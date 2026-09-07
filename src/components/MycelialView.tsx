@@ -24,6 +24,7 @@ import { openTab } from "../stores/tabs";
 import { settings } from "../stores/settings";
 import { useI18n, tPlural } from "../lib/i18n";
 import { Dropdown } from "./Dropdown";
+import { anchorPointMenu } from "../lib/uiMenu";
 import {
   publishMycelialState,
   clearMycelialState,
@@ -618,23 +619,13 @@ export default function MycelialView(props: MycelialViewProps) {
       // title, so open the namer popup to let the user trim it first.
       const wordCount = box.emergent.term.trim().split(/\s+/).length;
       if (wordCount > 3) {
-        const rect = canvasRef?.getBoundingClientRect();
         setNamerDraft(titleCase(box.emergent.term));
-        setNamer({
-          box,
-          x: e.clientX - (rect?.left ?? 0),
-          y: e.clientY - (rect?.top ?? 0),
-        });
+        setNamer({ box, x: e.clientX, y: e.clientY });
       } else {
         createEmergentNote(box);
       }
     } else if (box.kind === "latent" && box.latent) {
-      const rect = canvasRef?.getBoundingClientRect();
-      setPicker({
-        latent: box.latent,
-        x: e.clientX - (rect?.left ?? 0),
-        y: e.clientY - (rect?.top ?? 0),
-      });
+      setPicker({ latent: box.latent, x: e.clientX, y: e.clientY });
     } else if (box.kind === "source" || box.kind === "kindred") {
       recenter(box.id);
     }
@@ -744,12 +735,7 @@ export default function MycelialView(props: MycelialViewProps) {
     if (!hasStopwordAction && !boxNotePath(box)) return;
     e.preventDefault();
     e.stopPropagation();
-    const rect = canvasRef?.getBoundingClientRect();
-    setContextMenu({
-      box,
-      x: e.clientX - (rect?.left ?? 0),
-      y: e.clientY - (rect?.top ?? 0),
-    });
+    setContextMenu({ box, x: e.clientX, y: e.clientY });
   }
 
   function openMention(m: SourceMention) {
@@ -990,7 +976,7 @@ export default function MycelialView(props: MycelialViewProps) {
 
   return (
     <div class="mycelial-view">
-      <div class="mycelial-view__toolbar">
+      <div class="pane-toolbar mycelial-view__toolbar">
         <div class="mycelial-view__toolbar-left">
           <Show when={history().length > 0}>
             <button class="mycelial-view__btn" onClick={handleBack} title={t("mycelial.back")}>
@@ -1011,6 +997,7 @@ export default function MycelialView(props: MycelialViewProps) {
           >
             {t("mycelial.depth")}
             <Dropdown
+              class="dropdown--sm"
               value={maxDepth()}
               options={[
                 { value: 1, label: "1" },
@@ -1179,7 +1166,7 @@ export default function MycelialView(props: MycelialViewProps) {
           {(p) => (
             <div
               class="mycelial-picker"
-              style={{ left: `${p().x}px`, top: `${p().y}px` }}
+              ref={(el) => anchorPointMenu(p().x, p().y, el, canvasRef)}
               onClick={(e) => e.stopPropagation()}
               onMouseDown={(e) => e.stopPropagation()}
             >
@@ -1219,7 +1206,7 @@ export default function MycelialView(props: MycelialViewProps) {
           {(cm) => (
             <div
               class="mycelial-context-menu"
-              style={{ left: `${cm().x}px`, top: `${cm().y}px` }}
+              ref={(el) => anchorPointMenu(cm().x, cm().y, el, canvasRef)}
               onClick={(e) => e.stopPropagation()}
               onMouseDown={(e) => e.stopPropagation()}
             >
@@ -1254,7 +1241,7 @@ export default function MycelialView(props: MycelialViewProps) {
             return (
               <div
                 class="mycelial-picker mycelial-namer"
-                style={{ left: `${n().x}px`, top: `${n().y}px` }}
+                ref={(el) => anchorPointMenu(n().x, n().y, el, canvasRef)}
                 onClick={(e) => e.stopPropagation()}
                 onMouseDown={(e) => e.stopPropagation()}
               >

@@ -81,6 +81,31 @@
      7px field beside a 4px button reads as inconsistent. */
   --radius-input: var(--radius-control);
 
+  /* ── Editor content surface ─────────────────────────────────────
+     The writing area is drawn as a card: the page colour (--bg-primary)
+     floating on the chrome colour (--bg-secondary). The radius tracks
+     --radius-control, so the card's corners match the toolbar's icon buttons
+     rather than the tabs (which are on the larger --radius-md). The inset is
+     the gap between the card and the pane edges — set it to 0 for corners
+     that meet the surrounding chrome directly. */
+  --editor-surface-radius: var(--radius-control);
+  --editor-surface-inset: var(--space-2);
+  /* Colour of the inset gutter. Its own tone rather than plain chrome, so
+     the card reads as sitting in a shallow recess instead of floating on an
+     unbroken field. Derived: nudging --bg-secondary towards
+     --fg-primary steps it further from the page colour in every palette —
+     darker than the chrome in light themes, lighter in dark ones, where the
+     chrome is already the lighter of the two. Lower the percentage for a
+     stronger band, raise it towards 100% to fade back into the chrome. */
+  --editor-surface-gutter: color-mix(in srgb, var(--bg-secondary) 96%, var(--fg-primary));
+  /* Radius for the panel that holds the writing surface. Concentric with the
+     card: inner radius plus the gutter width, so the two curves share a centre
+     and the gutter stays an even thickness all the way round the corner. Any
+     surface that paints over the panel's corners (toolbar, reading view) has
+     to repeat the matching corners, since the panel can't use overflow:hidden
+     — the toolbar's overflow menu drops outside it. */
+  --editor-surface-radius-outer: calc(var(--editor-surface-radius) + var(--editor-surface-inset));
+
   /* ── Spacing scale ──────────────────────────────────────────────
      Geometric-ish step scale for padding/gap. The recurring ad-hoc
      paddings (2px 6px, 4px 8px, 6px 14px) map onto these. Multiplied
@@ -98,13 +123,21 @@
   --space-8: calc(32px * var(--density));
   --space-9: calc(48px * var(--density));
 
-  /* Width of the panel resize handles (.resize-handle), and the matching
-     inset a sidebar scroll region leaves on its right edge. A handle is an
-     invisible strip laid over a panel's edge, so anything underneath it stops
-     being clickable: a wider handle swallows a bigger slice of the scrollbar
-     beside it. Keep it narrow, and keep both handles on this one value so the
-     left and right panels stay symmetrical. */
+  /* The panel resize handles (.resize-handle) are built from two widths.
+     --resize-handle-width is the bar you SEE on hover. --resize-handle-hit is
+     the invisible strip that DETECTS the hover; it straddles the panel divider
+     so the pointer finds the handle without pixel-hunting for a 3px line.
+     Splitting the two lets the target grow without thickening the bar.
+
+     Anything under the hit strip stops being clickable, which bounds how wide
+     it can get: half of it reaches into the panel (so it also sets the inset a
+     sidebar scroll region leaves on its right edge, see
+     `.left-sidebar__pane-body`), and half into the content column's card
+     gutter. Past twice that gutter (--editor-surface-inset) it starts
+     swallowing the editor's scrollbar. Keep both handles on these two values
+     so the left and right panels stay symmetrical. */
   --resize-handle-width: 3px;
+  --resize-handle-hit: 12px;
 
   /* ── Buttons & focus ────────────────────────────────────────────
      Shared button geometry consumed by the .btn utility (layout.css).
@@ -377,8 +410,34 @@
   --callout-example: #6a5ea8;
   --callout-quote: color-mix(in srgb, var(--accent-color, #1D7874) 50%, white);
 
-  /* Status bar — blends with secondary background */
-  --status-bg: #f0f0f0;
+  /* Status bar — blends with the chrome. Tracks --bg-secondary rather than
+     repeating its value, so the two can't drift when one is retuned. Every
+     palette below inherits this: --bg-secondary is re-declared per palette
+     and the substitution picks up whichever value wins the cascade. */
+  /* The lip shadows: cast down by a pane toolbar (.pane-toolbar) and up by the
+     status bar (.main-content::after), so content reads as passing underneath
+     rather than stopping at a seam. Two strengths because the toolbar sits
+     closer to the eye than the status bar does. They have to be tokens: a
+     black shadow has plenty of range to darken a near-white surface, almost
+     none on a near-black one, so the dark themes need a much heavier alpha to
+     land the same visible step. */
+  /* Row height for a pane's toolbar (.pane-toolbar), so switching a tab
+     between Editor, Journal Scroll and Mycelial View doesn't shift the content
+     below by a few pixels each time. It is a floor, not a cap: controls in the
+     row have to fit inside it, which is why the Mycelial depth picker uses the
+     compact Dropdown. Sibling to the 38px chrome tier used by the tab strip
+     and the panel headers, one step shorter because it sits inside a pane. */
+  --pane-toolbar-height: 32px;
+  /* Height for the controls inside that row: what the row leaves once its own
+     padding is taken off. Derived so the two stay in step, and shared so a
+     picker and a button side by side line up instead of each sizing itself
+     from its own padding and font. */
+  --pane-toolbar-control-height: calc(var(--pane-toolbar-height) - 2 * var(--space-2));
+
+  --lip-shadow-toolbar: rgba(0, 0, 0, 0.28);
+  --lip-shadow-status: rgba(0, 0, 0, 0.22);
+
+  --status-bg: var(--bg-secondary);
   --status-fg: #071E22;
   --status-btn-bg: color-mix(in srgb, var(--accent-color, #1D7874) 10%, transparent);
   --status-btn-bg-hover: color-mix(in srgb, var(--accent-color, #1D7874) 20%, transparent);
@@ -390,6 +449,10 @@
 [data-theme="dark"] {
   /* Native form controls follow the theme — see the light block above. */
   color-scheme: dark;
+
+  /* Heavier than the light themes: see --lip-shadow-* above. */
+  --lip-shadow-toolbar: rgba(0, 0, 0, 0.6);
+  --lip-shadow-status: rgba(0, 0, 0, 0.5);
 
   /* Backgrounds — built from Ink Black */
   --bg-primary: #071E22;
@@ -538,8 +601,6 @@
   --callout-example: #8a7ec8;
   --callout-quote: color-mix(in srgb, var(--accent-color, #1D7874) 60%, white);
 
-  /* Status bar — blends with secondary background */
-  --status-bg: #0c2a2f;
   --status-fg: #b8c8c6;
   --status-btn-bg: color-mix(in srgb, var(--accent-color, #1D7874) 20%, transparent);
   --status-btn-bg-hover: color-mix(in srgb, var(--accent-color, #1D7874) 35%, transparent);
@@ -571,7 +632,6 @@
   --fg-gutter: #968f84;
   --fg-separator: #cfc9bb;
 
-  --status-bg: #F9F8F6;
   --status-fg: #1d1915;
 
   --code-block-bg: #f4f2eb;
@@ -602,7 +662,6 @@
   --fg-gutter: #909090;
   --fg-separator: #3e3e3e;
 
-  --status-bg: #272727;
   --status-fg: #c0c0c0;
 
   --code-block-bg: #171717;

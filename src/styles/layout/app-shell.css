@@ -3,6 +3,9 @@
    original cascade. */
 
 .app-shell {
+  /* Chrome tone behind everything, so the content column's rounded bottom
+     corners reveal chrome rather than the body's page colour. */
+  background: var(--bg-secondary);
   --left-width: 240px;
   --right-width: 280px;
   --toolbar-width: 44px;
@@ -122,37 +125,58 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  width: var(--resize-handle-width);
+  width: var(--resize-handle-hit);
   cursor: col-resize;
   z-index: 20;
+}
+
+/* The bar you see. Sized and placed independently of the hit strip, so the
+   pointer target can grow without the bar getting thicker. */
+.resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: var(--resize-handle-width);
   background: transparent;
   transition: background var(--dur-fast) ease;
 }
 
-.resize-handle:hover,
-.resize-handle--dragging {
+.resize-handle:hover::after,
+.resize-handle--dragging::after {
   background: var(--accent);
   opacity: 0.4;
 }
 
-/* Each handle seats against its divider from inside its own side panel, so
-   the hover bar never reaches across into the content column (where it used
-   to clip the top tab's edge). Left handle hugs the sidebar→content divider
-   from the sidebar side; right handle hugs the content→panel divider from the
-   panel side — mirror images, consistently "on the panel side".
+/* The hit strip straddles its divider, half of it either side, so the pointer
+   finds the handle from the content column as well as from the panel. The bar
+   itself still seats against the divider from inside its own side panel: the
+   left handle's bar hugs the sidebar→content divider from the sidebar side,
+   the right handle's from the panel side — mirror images, consistently "on the
+   panel side", so the bar never reaches across and clips the top tab's edge.
 
-   Because the left handle lies over the sidebar's own right edge, it covers
-   whatever is painted there — including the scroll region's scrollbar. Sidebar
-   scroll regions therefore stop `--resize-handle-width` short of that edge
-   (see `.left-sidebar__pane-body`), leaving the two side by side instead of
-   stacked. The right handle sits just outside the editor column, so the
-   editor's scrollbar already clears it. */
+   Anything under the hit strip stops being clickable, so each side has to
+   reach into dead space only:
+   - Into the sidebar, the strip covers the scroll region's scrollbar, so
+     sidebar scroll regions stop half the hit width short of that edge (see
+     `.left-sidebar__pane-body`) and the two sit side by side.
+   - Into the content column, the strip lands on the grey gutter around the
+     writing-surface card (--editor-surface-inset). Widen the hit strip much
+     past twice that gutter and it starts eating the editor's own scrollbar. */
 .resize-handle--left {
-  left: calc(var(--toolbar-width) + var(--left-width) - var(--resize-handle-width));
+  left: calc(var(--toolbar-width) + var(--left-width) - var(--resize-handle-hit) / 2);
+}
+
+.resize-handle--left::after {
+  left: calc(var(--resize-handle-hit) / 2 - var(--resize-handle-width));
 }
 
 .resize-handle--right {
-  left: calc(100vw - var(--right-width));
+  left: calc(100vw - var(--right-width) - var(--resize-handle-hit) / 2);
+}
+
+.resize-handle--right::after {
+  right: calc(var(--resize-handle-hit) / 2 - var(--resize-handle-width));
 }
 
 .app-shell.app-shell--left-collapsed .resize-handle--left,
@@ -231,25 +255,35 @@
 
 .main-content {
   grid-area: main;
-  background: var(--bg-primary);
+  /* Chrome, not page colour: what shows at the editor panel's rounded corners.
+     Tabs that fill the column with their own bright surface (collections) set
+     it back on .main-content__body. */
+  background: var(--bg-secondary);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   position: relative;
+  /* Matches the panel's bottom corners. Combined with overflow:hidden this is
+     also what clips ::after below, so the lip shadow keeps its full width but
+     stops at the panel's outline instead of crossing it. */
+  border-bottom-left-radius: var(--editor-surface-radius-outer);
+  border-bottom-right-radius: var(--editor-surface-radius-outer);
 }
 
 /* Bottom lip shadow — confined to the content column (not the full-width
    status bar), so content appears to slide under the status bar only
-   where the two actually meet. Inset by 1px to clear the body borders. */
+   where the two actually meet. Spans the full column width; the column's own
+   rounded bottom corners (below) clip it, so it stops tracing the card and
+   starts tracing the panel's outline. */
 .main-content::after {
   content: "";
   position: absolute;
-  left: 1px;
-  right: 1px;
+  left: 0;
+  right: 0;
   bottom: 0;
   height: 4px;
   pointer-events: none;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.22), transparent);
+  background: linear-gradient(to top, var(--lip-shadow-status), transparent);
 }
 
 .main-content__tabs {
@@ -263,15 +297,20 @@
 .main-content__body {
   flex: 1;
   overflow: auto;
-  /* The bg change (bright editor vs grey chrome) already marks this
-     boundary; the hairline is kept at the quiet tier so the seam is
-     defined without being drawn twice. */
-  border-left: 1px solid var(--border-subtle);
-  border-right: 1px solid var(--border-subtle);
+  /* No side hairlines. The content column shares the chrome colour with the
+     sidebars, so the boundary is carried by the inset writing-surface card
+     rather than a drawn line — a rule here would cut the shared field in two.
+     Uncomment both to bring the seams back; nothing else depends on them,
+     except that .main-content::after then wants its old 1px side inset. */
+  /* border-left: 1px solid var(--border-subtle); */
+  /* border-right: 1px solid var(--border-subtle); */
   box-sizing: border-box;
 }
 
 .main-content__body--collection {
+  /* A collection is a bright full-column surface rather than an inset card, so
+     it keeps the page colour the column no longer supplies. */
+  background: var(--bg-primary);
   padding: var(--space-6);
 }
 

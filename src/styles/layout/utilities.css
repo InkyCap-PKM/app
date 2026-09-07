@@ -169,3 +169,24 @@
   box-shadow: var(--focus-ring);
 }
 
+
+/* ─── .pane-toolbar ───────────────────────────────────────────────────
+   Surface for the control strip at the top of a pane's content: the editor's
+   header, the Mycelial View's toolbar. Only the surface lives here — layout,
+   padding and the controls themselves stay with each toolbar, since those
+   differ. The gradient darkens downward from the chrome tone to the toolbar
+   tone, and the lip shadow casts onto whatever sits below, so content reads as
+   passing underneath rather than starting at an invisible seam. A new pane
+   type gets the same seam by adding this class, not by copying the gradient. */
+.pane-toolbar {
+  /* Vertical rhythm lives here so every pane toolbar is the same height;
+     each one still sets its own padding-inline and layout. */
+  min-height: var(--pane-toolbar-height);
+  padding-block: var(--space-2);
+  box-sizing: border-box;
+  background: linear-gradient(to top, var(--bg-editor-toolbar), var(--bg-secondary));
+  /* Lift above the scrollable content so the lip shadow casts over it. */
+  position: relative;
+  z-index: 2;
+  box-shadow: 0 5px 6px -5px var(--lip-shadow-toolbar);
+}

@@ -9,6 +9,9 @@
   min-height: 0;
   overflow: auto;
   background: var(--bg-secondary);
+  /* Fills the gutter panel and paints over it, so it repeats the panel's
+     corners (see .typst-editor-body). */
+  border-radius: var(--editor-surface-radius-outer);
   display: flex;
   flex-direction: column;
 }

@@ -64,6 +64,14 @@
   flex-direction: column;
   gap: var(--space-6);
   background: var(--bg-secondary);
+  /* Seated in the gutter panel exactly like the editor card, rather than
+     filling it edge to edge. Beyond matching, this is what keeps the scroll
+     surface's own scrollbar out from under the right panel's resize handle:
+     the handle's hit strip reaches half its width into the content column, so
+     a scroll surface flush with the column edge puts its scrollbar directly
+     under it and the pointer switches to col-resize mid-scrollbar. */
+  margin: var(--editor-surface-inset);
+  border-radius: var(--editor-surface-radius);
 }
 
 .journal-scroll__entry {

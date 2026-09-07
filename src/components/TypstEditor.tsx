@@ -1241,7 +1241,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
   return (
     <div class="typst-editor-container" ref={containerRef}>
       <Show when={!isToolingFile()}>
-      <div class="editor-header" ref={observeHeaderWidth}>
+      <div class="pane-toolbar editor-header" ref={observeHeaderWidth}>
         <div class="editor-header__nav" role="group" aria-label={t("editor.nav.label")}>
           <button
             type="button"
@@ -1312,42 +1312,47 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
         </div>
       </Show>
 
-      <Show when={isScrollEnabled(props.tabId)}>
-        <JournalScrollView tabId={props.tabId} />
-      </Show>
+      {/* Everything below the toolbar. Its own element so the gutter can be
+          a rounded panel in its own right — the toolbar stays flush and full
+          width above it. */}
+      <div class="typst-editor-body">
+        <Show when={isScrollEnabled(props.tabId)}>
+          <JournalScrollView tabId={props.tabId} />
+        </Show>
 
-      <Show when={!isScrollEnabled(props.tabId) && (currentMode() === "source" || currentMode() === "live")}>
-        <div
-          class="typst-editor"
-          ref={(el) => {
-            editorMountRef = el;
-            if (!editorHandle) {
-              queueMicrotask(() => mountEditor());
-            }
-          }}
-        />
-      </Show>
-
-      <Show when={!isScrollEnabled(props.tabId) && currentMode() === "reading"}>
-        <Show when={readingFormat() === "svg"} fallback={
-          <TypstHtmlReadingView
-            result={htmlResult()}
-            loading={htmlResult.loading}
-            documentFont={resolveTextFontSync(settings.fonts)}
-            zoom={readingZoom()}
-            tabId={props.tabId}
-            path={props.path}
-          />
-        }>
-          <TypstReadingView
-            result={compileResult()}
-            loading={compileResult.loading}
-            zoom={readingZoom()}
-            tabId={props.tabId}
-            path={props.path}
+        <Show when={!isScrollEnabled(props.tabId) && (currentMode() === "source" || currentMode() === "live")}>
+          <div
+            class="typst-editor"
+            ref={(el) => {
+              editorMountRef = el;
+              if (!editorHandle) {
+                queueMicrotask(() => mountEditor());
+              }
+            }}
           />
         </Show>
-      </Show>
+
+        <Show when={!isScrollEnabled(props.tabId) && currentMode() === "reading"}>
+          <Show when={readingFormat() === "svg"} fallback={
+            <TypstHtmlReadingView
+              result={htmlResult()}
+              loading={htmlResult.loading}
+              documentFont={resolveTextFontSync(settings.fonts)}
+              zoom={readingZoom()}
+              tabId={props.tabId}
+              path={props.path}
+            />
+          }>
+            <TypstReadingView
+              result={compileResult()}
+              loading={compileResult.loading}
+              zoom={readingZoom()}
+              tabId={props.tabId}
+              path={props.path}
+            />
+          </Show>
+        </Show>
+      </div>
     </div>
   );
 };

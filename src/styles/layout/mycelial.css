@@ -15,9 +15,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-4) var(--space-6);
-  background: linear-gradient(to bottom, var(--bg-editor-toolbar), var(--bg-primary));
+  padding-inline: var(--space-6);
   flex-shrink: 0;
+  /* Surface (gradient, lip shadow, stacking) comes from .pane-toolbar. It used
+     to fade downward into --bg-primary, which left no seam against the graph
+     below it. */
 }
 
 .mycelial-view__toolbar-left {
@@ -50,13 +52,33 @@
 }
 
 .mycelial-view__btn {
+  /* inline-flex + centring so the glyph stays centred once min-height (below)
+     makes the box taller than the text. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: var(--bg-secondary);
   color: var(--fg-primary);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-control);
   padding: 4px 10px;
   font-size: var(--text-base);
+  /* The glyph's own line box would otherwise be taller than the row's control
+     height and push the button past it. */
+  line-height: 1;
   cursor: pointer;
+}
+
+/* Everything in the toolbar row lands on the row's own control height, so the
+   depth picker and the buttons beside it match. Each keeps its own padding for
+   horizontal breathing room; only the height is shared. */
+.mycelial-view__toolbar .mycelial-view__btn,
+.mycelial-view__toolbar .dropdown__trigger {
+  /* height, not min-height: a floor still lets a control with a taller line box
+     or icon grow past it, which is how these drifted apart by a pixel. Both
+     borders are inside the box, so this is the same outer height for each. */
+  height: var(--pane-toolbar-control-height);
+  box-sizing: border-box;
 }
 
 .mycelial-view__btn:hover {
@@ -541,7 +563,14 @@
 }
 
 .mycelial-controls__btn:hover {
-  background: var(--bg-hover);
+  /* --bg-hover is a translucent accent tint, designed to sit on top of an
+     opaque surface. These buttons float over the graph, so setting it as the
+     whole background replaced their opaque one and the notes behind showed
+     through. Keep the surface and layer the tint over it: same highlight
+     colour, still reading as a solid control. */
+  background-color: var(--popup-bg);
+  background-image: linear-gradient(var(--bg-hover), var(--bg-hover));
+  border-color: var(--accent);
 }
 
 .mycelial-controls__level {
@@ -553,7 +582,9 @@
 /* ─── Latent-link mention picker ─── */
 
 .mycelial-picker {
-  position: absolute;
+  /* Placed by anchorPointMenu in viewport coordinates — see
+     .mycelial-context-menu. Covers .mycelial-namer, which reuses this class. */
+  position: fixed;
   z-index: var(--z-menu);
   width: 320px;
   max-height: 360px;
@@ -821,7 +852,9 @@
 /* ─── Mycelial context menu (right-click on emergent concepts) ─── */
 
 .mycelial-context-menu {
-  position: absolute;
+  /* anchorPointMenu places this in viewport coordinates so it can escape the
+     canvas's clipping and sit above the side panels. */
+  position: fixed;
   z-index: var(--z-menu);
   background: var(--popup-bg);
   border: 1px solid var(--popup-border-color);
