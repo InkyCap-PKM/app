@@ -38,6 +38,16 @@ export const visualTheme = EditorView.theme({
   // the widget rules and the edit-line rules further down. Never restate one
   // of these numbers inline.
   ".cm-content": {
+    // Height of one text row, as a multiple of the font size. CodeMirror's
+    // own base theme sets this on `.cm-scroller`; restating it here as a
+    // variable (and applying it below) lets inline decorations size
+    // themselves to exactly one row instead of guessing.
+    "--editor-line-height": "1.4",
+    // Pill text size relative to the text it sits in. Read both by the pill's
+    // `font-size` and by its height, which has to convert back out of the
+    // pill's own `em` to the surrounding text's row height.
+    "--pill-font-scale": "0.78",
+    lineHeight: "var(--editor-line-height)",
     "--list-bullet-width": "1.5em",
     // CodeMirror's own horizontal padding on every `.cm-line`. Edit-state
     // lines replace that padding with their block's inset, so they carry it
@@ -715,6 +725,8 @@ export const visualTheme = EditorView.theme({
     borderLeft: "3px solid var(--border-primary)",
     padding: "0 var(--quote-inset)",
     lineHeight: "var(--quote-line-height)",
+    // Rows here are taller than body rows, so a pill on one sizes to this.
+    "--editor-line-height": "var(--quote-line-height)",
     // Lists inside the body keep their hanging indent past this inset.
     "--line-block-inset": "var(--quote-inset)",
   },
@@ -742,6 +754,8 @@ export const visualTheme = EditorView.theme({
     padding: "0 var(--callout-inset)",
     fontSize: "var(--callout-body-size)",
     lineHeight: "var(--callout-line-height)",
+    // Rows here are taller than body rows, so a pill on one sizes to this.
+    "--editor-line-height": "var(--callout-line-height)",
     "--line-block-inset": "var(--callout-inset)",
   },
   ".cm-typst-callout-line.cm-typst-block-edit-first": {
@@ -775,16 +789,26 @@ export const visualTheme = EditorView.theme({
     backgroundColor: "var(--bg-secondary)",
     border: "1px solid var(--border-subtle)",
     borderRadius: "12px",
-    padding: "1px 6px 1px 3px",
+    padding: "0 6px 0 3px",
     color: "var(--fg-muted)",
     cursor: "pointer",
-    verticalAlign: "middle",
+    // An inline pill appears and disappears as the caret enters and leaves
+    // its line, so it must occupy exactly one text row — a pill even a
+    // pixel taller grows the line, and every line below it shifts when the
+    // pill collapses. `1em` inside the pill is its own reduced font size,
+    // so dividing by that scale converts back to the surrounding text's
+    // size; times the row multiple gives one row exactly. Top alignment
+    // then seats it flush with the row instead of centring it on the
+    // baseline, where a box this tall would hang below the line.
+    boxSizing: "border-box",
+    height: "calc(1em / var(--pill-font-scale, 0.78) * var(--editor-line-height, 1.4))",
+    verticalAlign: "top",
     userSelect: "none",
     // Reset native button visuals so a <button> matches a <span>.
     font: "inherit",
-    fontSize: "0.78em",
+    fontSize: "calc(1em * var(--pill-font-scale, 0.78))",
     fontFamily: "var(--editor-font-mono, monospace)",
-    lineHeight: "1.4",
+    lineHeight: "1",
     // A hair of trailing space so the chip doesn't butt up against the text
     // that follows it inline (e.g. #quote[…] before its body). Uses the
     // density-scaled spacing token (2px at default density) so it tracks the

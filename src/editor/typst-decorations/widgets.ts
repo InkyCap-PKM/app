@@ -146,9 +146,9 @@ function attachImageResize(
 // blockquote) show at their top edge when the cursor is on the line.
 // The pill is rendered INSIDE the element's widget DOM, not as a
 // separate block widget above it: keeping it inside means
-// (a) `coordsAtPos(from)` returns the same y whether the pill is
-// present, replaced by raw markup, or absent — so the click-anchor
-// plugin sees zero delta on pill clicks and doesn't drift, and
+// (a) the element's top edge stays at the same y whether the pill is
+// present, replaced by raw markup, or absent, so showing the pill
+// doesn't move the block, and
 // (b) there's no extra block-widget container introducing line-spacing
 // above the element.
 // Block content-bracket pills (callout, quote) where the body is the

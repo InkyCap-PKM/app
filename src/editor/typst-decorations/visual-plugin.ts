@@ -49,7 +49,6 @@ import { computePreambleImportRanges, isLeadingLocaleDirective, commentHideRange
 export { externalReload } from "./visual-protected";
 import { linkClickHandler } from "./visual-links";
 import { tableClipboardHandler, tablePasteHandler, createTableEntryKeymap } from "./visual-tables";
-import { createClickAnchorPlugin } from "./click-anchor";
 import { pillBoundaryNav } from "./pill-boundary-nav";
 import { leadingWhitespace } from "./list-scan";
 
@@ -710,7 +709,11 @@ function pushListIndent(decos: Range<Decoration>[], state: EditorState, markerFr
   );
 }
 
-function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: number }[]): DecorationSet {
+/** Build the visual layer's whole decoration set for `state`. Exported so
+ *  tests can assert on decorations that only appear once the syntax tree is
+ *  walked (nested calls, markers); the editor reaches it through
+ *  `typstVisualMode()`. */
+export function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: number }[]): DecorationSet {
   const focused = cursorLines(state);
   const cursors = cursorPositions(state);
   const autoExpand = state.facet(autoExpandFacet);
@@ -794,21 +797,30 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
             decos.push(hide.range(r.from, r.to));
             return false;
           }
+          // Direct formatting (`*bold*`, `_italic_`): the `*` / `_` delimiters
+          // are hidden while the caret is elsewhere and shown once it lands
+          // inside, so they can be edited. Showing them must not take the
+          // content down with them — the body keeps its bold/italic mark and,
+          // crucially, is still traversed, so a nested call inside it (e.g.
+          // `*a #highlight[b] c*`) keeps its own decoration and pill instead of
+          // dropping to raw source.
           case "Strong": {
-            if (isCursorAdjacentOrInside(state, node.from, node.to, cursors)) return false;
             if (autoExpand && onCursor) return false;
             activeFormatting.bold = true;
-            decos.push(hide.range(node.from, node.from + 1));
-            decos.push(hide.range(node.to - 1, node.to));
+            if (!isCursorAdjacentOrInside(state, node.from, node.to, cursors)) {
+              decos.push(hide.range(node.from, node.from + 1));
+              decos.push(hide.range(node.to - 1, node.to));
+            }
             pushMark(decos, bold, node.from + 1, node.to - 1);
             break;
           }
           case "Emph": {
-            if (isCursorAdjacentOrInside(state, node.from, node.to, cursors)) return false;
             if (autoExpand && onCursor) return false;
             activeFormatting.italic = true;
-            decos.push(hide.range(node.from, node.from + 1));
-            decos.push(hide.range(node.to - 1, node.to));
+            if (!isCursorAdjacentOrInside(state, node.from, node.to, cursors)) {
+              decos.push(hide.range(node.from, node.from + 1));
+              decos.push(hide.range(node.to - 1, node.to));
+            }
             pushMark(decos, italic, node.from + 1, node.to - 1);
             break;
           }
@@ -2453,6 +2465,29 @@ function expandRangesToBlockElements(
   });
 }
 
+/**
+ * Grow each dirty range out to whole lines.
+ *
+ * Line decorations (`Decoration.line`) sit at a line's *start*. A block
+ * element indented inside a list opens mid-line — the fence of a code block
+ * written as a list item starts after the `- ` marker — so a range grown to
+ * that element still begins past the line start, and the element's own line
+ * decorations fall outside it. `rebuildRanges` would then keep them: the block
+ * collapses back to its widget while the edit-state background stays painted
+ * behind it. At the top level the element starts at column 0 and the two
+ * coincide, which is why the same block outside a list was unaffected.
+ */
+function snapRangesToLines(
+  state: EditorState,
+  ranges: { from: number; to: number }[],
+): { from: number; to: number }[] {
+  const len = state.doc.length;
+  return ranges.map((r) => ({
+    from: state.doc.lineAt(Math.min(r.from, len)).from,
+    to: state.doc.lineAt(Math.min(r.to, len)).to,
+  }));
+}
+
 function coalesceRanges(ranges: { from: number; to: number }[]): { from: number; to: number }[] {
   ranges.sort((a, b) => a.from - b.from);
   const merged: { from: number; to: number }[] = [];
@@ -2469,9 +2504,11 @@ function rebuildRanges(
   state: EditorState,
   dirtyRanges: { from: number; to: number }[],
 ): DecorationSet {
-  // Coalesce, then grow to whole block elements, then coalesce again (the
-  // growth can make formerly-separate ranges overlap).
-  const merged = coalesceRanges(expandRangesToBlockElements(state, coalesceRanges(dirtyRanges)));
+  // Coalesce, then grow to whole block elements, then out to whole lines, then
+  // coalesce again (the growth can make formerly-separate ranges overlap).
+  const merged = coalesceRanges(
+    snapRangesToLines(state, expandRangesToBlockElements(state, coalesceRanges(dirtyRanges))),
+  );
 
   if (merged.length === 0) return existing;
 
@@ -2528,7 +2565,10 @@ function rebuildRanges(
   return RangeSet.of([...kept, ...rebuilt], true);
 }
 
-function rebuildDirtyLines(
+/** Incremental rebuild for a cursor move: only the lines the caret left and
+ *  arrived on are rebuilt (grown to whole block elements first). Exported so
+ *  tests can pin that its result matches a full rebuild. */
+export function rebuildDirtyLines(
   existing: DecorationSet,
   state: EditorState,
   oldCursorLines: Set<number>,
@@ -2700,7 +2740,6 @@ const protectedCursorFilter = createProtectedCursorFilter(
 const protectedChangeFilter = createProtectedChangeFilter(protectedRangesField);
 const tableEntryKeymap = createTableEntryKeymap(visualField);
 const verseEntryKeymap = createVerseEntryKeymap(visualField);
-const clickAnchorPlugin = createClickAnchorPlugin(visualField);
 
 // A trailing paragraph-break `\` is hidden in visual mode (see
 // `buildDecorations`) and registered here as an atomic range spanning the `\`
@@ -2846,7 +2885,16 @@ const dueCursorRoundOut = ViewPlugin.fromClass(class {
   }
 });
 
+// Scroll stability across decoration changes is CodeMirror's own job: it
+// anchors on the line at the top of the visible area and corrects scrollTop
+// after every measure, so content above a height change stays put and content
+// below it moves. There was once a plugin here that anchored on the *clicked*
+// line instead; holding that line still dragged everything above it whenever a
+// block collapsed higher up the page, which is the opposite of what should
+// happen. Don't reintroduce one — if a click makes the page jump, the cause is
+// a block whose two states measure differently, and that belongs in the block's
+// own geometry (see the shared block variables in visual-theme.ts).
 export function typstVisualMode() {
-  return [expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, dueCursorRoundOut, Prec.high(tableEntryKeymap), Prec.high(verseEntryKeymap), visualField, softBreakRangesField, softBreakAtomicRanges, markupAtomicRanges, postHistoryRebuild, visualTheme, linkClickHandler, tableClipboardHandler, tablePasteHandler, clickAnchorPlugin, pillBoundaryNav];
+  return [expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, dueCursorRoundOut, Prec.high(tableEntryKeymap), Prec.high(verseEntryKeymap), visualField, softBreakRangesField, softBreakAtomicRanges, markupAtomicRanges, postHistoryRebuild, visualTheme, linkClickHandler, tableClipboardHandler, tablePasteHandler, pillBoundaryNav];
 }
 
