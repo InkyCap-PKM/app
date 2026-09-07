@@ -46,6 +46,11 @@ export function calloutKindLabel(kind: string, title?: string | null): string {
 // Typst-source representation (used in `fill: rgb(...)`) and a label.
 // Keeping the rgb literal stable lets the round-trip detect "this is the
 // yellow preset" reliably across re-saves.
+//
+// The palette is only ever the *current* set of colours. A note keeps whatever
+// fill it was written with, so a value from an older palette still renders as
+// authored, but the menu shows no swatch as active for it; picking a colour
+// then writes the current literal, bringing the highlight up to date.
 interface HighlightColor {
   /** i18n key for the user-visible colour name. */
   labelKey: string;
@@ -56,18 +61,13 @@ interface HighlightColor {
   /** Colour a bare `#highlight[…]` renders as. Exactly one entry sets it;
    *  picking it drops the `fill:` argument instead of writing it. */
   isDefault?: true;
-  /** Fill literals this preset used in earlier versions. Notes written then
-   *  keep their original colour — we never rewrite note source — so the menu
-   *  matches these too, and still shows the swatch as the active choice. */
-  legacyFills?: string[];
 }
 const HIGHLIGHT_COLORS: HighlightColor[] = [
   { labelKey: "pill.highlight.color.red",    fill: 'rgb("#ff9f97")', hex: "#ff9f97" },
   { labelKey: "pill.highlight.color.orange", fill: 'rgb("#ffd6a8")', hex: "#ffd6a8" },
   { labelKey: "pill.highlight.color.yellow", fill: 'rgb("#f2ed61")', hex: "#f2ed61", isDefault: true },
   { labelKey: "pill.highlight.color.green",  fill: 'rgb("#c8f0c8")', hex: "#c8f0c8" },
-  { labelKey: "pill.highlight.color.blue",   fill: 'rgb("#b3dfff")', hex: "#b3dfff",
-    legacyFills: ['rgb("#c8dcff")'] },
+  { labelKey: "pill.highlight.color.blue",   fill: 'rgb("#b3dfff")', hex: "#b3dfff" },
   { labelKey: "pill.highlight.color.violet", fill: 'rgb("#e0c8f0")', hex: "#e0c8f0" },
   { labelKey: "pill.highlight.color.pink",   fill: 'rgb("#ffd1e0")', hex: "#ffd1e0" },
 ];
@@ -727,9 +727,7 @@ function highlightOptions(view: EditorView, from: number, to: number): PillMenuS
     items: HIGHLIGHT_COLORS.map((c) => {
       // Active when the current `fill:` matches this preset's literal,
       // OR when there's no fill arg AND this is the default (yellow).
-      const isActive = fill === c.fill
-        || (fill != null && c.legacyFills?.includes(fill) === true)
-        || (fill == null && c.isDefault === true);
+      const isActive = fill === c.fill || (fill == null && c.isDefault === true);
       return {
         label: t(c.labelKey),
         isActive,
