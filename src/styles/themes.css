@@ -537,10 +537,10 @@
   --lip-shadow-status: rgba(0, 0, 0, 0.19);
   --lip-height: 4px;
   /* The hard edge under each lip. The lip's soft cast is tapered to the width
-     of the text column (see --lip-fade), so past the column it carries no
-     separation at all; this 1px line runs the full width and keeps chrome and
-     content apart there. Read them as a pair: the hairline says where the
-     boundary is, the lip says which side is on top. One value for both ends,
+     of the text column (see --lip-fade), so out at the column's edges it
+     carries no separation at all; this 1px line is what still marks the
+     boundary there. Read them as a pair: the hairline says where the boundary
+     is, the lip says which side is on top. One value for both ends,
      unlike the two --lip-shadow-* tones, because a hairline sits on the
      boundary rather than casting across a surface, so it does not need to be
      retuned per direction. Defaults to the theme's own subtle border so it

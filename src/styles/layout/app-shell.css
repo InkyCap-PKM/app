@@ -275,6 +275,23 @@
   border-bottom-right-radius: var(--editor-surface-radius-outer);
 }
 
+/* The hairline where the writing surface meets the status bar. It closes the
+   U begun by `.main-content__body`'s side borders, and it is what still marks
+   the boundary out at the column's edges once the lip above has tapered away.
+   Inset by 1px on each side so it abuts those side borders instead of crossing
+   them. It stops at the column because the status bar and the sidebars share a
+   background: past the column there are not two surfaces to separate. */
+.main-content::before {
+  content: "";
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  bottom: 0;
+  height: 1px;
+  pointer-events: none;
+  background: var(--lip-hairline);
+}
+
 /* Bottom lip shadow — confined to the content column (not the full-width
    status bar), so content appears to slide under the status bar only where the
    two actually meet. Mirror of `.pane-toolbar::after` at the top of the pane:
@@ -287,7 +304,9 @@
      rather than running over them. */
   left: 1px;
   right: 1px;
-  bottom: 0;
+  /* Sits on top of the hairline rather than over it, mirroring the 1px offset
+     .pane-toolbar::after uses at the other end. */
+  bottom: 1px;
   height: var(--lip-height);
   pointer-events: none;
   background: linear-gradient(to top, var(--lip-shadow-status), transparent);
