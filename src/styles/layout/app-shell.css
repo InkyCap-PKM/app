@@ -148,35 +148,33 @@
   opacity: 0.4;
 }
 
-/* The hit strip straddles its divider, half of it either side, so the pointer
-   finds the handle from the content column as well as from the panel. The bar
-   itself still seats against the divider from inside its own side panel: the
-   left handle's bar hugs the sidebar→content divider from the sidebar side,
-   the right handle's from the panel side — mirror images, consistently "on the
-   panel side", so the bar never reaches across and clips the top tab's edge.
+/* Each hit strip lies wholly inside its own side panel rather than straddling
+   its divider, and the visible bar hugs the divider from that same side: the
+   left handle from the sidebar side, the right handle from the panel side.
+   Mirror images, consistently "on the panel side", so neither bar reaches
+   across into the content column to clip the top tab's edge.
 
-   Anything under the hit strip stops being clickable, so each side has to
-   reach into dead space only:
-   - Into the sidebar, the strip covers the scroll region's scrollbar, so
-     sidebar scroll regions stop half the hit width short of that edge (see
-     `.left-sidebar__pane-body`) and the two sit side by side.
-   - Into the content column, the strip lands on the grey gutter around the
-     writing-surface card (--editor-surface-inset). Widen the hit strip much
-     past twice that gutter and it starts eating the editor's own scrollbar. */
+   Staying out of the content column is what keeps the pointer target clear of
+   the editor: the writing surface runs to the column edge, so a strip
+   reaching in would sit on the editor's own scrollbar and switch the cursor
+   to col-resize halfway across it. Inside the left sidebar the strip does
+   cover that panel's scrollbar, so sidebar scroll regions stop the full hit
+   width short of that edge (see `.left-sidebar__pane-body`) and the two sit
+   side by side. The right panel has nothing at its left edge to displace. */
 .resize-handle--left {
-  left: calc(var(--toolbar-width) + var(--left-width) - var(--resize-handle-hit) / 2);
+  left: calc(var(--toolbar-width) + var(--left-width) - var(--resize-handle-hit));
 }
 
 .resize-handle--left::after {
-  left: calc(var(--resize-handle-hit) / 2 - var(--resize-handle-width));
+  right: 0;
 }
 
 .resize-handle--right {
-  left: calc(100vw - var(--right-width) - var(--resize-handle-hit) / 2);
+  left: calc(100vw - var(--right-width));
 }
 
 .resize-handle--right::after {
-  right: calc(var(--resize-handle-hit) / 2 - var(--resize-handle-width));
+  left: 0;
 }
 
 .app-shell.app-shell--left-collapsed .resize-handle--left,
@@ -260,47 +258,45 @@
 
 .main-content {
   grid-area: main;
-  /* Chrome, not page colour: what shows at the editor panel's rounded corners.
-     Tabs that fill the column with their own bright surface (collections) set
-     it back on .main-content__body. */
+  /* Chrome, not page colour: the backdrop the tab strip and toolbar sit on,
+     and what would show at the column's corners if the writing surface were
+     ever inset. Tabs that fill the column with their own bright surface
+     (collections) set the page colour back on .main-content__body. */
   background: var(--bg-secondary);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   position: relative;
-  /* Matches the panel's bottom corners. Combined with overflow:hidden this is
-     also what clips ::after below, so the lip shadow keeps its full width but
-     stops at the panel's outline instead of crossing it. */
+  /* Follows the writing surface's outer radius, which is 0 while the surface
+     is flat. Combined with overflow:hidden this is also what clips ::after
+     below, so a rounded column would trim the lip shadow to its own outline
+     rather than letting it cross the corner. */
   border-bottom-left-radius: var(--editor-surface-radius-outer);
   border-bottom-right-radius: var(--editor-surface-radius-outer);
 }
 
 /* Bottom lip shadow — confined to the content column (not the full-width
-   status bar), so content appears to slide under the status bar only
-   where the two actually meet. Spans the full column width; the column's own
-   rounded bottom corners (below) clip it, so it stops tracing the card and
-   starts tracing the panel's outline. */
+   status bar), so content appears to slide under the status bar only where the
+   two actually meet. Mirror of `.pane-toolbar::after` at the top of the pane:
+   the pair is what separates chrome from page now that the writing surface has
+   no edge of its own. */
 .main-content::after {
   content: "";
   position: absolute;
-  left: 0;
-  right: 0;
+  /* Inset by 1px so the shadow starts inside the column's side hairlines
+     rather than running over them. */
+  left: 1px;
+  right: 1px;
   bottom: 0;
   height: var(--lip-height);
   pointer-events: none;
   background: linear-gradient(to top, var(--lip-shadow-status), transparent);
-  /* Ends taper off before the column's rounded corners — see --lip-fade-mask.
-     The corner radius below still clips whatever is left. */
+  /* Ends taper out well before the column's side hairlines, so the seam reads
+     as a line dissolving rather than a band with two hard stops. See
+     --lip-fade-mask. The bottom corner radius above still clips whatever is
+     left, which matters only if the column is ever rounded again. */
   -webkit-mask-image: var(--lip-fade-mask);
   mask-image: var(--lip-fade-mask);
-  /* Off unless the column is showing a continuous view, matching the toolbar
-     lip at the other end (see `.pane-toolbar::after`). */
-  opacity: 0;
-}
-
-.main-content:has(.journal-scroll)::after,
-.main-content:has(.mycelial-view)::after {
-  opacity: 1;
 }
 
 .main-content__tabs {
@@ -314,19 +310,20 @@
 .main-content__body {
   flex: 1;
   overflow: auto;
-  /* No side hairlines. The content column shares the chrome colour with the
-     sidebars, so the boundary is carried by the inset writing-surface card
-     rather than a drawn line — a rule here would cut the shared field in two.
-     Uncomment both to bring the seams back; nothing else depends on them,
-     except that .main-content::after then wants its old 1px side inset. */
-  /* border-left: 1px solid var(--border-subtle); */
-  /* border-right: 1px solid var(--border-subtle); */
+  /* The seam between the writing surface and the panels either side. The
+     background change (page colour against chrome) already marks it; the
+     hairline stays at the quiet tier so the boundary is defined without being
+     drawn twice. Drop both if the writing surface is ever set back in a
+     gutter (--editor-surface-inset), since a card draws its own edge and
+     .main-content::after then wants its side inset back at 0. */
+  border-left: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle);
   box-sizing: border-box;
 }
 
 .main-content__body--collection {
-  /* A collection is a bright full-column surface rather than an inset card, so
-     it keeps the page colour the column no longer supplies. */
+  /* A collection paints its own full-column surface, so it supplies the page
+     colour that .main-content (chrome) does not. */
   background: var(--bg-primary);
   padding: var(--space-6);
 }

@@ -82,15 +82,24 @@
   --radius-input: var(--radius-control);
 
   /* ── Editor content surface ─────────────────────────────────────
-     The writing area is drawn as a card: the page colour (--bg-primary)
-     floating on the chrome colour (--bg-secondary). The radius tracks
-     --radius-control, so the card's corners match the toolbar's icon buttons
-     rather than the tabs (which are on the larger --radius-md). The inset is
-     the gap between the card and the pane edges — set it to 0 for corners
-     that meet the surrounding chrome directly. */
-  --editor-surface-radius: var(--radius-control);
-  --editor-surface-inset: var(--space-2);
-  /* Colour of the inset gutter. Its own tone rather than plain chrome, so
+     The writing area runs edge to edge with square corners. The page colour
+     meets the chrome along a straight seam, drawn by the column's side
+     hairlines (.main-content__body) and by the lip shadows the toolbar and
+     status bar cast (--lip-* below). Flat is the default because rounding the
+     writing surface softens all four of its edges at once, and this boundary
+     reads better drawn sharply.
+
+     These two tokens are the switch, and the rest of the family follows them.
+     Give them a radius and an inset and the surface becomes a card floating
+     in a gutter of --editor-surface-gutter, with the panel behind it, the
+     reading views and the column's bottom corners all picking up the
+     concentric outer radius. --radius-control and --space-2 are the values
+     that recipe was tuned at. Switching it on also wants the lip shadows and
+     the side hairlines turned off, since a card draws its own edge. */
+  --editor-surface-radius: 0;
+  --editor-surface-inset: 0;
+  /* Colour of the inset gutter. Only visible while --editor-surface-inset is
+     non-zero. Its own tone rather than plain chrome, so
      the card reads as sitting in a shallow recess instead of floating on an
      unbroken field. Derived: nudging --bg-secondary towards
      --fg-primary steps it further from the page colour in every palette —
@@ -150,13 +159,14 @@
      so the pointer finds the handle without pixel-hunting for a 3px line.
      Splitting the two lets the target grow without thickening the bar.
 
-     Anything under the hit strip stops being clickable, which bounds how wide
-     it can get: half of it reaches into the panel (so it also sets the inset a
-     sidebar scroll region leaves on its right edge, see
-     `.left-sidebar__pane-body`), and half into the content column's card
-     gutter. Past twice that gutter (--editor-surface-inset) it starts
-     swallowing the editor's scrollbar. Keep both handles on these two values
-     so the left and right panels stay symmetrical. */
+     Anything under the hit strip stops being clickable, which is why each
+     strip sits wholly inside its own side panel instead of straddling the
+     divider: it never reaches into the content column, where it would land on
+     the editor's own scrollbar. Inside the left sidebar it does cover that
+     panel's scrollbar, so a sidebar scroll region stops the full hit width
+     short of its right edge (see `.left-sidebar__pane-body`). Keep both
+     handles on these two values so the left and right panels stay
+     symmetrical. */
   --resize-handle-width: 3px;
   --resize-handle-hit: 12px;
 
@@ -508,16 +518,18 @@
      same line. */
   --pane-toolbar-control-height: calc(var(--pane-toolbar-height) - 2 * var(--space-2));
 
-  --lip-shadow-toolbar: rgba(0, 0, 0, 0.12);
-  --lip-shadow-status: rgba(0, 0, 0, 0.12);
-  --lip-height: 12px;
-  /* Both lips run the full width of the column, which put a hard-edged line
-     right where the panel's corner has already curved away. Tapering the ends
-     lets each shadow run out before it reaches the corner, so the two stop
-     contradicting each other. Shared by both lips so they stay a pair; raise
-     --lip-fade for a longer, softer run-out. A mask takes its alpha from the
-     gradient, so the colour in it is arbitrary. */
-  --lip-fade: 12px;
+  --lip-shadow-toolbar: rgba(0, 0, 0, 0.16);
+  --lip-shadow-status: rgba(0, 0, 0, 0.16);
+  --lip-height: 5px;
+  /* Both lips run the full width of the column, and --lip-fade tapers their
+     ends so neither one arrives at a side hairline as a hard stop. The run-out
+     is deliberately long relative to --lip-height: the seam is a thin line
+     across the middle of the column that dissolves before it reaches either
+     edge, rather than a band boxing the content in. Raise it for a softer
+     run-out, lower it towards 0px to carry the shadow to the edges. Keep the
+     unit, since `calc(100% - 0)` below is not valid CSS. A mask takes its
+     alpha from the gradient, so the colour in it is arbitrary. */
+  --lip-fade: 30px;
   --lip-fade-mask: linear-gradient(
     to right,
     transparent,

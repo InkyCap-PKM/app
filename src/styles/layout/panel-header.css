@@ -109,11 +109,11 @@
 
 /* Left side only: the panel-width drag handle is laid over the sidebar's right
    edge, so a scrollbar directly under it can't be grabbed. Stop the body short
-   by the half of the hit strip that reaches into the sidebar, and the two sit
-   side by side. The right panel needs no equivalent — its handle is on its
+   by the whole hit strip, which sits entirely inside the sidebar, and the two
+   sit side by side. The right panel needs no equivalent — its handle is on its
    left edge, away from the scrollbar. */
 .left-sidebar__pane-body {
-  margin-right: calc(var(--resize-handle-hit) / 2 - var(--space-4));
+  margin-right: calc(var(--resize-handle-hit) - var(--space-4));
 }
 
 .left-sidebar__add-btn {
