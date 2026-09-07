@@ -345,11 +345,13 @@
      source carries; dark mode substitutes a slightly muted equivalent so
      the marker doesn't glare against the dark editor. Text on highlights is
      pinned near-black, so dark-mode values stay light enough to read on. */
+  --hl-red: #ff9f97;
+  --hl-orange: #ffd6a8;
   --hl-yellow: #f2ed61;
   --hl-green: #c8f0c8;
-  --hl-blue: #c8dcff;
+  --hl-blue: #b3dfff;
+  --hl-violet: #e0c8f0;
   --hl-pink: #ffd1e0;
-  --hl-orange: #ffd6a8;
 
   --block-id: #8a9e9a;
   --footnote-ref: var(--accent-color, #1D7874);
@@ -504,11 +506,13 @@
   /* Muted dark-mode equivalents of the highlighter palette (see light
      theme above). Kept light enough for the pinned near-black highlight
      text to remain legible. */
+  --hl-red: #e89189;
+  --hl-orange: #f2c088;
   --hl-yellow: #e8e29a;
   --hl-green: #b3dcb3;
-  --hl-blue: #b6cdf2;
+  --hl-blue: #a8d3ef;
+  --hl-violet: #d6bce8;
   --hl-pink: #ecbccb;
-  --hl-orange: #ecc599;
 
   --block-id: #4d706a;
   --footnote-ref: color-mix(in srgb, var(--accent-color, #1D7874) 40%, white);

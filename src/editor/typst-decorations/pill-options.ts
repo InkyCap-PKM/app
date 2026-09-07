@@ -42,10 +42,10 @@ export function calloutKindLabel(kind: string, title?: string | null): string {
     : kind.charAt(0).toUpperCase() + kind.slice(1);
 }
 
-// Five-color highlighter palette per the user-confirmed Stage 2 design.
-// Each entry has a Typst-source representation (used in `fill: rgb(...)`)
-// and a label. Keeping the rgb literal stable lets the round-trip detect
-// "this is the yellow preset" reliably across re-saves.
+// Highlighter palette, listed in rainbow order. Each entry has a
+// Typst-source representation (used in `fill: rgb(...)`) and a label.
+// Keeping the rgb literal stable lets the round-trip detect "this is the
+// yellow preset" reliably across re-saves.
 interface HighlightColor {
   /** i18n key for the user-visible colour name. */
   labelKey: string;
@@ -53,13 +53,23 @@ interface HighlightColor {
   fill: string;
   /** Hex used to compare the current source value back to a preset. */
   hex: string;
+  /** Colour a bare `#highlight[…]` renders as. Exactly one entry sets it;
+   *  picking it drops the `fill:` argument instead of writing it. */
+  isDefault?: true;
+  /** Fill literals this preset used in earlier versions. Notes written then
+   *  keep their original colour — we never rewrite note source — so the menu
+   *  matches these too, and still shows the swatch as the active choice. */
+  legacyFills?: string[];
 }
 const HIGHLIGHT_COLORS: HighlightColor[] = [
-  { labelKey: "pill.highlight.color.yellow", fill: 'rgb("#f2ed61")', hex: "#f2ed61" },
-  { labelKey: "pill.highlight.color.green",  fill: 'rgb("#c8f0c8")', hex: "#c8f0c8" },
-  { labelKey: "pill.highlight.color.blue",   fill: 'rgb("#c8dcff")', hex: "#c8dcff" },
-  { labelKey: "pill.highlight.color.pink",   fill: 'rgb("#ffd1e0")', hex: "#ffd1e0" },
+  { labelKey: "pill.highlight.color.red",    fill: 'rgb("#ff9f97")', hex: "#ff9f97" },
   { labelKey: "pill.highlight.color.orange", fill: 'rgb("#ffd6a8")', hex: "#ffd6a8" },
+  { labelKey: "pill.highlight.color.yellow", fill: 'rgb("#f2ed61")', hex: "#f2ed61", isDefault: true },
+  { labelKey: "pill.highlight.color.green",  fill: 'rgb("#c8f0c8")', hex: "#c8f0c8" },
+  { labelKey: "pill.highlight.color.blue",   fill: 'rgb("#b3dfff")', hex: "#b3dfff",
+    legacyFills: ['rgb("#c8dcff")'] },
+  { labelKey: "pill.highlight.color.violet", fill: 'rgb("#e0c8f0")', hex: "#e0c8f0" },
+  { labelKey: "pill.highlight.color.pink",   fill: 'rgb("#ffd1e0")', hex: "#ffd1e0" },
 ];
 
 const LINE_STROKES: { labelKey: string; literal: string; defaultMatch: boolean }[] = [
@@ -714,18 +724,19 @@ function highlightOptions(view: EditorView, from: number, to: number): PillMenuS
   const fill = readNamedArg(src, "fill");
   return [{
     heading: t("pill.highlight.colour"),
-    items: HIGHLIGHT_COLORS.map((c, idx) => {
+    items: HIGHLIGHT_COLORS.map((c) => {
       // Active when the current `fill:` matches this preset's literal,
       // OR when there's no fill arg AND this is the default (yellow).
-      const isDefault = idx === 0;
-      const isActive = fill === c.fill || (fill == null && isDefault);
+      const isActive = fill === c.fill
+        || (fill != null && c.legacyFills?.includes(fill) === true)
+        || (fill == null && c.isDefault === true);
       return {
         label: t(c.labelKey),
         isActive,
         onSelect: () => applyCallTransform(view, from, (s) =>
           // Drop the arg entirely when picking yellow (the default), so
           // existing source like `#highlight[x]` stays clean.
-          upsertNamedArg(s, "fill", isDefault ? null : c.fill)),
+          upsertNamedArg(s, "fill", c.isDefault ? null : c.fill)),
       };
     }),
   }];

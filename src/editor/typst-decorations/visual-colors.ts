@@ -66,11 +66,13 @@ export const highlight = Decoration.mark({ class: "cm-typst-highlight" });
  * their literal value, unchanged.
  */
 const PRESET_HIGHLIGHT_VARS: Record<string, string> = {
+  "#ff9f97": "--hl-red",
+  "#ffd6a8": "--hl-orange",
   "#f2ed61": "--hl-yellow",
   "#c8f0c8": "--hl-green",
-  "#c8dcff": "--hl-blue",
+  "#b3dfff": "--hl-blue",
+  "#e0c8f0": "--hl-violet",
   "#ffd1e0": "--hl-pink",
-  "#ffd6a8": "--hl-orange",
 };
 
 /** Resolve a parsed fill colour to a themed `var(--hl-*, <literal>)`

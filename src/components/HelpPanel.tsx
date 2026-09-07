@@ -38,9 +38,8 @@ import {
   shortcutOverrideCount,
 } from "../lib/shortcuts";
 import { VISUAL_EDITOR_KEYS, MARKUP_REFERENCE } from "../lib/help-content";
+import { helpView as view, setHelpView as setView } from "../stores/help";
 import { openDocumentationWindow } from "../lib/docs-window";
-
-type HelpView = "ui" | "visual" | "markup";
 
 // macOS uses different modifier glyphs. The dispatcher folds Cmd into "Ctrl"
 // (see keyboard.ts), so the binding a Mac user actually presses is ⌘; map the
@@ -65,7 +64,6 @@ const KeyCombo: Component<{ combo: string }> = (props) => (
 
 const HelpPanel: Component = () => {
   const t = useI18n();
-  const [view, setView] = createSignal<HelpView>("ui");
   const [filter, setFilter] = createSignal("");
 
   const q = () => filter().trim().toLowerCase();

@@ -115,16 +115,29 @@ const App: Component = () => {
     setSidebarMode(m);
   };
 
+  // Reveal the Help panel, expanding the sidebar if it is collapsed. The view
+  // it lands on is whatever the caller put in the help store.
+  const showHelp = () => {
+    selectSidebarMode("help");
+    if (leftCollapsed()) setLeftCollapsed(false);
+  };
+
   // F1 / Info button toggle: open the Help panel, or — if it's already showing —
   // return to the panel the user was last browsing.
   const toggleHelp = () => {
     if (sidebarMode() === "help" && !leftCollapsed()) {
       selectSidebarMode(lastBrowseMode);
     } else {
-      selectSidebarMode("help");
-      if (leftCollapsed()) setLeftCollapsed(false);
+      showHelp();
     }
   };
+
+  // Other entry points (e.g. the empty-tab markup link) ask for the panel on a
+  // specific view; they set the view in the help store, we just reveal it.
+  {
+    document.addEventListener("inkycap:open-help", showHelp);
+    onCleanup(() => document.removeEventListener("inkycap:open-help", showHelp));
+  }
 
   // (Re)load declarative plugins on startup and whenever the open notebox
   // changes — per-notebox manifests live under the notebox's `.inkycap/plugins`,
