@@ -699,7 +699,13 @@
 [data-palette="warm"][data-theme="light"],
 [data-palette="warm"]:not([data-theme="dark"]) {
   --bg-primary: #ffffff;
-  --bg-editor-toolbar: #f4f2eb;
+  /* Sits 3 levels below --bg-secondary on every channel, so the header band's
+     gradient (see .pane-toolbar) is a pure lightness step and holds the
+     chrome's warmth from top to bottom. It used to be #f4f2eb, a much
+     creamier tone: the blue channel alone travelled 11 levels, so the band
+     visibly changed temperature down its height rather than reading as one
+     flat surface. Keep any new value on the same hue as --bg-secondary. */
+  --bg-editor-toolbar: #f6f5f3;
   --bg-secondary: #F9F8F6;
   --bg-active: #e4e1d8;
   --bg-highlight: #d9d5cb;
