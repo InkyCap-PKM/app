@@ -439,16 +439,16 @@
      same line. */
   --pane-toolbar-control-height: calc(var(--pane-toolbar-height) - 2 * var(--space-2));
 
-  --lip-shadow-toolbar: rgba(0, 0, 0, 0.16);
-  --lip-shadow-status: rgba(0, 0, 0, 0.16);
-  --lip-height: 9px;
+  --lip-shadow-toolbar: rgba(0, 0, 0, 0.12);
+  --lip-shadow-status: rgba(0, 0, 0, 0.12);
+  --lip-height: 12px;
   /* Both lips run the full width of the column, which put a hard-edged line
      right where the panel's corner has already curved away. Tapering the ends
      lets each shadow run out before it reaches the corner, so the two stop
      contradicting each other. Shared by both lips so they stay a pair; raise
      --lip-fade for a longer, softer run-out. A mask takes its alpha from the
      gradient, so the colour in it is arbitrary. */
-  --lip-fade: 60px;
+  --lip-fade: 12px;
   --lip-fade-mask: linear-gradient(
     to right,
     transparent,
