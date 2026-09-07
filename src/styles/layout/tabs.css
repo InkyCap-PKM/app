@@ -45,12 +45,15 @@
 }
 
 .tab--active {
-  background: var(--bg-primary);
+  /* All three cues come from tokens, because how they divide the work
+     changes per theme — see the --tab-active-* block in themes.css. The fill
+     leads wherever the palette gives it room; the edge and shadow are
+     support, kept faint so the tab sits forward rather than being outlined.
+     Note the fill is NOT --bg-primary: the page colour is the darker of the
+     two surfaces in the dark palettes, so it would sink the tab. */
+  background: var(--tab-active-bg);
   color: var(--fg-primary);
-  /* A lightly crisped neutral edge — firmer than a plain input border for
-     definition, but well short of a dark stroke; the elevation still carries
-     most of the lift. */
-  border-color: color-mix(in srgb, var(--border-input), var(--fg-muted) 15%);
+  border-color: var(--tab-active-border);
   box-shadow: var(--tab-active-shadow);
 }
 

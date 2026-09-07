@@ -106,6 +106,27 @@
      — the toolbar's overflow menu drops outside it. */
   --editor-surface-radius-outer: calc(var(--editor-surface-radius) + var(--editor-surface-inset));
 
+  /* ── Active editor tab ──────────────────────────────────────────
+     The active tab is a small card on the tab strip. Its fill is the primary
+     cue and should always read as a step *towards the light* from the strip
+     it sits on — brighter in light themes, lighter in dark ones. Do not
+     reach for --bg-primary here: in the dark palettes the page colour is
+     darker than the chrome, so using it sinks the active tab into the strip
+     instead of lifting it out.
+
+     The edge and the shadow are supporting cues only, kept faint so they
+     define the card's shape without outlining it. All three add up, so each
+     one stays quiet on its own — a firm edge drawn on top of a shadow is
+     what makes the tab shout rather than simply sit forward.
+
+     Light themes have real headroom above the chrome, so the fill is the
+     page white and the edge can stay soft. A palette whose chrome is already
+     nearly white has no headroom, and has to lean on the edge instead — see
+     the warm light override. Raise the border percentage for a crisper
+     outline, lower it to let fill and shadow carry the lift alone. */
+  --tab-active-bg: var(--bg-primary);
+  --tab-active-border: color-mix(in srgb, var(--border-input) 45%, var(--bg-secondary));
+
   /* ── Spacing scale ──────────────────────────────────────────────
      Geometric-ish step scale for padding/gap. The recurring ad-hoc
      paddings (2px 6px, 4px 8px, 6px 14px) map onto these. Multiplied
@@ -308,8 +329,10 @@
   --border-input: #c8c8c8;
   --border-input-focus: var(--accent-color, #1D7874);
   /* A whisper of elevation for the active editor tab, so it lifts off the
-     strip as a solid card. Kept deliberately faint — one soft 1px drop. */
-  --tab-active-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+     strip as a solid card. Kept deliberately faint, and spread over a wider
+     blur than its offset — a diffuse pool reads as ambient depth, where a
+     tight dark drop reads as an object hovering above the row. */
+  --tab-active-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
   /* Off-state background for toggle switches — a clearly neutral grey so
      "off" reads as distinct from the accent-coloured "on" state. */
   --toggle-off-bg: #b6b6b6;
@@ -537,9 +560,18 @@
   --border-subtle: #0f3035;
   --border-input: #2a5a52;
   --border-input-focus: var(--accent-color, #1D7874);
-  /* Dark surfaces swallow a faint shadow, so the active-tab lift is cast a
-     touch stronger here to register the same whisper of elevation. */
-  --tab-active-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  /* The active tab lifts off the strip rather than dropping to the page
+     colour, which in the dark palettes is the darker of the two. Nudging the
+     chrome towards the text colour is the same trick --editor-surface-gutter
+     uses, and it resolves per palette: Ink Black's chrome warms towards its
+     teal-tinted text, warm dark's towards its neutral grey. 90% is roughly
+     the step a browser puts between its tab strip and its active tab.
+     Because the fill now carries the cue, the derived edge lands close
+     enough to the fill to read as no border at all — which is what we want
+     here. The shadow stays only to settle the card's lower edge; dark
+     surfaces swallow a faint one, so it is cast a touch wider. */
+  --tab-active-bg: color-mix(in srgb, var(--bg-secondary) 90%, var(--fg-primary));
+  --tab-active-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
   /* Off-state background for toggle switches — a desaturated grey, kept
      well clear of the teal accent so "off" is obvious at a glance. */
   --toggle-off-bg: #5e6463;
@@ -716,6 +748,14 @@
   --border-primary: #d0cdc3;
   --border-subtle: #e4e1d8;
   --border-input: #c2bfb5;
+
+  /* This palette's chrome is only a couple of levels below white, so the
+     active tab's white fill barely registers and the edge has to do the
+     work the fill does elsewhere. Held at the weight of an ordinary input
+     border — defined, but not a dark stroke — with the shadow lifted
+     slightly to match. */
+  --tab-active-border: color-mix(in srgb, var(--border-input) 85%, var(--bg-secondary));
+  --tab-active-shadow: 0 1px 3px rgba(0, 0, 0, 0.09);
 
   --fg-primary: #1d1915;
   --fg-secondary: #3b3630;
