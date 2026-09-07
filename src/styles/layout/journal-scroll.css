@@ -59,6 +59,13 @@
 
 /* ─── Journal Scroll view (continuous file scroll) ─── */
 
+/* The Journal Scroll is one continuous feed running the height of the pane,
+   so its toolbar casts the lip that shows the feed passing underneath. The
+   editor's other modes leave it off — see `.pane-toolbar::after`. */
+.typst-editor-container:has(.journal-scroll) .pane-toolbar::after {
+  opacity: 1;
+}
+
 .journal-scroll {
   flex: 1;
   overflow-y: auto;

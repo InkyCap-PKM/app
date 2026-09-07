@@ -11,6 +11,12 @@
   background: var(--bg-primary);
 }
 
+/* The graph fills the pane edge to edge, so the toolbar casts the lip that
+   shows it passing underneath — see `.pane-toolbar::after`. */
+.mycelial-view .pane-toolbar::after {
+  opacity: 1;
+}
+
 .mycelial-view__toolbar {
   display: flex;
   align-items: center;

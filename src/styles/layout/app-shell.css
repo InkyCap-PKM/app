@@ -293,6 +293,14 @@
      The corner radius below still clips whatever is left. */
   -webkit-mask-image: var(--lip-fade-mask);
   mask-image: var(--lip-fade-mask);
+  /* Off unless the column is showing a continuous view, matching the toolbar
+     lip at the other end (see `.pane-toolbar::after`). */
+  opacity: 0;
+}
+
+.main-content:has(.journal-scroll)::after,
+.main-content:has(.mycelial-view)::after {
+  opacity: 1;
 }
 
 .main-content__tabs {

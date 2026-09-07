@@ -205,4 +205,10 @@
   background: linear-gradient(to bottom, var(--lip-shadow-toolbar), transparent);
   -webkit-mask-image: var(--lip-fade-mask);
   mask-image: var(--lip-fade-mask);
+  /* Off by default: only the two continuous, scroll-driven views ask for the
+     seam — the Journal Scroll (journal-scroll.css) and the Mycelial View
+     (mycelial.css) turn it back on. In an ordinary editor pane the writing
+     surface is an inset card with its own edge, so a shadow above it reads as
+     clutter rather than depth. */
+  opacity: 0;
 }
