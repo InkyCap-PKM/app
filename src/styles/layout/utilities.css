@@ -188,5 +188,21 @@
   /* Lift above the scrollable content so the lip shadow casts over it. */
   position: relative;
   z-index: 2;
-  box-shadow: 0 5px 6px -5px var(--lip-shadow-toolbar);
+}
+
+/* The lip. It was a box-shadow, which always spans the element's full width and
+   can't be tapered; as a strip its ends can fade out before they reach the
+   content panel's rounded corners. Mirror of .main-content::after, which does
+   the same at the other end. */
+.pane-toolbar::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  height: var(--lip-height);
+  pointer-events: none;
+  background: linear-gradient(to bottom, var(--lip-shadow-toolbar), transparent);
+  -webkit-mask-image: var(--lip-fade-mask);
+  mask-image: var(--lip-fade-mask);
 }

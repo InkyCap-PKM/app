@@ -281,9 +281,13 @@
   left: 0;
   right: 0;
   bottom: 0;
-  height: 4px;
+  height: var(--lip-height);
   pointer-events: none;
   background: linear-gradient(to top, var(--lip-shadow-status), transparent);
+  /* Ends taper off before the column's rounded corners — see --lip-fade-mask.
+     The corner radius below still clips whatever is left. */
+  -webkit-mask-image: var(--lip-fade-mask);
+  mask-image: var(--lip-fade-mask);
 }
 
 .main-content__tabs {

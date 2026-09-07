@@ -434,8 +434,23 @@
      from its own padding and font. */
   --pane-toolbar-control-height: calc(var(--pane-toolbar-height) - 2 * var(--space-2));
 
-  --lip-shadow-toolbar: rgba(0, 0, 0, 0.28);
-  --lip-shadow-status: rgba(0, 0, 0, 0.22);
+  --lip-shadow-toolbar: rgba(0, 0, 0, 0.22);
+  --lip-shadow-status: rgba(0, 0, 0, 0.18);
+  --lip-height: 5px;
+  /* Both lips run the full width of the column, which put a hard-edged line
+     right where the panel's corner has already curved away. Tapering the ends
+     lets each shadow run out before it reaches the corner, so the two stop
+     contradicting each other. Shared by both lips so they stay a pair; raise
+     --lip-fade for a longer, softer run-out. A mask takes its alpha from the
+     gradient, so the colour in it is arbitrary. */
+  --lip-fade: 40px;
+  --lip-fade-mask: linear-gradient(
+    to right,
+    transparent,
+    #000 var(--lip-fade),
+    #000 calc(100% - var(--lip-fade)),
+    transparent
+  );
 
   --status-bg: var(--bg-secondary);
   --status-fg: #071E22;
@@ -451,8 +466,8 @@
   color-scheme: dark;
 
   /* Heavier than the light themes: see --lip-shadow-* above. */
-  --lip-shadow-toolbar: rgba(0, 0, 0, 0.6);
-  --lip-shadow-status: rgba(0, 0, 0, 0.5);
+  --lip-shadow-toolbar: rgba(0, 0, 0, 0.5);
+  --lip-shadow-status: rgba(0, 0, 0, 0.42);
 
   /* Backgrounds — built from Ink Black */
   --bg-primary: #071E22;
