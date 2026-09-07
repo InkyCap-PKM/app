@@ -10,7 +10,7 @@ export default defineConfig({
   plugins: [wasm(), solid()],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "src"),
+      "@": path.resolve(import.meta.dirname, "src"),
     },
   },
   clearScreen: false,
