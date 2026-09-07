@@ -1609,7 +1609,7 @@ function buildMenuAtPos(x: number, y: number, items: (MenuItem | null)[]): HTMLE
   for (const item of items) {
     if (!item) {
       const sep = document.createElement("div");
-      sep.style.cssText = "height:1px;background:var(--popup-border-color,#ddd);margin:4px 0;";
+      sep.style.cssText = "height:1px;background:var(--popup-separator-color,#ddd);margin:4px 0;";
       menu.appendChild(sep);
       continue;
     }

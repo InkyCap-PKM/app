@@ -27,7 +27,7 @@
   color: var(--fg-primary);
   background: var(--bg-secondary);
   border: 1px solid var(--border-primary);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--popup-shadow);
   cursor: pointer;
   pointer-events: auto;
   animation: toast-slide-in 0.2s ease-out;

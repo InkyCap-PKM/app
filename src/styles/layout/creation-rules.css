@@ -257,8 +257,9 @@
   overflow-y: auto;
   background: var(--popup-bg);
   border: 1px solid var(--popup-border-color);
-  /* Input-attached — flush top edge against the control above. */
-  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  /* Input-attached and flush against the control above, so only the bottom
+     corners round. See --popup-radius-attached. */
+  border-radius: 0 0 var(--popup-radius-attached) var(--popup-radius-attached);
   box-shadow: var(--popup-shadow);
   z-index: var(--z-menu);
 }

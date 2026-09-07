@@ -69,7 +69,7 @@
 
 .tab-bar__menu-divider {
   height: 1px;
-  background: var(--popup-border-color);
+  background: var(--popup-separator-color);
   margin: var(--space-2) 0;
 }
 

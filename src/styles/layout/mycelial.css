@@ -305,6 +305,9 @@
 }
 
 .mycelial-box:hover {
+  /* A hover lift on an in-canvas node. --popup-shadow would draw its hard
+     ring around the node, which reads as a selection outline.
+     token-exempt: in-canvas hover lift, not a floating surface */
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.22);
   /* Lift the hovered box above its neighbours so the shadow is not clipped.
      Works because boxes are now positioned HTML siblings, not foreignObjects

@@ -30,20 +30,21 @@ warm palettes automatically.
 | **Line-height scale** | `--leading-none/tight/normal/relaxed` (1 / 1.3 / 1.45 / 1.6) | glyph chrome / headings / UI body / longer prose |
 | **Icon scale** | `--icon-sm/md/lg` | Lucide glyph sizing |
 | **Radius scale** | `--radius-xs` (2px) · `--radius-sm` (4px) · `--radius-md` (7px) · `--radius-lg` (8px) · `--radius-full` (999px) | xs = hairline marks, sm = badges/chips, md = buttons/controls/popups, lg = modals, full = pills |
-| **Input radius** | `--radius-input` (= `--radius-md`) | text inputs, textareas, select/combobox triggers |
+| **Input radius** | `--radius-input` (= `--radius-control` = `--radius-sm`, 4px) | text inputs, textareas, select/combobox triggers |
 | **Spacing scale** | `--space-1 … --space-9` (2/4/6/8/12/16/24/32/48px) | padding & gap, up to section/page-level steps |
 | **Button geometry** | `--btn-pad-y/-x`, `--btn-radius` | consumed by `.btn` |
 | **Focus** | `--focus-ring` | the one keyboard-focus affordance |
 | **Motion** | `--ease-out`, `--dur-fast` (120ms), `--dur-base` (200ms) | transitions |
 | **Elevation** | `--surface-0/1/2` | layered chrome (base → raised → active) |
-| **Surfaces** | `--popup-*`, `--modal-*` | floating vs. backdropped surfaces |
+| **Surfaces** | `--popup-*`, `--modal-*` | floating vs. backdropped surfaces (see §4a) |
 | **Stacking** | `--z-menu` < `--z-modal` < `--z-toast` (+ `--z-menu-over-modal`) | the only z-index values |
 | **Status** | `--accent-danger`, `--accent-warn`, `--accent-success`, `--accent-info` | any UI communicating a state — one hue per meaning, app-wide |
 | **On-accent text** | `--fg-on-accent` | text on an accent-filled surface (primary buttons, active chips) |
 | **Annotations** | `--annotation-accent` | collaboration annotations/suggestions (purple, distinct from every status hue) |
 
-`--radius-control` is kept as a back-compat **alias of `--radius-md`** — old
-rules still resolve, but new code should use the named scale.
+`--radius-control` is the small-control radius and resolves to `--radius-sm`
+(4px): icon buttons, small pills/toggles, `.btn--sm`, chips. Larger surfaces
+(tabs, cards, full buttons) stay on `--radius-md`.
 
 The spacing scale is multiplied by `--density` (see §5) so it can be rescaled
 from one lever.
@@ -115,13 +116,58 @@ spacing-scale padding. Focus is shown via `border-color: var(--accent)`
 (`--border-input-focus`). Keep new inputs on the same token so every field
 reads as one family.
 
-`--radius-input` currently resolves to `--radius-md` (7px), so interactive
-fields share the same roundedness as buttons — one uniform control radius
-across the app. This is a single-token decision: flip `--radius-input` to
-`--radius-sm` in `themes.css` to make form fields a touch tighter than buttons
-again, without touching any component rule. Split controls (e.g. the settings
-combobox) round only their outer corners using the same token
+`--radius-input` resolves to `--radius-control` (`--radius-sm`, 4px), so form
+fields share the roundedness of the icon buttons and small pills they sit
+beside rather than the larger `--radius-md` of tabs and full buttons. This is a
+single-token decision: repoint `--radius-input` in `themes.css` to move every
+field at once, without touching any component rule. Split controls (e.g. the
+settings combobox) round only their outer corners using the same token
 (`var(--radius-input) 0 0 var(--radius-input)`).
+
+---
+
+## 4a. Floating surfaces: how the edge is built
+
+A menu should read as a solid object sitting above the page. Two separate
+jobs make that happen, and mixing them is what makes an edge look soft:
+
+- **The edge** is a single 1px `--popup-border-color` hairline. Nothing else
+  draws it. Keeping it to exactly one pixel is the whole point: stack a
+  second hairline outside it (a `0 0 0 1px` ring, say) and the perimeter
+  becomes 2px, which reads as thick and soft rather than thin and sharp. If
+  the edge needs more presence, raise the token's `color-mix` percentage
+  rather than adding another line.
+- **The depth** is a blur, kept entirely off the boundary: a tight contact
+  layer that seats the menu, then a *heavier* wide ambient layer that lifts
+  it. The weighting is what sells the lift. A tight blur carrying more weight
+  than the wide one smudges the edge instead of raising the surface.
+
+`--popup-border-color` is derived (`color-mix` of `--fg-primary` into
+`--popup-bg`) so it adapts to any palette, but **the percentage differs by
+theme**: 25% in light, 15% in dark. The mix is not perceptually symmetric.
+Lifting a near-black surface towards a near-white foreground is a much bigger
+step than darkening white towards near-black ink, and it desaturates the
+surface on the way — at 25% the dark theme's deep teal picks up a flat grey
+rim that reads as a differently-coloured outline rather than an edge. The two
+shadow colours are likewise set per theme, because a dark surface swallows a
+black shadow that a light surface shows plainly.
+
+Practical notes:
+
+- `--popup-separator-color` is the divider *inside* a menu. It is deliberately
+  lighter than `--popup-border-color`, so the perimeter stays the strongest
+  line on the surface. Don't use the border token for a separator.
+- `--popup-shadow-up` is the same surface for a drop-up (a menu with no room
+  below its anchor). Any `.is-flipped` / `--up` variant should switch to it,
+  or the menu appears to cast back onto the control it belongs to.
+- `--popup-radius-attached` is for a list that hangs off a control (combobox,
+  path field, font picker). It matches the control's own corner so the pair
+  reads as one object; free-floating menus stay on `--popup-radius`.
+- A shadow that is genuinely *not* a floating surface — an edge lip, a
+  document page, an in-canvas hover lift — opts out with a
+  `/* token-exempt: <reason> */` marker on the same line or the line directly
+  above. `src/lib/token-guard.test.ts` fails CI on any other colour literal
+  inside a `box-shadow`.
 
 ---
 
@@ -215,7 +261,8 @@ combobox) round only their outer corners using the same token
   labels — distinguish with weight (600), `letter-spacing`, and muted colour.
 - Floating surfaces (menus, popovers, palettes, tooltips) use `--popup-*`;
   centered backdropped dialogs use `--modal-*`; never hardcode their bg, border,
-  radius, shadow, or z-index.
+  radius, shadow, or z-index. A colour written into a `box-shadow` fails the
+  token guard — see §4a.
 - Every user-facing string flows through the i18n seam — see
   [CONTRIBUTING-translations.md](./CONTRIBUTING-translations.md).
 - Component styles live in per-feature files under `src/styles/layout/`;

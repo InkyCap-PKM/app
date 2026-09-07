@@ -866,7 +866,7 @@ export const visualTheme = EditorView.theme({
   ".cm-typst-pill-menu-sep": {
     height: "1px",
     margin: "4px 0",
-    backgroundColor: "var(--popup-border-color)",
+    backgroundColor: "var(--popup-separator-color)",
   },
   ".cm-typst-pill-menu-item": {
     display: "flex",

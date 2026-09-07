@@ -46,6 +46,9 @@
   /* Pages always show on white regardless of theme — they're a document
      surface, not a UI surface. */
   color: #000000; /* token-exempt: pages mimic paper, independent of UI theme */
+  /* A document page, not a UI surface, so it keeps its own paper elevation
+     rather than the menu shadow.
+     token-exempt: document surface, independent of the UI shadow tokens */
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18), 0 4px 12px rgba(0, 0, 0, 0.08);
   flex-shrink: 0;
   /* Centre within a pane wider than the page; collapses to a left-aligned,

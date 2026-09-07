@@ -114,7 +114,7 @@
 
 .dropdown__group:not(:first-child) {
   margin-top: var(--space-1);
-  border-top: 1px solid var(--popup-border-color);
+  border-top: 1px solid var(--popup-separator-color);
   padding-top: var(--space-3);
 }
 

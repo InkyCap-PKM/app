@@ -235,6 +235,9 @@
   background: color-mix(in srgb, var(--accent-danger) 45%, black);
   color: var(--fg-on-accent);
   border-bottom: 1px solid color-mix(in srgb, var(--accent-danger) 65%, black);
+  /* An edge-attached banner casting onto the content below, not a floating
+     surface with an edge to define.
+     token-exempt: edge-attached banner, not a floating surface */
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
   font-size: var(--text-sm);
   line-height: var(--leading-normal);

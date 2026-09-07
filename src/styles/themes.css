@@ -199,12 +199,47 @@
 
   /* Popup surface — floating menus, dropdowns, suggestion popups. */
   --popup-bg: var(--bg-primary);
-  --popup-border-color: var(--border-subtle);
+  /* The perimeter line, and the strongest line anywhere on the surface.
+     Derived from the theme's own ink and surface colours so it lands at the
+     same visual strength in every palette: clearly darker than a light menu,
+     clearly lighter than a dark one.
+
+     This 1px border is the ONLY thing that draws the edge. Adding a second
+     hairline outside it (a 0-blur ring, say) doubles the perimeter to 2px,
+     and a 2px edge reads as thick and soft rather than thin and sharp — the
+     opposite of the intent. If the edge needs more presence, raise this
+     percentage; don't add another line.
+
+     The percentage is NOT the same in light and dark — see the override in
+     the dark block below. */
+  --popup-border-color: color-mix(in srgb, var(--fg-primary) 25%, var(--popup-bg));
+  /* Divider between groups of rows INSIDE a menu. Deliberately lighter than
+     the perimeter, so the outline still reads as the edge of the object. */
+  --popup-separator-color: var(--border-subtle);
   --popup-radius: var(--radius-md);
-  /* Two-layer shadow: a tight, near-zero-blur "contact" layer gives a
-     crisp, solid edge (the elementary-OS look); a softer ambient layer
-     adds depth without the whole frame going blurry. */
-  --popup-shadow: 0 1px 3px rgba(0, 0, 0, 0.24), 0 4px 8px rgba(0, 0, 0, 0.14);
+  /* Radius for a dropdown that hangs off a control (combobox, path field,
+     font picker) instead of floating free. It matches the control's own
+     corner so the field and its list read as one object. */
+  --popup-radius-attached: var(--radius-input);
+  /* Elevation. The shadow never touches the edge — that is the border's job
+     alone — so both layers hang below and around the surface rather than
+     sitting on the boundary blurring it.
+
+     The weighting is the part that matters: the wide ambient layer is the
+     HEAVIER of the two. That is what makes a menu look lifted off the page.
+     A tight blur carrying more weight than the wide one is what makes an
+     edge look smudged, which is how this token was originally written.
+     Colours are set per theme below, because a dark surface swallows a
+     black shadow that a light one shows plainly. */
+  --popup-shadow:
+    0 1px 2px var(--popup-shadow-contact),
+    0 6px 16px var(--popup-shadow-ambient);
+  /* Same surface opened upwards (a drop-up, when there is no room below).
+     Identical weights, mirrored so the menu still lifts away from its
+     anchor rather than casting back onto it. */
+  --popup-shadow-up:
+    0 -1px 2px var(--popup-shadow-contact),
+    0 -6px 16px var(--popup-shadow-ambient);
   --popup-padding-block: 4px;       /* vertical padding of the surface */
   --popup-item-padding: 5px 12px;   /* a standard action-list row */
 
@@ -212,7 +247,10 @@
   --modal-bg: var(--bg-primary);
   --modal-border-color: var(--border-primary);
   --modal-radius: var(--radius-lg);
-  /* Same two-layer approach as --popup-shadow, scaled up for a dialog. */
+  /* Same two-layer shape as --popup-shadow, scaled up for a dialog: a tight
+     contact layer, then a wider ambient layer carrying most of the weight.
+     A dialog sits on a dimmed backdrop, which already separates it from the
+     page, so its edge needs less help than a menu's does. */
   --modal-shadow: 0 2px 6px rgba(0, 0, 0, 0.3), 0 10px 24px rgba(0, 0, 0, 0.18);
   --modal-backdrop: rgba(0, 0, 0, 0.45);
 
@@ -298,7 +336,15 @@
   --toolbar-float-hover-bg: rgba(255, 255, 255, 0.13);
   --toolbar-float-border: rgba(0, 0, 0, 0.4);
   --toolbar-float-sep: rgba(255, 255, 255, 0.18);
-  --toolbar-float-highlight: transparent;
+  /* A hairline of light along the toolbar's top edge, so the dark surface
+     reads as a raised object rather than a hole cut in the page. */
+  --toolbar-float-highlight: rgba(255, 255, 255, 0.08);
+
+  /* Popup elevation — the two shadow layers of --popup-shadow. The contact
+     layer only seats the menu against the surface under it; the ambient
+     layer carries the lift, so it is the heavier of the two. */
+  --popup-shadow-contact: rgba(0, 0, 0, 0.10);
+  --popup-shadow-ambient: rgba(0, 0, 0, 0.20);
 
   /* Accents — Deep Ocean as primary accent */
   --accent: var(--accent-color, #1D7874);
@@ -518,7 +564,27 @@
   --toolbar-float-hover-bg: rgba(255, 255, 255, 0.08);
   --toolbar-float-border: #333333;
   --toolbar-float-sep: rgba(255, 255, 255, 0.10);
-  --toolbar-float-highlight: transparent;
+  /* Same top hairline as the light theme — the toolbar is the same dark
+     teal in both, so the highlight that lifts it is the same too. */
+  --toolbar-float-highlight: rgba(255, 255, 255, 0.08);
+
+  /* Popup edge — a lighter percentage than the light themes use, because the
+     mix is not symmetric. Lifting a near-black surface towards the near-white
+     foreground is a much larger perceptual step than darkening white towards
+     near-black ink, and it washes the surface's hue out on the way: at the
+     light theme's 25%, this palette's deep teal gets a flat grey rim that
+     reads as a differently-coloured outline rather than an edge. Keeping the
+     mix low holds the hue and leaves the heavier shadow below to define the
+     surface. */
+  --popup-border-color: color-mix(in srgb, var(--fg-primary) 15%, var(--popup-bg));
+
+  /* Popup elevation — see the light block. A dark surface swallows a black
+     shadow, so both layers are carried much harder here; without this the
+     menu would sit flat against the chrome instead of above it. Warm dark
+     inherits these (its selector matches the same element via
+     [data-theme="dark"]), so no override is needed there. */
+  --popup-shadow-contact: rgba(0, 0, 0, 0.36);
+  --popup-shadow-ambient: rgba(0, 0, 0, 0.58);
 
   /* Accents — Deep Ocean as primary accent */
   --accent: var(--accent-color, #1D7874);

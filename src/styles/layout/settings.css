@@ -652,8 +652,8 @@
   min-width: 100%;
   background: var(--popup-bg);
   border: 1px solid var(--popup-border-color);
-  /* Input-attached — keeps the control's 4px radius. */
-  border-radius: var(--radius-sm);
+  /* Input-attached — see --popup-radius-attached. */
+  border-radius: var(--popup-radius-attached);
   box-shadow: var(--popup-shadow);
   z-index: var(--z-menu);
   max-height: 180px;
@@ -665,6 +665,7 @@
   bottom: 100%;
   margin-top: 0;
   margin-bottom: var(--space-1);
+  box-shadow: var(--popup-shadow-up);
 }
 
 .settings__path-option {
@@ -731,23 +732,22 @@
   overflow-y: auto;
   background: var(--popup-bg);
   border: 1px solid var(--popup-border-color);
-  /* Input-attached dropdown — matches the --radius-sm of the input it
-     hangs off rather than the free-floating --popup-radius. */
-  border-radius: var(--radius-md);
+  /* Input-attached — see --popup-radius-attached. */
+  border-radius: var(--popup-radius-attached);
   box-shadow: var(--popup-shadow);
   z-index: var(--z-menu);
 }
 
 /* Drop-up variant: opened above the input when there isn't enough space
- * below. Mirrors the box-shadow direction so the menu still looks "lifted"
- * relative to its anchor. The 240px max-height stays in sync with the JS
- * threshold in FontPicker.tsx. */
+ * below. --popup-shadow-up mirrors the shadow so the menu still looks
+ * "lifted" relative to its anchor. The 240px max-height stays in sync with
+ * the JS threshold in FontPicker.tsx. */
 .settings__font-dropdown--up {
   top: auto;
   bottom: 100%;
   margin-top: 0;
   margin-bottom: var(--space-1);
-  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--popup-shadow-up);
 }
 
 .settings__font-option {
@@ -839,8 +839,8 @@
   min-width: 100%;
   background: var(--popup-bg);
   border: 1px solid var(--popup-border-color);
-  /* Input-attached — matches the combobox field's medium radius. */
-  border-radius: var(--radius-md);
+  /* Input-attached — see --popup-radius-attached. */
+  border-radius: var(--popup-radius-attached);
   box-shadow: var(--popup-shadow);
   z-index: var(--z-menu);
   max-height: 180px;
@@ -852,6 +852,7 @@
   bottom: 100%;
   margin-top: 0;
   margin-bottom: var(--space-1);
+  box-shadow: var(--popup-shadow-up);
 }
 
 .settings__combobox-option {

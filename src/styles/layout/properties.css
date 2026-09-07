@@ -342,8 +342,8 @@
 .collection-picker__dropdown {
   background: var(--popup-bg);
   border: 1px solid var(--popup-border-color);
-  /* Input-attached — keeps the control's radius. */
-  border-radius: var(--radius-input);
+  /* Input-attached — see --popup-radius-attached. */
+  border-radius: var(--popup-radius-attached);
   box-shadow: var(--popup-shadow);
   margin-top: var(--space-2);
   max-height: 180px;
