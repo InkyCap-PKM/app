@@ -533,18 +533,36 @@
      same line. */
   --pane-toolbar-control-height: calc(var(--pane-toolbar-height) - 2 * var(--space-2));
 
-  --lip-shadow-toolbar: rgba(0, 0, 0, 0.16);
-  --lip-shadow-status: rgba(0, 0, 0, 0.16);
-  --lip-height: 5px;
-  /* Both lips run the full width of the column, and --lip-fade tapers their
-     ends so neither one arrives at a side hairline as a hard stop. The run-out
-     is deliberately long relative to --lip-height: the seam is a thin line
-     across the middle of the column that dissolves before it reaches either
-     edge, rather than a band boxing the content in. Raise it for a softer
-     run-out, lower it towards 0px to carry the shadow to the edges. Keep the
-     unit, since `calc(100% - 0)` below is not valid CSS. A mask takes its
-     alpha from the gradient, so the colour in it is arbitrary. */
-  --lip-fade: 30px;
+  --lip-shadow-toolbar: rgba(0, 0, 0, 0.19);
+  --lip-shadow-status: rgba(0, 0, 0, 0.19);
+  --lip-height: 4px;
+  /* The hard edge under each lip. The lip's soft cast is tapered to the width
+     of the text column (see --lip-fade), so past the column it carries no
+     separation at all; this 1px line runs the full width and keeps chrome and
+     content apart there. Read them as a pair: the hairline says where the
+     boundary is, the lip says which side is on top. One value for both ends,
+     unlike the two --lip-shadow-* tones, because a hairline sits on the
+     boundary rather than casting across a surface, so it does not need to be
+     retuned per direction. Defaults to the theme's own subtle border so it
+     matches the panel edges already on screen; a theme can override it. */
+  --lip-hairline: var(--border-subtle);
+  /* Both lips are drawn across the full width of the column, and --lip-fade
+     tapers their ends so neither one arrives at a side hairline as a hard
+     stop. The taper is tied to the writing measure: the lip is at full
+     strength for exactly as wide as the text column (--md-max-width, set by
+     TypstEditor from the "readable line length" setting) and dissolves across
+     the gutters on either side. So the seam reads as a line under the text
+     that fades away where the text stops, and it re-fits itself when the user
+     changes the line width or resizes the pane.
+
+     100% here resolves against the lip strip, which spans the pane, and the
+     column is centred in it, so half the leftover space is the taper on each
+     side. max() pins the taper to 0 when the measure is off (--md-max-width is
+     100%) or when the pane is narrower than the column, in which case the lip
+     runs edge to edge. For a shorter, fixed run-out instead, replace the whole
+     value with a plain length such as 30px. A mask takes its alpha from the
+     gradient, so the colour in it is arbitrary. */
+  --lip-fade: max(0px, calc((100% - var(--md-max-width, 100%)) / 2));
   --lip-fade-mask: linear-gradient(
     to right,
     transparent,
@@ -552,6 +570,14 @@
     #000 calc(100% - var(--lip-fade)),
     transparent
   );
+  /* --md-max-width is expressed in `ch`, which is sized by whatever font the
+     element using it has. The lips live on chrome elements that carry the UI
+     font, so anything reading --lip-fade must first adopt the editor body font
+     for its `ch` to mean the same thing the editor's column means. Apply this
+     to the lip element (see .pane-toolbar::after / .main-content::after). It
+     sets no text, only the unit basis. */
+  --lip-fade-font-basis: var(--md-body-size, 17px) / 1
+    var(--md-body-font, var(--editor-font-body, sans-serif));
 
   --status-bg: var(--bg-secondary);
   --status-fg: #071E22;

@@ -188,6 +188,11 @@
   /* Lift above the scrollable content so the lip shadow casts over it. */
   position: relative;
   z-index: 2;
+  /* The hairline that closes the band, drawn as a shadow rather than a
+     border-bottom so it costs no height: the toolbar shares
+     --pane-toolbar-height with the sidebar and right-panel headers, and a
+     border would push this one row 1px taller than the rest of the band. */
+  box-shadow: 0 1px 0 var(--lip-hairline);
 }
 
 /* The lip. It was a box-shadow, which always spans the element's full width and
@@ -197,12 +202,17 @@
 .pane-toolbar::after {
   content: "";
   position: absolute;
-  top: 100%;
+  /* Starts below the hairline, not on top of it: `top: 100%` is the bottom of
+     the padding box, which is where the hairline shadow is drawn. */
+  top: calc(100% + 1px);
   left: 0;
   right: 0;
   height: var(--lip-height);
   pointer-events: none;
   background: linear-gradient(to bottom, var(--lip-shadow-toolbar), transparent);
+  /* The strip holds no text; the font is here only so the `ch` inside
+     --lip-fade measures the editor body font, matching the text column. */
+  font: var(--lip-fade-font-basis);
   -webkit-mask-image: var(--lip-fade-mask);
   mask-image: var(--lip-fade-mask);
 }

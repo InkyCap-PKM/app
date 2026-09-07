@@ -79,6 +79,14 @@
   align-items: center;
   gap: var(--space-6);
   height: 22px;
+  /* Mirror of the hairline under .pane-toolbar, at the other end of the pane.
+     The bottom lip above it is confined to the content column and tapers to
+     the width of the text, so this is what separates the bar from the sidebars
+     and from the column's outer reaches. A border rather than a shadow because
+     the bar sits in its own grid row and is not positioned, so a shadow would
+     be painted over by .main-content. box-sizing keeps the bar at 22px. */
+  box-sizing: border-box;
+  border-top: 1px solid var(--lip-hairline);
 }
 
 .status-bar__btn {

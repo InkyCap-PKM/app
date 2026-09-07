@@ -291,10 +291,13 @@
   height: var(--lip-height);
   pointer-events: none;
   background: linear-gradient(to top, var(--lip-shadow-status), transparent);
-  /* Ends taper out well before the column's side hairlines, so the seam reads
-     as a line dissolving rather than a band with two hard stops. See
-     --lip-fade-mask. The bottom corner radius above still clips whatever is
-     left, which matters only if the column is ever rounded again. */
+  /* Ends taper out across the gutters on either side of the text column, so
+     the seam reads as a line under the text that dissolves rather than a band
+     with two hard stops. See --lip-fade-mask. The bottom corner radius above
+     still clips whatever is left, which matters only if the column is ever
+     rounded again. The strip holds no text; the font is here only so the `ch`
+     inside --lip-fade measures the editor body font. */
+  font: var(--lip-fade-font-basis);
   -webkit-mask-image: var(--lip-fade-mask);
   mask-image: var(--lip-fade-mask);
 }
