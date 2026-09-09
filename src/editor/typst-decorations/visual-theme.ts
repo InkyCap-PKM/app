@@ -886,6 +886,14 @@ export const visualTheme = EditorView.theme({
     backgroundColor: "var(--bg-hover)",
     outline: "none",
   },
+  // The arrow keys mark the item they land on (lib/menu-nav.ts). A class,
+  // rather than :focus-visible, because the browser does not treat focus
+  // moved by script after a mouse click as visible — see context-menu.css.
+  ".cm-typst-pill-menu-item.is-kbd-active": {
+    backgroundColor: "var(--bg-hover)",
+    boxShadow: "inset 0 0 0 2px var(--accent)",
+    outline: "none",
+  },
   ".cm-typst-pill-menu-item.is-disabled": {
     color: "var(--fg-dim)",
     cursor: "not-allowed",

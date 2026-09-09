@@ -43,7 +43,7 @@ import {
 } from "lucide-solid";
 import type { SearchResult, AnnotationScope } from "../lib/types";
 import { pathEquals } from "../lib/paths";
-import { clickOutside } from "../lib/clickOutside";
+import { clickOutside, dismissOnEscape } from "../lib/clickOutside";
 import * as ipc from "../lib/ipc";
 import { useI18n, tPlural } from "../lib/i18n";
 import { openTab } from "../stores/tabs";
@@ -242,6 +242,8 @@ const SearchPanel: Component = () => {
     const onDocClick = () => setResultContextMenu(null);
     document.addEventListener("click", onDocClick);
     onCleanup(() => document.removeEventListener("click", onDocClick));
+    // …and Escape, like every other menu in the app.
+    dismissOnEscape(() => setResultContextMenu(null));
 
     const onNoteSaved = (e: Event) => {
       if (!searchQuery().trim()) return;

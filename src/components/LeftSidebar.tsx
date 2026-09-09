@@ -37,7 +37,7 @@ import { pathEquals, pathStartsWith } from "../lib/paths";
 import { isLinux } from "../lib/platform";
 import { attachListNav } from "../lib/list-nav";
 import { anchorPanelMenu } from "../lib/uiMenu";
-import { clickOutside } from "../lib/clickOutside";
+import { clickOutside, dismissOnEscape } from "../lib/clickOutside";
 import { createOverflowWatcher } from "../lib/overflow";
 import { compareName, compareZid } from "../lib/sort";
 import { settings, updateSetting, noteboxSettings } from "../stores/settings";
@@ -1439,6 +1439,15 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     onCleanup(() => document.removeEventListener("click", handleDocClick));
   }
 
+  // Escape closes the same menus an outside click closes.
+  dismissOnEscape(() => {
+    setContextMenu(null);
+    setFileContextMenu(null);
+    setTagMenu(null);
+    setPropMenu(null);
+    setShowNewMenu(false);
+  });
+
   return (
     <div class="left-sidebar" data-focus-region="sidebar">
       <div
@@ -2265,6 +2274,16 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
               onMouseLeave={() =>
                 setPropMenu({ ...menu(), typeSubmenuOpen: false })
               }
+              /* The keyboard reaches this row by focus rather than hover
+                 (lib/menu-nav.ts), so focus opens and closes the submenu the
+                 same way the pointer does. Focus moving *into* the submenu
+                 stays inside this element, so it keeps it open. */
+              onFocusIn={() => setPropMenu({ ...menu(), typeSubmenuOpen: true })}
+              onFocusOut={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                  setPropMenu({ ...menu(), typeSubmenuOpen: false });
+                }
+              }}
             >
               {t("rightPanel.propertyType")}
               <span class="context-menu__chevron">{"\u25B8"}</span>

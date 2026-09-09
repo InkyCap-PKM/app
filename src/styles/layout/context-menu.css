@@ -34,6 +34,22 @@
   background: var(--bg-hover);
 }
 
+/* Keyboard cursor. The arrow keys walk focus through a menu (lib/menu-nav.ts),
+   which marks the item it lands on with `.is-kbd-active` — the same class the
+   file tree and list panels use for their cursor. The item reads like a
+   hovered one, with an accent edge saying which one the keys will act on.
+
+   The class is what's styled rather than `:focus-visible` because a browser
+   answers "no" to focus-visible for focus moved by script after a mouse
+   click, which is exactly this case: the menu was opened with the pointer.
+   That left the arrow keys moving an invisible cursor. */
+.context-menu__item.is-kbd-active,
+.context-menu__item:focus-visible {
+  background: var(--bg-hover);
+  box-shadow: inset 0 0 0 2px var(--accent);
+  outline: none;
+}
+
 /* Icon + label menu items (e.g. the New-note dropdown's
    "Folder" / "Upload into notebox" entries). Uses flex so the icon
    sits inline with the label rather than inheriting the default

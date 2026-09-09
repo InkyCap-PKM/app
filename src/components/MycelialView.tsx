@@ -25,6 +25,7 @@ import { settings } from "../stores/settings";
 import { useI18n, tPlural } from "../lib/i18n";
 import { Dropdown } from "./Dropdown";
 import { anchorPointMenu } from "../lib/uiMenu";
+import { dismissOnEscape } from "../lib/clickOutside";
 import {
   publishMycelialState,
   clearMycelialState,
@@ -700,6 +701,9 @@ export default function MycelialView(props: MycelialViewProps) {
     x: number;
     y: number;
   } | null>(null);
+
+  // Escape closes the node menu, like every other menu in the app.
+  dismissOnEscape(() => setContextMenu(null));
 
   async function handleAddStopword(term: string) {
     setContextMenu(null);

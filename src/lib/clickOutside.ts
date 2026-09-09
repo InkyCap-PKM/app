@@ -79,6 +79,24 @@ export function clickOutside(
   });
 }
 
+/**
+ * Escape closes a transient surface, for the surfaces that can't use the
+ * directive above.
+ *
+ * A right-click menu is opened by a signal and dismissed by the component's own
+ * document-click handler rather than by a directive on the element, so there is
+ * nothing for `clickOutside` to attach to. This gives those the other half of
+ * the same contract: call it once, next to the existing click dismissal, with
+ * the same close function. Registers for the lifetime of the calling component.
+ */
+export function dismissOnEscape(close: () => void): void {
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key === "Escape") close();
+  };
+  document.addEventListener("keydown", onKeyDown, true);
+  onCleanup(() => document.removeEventListener("keydown", onKeyDown, true));
+}
+
 // Register `use:clickOutside` with Solid's JSX directive typing so call sites
 // type-check (and so TS sees the imported symbol as used).
 declare module "solid-js" {

@@ -332,6 +332,15 @@ function menuButton(label: string, onClick: () => void, opts?: { muted?: boolean
     closeSpellMenu();
     onClick();
   });
+  // Keyboard activation arrives as a click instead (lib/menu-nav.ts), and no
+  // mousedown ever precedes it. `detail === 0` is what tells the two apart —
+  // a click the pointer produced carries its click count, a synthesised one
+  // does not — so a real mouse click can't run the action twice.
+  btn.addEventListener("click", (e) => {
+    if (e.detail !== 0) return;
+    closeSpellMenu();
+    onClick();
+  });
   return btn;
 }
 

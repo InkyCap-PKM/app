@@ -50,6 +50,7 @@ import { initKeyboard, destroyKeyboard } from "./lib/keyboard";
 import { initShortcuts } from "./lib/shortcuts";
 import { initFocusRegions } from "./lib/focus-regions";
 import { initInputModality } from "./lib/input-modality";
+import { initMenuNav, destroyMenuNav } from "./lib/menu-nav";
 import { initTauriDragDrop, initHtml5DragDrop } from "./lib/tauri-drag-drop";
 import { isWindows } from "./lib/platform";
 import { openTab, getActiveTab, activeTabId, tabs } from "./stores/tabs";
@@ -280,6 +281,7 @@ const App: Component = () => {
 
     initKeyboard();
     initInputModality();
+    initMenuNav();
 
     // Register the user's creation rules with the registry as well —
     // this is what gives e.g. "New Note" its Ctrl+N binding.
@@ -396,6 +398,7 @@ const App: Component = () => {
   onCleanup(() => {
     flushSettingsSave();
     destroyKeyboard();
+    destroyMenuNav();
     disposeFocusRegions();
     stopLsp();
   });

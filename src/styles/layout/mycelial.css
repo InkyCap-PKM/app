@@ -879,6 +879,13 @@
   cursor: pointer;
 }
 
+/* Keyboard cursor — see lib/menu-nav.ts and context-menu.css. */
+.mycelial-context-menu__item.is-kbd-active {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.mycelial-context-menu__item.is-kbd-active,
+.mycelial-context-menu__item:focus-visible,
 .mycelial-context-menu__item:hover {
   background: var(--bg-hover);
 }

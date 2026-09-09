@@ -55,6 +55,10 @@ export function Dropdown<T>(props: DropdownProps<T>) {
     if (props.disabled) return;
     setActiveIdx(selectedIndex());
     setOpen(true);
+    // The keys below live on the trigger, so it has to hold focus for the
+    // keyboard to carry on after a mouse click. Clicking a button focuses it
+    // on some platforms and not others (macOS does not), so do it explicitly.
+    triggerRef?.focus();
   }
   function closeMenu() {
     setOpen(false);
@@ -128,9 +132,12 @@ export function Dropdown<T>(props: DropdownProps<T>) {
         <ChevronDown size={14} class="dropdown__chevron" />
       </button>
       <Show when={open()}>
+        {/* `data-menu-nav="off"`: this one drives its own keys (onKeyDown
+            above), so the shared menu controller leaves it alone. */}
         <div
           class="context-menu dropdown__menu"
           role="listbox"
+          data-menu-nav="off"
           ref={(el) => anchorPanelMenu(triggerRef, el)}
           use:clickOutside={{ onDismiss: closeMenu, ignore: triggerRef }}
         >

@@ -1,4 +1,5 @@
 import { Component, For, Show, createSignal, onCleanup } from "solid-js";
+import { dismissOnEscape } from "../../lib/clickOutside";
 import {
   tabs,
   setActiveTabId,
@@ -59,6 +60,9 @@ const TabBarMenu: Component<{ leaf: LeafPane }> = (props) => {
     setOpen(false);
     document.removeEventListener("pointerdown", onDocPointerDown);
   }
+
+  // Escape closes it, like every other menu in the app.
+  dismissOnEscape(close);
 
   return (
     <div class="tab-bar__menu" ref={wrapRef}>

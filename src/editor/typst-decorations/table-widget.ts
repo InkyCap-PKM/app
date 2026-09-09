@@ -1633,8 +1633,15 @@ function buildMenuAtPos(x: number, y: number, items: (MenuItem | null)[]): HTMLE
     iconSpan.innerHTML = item.danger ? ICON_TRASH : item.icon; // static-only: internal SVG/emoji constants
     btn.appendChild(iconSpan);
     btn.appendChild(document.createTextNode(` ${item.label}`));
-    btn.addEventListener("mouseenter", () => { btn.style.background = "var(--bg-hover, #f0f0f0)"; });
-    btn.addEventListener("mouseleave", () => { btn.style.background = "transparent"; });
+    const highlight = () => { btn.style.background = "var(--bg-hover, #f0f0f0)"; };
+    const unhighlight = () => { btn.style.background = "transparent"; };
+    btn.addEventListener("mouseenter", highlight);
+    btn.addEventListener("mouseleave", unhighlight);
+    // The arrow keys walk focus through this menu (lib/menu-nav.ts). The row
+    // colours are inline here, so a stylesheet `:focus-visible` rule could not
+    // override them — the focus cue has to be set the same way.
+    btn.addEventListener("focus", highlight);
+    btn.addEventListener("blur", unhighlight);
     btn.addEventListener("mousedown", (ev) => { ev.preventDefault(); ev.stopPropagation(); });
     btn.addEventListener("click", (ev) => {
       ev.stopPropagation();

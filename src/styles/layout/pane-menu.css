@@ -63,6 +63,13 @@
   text-align: left;
 }
 
+/* Keyboard cursor — see lib/menu-nav.ts and context-menu.css. */
+.tab-bar__menu-item.is-kbd-active {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.tab-bar__menu-item.is-kbd-active,
+.tab-bar__menu-item:focus-visible,
 .tab-bar__menu-item:hover {
   background: var(--bg-hover);
 }

@@ -365,6 +365,11 @@ function getToolbar(): HTMLElement {
 
     document.body.appendChild(toolbar);
 
+    /* Escape closes them, like every other menu in the app. */
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closeAllPopups();
+    }, true);
+
     /* Close popups on outside click */
     document.addEventListener("mousedown", (e) => {
       if (dropdown && dropdown.style.display !== "none" &&
@@ -430,10 +435,25 @@ function getDropdown(): HTMLElement {
 
       row.appendChild(labelSpan);
 
+      const run = () => {
+        closeAllPopups();
+        if (activeView) {
+          item.action(activeView);
+          activeView.focus();
+        }
+      };
+      // mousedown, with the default prevented, so the editor keeps its
+      // selection while the item runs.
       row.addEventListener("mousedown", (e) => {
         e.preventDefault();
-        closeAllPopups();
-        if (activeView) item.action(activeView);
+        run();
+      });
+      // Keyboard activation arrives as a click with no mousedown before it
+      // (lib/menu-nav.ts); `detail === 0` is what marks a click the pointer
+      // did not make, so a real click can't run the action twice.
+      row.addEventListener("click", (e) => {
+        if (e.detail !== 0) return;
+        run();
       });
 
       dropdown.appendChild(row);

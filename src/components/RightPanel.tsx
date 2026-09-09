@@ -90,7 +90,7 @@ import {
 import { rescanHeadings } from "../editor/typst-decorations/heading-tracker";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { anchorPanelMenu } from "../lib/uiMenu";
-import { clickOutside } from "../lib/clickOutside";
+import { clickOutside, dismissOnEscape } from "../lib/clickOutside";
 import { activeEditorView } from "../stores/editor";
 import { openEditorFind, openEditorReplace } from "../editor/search-panel";
 import {
@@ -1108,6 +1108,20 @@ const RightPanel: Component = () => {
   // ── Hamburger menu ────────────────────────────────────
   const [fileMenu, setFileMenu] = createSignal<{ x: number; y: number } | null>(null);
   let cleanupFileMenu: (() => void) | undefined;
+
+  // Escape closes any of this panel's pop-up menus, matching the outside-click
+  // dismissal each one arms for itself.
+  dismissOnEscape(() => {
+    cleanupLinkRowMenu?.();
+    cleanupLinkRowMenu = undefined;
+    setLinkRowMenu(null);
+    cleanupRowMenu?.();
+    cleanupRowMenu = undefined;
+    closeRowMenu();
+    cleanupFileMenu?.();
+    cleanupFileMenu = undefined;
+    setFileMenu(null);
+  });
 
   function openFileMenu(e: MouseEvent) {
     e.preventDefault();
@@ -2392,6 +2406,14 @@ const RightPanel: Component = () => {
                 onMouseLeave={() =>
                   setRowMenu({ ...menu(), typeSubmenuOpen: false })
                 }
+                /* Focus opens the submenu too — that is how the keyboard
+                   reaches it (lib/menu-nav.ts). */
+                onFocusIn={() => setRowMenu({ ...menu(), typeSubmenuOpen: true })}
+                onFocusOut={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                    setRowMenu({ ...menu(), typeSubmenuOpen: false });
+                  }
+                }}
               >
                 {t("rightPanel.propertyType")}
                 <span class="context-menu__chevron">{"\u25B8"}</span>

@@ -26,7 +26,7 @@ import { propertyVersion, fileTreeVersion } from "../stores/notebox";
 import { promptText, promptConfirm } from "../stores/prompt";
 import { useI18n, tPlural } from "../lib/i18n";
 import { propertyLabel } from "../lib/property-labels";
-import { clickOutside } from "../lib/clickOutside";
+import { clickOutside, dismissOnEscape } from "../lib/clickOutside";
 import { anchorPanelMenu } from "../lib/uiMenu";
 import { propertyType, inferPropertyType } from "../stores/propertyTypes";
 import { columnFilterKind, fileColumnType } from "../lib/column-filter";
@@ -758,6 +758,9 @@ const CollectionTable: Component<{ path: string }> = (props) => {
     document.addEventListener("click", handleDocClick);
     onCleanup(() => document.removeEventListener("click", handleDocClick));
   }
+
+  // Escape closes the same menus an outside click closes.
+  dismissOnEscape(handleDocClick);
 
   // ── Export handling ──
 

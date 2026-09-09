@@ -68,13 +68,21 @@ const StatusBar: Component = () => {
   let activeDismiss: (() => void) | null = null;
   const armDismiss = (close: () => void) => {
     setTimeout(() => {
-      const onDocClick = () => {
+      const dismiss = () => {
         close();
-        document.removeEventListener("click", onDocClick);
+        stop();
         activeDismiss = null;
       };
-      activeDismiss = () => document.removeEventListener("click", onDocClick);
-      document.addEventListener("click", onDocClick);
+      const onDocKey = (e: KeyboardEvent) => {
+        if (e.key === "Escape") dismiss();
+      };
+      const stop = () => {
+        document.removeEventListener("click", dismiss);
+        document.removeEventListener("keydown", onDocKey, true);
+      };
+      activeDismiss = stop;
+      document.addEventListener("click", dismiss);
+      document.addEventListener("keydown", onDocKey, true);
     }, 0);
   };
   onCleanup(() => activeDismiss?.());

@@ -44,6 +44,13 @@
   flex-shrink: 0;
 }
 
+/* Keyboard cursor — see lib/menu-nav.ts and context-menu.css. */
+.selection-toolbar__menu-item.is-kbd-active {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.selection-toolbar__menu-item.is-kbd-active,
+.selection-toolbar__menu-item:focus-visible,
 .selection-toolbar__menu-item:hover {
   background: var(--toolbar-float-hover-bg);
   color: var(--toolbar-float-fg-strong);
