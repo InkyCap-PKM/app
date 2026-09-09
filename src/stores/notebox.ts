@@ -15,6 +15,12 @@ import {
   onFileRenamed,
 } from "../lib/events";
 import { renameTabPath, closeAllTabs, openTab, createEmptyTab, tabs } from "./tabs";
+import {
+  recordTabSession,
+  restorePreviousTabs,
+  resumeTabSessionRecording,
+  suspendTabSessionRecording,
+} from "./tab-session";
 import { reloadPropertyTypes } from "./propertyTypes";
 import {
   loadNoteboxSettings,
@@ -253,6 +259,9 @@ async function applyStartupBehavior(): Promise<void> {
   switch (behavior) {
     case "default":
       break;
+    case "previous-tabs":
+      await restorePreviousTabs();
+      break;
     case "last-file":
       if (last_active_file) {
         try {
@@ -328,6 +337,11 @@ export async function openNotebox(path: string) {
   // overlaps the switch would otherwise land in the new one.
   const switchingNoteboxes = noteboxInfo() !== null && !pathEquals(noteboxInfo()?.path, path);
   if (switchingNoteboxes) {
+    // Record the outgoing notebox's tabs before they are torn down, then pause
+    // recording so the emptied workspace isn't written over either notebox's
+    // record. Recording resumes once the new notebox is open.
+    await recordTabSession();
+    suspendTabSessionRecording();
     closeAllTabs();
     await awaitAllPendingWrites();
   }
@@ -385,6 +399,12 @@ export async function openNotebox(path: string) {
     // instead of empty. Runs on every successful open — including the
     // initial app launch and subsequent switches.
     await applyStartupBehavior();
+    // The workspace has settled into this notebox, so tab changes from here on
+    // are the user's and belong in its record. Deliberately not in a `finally`:
+    // if the open failed there is no settled notebox, and recording must stay
+    // paused rather than write an empty tab list against whichever notebox the
+    // backend still holds.
+    resumeTabSessionRecording();
     // Invariant: a notebox is always presented with at least one tab.
     // "default" startup, or any of the other modes silently failing
     // (missing target, etc.), can leave us with no tabs — in that case
@@ -462,6 +482,10 @@ export async function showNoteboxPicker(): Promise<void> {
  * writes first so in-flight edits still land on disk while the folder exists.
  */
 export async function closeActiveNotebox(): Promise<void> {
+  // The notebox is being unloaded, not left for later, so the emptied
+  // workspace must not be recorded as "no tabs open". Recording resumes when a
+  // notebox is opened again.
+  suspendTabSessionRecording();
   closeAllTabs();
   await awaitAllPendingWrites();
   stopLsp();

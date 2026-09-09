@@ -208,7 +208,12 @@ impl Default for FileSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct StartupSettings {
-    /// What to open on launch: "default", "last-file", "creation-rule", "specific-page", or "specific-collection".
+    /// What to open on launch: "default", "last-file", "previous-tabs",
+    /// "creation-rule", "specific-page", or "specific-collection".
+    ///
+    /// "previous-tabs" restores the tabs this machine last had open in the
+    /// notebox; that record is per-machine and lives outside the notebox, in
+    /// [`crate::tab_sessions`].
     pub behavior: String,
 }
 

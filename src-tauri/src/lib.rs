@@ -35,6 +35,7 @@ pub mod settings;
 pub mod sort;
 pub mod state;
 pub mod storage;
+pub mod tab_sessions;
 pub mod typst_packages;
 pub mod typst_pipeline;
 pub mod watcher;
@@ -333,6 +334,9 @@ pub fn run() {
             commands::settings::get_notebox_settings,
             commands::settings::update_notebox_settings,
             commands::settings::generate_zid,
+            commands::tab_session::get_notebox_tab_session,
+            commands::tab_session::save_notebox_tab_session,
+            commands::tab_session::clear_notebox_tab_session,
             commands::properties::get_property_types,
             commands::properties::get_system_property_keys,
             commands::properties::set_property_type,

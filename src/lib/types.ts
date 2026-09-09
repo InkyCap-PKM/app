@@ -412,9 +412,38 @@ export interface CitationSettings {
 }
 
 /** User-global startup behaviour. The notebox-specific target and
- *  last-active file pointer live in `NoteboxStartupSettings`. */
+ *  last-active file pointer live in `NoteboxStartupSettings`; the tabs
+ *  `"previous-tabs"` restores are recorded per-machine outside the notebox
+ *  (see `NoteboxTabSession`). */
 export interface StartupSettings {
-  behavior: "default" | "last-file" | "creation-rule" | "specific-page" | "specific-collection";
+  behavior:
+    | "default"
+    | "last-file"
+    | "previous-tabs"
+    | "creation-rule"
+    | "specific-page"
+    | "specific-collection";
+}
+
+/** One tab remembered from a previous session, as the backend stores it.
+ *  Snake-case because it crosses IPC as-is; `stores/tab-session.ts` maps it
+ *  to and from the frontend `Tab`. */
+export interface SessionTab {
+  /** Tab type: "file", "collection", or "mycelial". */
+  kind: string;
+  title: string;
+  /** Absolute path, in the same shape as `FileTreeNode.path`. */
+  path: string;
+  editing_mode: string | null;
+  reading_format: string | null;
+  reading_zoom: number | null;
+  /** True for the tab that was in the foreground. */
+  active: boolean;
+}
+
+/** The tabs one notebox was last left with on this machine. */
+export interface NoteboxTabSession {
+  tabs: SessionTab[];
 }
 
 export interface ExportSettings {

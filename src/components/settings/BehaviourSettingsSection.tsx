@@ -67,6 +67,7 @@ export function BehaviourSettingsSection() {
         options={[
           { value: "default", label: t("settings.behaviour.startup.option.default") },
           { value: "last-file", label: t("settings.behaviour.startup.option.lastFile") },
+          { value: "previous-tabs", label: t("settings.behaviour.startup.option.previousTabs") },
           { value: "creation-rule", label: t("settings.behaviour.startup.option.creationRule") },
           { value: "specific-page", label: t("settings.behaviour.startup.option.specificPage") },
           { value: "specific-collection", label: t("settings.behaviour.startup.option.specificCollection") },
@@ -75,10 +76,21 @@ export function BehaviourSettingsSection() {
           updateSetting(
             "startup",
             "behavior",
-            v as "default" | "last-file" | "creation-rule" | "specific-page" | "specific-collection",
+            v as
+              | "default"
+              | "last-file"
+              | "previous-tabs"
+              | "creation-rule"
+              | "specific-page"
+              | "specific-collection",
           )
         }
       />
+      <Show when={settings.startup.behavior === "previous-tabs"}>
+        <p class="settings__section-note">
+          {t("settings.behaviour.startup.previousTabsNote")}
+        </p>
+      </Show>
       <Show when={settings.startup.behavior === "creation-rule"}>
         <Show
           when={ruleOptions().length > 0}

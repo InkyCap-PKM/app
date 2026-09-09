@@ -54,6 +54,7 @@ import { initMenuNav, destroyMenuNav } from "./lib/menu-nav";
 import { initTauriDragDrop, initHtml5DragDrop } from "./lib/tauri-drag-drop";
 import { isWindows } from "./lib/platform";
 import { openTab, getActiveTab, activeTabId, tabs } from "./stores/tabs";
+import { installTabSessionRecorder } from "./stores/tab-session";
 import { collaborative, setManageOpen } from "./stores/git";
 import { registerBuiltinCommands, registerCreationRuleCommands } from "./lib/commands";
 import { registerExternalToolPalette, registerExternalToolCommands } from "./lib/external-tools";
@@ -77,6 +78,11 @@ const App: Component = () => {
   const [typAuditVisible, setTypAuditVisible] = createSignal(false);
   const [nameAuditVisible, setNameAuditVisible] = createSignal(false);
   const [scaffoldPickerVisible, setScaffoldPickerVisible] = createSignal(false);
+
+  // Keep the record of open tabs current so the "previous tabs" startup
+  // behaviour can restore them next launch. A no-op unless that behaviour is
+  // the one selected.
+  installTabSessionRecorder();
 
   // Persist the active file path so "last-file" startup behavior can restore it.
   createEffect(() => {

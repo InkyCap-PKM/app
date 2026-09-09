@@ -1677,6 +1677,8 @@
   "settings.behaviour.startup.description": "What do you prefer InkyCap to do or display upon starting?",
   "settings.behaviour.startup.option.default": "Tabula rasa (file tree)",
   "settings.behaviour.startup.option.lastFile": "Last opened file",
+  "settings.behaviour.startup.option.previousTabs": "Previously open tabs",
+  "settings.behaviour.startup.previousTabsNote": "InkyCap reopens the tabs you had open when you last closed this notebox. The record is kept on this computer only; it never travels with the notebox.",
   "settings.behaviour.startup.option.creationRule": "Launch a rule",
   "settings.behaviour.startup.option.specificPage": "Open a specific page",
   "settings.behaviour.startup.option.specificCollection": "Open a specific collection",

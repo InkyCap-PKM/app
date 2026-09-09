@@ -1677,6 +1677,8 @@
   "settings.behaviour.startup.description": "Que préférez-vous qu'InkyCap fasse ou affiche au démarrage ?",
   "settings.behaviour.startup.option.default": "Table rase (arborescence de fichiers)",
   "settings.behaviour.startup.option.lastFile": "Dernier fichier ouvert",
+  "settings.behaviour.startup.option.previousTabs": "Onglets précédemment ouverts",
+  "settings.behaviour.startup.previousTabsNote": "InkyCap rouvre les onglets que vous aviez ouverts la dernière fois que vous avez fermé ce carnet. Cet historique demeure sur cet ordinateur seulement; il ne suit jamais le carnet.",
   "settings.behaviour.startup.option.creationRule": "Lancer une règle",
   "settings.behaviour.startup.option.specificPage": "Ouvrir une page précise",
   "settings.behaviour.startup.option.specificCollection": "Ouvrir une collection précise",

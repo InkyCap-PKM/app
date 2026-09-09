@@ -18,6 +18,7 @@ import type {
   UserSettings,
   ExternalToolResult,
   NoteboxSettings,
+  NoteboxTabSession,
   SearchResult,
   SearchResponse,
   ReplaceResult,
@@ -617,6 +618,26 @@ export async function getNoteboxSettings(): Promise<NoteboxSettings> {
 
 export async function updateNoteboxSettings(settings: NoteboxSettings): Promise<void> {
   return invoke<void>("update_notebox_settings", { settings });
+}
+
+// ───────────────────────── Previous-tab session ─────────────────────────
+// Backing store for the "Open previous tabs" startup behaviour. The record is
+// per-machine and kept outside the notebox, so it never travels with it.
+
+/** Tabs this machine last had open in the current notebox. Notes that have
+ *  since been deleted are already filtered out by the backend. */
+export async function getNoteboxTabSession(): Promise<NoteboxTabSession> {
+  return invoke<NoteboxTabSession>("get_notebox_tab_session");
+}
+
+/** Record the current notebox's open tabs, replacing the previous record. */
+export async function saveNoteboxTabSession(session: NoteboxTabSession): Promise<void> {
+  return invoke<void>("save_notebox_tab_session", { session });
+}
+
+/** Forget the current notebox's recorded tabs. */
+export async function clearNoteboxTabSession(): Promise<void> {
+  return invoke<void>("clear_notebox_tab_session");
 }
 
 export async function generateZid(): Promise<string> {
