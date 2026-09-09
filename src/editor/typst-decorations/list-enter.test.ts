@@ -96,3 +96,41 @@ describe("list Enter behaviour", () => {
     v.destroy();
   });
 });
+
+describe("numbered list Enter renumbering", () => {
+  it("pushes the numbers below along when an item is inserted mid-list", () => {
+    const doc = "1. one\n2. two\n3. three";
+    const v = mk(doc);
+    v.dispatch({ selection: { anchor: "1. one".length } });
+    pressEnter(v);
+    expect(v.state.doc.toString()).toBe("1. one\n2. \n3. two\n4. three");
+    expect(v.state.selection.main.head).toBe("1. one\n2. ".length);
+    v.destroy();
+  });
+
+  it("numbers a new nested item from its own level", () => {
+    const doc = "1. one\n  1. child";
+    const v = mk(doc);
+    pressEnter(v);
+    expect(v.state.doc.toString()).toBe("1. one\n  1. child\n  2. ");
+    v.destroy();
+  });
+
+  it("carries the text right of the caret onto the new item", () => {
+    const doc = "1. onetwo\n2. three";
+    const v = mk(doc);
+    v.dispatch({ selection: { anchor: "1. one".length } });
+    pressEnter(v);
+    expect(v.state.doc.toString()).toBe("1. one\n2. two\n3. three");
+    expect(v.state.selection.main.head).toBe("1. one\n2. ".length);
+    v.destroy();
+  });
+
+  it("straightens a list whose numbers were already wrong", () => {
+    const doc = "1. one\n  2. child\n3. two";
+    const v = mk(doc);
+    pressEnter(v);
+    expect(v.state.doc.toString()).toBe("1. one\n  1. child\n2. two\n3. ");
+    v.destroy();
+  });
+});

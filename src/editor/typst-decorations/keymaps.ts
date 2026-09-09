@@ -4,6 +4,7 @@ import { syntaxTree, foldedRanges, foldEffect } from "@codemirror/language";
 import { moveLineUp, moveLineDown } from "@codemirror/commands";
 import { toggleEmphasis, toggleWrap } from "./wrap-format";
 import { listSubtreeEndLine, leadingWhitespace } from "./list-scan";
+import { listBlockRange, linesOfRange, markerWidth, renumberListLines } from "./list-renumber";
 
 /**
  * When true, indent/outdent of a list item also moves any nested
@@ -382,10 +383,56 @@ function continueList(state: EditorState): { changes: ChangeSpec; selection: { a
   const contentStart = line.from + listMatch[0].length;
   const pos = Math.max(from, contentStart);
 
-  const insert = `\n${indent}${nextMarker} `;
+  // The new item's indent, marker and separator — everything before its text.
+  const opening = `${indent}${nextMarker} `;
+  const renumbered = continuationWithRenumber(state, line, pos, opening);
+  if (renumbered) return renumbered;
+
+  const insert = `\n${opening}`;
   return {
     changes: { from: pos, insert },
     selection: { anchor: pos + insert.length },
+  };
+}
+
+/**
+ * The Enter continuation rewritten to cover the whole list block, so that
+ * inserting an item in the middle of a `1. 2. 3.` list pushes the numbers below
+ * it along instead of leaving a duplicate. Returns null when no number would
+ * change, so the ordinary case stays the small, cheap insertion.
+ *
+ * `opening` is the new item's indent and marker (with its separator); the text
+ * to the right of the caret moves onto the new line after it.
+ */
+function continuationWithRenumber(
+  state: EditorState,
+  line: Line,
+  pos: number,
+  opening: string,
+): { changes: ChangeSpec; selection: { anchor: number } } | null {
+  const [first, last] = listBlockRange(state.doc, line.number);
+  const before = state.doc.sliceString(line.from, pos);
+  const after = state.doc.sliceString(pos, line.to);
+
+  const index = line.number - first;
+  const original = linesOfRange(state.doc, first, last);
+  const withNewItem = [
+    ...original.slice(0, index),
+    before,
+    opening + after,
+    ...original.slice(index + 1),
+  ];
+  const rewritten = renumberListLines(withNewItem);
+  if (rewritten.join("\n") === withNewItem.join("\n")) return null;
+
+  const regionFrom = state.doc.line(first).from;
+  let caret = regionFrom;
+  for (let i = 0; i <= index; i++) caret += rewritten[i].length + 1;
+  caret += markerWidth(rewritten[index + 1]);
+
+  return {
+    changes: { from: regionFrom, to: state.doc.line(last).to, insert: rewritten.join("\n") },
+    selection: { anchor: caret },
   };
 }
 
@@ -508,28 +555,44 @@ function indentList(state: EditorState, direction: 1 | -1): IndentPlan | null {
   if (shifts.size === 0) return null;
 
   const shiftedNumbers = [...shifts.keys()].sort((a, b) => a - b);
-  const startLine = state.doc.line(shiftedNumbers[0]);
-  const endLine = state.doc.line(shiftedNumbers[shiftedNumbers.length - 1]);
+  const shiftedFirst = shiftedNumbers[0];
+  const shiftedLast = shiftedNumbers[shiftedNumbers.length - 1];
 
-  const rewritten: string[] = [];
-  for (let n = startLine.number; n <= endLine.number; n++) {
-    const text = state.doc.line(n).text;
-    const shift = shifts.get(n) ?? 0;
-    rewritten.push(shift > 0 ? INDENT_UNIT + text : shift < 0 ? text.slice(-shift) : text);
-  }
+  // Moving an item between levels invalidates the explicit `N.` numbers of the
+  // level it left and the one it joined, so the rewrite covers the whole list
+  // block, not just the shifted lines. Lines outside the shift are reproduced
+  // unchanged unless their number moved (see list-renumber.ts).
+  const [blockFirst, blockLast] = listBlockRange(state.doc, shiftedFirst);
+  const first = Math.min(blockFirst, shiftedFirst);
+  const last = Math.max(blockLast, shiftedLast);
 
-  // Where a position ends up: earlier shifted lines move its line start, and
-  // its own line's shift moves it within the line. A position inside removed
-  // indentation lands at the new line start.
+  const shifted = linesOfRange(state.doc, first, last).map((text, i) => {
+    const shift = shifts.get(first + i) ?? 0;
+    return shift > 0 ? INDENT_UNIT + text : shift < 0 ? text.slice(-shift) : text;
+  });
+  const rewritten = renumberListLines(shifted);
+
+  const startLine = state.doc.line(first);
+  const endLine = state.doc.line(last);
+
+  // Where a position ends up: preceding lines in the region move its line
+  // start, and its own line's shift (plus any change in the width of its
+  // number) moves it within the line. A position inside removed indentation
+  // lands at the new line start.
+  const regionDelta = rewritten.join("\n").length - shifted.join("\n").length;
   const mapPos = (pos: number): number => {
     const line = state.doc.lineAt(pos);
-    let precedingShift = 0;
-    for (const n of shiftedNumbers) {
-      if (n < line.number) precedingShift += shifts.get(n) ?? 0;
-    }
+    if (line.number < first) return pos;
+    if (line.number > last) return pos + regionDelta;
+    const index = line.number - first;
+    let lineStart = startLine.from;
+    for (let i = 0; i < index; i++) lineStart += rewritten[i].length + 1;
     const shift = shifts.get(line.number) ?? 0;
     const column = pos - line.from;
-    return line.from + precedingShift + Math.max(0, column + shift);
+    const numberShift = column >= markerWidth(line.text)
+      ? rewritten[index].length - shifted[index].length
+      : 0;
+    return lineStart + Math.max(0, column + shift + numberShift);
   };
 
   return {

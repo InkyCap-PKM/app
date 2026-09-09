@@ -265,3 +265,65 @@ describe("list indent over a selection", () => {
     v.destroy();
   });
 });
+
+describe("numbered list renumbering on indent and outdent", () => {
+  /** Caret at the end of the given line's text. */
+  function caretAtEndOfLine(doc: string, lineIndex: number): number {
+    const lines = doc.split("\n");
+    return lines.slice(0, lineIndex).reduce((n, l) => n + l.length + 1, 0) + lines[lineIndex].length;
+  }
+
+  it("restarts the number when an item becomes a child", () => {
+    const doc = "1. Growth\n2. InkyCap";
+    const v = mkSel(doc, caretAtEndOfLine(doc, 1), caretAtEndOfLine(doc, 1));
+    pressTab(v);
+    expect(v.state.doc.toString()).toBe("1. Growth\n  1. InkyCap");
+    v.destroy();
+  });
+
+  it("keeps the caret on the same character when the number changes", () => {
+    const doc = "1. Growth\n2. InkyCap";
+    const caret = caretAtEndOfLine(doc, 1);
+    const v = mkSel(doc, caret, caret);
+    pressTab(v);
+    expect(v.state.sliceDoc(0, v.state.selection.main.head)).toBe("1. Growth\n  1. InkyCap");
+    v.destroy();
+  });
+
+  it("continues the parent count when an item is outdented back", () => {
+    const doc = "1. Growth\n  1. InkyCap\n  2. Obsidian\n  3. Scope";
+    const caret = caretAtEndOfLine(doc, 3);
+    const v = mkSel(doc, caret, caret);
+    pressTab(v, true);
+    expect(v.state.doc.toString()).toBe("1. Growth\n  1. InkyCap\n  2. Obsidian\n2. Scope");
+    v.destroy();
+  });
+
+  it("renumbers the items left behind at the old level", () => {
+    const doc = "1. one\n2. two\n3. three";
+    const caret = caretAtEndOfLine(doc, 1);
+    const v = mkSel(doc, caret, caret);
+    pressTab(v);
+    expect(v.state.doc.toString()).toBe("1. one\n  1. two\n2. three");
+    v.destroy();
+  });
+
+  it("undoes an indent that renumbered in one step", () => {
+    const doc = "1. one\n2. two\n3. three";
+    const caret = caretAtEndOfLine(doc, 1);
+    const v = mkSel(doc, caret, caret);
+    pressTab(v);
+    undo(v);
+    expect(v.state.doc.toString()).toBe(doc);
+    v.destroy();
+  });
+
+  it("leaves prose after the list untouched", () => {
+    const doc = "1. one\n2. two\n\nProse.";
+    const caret = caretAtEndOfLine(doc, 1);
+    const v = mkSel(doc, caret, caret);
+    pressTab(v);
+    expect(v.state.doc.toString()).toBe("1. one\n  1. two\n\nProse.");
+    v.destroy();
+  });
+});

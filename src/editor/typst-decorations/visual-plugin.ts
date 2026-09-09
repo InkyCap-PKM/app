@@ -608,13 +608,25 @@ function enumItemNumber(state: EditorState, markerFrom: number): string {
   if (explicit) return `${explicit[1]}.`;
 
   // "+" marker: its position is the length of the same-indent enum run above.
+  // What counts as "the run above" follows the same rules the source-side
+  // renumbering uses (see list-renumber.ts), so the number shown here matches
+  // both the source and what Typst compiles: blank lines and an item's wrapped
+  // text do not end a list, an explicit `N.` above anchors the count, and
+  // prose or a shallower item starts the run.
   let count = 1;
   for (let n = line.number - 1; n >= 1; n--) {
-    const m = state.doc.line(n).text.match(/^(\s*)(?:\+|\d+\.)(?:\s|$)/);
-    if (!m) break;                      // non-enum line ends the list
+    const text = state.doc.line(n).text;
+    if (text.trim() === "") continue;   // blank line — a loose list is one list
+    const m = text.match(/^(\s*)(\+|\d+\.)(?:\s|$)/);
+    if (!m) {
+      if (leadingWhitespace(text) > indent) continue; // wrapped item text
+      break;                            // prose (or a bullet) ends the list
+    }
     const prevIndent = m[1].length;
     if (prevIndent < indent) break;     // parent level — our run starts below it
     if (prevIndent > indent) continue;  // nested child — does not affect our number
+    const anchored = m[2].match(/^(\d+)\./);
+    if (anchored) return `${Number(anchored[1]) + count}.`;
     count++;
   }
   return `${count}.`;
