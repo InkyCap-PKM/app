@@ -1044,6 +1044,8 @@
   "property.editor.addValue": "+ Add \"{value}\"",
   "property.editor.assignCollections": "Click to assign collections",
   "property.editor.noCollections": "No collections defined",
+  "property.editor.chooseValues": "Choose values for {key}",
+  "property.editor.chooseCollections": "Choose collections",
   "property.editor.expectedNumber": "Expected a number",
   "property.editor.expectedBool": "Expected true or false",
   "property.editor.expectedDate": "Expected date (YYYY-MM-DD)",

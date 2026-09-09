@@ -335,23 +335,41 @@
   color: var(--fg-primary);
 }
 
-.collection-picker {
+/* ── Multi-select picker (MultiSelectPicker.tsx) ──────────────────────────
+   The chips row plus checkable dropdown behind list properties (tags,
+   aliases, …) and the collection assignment. One block of styles because
+   one component draws both.
+
+   The filter box is pinned and only the option list scrolls, so arrowing
+   down the list never carries the box the writer is typing in out of view. */
+.multi-select {
   position: relative;
 }
 
-.collection-picker__dropdown {
+.multi-select__dropdown {
   background: var(--popup-bg);
   border: 1px solid var(--popup-border-color);
   /* Input-attached — see --popup-radius-attached. */
   border-radius: var(--popup-radius-attached);
   box-shadow: var(--popup-shadow);
   margin-top: var(--space-2);
-  max-height: 180px;
-  overflow-y: auto;
   padding: var(--space-2);
 }
 
-.collection-picker__item {
+.multi-select__list {
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+/* The list takes focus itself when there is no filter box to hold it, so it
+   carries the same ring as any other focusable control. */
+.multi-select__list:focus-visible {
+  outline: var(--focus-ring-outline);
+  outline-offset: -2px;
+  border-radius: var(--radius-sm);
+}
+
+.multi-select__option {
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -362,11 +380,14 @@
   border-radius: var(--radius-sm);
 }
 
-.collection-picker__item:hover {
+/* Hover and the keyboard highlight are one state: the pointer and the arrow
+   keys take turns driving it (see createHoverGuard). */
+.multi-select__option:hover,
+.multi-select__option--active {
   background: var(--bg-hover);
 }
 
-.collection-picker__empty {
+.multi-select__empty {
   display: block;
   padding: var(--space-4);
   font-size: var(--text-base);
@@ -374,17 +395,13 @@
   text-align: center;
 }
 
-.list-picker {
-  position: relative;
-}
-
-.list-picker__filter {
+.multi-select__filter {
   width: 100%;
   margin-bottom: var(--space-2);
   box-sizing: border-box;
 }
 
-.list-picker__create {
+.multi-select__create {
   width: 100%;
   background: none;
   border: none;
@@ -453,6 +470,14 @@
   cursor: pointer;
   min-height: 20px;
   padding: 1px 0;
+}
+
+/* The chips row is the picker's own control (it opens the list from the
+   keyboard), so it shows the ring like any other. */
+.property-editor__tags:focus-visible {
+  outline: var(--focus-ring-outline);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
 }
 
 /* Property tags use the shared .badge .badge--accent chip (see markup). */

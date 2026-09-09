@@ -1,4 +1,4 @@
-import { Component, createSignal, createResource, createEffect, onCleanup, For, Show } from "solid-js";
+import { Component, createSignal, createResource, onCleanup, Show } from "solid-js";
 import type { PropertyValue, PropertyType } from "../lib/types";
 import { propertyType } from "../stores/propertyTypes";
 import { sanitizeAlias } from "../lib/typst";
@@ -7,6 +7,7 @@ import * as ipc from "../lib/ipc";
 import { showWikilinkContextMenu } from "../lib/wikilink-nav";
 import { useI18n } from "../lib/i18n";
 import DatePicker from "./DatePicker";
+import MultiSelectPicker from "./MultiSelectPicker";
 
 export interface PropertyEditorProps {
   propKey: string;
@@ -406,8 +407,6 @@ const [listPickerOpen, setListPickerOpen] = createSignal<string | null>(null);
 
 const ListEditor: Component<PropertyEditorProps> = (props) => {
   const t = useI18n();
-  let containerRef: HTMLDivElement | undefined;
-  let inputRef: HTMLInputElement | undefined;
 
   const currentItems = (): string[] => {
     const v = props.value;
@@ -430,33 +429,25 @@ const ListEditor: Component<PropertyEditorProps> = (props) => {
   const [filter, setFilter] = createSignal("");
 
   const isOpen = () => listPickerOpen() === props.propKey;
-  function openPicker() {
-    setFilter("");
-    setListPickerOpen(props.propKey);
-    refetchValues();
-    setTimeout(() => inputRef?.focus(), 0);
-  }
-  function closePicker() {
-    if (isOpen()) setListPickerOpen(null);
-  }
 
   // Items the user can pick from: union of values-in-this-property and any
   // currently-selected items (so a stale entry not yet propagated to the
   // global index still appears as checked).
+  const universe = (): Set<string> => {
+    const all = new Set<string>(allValues() ?? []);
+    for (const it of currentItems()) all.add(it);
+    return all;
+  };
+
   const candidates = (): string[] => {
-    const universe = new Set<string>(allValues() ?? []);
-    for (const it of currentItems()) universe.add(it);
     const filt = filter().trim().toLowerCase();
-    const arr = [...universe].sort((a, b) => compareName(a, b));
+    const arr = [...universe()].sort((a, b) => compareName(a, b));
     return filt ? arr.filter((v) => v.toLowerCase().includes(filt)) : arr;
   };
 
   const canCreate = () => {
     const f = filter().trim();
-    if (!f) return false;
-    const universe = new Set<string>(allValues() ?? []);
-    for (const it of currentItems()) universe.add(it);
-    return !universe.has(f);
+    return !!f && !universe().has(f);
   };
 
   function toggle(name: string) {
@@ -465,6 +456,9 @@ const ListEditor: Component<PropertyEditorProps> = (props) => {
       ? items.filter((i) => i !== name)
       : [...items, name];
     props.onSave(props.propKey, next);
+    // The filter was a way of finding that value; clear it so the next one can
+    // be typed straight away.
+    setFilter("");
   }
 
   function commitNew() {
@@ -474,100 +468,40 @@ const ListEditor: Component<PropertyEditorProps> = (props) => {
       props.onSave(props.propKey, [...currentItems(), v]);
     }
     setFilter("");
-    setTimeout(() => inputRef?.focus(), 0);
   }
-
-  function handleKeyDown(e: KeyboardEvent) {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      // If the typed text uniquely matches a candidate, toggle it; else create.
-      const f = filter().trim();
-      const matches = candidates();
-      if (f && matches.length === 1) {
-        toggle(matches[0]);
-        setFilter("");
-        return;
-      }
-      if (canCreate()) commitNew();
-    } else if (e.key === "Escape") {
-      closePicker();
-    } else if (e.key === "Backspace" && filter() === "" && currentItems().length > 0) {
-      // Backspace with empty filter pops the last selected value.
-      const items = currentItems();
-      props.onSave(props.propKey, items.slice(0, -1));
-    }
-  }
-
-  function handleClickOutside(e: MouseEvent) {
-    if (containerRef && !containerRef.contains(e.target as Node)) {
-      closePicker();
-    }
-  }
-
-  createEffect(() => {
-    if (isOpen()) {
-      document.addEventListener("mousedown", handleClickOutside);
-    } else {
-      document.removeEventListener("mousedown", handleClickOutside);
-    }
-  });
-  onCleanup(() => document.removeEventListener("mousedown", handleClickOutside));
 
   return (
-    <div class="list-picker" ref={containerRef}>
-      <div
-        class="property-editor__tags"
-        onClick={() => (isOpen() ? closePicker() : openPicker())}
-      >
-        <For each={currentItems()}>
-          {(item) => <span class="badge badge--accent">{item}</span>}
-        </For>
-        <Show when={currentItems().length === 0}>
-          <span class="property-editor__value property-editor__value--empty">
-            {t("property.editor.empty")}
-          </span>
-        </Show>
-      </div>
-
-      <Show when={isOpen()}>
-        <div class="collection-picker__dropdown">
-          <input
-            class="property-editor__input list-picker__filter"
-            type="text"
-            placeholder={t("property.editor.filterOrAdd")}
-            value={filter()}
-            onInput={(e) => setFilter(e.currentTarget.value)}
-            onKeyDown={handleKeyDown}
-            ref={(el) => (inputRef = el)}
-          />
-          <For each={candidates()} fallback={
-            <Show when={!canCreate()}>
-              <span class="collection-picker__empty">{t("property.editor.noValues")}</span>
-            </Show>
-          }>
-            {(val) => (
-              <label class="collection-picker__item">
-                <input
-                  type="checkbox"
-                  checked={currentItems().includes(val)}
-                  onChange={() => toggle(val)}
-                />
-                <span>{val}</span>
-              </label>
-            )}
-          </For>
-          <Show when={canCreate()}>
-            <button
-              class="collection-picker__item list-picker__create"
-              onClick={commitNew}
-              type="button"
-            >
-              {t("property.editor.addValue", { value: filter().trim() })}
-            </button>
-          </Show>
-        </div>
-      </Show>
-    </div>
+    <MultiSelectPicker
+      selected={currentItems()}
+      options={candidates()}
+      onToggle={toggle}
+      open={isOpen()}
+      onOpenChange={(open) => {
+        if (open) {
+          setFilter("");
+          setListPickerOpen(props.propKey);
+          refetchValues();
+        } else if (isOpen()) {
+          setListPickerOpen(null);
+        }
+      }}
+      label={t("property.editor.chooseValues", { key: props.propKey })}
+      emptyLabel={t("property.editor.empty")}
+      noOptionsLabel={t("property.editor.noValues")}
+      filterable
+      filterValue={filter()}
+      filterPlaceholder={t("property.editor.filterOrAdd")}
+      onFilterChange={setFilter}
+      createLabel={
+        canCreate() ? t("property.editor.addValue", { value: filter().trim() }) : undefined
+      }
+      onCreate={commitNew}
+      // Backspace with an empty filter pops the last selected value.
+      onBackspaceEmpty={() => {
+        const items = currentItems();
+        if (items.length > 0) props.onSave(props.propKey, items.slice(0, -1));
+      }}
+    />
   );
 };
 
@@ -630,7 +564,6 @@ const [collectionPickerOpen, setCollectionPickerOpen] = createSignal(false);
 
 const CollectionEditor: Component<PropertyEditorProps> = (props) => {
   const t = useI18n();
-  let containerRef: HTMLDivElement | undefined;
 
   const [collections] = createResource(async () => {
     try {
@@ -655,57 +588,17 @@ const CollectionEditor: Component<PropertyEditorProps> = (props) => {
     props.onSave(props.propKey, newItems);
   }
 
-  function handleClickOutside(e: MouseEvent) {
-    if (containerRef && !containerRef.contains(e.target as Node)) {
-      setCollectionPickerOpen(false);
-    }
-  }
-
-  // Attach/detach click-outside listener when dropdown opens/closes
-  createEffect(() => {
-    if (collectionPickerOpen()) {
-      document.addEventListener("mousedown", handleClickOutside);
-    } else {
-      document.removeEventListener("mousedown", handleClickOutside);
-    }
-  });
-
-  onCleanup(() => document.removeEventListener("mousedown", handleClickOutside));
-
   return (
-    <div class="collection-picker" ref={containerRef}>
-      <div class="property-editor__tags" onClick={() => setCollectionPickerOpen(!collectionPickerOpen())}>
-        <For each={currentItems()}>
-          {(item) => (
-            <span class="badge badge--accent">{item}</span>
-          )}
-        </For>
-        <Show when={currentItems().length === 0}>
-          <span class="property-editor__value property-editor__value--empty">
-            {t("property.editor.assignCollections")}
-          </span>
-        </Show>
-      </div>
-
-      <Show when={collectionPickerOpen()}>
-        <div class="collection-picker__dropdown">
-          <For each={collections() ?? []} fallback={
-            <span class="collection-picker__empty">{t("property.editor.noCollections")}</span>
-          }>
-            {(col) => (
-              <label class="collection-picker__item">
-                <input
-                  type="checkbox"
-                  checked={currentItems().includes(col.name)}
-                  onChange={() => toggleCollection(col.name)}
-                />
-                <span>{col.name}</span>
-              </label>
-            )}
-          </For>
-        </div>
-      </Show>
-    </div>
+    <MultiSelectPicker
+      selected={currentItems()}
+      options={(collections() ?? []).map((c) => c.name)}
+      onToggle={toggleCollection}
+      open={collectionPickerOpen()}
+      onOpenChange={setCollectionPickerOpen}
+      label={t("property.editor.chooseCollections")}
+      emptyLabel={t("property.editor.assignCollections")}
+      noOptionsLabel={t("property.editor.noCollections")}
+    />
   );
 };
 

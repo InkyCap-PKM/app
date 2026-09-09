@@ -43,6 +43,11 @@ function stubGeometry(proto: object): void {
   if (typeof p.getBoundingClientRect !== "function") {
     p.getBoundingClientRect = () => emptyRect();
   }
+  // Scrolling is layout too: any list that keeps a highlighted row in view
+  // calls this, and jsdom has no implementation at all.
+  if (typeof p.scrollIntoView !== "function") {
+    p.scrollIntoView = () => {};
+  }
 }
 
 if (typeof Range !== "undefined") stubGeometry(Range.prototype);
