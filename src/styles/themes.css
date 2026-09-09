@@ -166,9 +166,16 @@
      panel's scrollbar, so a sidebar scroll region stops the full hit width
      short of its right edge (see `.left-sidebar__pane-body`). Keep both
      handles on these two values so the left and right panels stay
-     symmetrical. */
+     symmetrical.
+
+     That last point is why the hit width is also the width of the empty band
+     between a sidebar list's scrollbar and the panel divider — every pixel of
+     hit strip is a pixel the scrollbar has to give up. 8px keeps a pointer
+     target well clear of the 3px bar it grabs (and wider than the 4-5px
+     dividers most desktop apps ship) while leaving the band narrow enough
+     that the scrollbar still reads as sitting at the panel's edge. */
   --resize-handle-width: 3px;
-  --resize-handle-hit: 12px;
+  --resize-handle-hit: 8px;
 
   /* ── Buttons & focus ────────────────────────────────────────────
      Shared button geometry consumed by the .btn utility (layout.css).
