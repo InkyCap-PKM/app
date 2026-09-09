@@ -45,7 +45,7 @@ import { FuncPillWidget, FuncChipWidget, BulletWidget, ShorthandWidget, HrWidget
 import { symbolGlyph } from "./symbols";
 import { highlight, buildHighlightMark } from "./visual-colors";
 import { visualTheme } from "./visual-theme";
-import { computePreambleImportRanges, isLeadingLocaleDirective, commentHideRange, createProtectedRangesField, createProtectedCursorFilter, createProtectedChangeFilter, externalReload } from "./visual-protected";
+import { computePreambleImportRanges, isLeadingLocaleDirective, commentHideRange, isCommentClosed, createProtectedRangesField, createProtectedCursorFilter, createProtectedChangeFilter, externalReload } from "./visual-protected";
 export { externalReload } from "./visual-protected";
 import { linkClickHandler } from "./visual-links";
 import { tableClipboardHandler, tablePasteHandler, createTableEntryKeymap } from "./visual-tables";
@@ -793,6 +793,9 @@ export function buildDecorations(state: EditorState, onlyRanges?: { from: number
             // Typst comments are source-only — collapse them away entirely in
             // the visual editor (the `hide` decoration is auto-atomic, and the
             // protected-range machinery locks + skips the cursor past them).
+            // An unclosed `/*` runs to the end of the document, so it stays
+            // visible until its closing delimiter exists.
+            if (!isCommentClosed(state, node.name, node.from, node.to)) return false;
             const r = commentHideRange(state, node.from, node.to);
             decos.push(hide.range(r.from, r.to));
             return false;
@@ -906,8 +909,22 @@ export function buildDecorations(state: EditorState, onlyRanges?: { from: number
             return false;
           }
           case "Equation": {
-            const text = state.doc.sliceString(node.from, node.to);
-            const isDisplay = text.startsWith("$ ") || text.startsWith("$\n");
+            // Typst's parser is error-tolerant, so a lone `$` already opens an
+            // Equation node that runs to the end of the document. Decorating
+            // that would restyle and re-lay-out every following line until the
+            // closing `$` arrives — the text jumps down a line mid-typing and
+            // snaps back at the end. Wait for a matched pair of delimiters,
+            // the same rule the raw spans above use.
+            const open = node.node.firstChild;
+            const close = node.node.lastChild;
+            if (open?.name !== "Dollar" || close?.name !== "Dollar" || open.from === close.from) {
+              return false;
+            }
+            // Typst sets an equation on its own line only when a space sits
+            // just inside both delimiters (`$ x $`); `$ x$` stays inline. This
+            // mirrors `Equation::block()` in typst-syntax.
+            const isDisplay =
+              open.nextSibling?.name === "Space" && close.prevSibling?.name === "Space";
             if (isDisplay) {
               decos.push(mathDisplay.range(node.from, node.to));
             } else {

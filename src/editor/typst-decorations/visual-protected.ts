@@ -70,6 +70,23 @@ export function computePreambleImportRanges(state: EditorState): ProtectedRange[
 }
 
 /**
+ * Whether a comment node has its closing delimiter. Typst's parser is
+ * error-tolerant, so an unclosed `/*` opens a BlockComment that runs to the end
+ * of the document; hiding and locking that would make the rest of the note
+ * vanish the moment those two characters are typed. Line comments end at the
+ * line break, so they are always complete.
+ */
+export function isCommentClosed(
+  state: EditorState,
+  name: string,
+  from: number,
+  to: number,
+): boolean {
+  if (name !== "BlockComment") return true;
+  return to - from >= 4 && state.doc.sliceString(to - 2, to) === "*/";
+}
+
+/**
  * The range to collapse for a Typst comment node. When the comment is the only
  * thing on its line(s) it swallows the whole line including leading indentation
  * and the trailing newline, so a full-line comment leaves no blank gap in the
@@ -162,7 +179,9 @@ export function computeProtectedRanges(
       // based, so a `//` line inside a raw/code block — not a comment node —
       // stays visible as example content.
       if (node.name === "LineComment" || node.name === "BlockComment") {
-        ranges.push(commentHideRange(state, node.from, node.to));
+        if (isCommentClosed(state, node.name, node.from, node.to)) {
+          ranges.push(commentHideRange(state, node.from, node.to));
+        }
         return;
       }
       if (node.name !== "FuncCall") return;
