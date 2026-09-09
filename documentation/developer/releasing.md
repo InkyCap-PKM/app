@@ -241,11 +241,11 @@ is uploaded.
 
 ```sh
 # Take the release notes from a file so they show up in the in-app notice.
-npm run release:manifest -- --notes RELEASE-NOTES.md --out latest.json
+npm run release:manifest -- --notes release-artifacts/RELEASE-NOTES.md --out latest.json
 npm run release:manifest:verify -- latest.json        # sanity check
 ```
 
-The generator reads the version from `package.json` (so it can't be mistyped)
+RELEASE-NOTES.md must be manually updated to reflect the message that should appear for users (plain text, no markdown). The generator reads the version from `package.json` (so it can't be mistyped)
 and merges into the existing `latest.json`, leaving the *other* channel's entry
 untouched — publishing a beta never erases the stable entry. Download the
 currently published `latest.json` first, or pass it with `--in`, so the merge
