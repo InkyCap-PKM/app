@@ -7,7 +7,7 @@ import { pathEquals } from "../lib/paths";
 import { noteboxSettings } from "../stores/settings";
 import type { FileCitation, BibEntry } from "../lib/types";
 import * as ipc from "../lib/ipc";
-import { fuzzyMatch } from "../lib/fuzzy";
+import { fuzzyMatch, compareMatches, type FuzzyMatch } from "../lib/fuzzy";
 import { compareName } from "../lib/sort";
 import { useI18n, tPlural } from "../lib/i18n";
 import { anchorPanelMenu } from "../lib/uiMenu";
@@ -201,14 +201,14 @@ const ReferencesPanel: Component = () => {
       return sortEntries(matched, sortKey());
     }
 
-    const scored: { entry: BibEntry; score: number }[] = [];
+    const scored: { entry: BibEntry; match: FuzzyMatch }[] = [];
     const ql = q.toLowerCase();
     for (const entry of all) {
       const text = `${entry.key} ${entry.title} ${entry.authors.join(" ")} ${entry.year ?? ""}`;
       const m = fuzzyMatch(ql, text);
-      if (m) scored.push({ entry, score: m.score });
+      if (m) scored.push({ entry, match: m });
     }
-    scored.sort((a, b) => b.score - a.score);
+    scored.sort((a, b) => compareMatches(a.match, b.match));
     return scored.map((s) => s.entry);
   });
 

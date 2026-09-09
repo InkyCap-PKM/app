@@ -559,8 +559,9 @@ fn collect_text_within(node: &LinkedNode<'_>) -> String {
 /// Tokenize a plain string (no AST context). Returns (byte_offset, word)
 /// pairs, with the same word-character rules the legacy `word_boundaries`
 /// helper used so search behavior stays consistent across the rest of
-/// the engine.
-fn word_boundaries(text: &str) -> Vec<(usize, &str)> {
+/// the engine. The engine also uses this to split file names, so a name is
+/// matched against the same notion of a word as body text.
+pub(crate) fn word_boundaries(text: &str) -> Vec<(usize, &str)> {
     let mut words = Vec::new();
     let mut start: Option<usize> = None;
     for (i, ch) in text.char_indices() {

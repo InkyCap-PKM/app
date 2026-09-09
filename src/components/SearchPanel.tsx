@@ -7,11 +7,20 @@
 // clears the search box.
 
 import { errorText } from "../lib/errors";
-import { compareName } from "../lib/sort";
+import { compareName, compareZid } from "../lib/sort";
+import { substringMatch, compareMatches } from "../lib/fuzzy";
+import { notePropertyKeys } from "../lib/note-properties";
+import { fileList, folderPaths } from "../stores/filelist";
+import {
+  completionContext,
+  applyCompletion,
+  type SearchCompletionContext,
+} from "../lib/search-completion";
 import {
   Component,
   createEffect,
   createMemo,
+  createResource,
   createSignal,
   For,
   Show,
@@ -103,6 +112,7 @@ const FILTER_HINTS: FilterHint[] = [
 const SYNTAX_TIPS: { label: string; descKey: string }[] = [
   { label: "word*", descKey: "search.syntaxTip.truncation" },
   { label: '"…"', descKey: "search.syntaxTip.phrase" },
+  { label: 'path:"…"', descKey: "search.syntaxTip.quotedFilter" },
   { label: "AND OR NOT", descKey: "search.syntaxTip.boolean" },
   { label: "a W/5 b", descKey: "search.syntaxTip.proximity" },
 ];
@@ -115,6 +125,8 @@ const SORT_OPTIONS: { value: SortMode; labelKey: string }[] = [
   { value: "modified-asc", labelKey: "search.sort.modifiedAsc" },
   { value: "created-desc", labelKey: "search.sort.createdDesc" },
   { value: "created-asc", labelKey: "search.sort.createdAsc" },
+  { value: "zid-asc", labelKey: "sort.zid.asc" },
+  { value: "zid-desc", labelKey: "sort.zid.desc" },
 ];
 
 const ANNOTATION_SCOPE_OPTIONS: {
@@ -150,8 +162,20 @@ const SearchPanel: Component = () => {
     { x: number; y: number; result: SearchResult } | null
   >(null);
 
+  // Filter-value completions. The notebox's tags and property keys are small
+  // lists that change rarely, so they load once; a key's values are fetched on
+  // demand because there is one list per key.
+  const [allTags, setAllTags] = createSignal<[string, number][]>([]);
+  const [allPropertyKeys, setAllPropertyKeys] = createSignal<string[]>([]);
+  const folders = createMemo(() => folderPaths(fileList()));
+  const [caretPos, setCaretPos] = createSignal(0);
+  const [completionIndex, setCompletionIndex] = createSignal(0);
+  /** Set by Escape; cleared as soon as the caret moves to a new filter. */
+  const [completionsDismissed, setCompletionsDismissed] = createSignal(false);
+
   let searchTimeout: ReturnType<typeof setTimeout> | undefined;
   let inputRef: HTMLInputElement | undefined;
+  let completionListRef: HTMLDivElement | undefined;
 
   onCleanup(() => {
     if (searchTimeout) clearTimeout(searchTimeout);
@@ -171,6 +195,7 @@ const SearchPanel: Component = () => {
       if (cursorAtEnd) {
         const end = inputRef.value.length;
         inputRef.setSelectionRange(end, end);
+        syncCaret();
       } else {
         inputRef.select();
       }
@@ -180,6 +205,15 @@ const SearchPanel: Component = () => {
   onMount(() => {
     // Land the cursor in the box immediately whenever the pane opens.
     focusInput();
+
+    // Completion sources. A failure here only costs the suggestions, so it
+    // stays quiet rather than raising a toast over the search box.
+    void Promise.all([ipc.getAllTags(), ipc.getAllPropertyKeys()])
+      .then(([tags, keys]) => {
+        setAllTags(tags);
+        setAllPropertyKeys(notePropertyKeys(keys));
+      })
+      .catch(() => {});
 
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<{ query?: string; showReplace?: boolean }>)
@@ -286,6 +320,11 @@ const SearchPanel: Component = () => {
 
   function handleInput(value: string) {
     setSearchQuery(value);
+    // A new keystroke is a new filter to complete, so a previous Escape no
+    // longer applies.
+    setCompletionsDismissed(false);
+    setCompletionIndex(0);
+    syncCaret();
     if (searchTimeout) clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
       executeSearch();
@@ -293,6 +332,31 @@ const SearchPanel: Component = () => {
   }
 
   function handleKeyDown(e: KeyboardEvent) {
+    // The completion list owns the arrows and Enter while it is open, so
+    // choosing a tag doesn't also fire the search.
+    const items = completionItems();
+    if (showCompletions() && items.length > 0) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const step = e.key === "ArrowDown" ? 1 : -1;
+        setCompletionIndex((i) => (i + step + items.length) % items.length);
+        return;
+      }
+      const selected = items[completionIndex()];
+      // Enter runs the search once there is nothing left to complete, so
+      // typing a tag out in full and pressing Enter does what it looks like.
+      const alreadyTyped = selected.toLowerCase() === completion()?.typed;
+      if (e.key === "Tab" || (e.key === "Enter" && !alreadyTyped)) {
+        e.preventDefault();
+        acceptCompletion(selected);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setCompletionsDismissed(true);
+        return;
+      }
+    }
     if (e.key === "Enter") {
       if (searchTimeout) clearTimeout(searchTimeout);
       executeSearch();
@@ -325,6 +389,110 @@ const SearchPanel: Component = () => {
       inputRef?.setSelectionRange(next.length, next.length);
     }, 0);
   }
+
+  // ── Filter-value completions ───────────────────────────────────────────
+  // A half-typed `tag:` or `property:` filter offers what the notebox
+  // actually contains, listed below the box where the results go.
+
+  const completion = createMemo((): SearchCompletionContext | null => {
+    if (completionsDismissed()) return null;
+    return completionContext(searchQuery(), caretPos());
+  });
+
+  // Values are per key, so they load when the key is known. The source is the
+  // key alone — typing the value doesn't re-fetch.
+  const [propertyValues] = createResource(
+    () => {
+      const c = completion();
+      return c?.kind === "property-value" && c.key ? c.key : null;
+    },
+    (key: string) => ipc.getPropertyValues(key).catch(() => [] as string[]),
+  );
+
+  /** Everything the current filter could be completed with, unfiltered. */
+  const completionSource = createMemo((): string[] => {
+    const c = completion();
+    if (!c) return [];
+    switch (c.kind) {
+      case "path":
+        // The trailing `/` keeps the filter to the folder rather than also
+        // matching a note whose name merely starts the same way, and showing
+        // it in the list is how the user learns the shape.
+        return folders().map((folder) => `${folder}/`);
+      case "tag":
+        return allTags().map(([name]) => name);
+      case "property-key":
+        return allPropertyKeys();
+      case "property-value":
+        return propertyValues() ?? [];
+    }
+  });
+
+  /** The source narrowed to what the user has typed, best match first. */
+  const completionItems = createMemo((): string[] => {
+    const c = completion();
+    if (!c) return [];
+    const source = completionSource();
+    if (!c.typed) {
+      // Nothing typed yet: tags keep the backend's most-used-first order,
+      // which is the more useful way to meet a tag list. Property values
+      // arrive in byte order, so they get the app's natural name ordering
+      // (`phase2` before `phase10`); property keys are already in the
+      // Properties panel's own order and keep it.
+      if (c.kind !== "property-value") return source;
+      return [...source].sort(compareName);
+    }
+    return source
+      .map((value) => ({ value, match: substringMatch(c.typed, value) }))
+      .filter((scored) => scored.match !== null)
+      .sort((a, b) => compareMatches(a.match!, b.match!))
+      .map((scored) => scored.value);
+  });
+
+  const showCompletions = createMemo(() => completion() !== null);
+
+  /** Heading above the list, naming what is being offered. */
+  function completionTitle(): string {
+    const c = completion();
+    if (!c) return "";
+    if (c.kind === "path") return t("search.completion.folders");
+    if (c.kind === "tag") return t("search.completion.tags");
+    if (c.kind === "property-key") return t("search.completion.properties");
+    return t("search.completion.values", { key: c.key });
+  }
+
+  /** Track the caret so the completion context follows it. */
+  function syncCaret() {
+    setCaretPos(inputRef?.selectionStart ?? searchQuery().length);
+  }
+
+  function acceptCompletion(value: string) {
+    const c = completion();
+    if (!c) return;
+    // A property key is a step, not an answer: append the `=` so the list can
+    // switch straight to that key's values. A tag or a value finishes the
+    // filter, so the list closes until the user types again.
+    const isKey = c.kind === "property-key";
+    const { text, caret } = applyCompletion(searchQuery(), c, value, isKey ? "=" : "");
+    setSearchQuery(text);
+    setCompletionIndex(0);
+    setCompletionsDismissed(!isKey);
+    if (searchTimeout) clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => executeSearch(), 300);
+    queueMicrotask(() => {
+      inputRef?.focus();
+      inputRef?.setSelectionRange(caret, caret);
+      setCaretPos(caret);
+    });
+  }
+
+  /** Keep the keyboard selection in range as the list narrows, and in view. */
+  createEffect(() => {
+    const count = completionItems().length;
+    if (completionIndex() >= count) setCompletionIndex(0);
+    const row = completionListRef?.children[completionIndex() + 1];
+    (row as HTMLElement | undefined)?.scrollIntoView({ block: "nearest" });
+  });
 
   function openResult(result: SearchResult, e?: MouseEvent) {
     const title = result.path.split(/[/\\]/).pop() ?? result.file_name;
@@ -486,6 +654,8 @@ const SearchPanel: Component = () => {
     matches: SearchResult[];
     modified_time: number;
     created_time: number;
+    /** The note's zid, for the zid sort orders. Null when it has none. */
+    zid: string | null;
     topScore: number;
   }
 
@@ -502,6 +672,7 @@ const SearchPanel: Component = () => {
           matches: [],
           modified_time: r.modified_time,
           created_time: r.created_time,
+          zid: r.zid,
           topScore: r.score,
         };
         index.set(r.path, group);
@@ -571,6 +742,14 @@ const SearchPanel: Component = () => {
         case "created-asc":
           return (a: GroupedResult, b: GroupedResult) =>
             a.created_time - b.created_time;
+        // Notes without a zid sort to the end either way; `compareZid` returns
+        // 0 when neither has one, so the name tiebreak below decides those.
+        case "zid-asc":
+          return (a: GroupedResult, b: GroupedResult) =>
+            compareZid(a.zid, b.zid, "asc") || compareName(a.file_name, b.file_name);
+        case "zid-desc":
+          return (a: GroupedResult, b: GroupedResult) =>
+            compareZid(a.zid, b.zid, "desc") || compareName(a.file_name, b.file_name);
         case "relevance":
         default:
           return (a: GroupedResult, b: GroupedResult) => b.topScore - a.topScore;
@@ -625,6 +804,9 @@ const SearchPanel: Component = () => {
             value={searchQuery()}
             onInput={(e) => handleInput(e.currentTarget.value)}
             onKeyDown={handleKeyDown}
+            onKeyUp={syncCaret}
+            onClick={syncCaret}
+            onFocus={syncCaret}
             autofocus
           />
           <Show when={searchQuery().length > 0}>
@@ -797,6 +979,42 @@ const SearchPanel: Component = () => {
           >
             <X size={18} />
           </button>
+        </div>
+      </Show>
+
+      <Show when={showCompletions()}>
+        <div
+          class="search-panel__hints search-panel__hints--completions"
+          ref={(el) => (completionListRef = el)}
+        >
+          <div class="search-panel__hints-title">{completionTitle()}</div>
+          <Show
+            when={completionItems().length > 0}
+            fallback={
+              <Show when={!propertyValues.loading}>
+                <div class="search-panel__hint search-panel__hint--static">
+                  <span class="search-panel__hint-desc">
+                    {t("search.completion.empty")}
+                  </span>
+                </div>
+              </Show>
+            }
+          >
+            <For each={completionItems()}>
+              {(value, i) => (
+                <button
+                  class="search-panel__hint"
+                  classList={{
+                    "search-panel__hint--selected": completionIndex() === i(),
+                  }}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => acceptCompletion(value)}
+                >
+                  <span class="search-panel__hint-prefix">{value}</span>
+                </button>
+              )}
+            </For>
+          </Show>
         </div>
       </Show>
 

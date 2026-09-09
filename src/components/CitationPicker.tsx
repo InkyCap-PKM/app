@@ -2,7 +2,7 @@ import { errorText } from "../lib/errors";
 import { Component, createSignal, createResource, createMemo, createEffect, For, Show } from "solid-js";
 import type { BibEntry } from "../lib/types";
 import * as ipc from "../lib/ipc";
-import { fuzzyMatch } from "../lib/fuzzy";
+import { fuzzyMatch, compareMatches, type FuzzyMatch } from "../lib/fuzzy";
 import { activeEditorView } from "../stores/editor";
 import { createHoverGuard } from "../lib/picker-hover";
 
@@ -61,15 +61,15 @@ const CitationPicker: Component<CitationPickerProps> = (props) => {
     const q = query().trim().toLowerCase();
     if (q.length === 0) return all;
 
-    const scored: { entry: BibEntry; score: number }[] = [];
+    const scored: { entry: BibEntry; match: FuzzyMatch }[] = [];
     for (const entry of all) {
       const searchText = `${entry.key} ${entry.title} ${entry.authors.join(" ")} ${entry.year ?? ""}`;
       const m = fuzzyMatch(q, searchText);
       if (m) {
-        scored.push({ entry, score: m.score });
+        scored.push({ entry, match: m });
       }
     }
-    scored.sort((a, b) => b.score - a.score);
+    scored.sort((a, b) => compareMatches(a.match, b.match));
     return scored.map((s) => s.entry);
   });
 

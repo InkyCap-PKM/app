@@ -532,6 +532,9 @@ impl SearchEngine {
                     score: doc_score + (positions.len() as f64) * 0.01,
                     modified_time: doc.modified_time,
                     created_time: doc.created_time,
+                    // Filled in by the command layer, which holds the
+                    // property index.
+                    zid: None,
                     context_before,
                     context_after,
                 });
@@ -668,14 +671,19 @@ impl SearchEngine {
     }
 
     /// Find documents containing a single term in their body text or their
-    /// filename. Filename hits mirror the `file:` filter's case-insensitive
-    /// substring rule, so a plain word that appears only in the file name
-    /// still surfaces the note (via a representative-line placeholder), and
-    /// picks up the same filename relevance bonus as a `file:` match.
+    /// filename. A word that appears only in the file name still surfaces the
+    /// note (via a representative-line placeholder) and picks up the filename
+    /// relevance bonus. The file name is matched a whole word at a time, the
+    /// same rule the body index uses, so `ink` finds a note called "Ink and
+    /// Switch" but not one called "Linked thinking"; `ink*` is how the user
+    /// asks for the wider match. (The explicit `file:` filter keeps its
+    /// documented substring rule — it is opt-in and scoped.)
     fn find_term(&self, term: &str) -> HashMap<usize, HashMap<usize, Vec<WordPosition>>> {
         // `term` is already lowercased by the query parser.
         let mut result = self.find_term_body(term);
-        self.add_filename_matches(&mut result, |name| name.contains(term));
+        self.add_filename_matches(&mut result, |name| {
+            !filename_word_ranges(name, |word| word == term).is_empty()
+        });
         result
     }
 
@@ -797,11 +805,12 @@ impl SearchEngine {
             }
         }
 
-        // Also match the phrase against filenames (same joined-substring rule
-        // as the `file:` filter), so a quoted title that lives only in the
-        // file name still surfaces the note.
-        let joined = words.join(" ");
-        self.add_filename_matches(&mut result, |name| name.contains(&joined));
+        // Also match the phrase against filenames, as a consecutive run of
+        // whole words, so a quoted title that lives only in the file name
+        // still surfaces the note.
+        self.add_filename_matches(&mut result, |name| {
+            !filename_phrase_ranges(name, words).is_empty()
+        });
 
         result
     }
@@ -828,10 +837,13 @@ impl SearchEngine {
             }
         }
 
-        // A wildcard also matches a filename the pattern spans end-to-end
-        // (the pattern is already anchored with `^…$`), keeping filename
-        // search consistent with plain terms.
-        self.add_filename_matches(&mut result, |name| re.is_match(name));
+        // A wildcard matches a file name one word at a time, exactly as it
+        // matches the indexed body words above. Spanning the whole name
+        // instead would make `ink*` match every name that merely starts with
+        // "ink", and highlight all of it.
+        self.add_filename_matches(&mut result, |name| {
+            !filename_word_ranges(name, |word| re.is_match(word)).is_empty()
+        });
 
         result
     }
@@ -1229,6 +1241,44 @@ struct DocBuild {
 /// line is skipped from indexing (so users searching for `notebox` or
 /// `import` don't get every note back) but kept in `lines` so result
 /// line numbers stay aligned with the source.
+/// Byte ranges of the whole words in `text` that satisfy `pred`. Each word is
+/// lowercased before the test; the returned ranges index the original string.
+///
+/// File names are split with the same word rules the body index is built from
+/// (`text_projection::word_boundaries`), so a bare term matches a name the way
+/// it matches body text — as a whole word, with `*` the way to widen it. The
+/// ranges also mean a highlight covers only the word that matched rather than
+/// the rest of the name.
+fn filename_word_ranges(text: &str, pred: impl Fn(&str) -> bool) -> Vec<(usize, usize)> {
+    crate::search::text_projection::word_boundaries(text)
+        .into_iter()
+        .filter(|(_, word)| pred(&word.to_lowercase()))
+        .map(|(offset, word)| (offset, offset + word.len()))
+        .collect()
+}
+
+/// Byte ranges in `text` where `words` occur as a consecutive run of whole
+/// words — the file-name counterpart of a body phrase match.
+fn filename_phrase_ranges(text: &str, words: &[String]) -> Vec<(usize, usize)> {
+    if words.is_empty() {
+        return Vec::new();
+    }
+    let found = crate::search::text_projection::word_boundaries(text);
+    let mut out = Vec::new();
+    for run in found.windows(words.len()) {
+        if run
+            .iter()
+            .zip(words)
+            .all(|((_, word), wanted)| word.to_lowercase() == *wanted)
+        {
+            let (start, _) = run[0];
+            let (last_offset, last_word) = run[run.len() - 1];
+            out.push((start, last_offset + last_word.len()));
+        }
+    }
+    out
+}
+
 /// Byte ranges within `text` (original case) that the query's literal text
 /// leaves match, case-insensitively, with overlaps merged. Powers filename
 /// highlighting in the result list — it answers "where in this file name did
@@ -1242,19 +1292,16 @@ fn query_filename_ranges(node: &QueryNode, text: &str) -> Vec<(usize, usize)> {
 
 fn collect_filename_ranges(node: &QueryNode, text: &str) -> Vec<(usize, usize)> {
     match node {
-        QueryNode::Term(term) => regex_ranges(&regex::escape(term), text),
-        QueryNode::Phrase(words) => regex_ranges(&regex::escape(&words.join(" ")), text),
+        QueryNode::Term(term) => filename_word_ranges(text, |word| word == term),
+        QueryNode::Phrase(words) => filename_phrase_ranges(text, words),
         QueryNode::Wildcard(pattern) => {
-            // A wildcard is matched against the whole file name (anchored),
-            // so highlight the entire name when it matches.
-            let anchored = format!("(?i)^{}$", pattern.replace('*', ".*"));
-            let hit = compile_bounded_regex(&anchored)
-                .map(|re| re.is_match(text))
-                .unwrap_or(false);
-            if hit && !text.is_empty() {
-                vec![(0, text.len())]
-            } else {
-                Vec::new()
+            // Highlight the words the pattern matched, not the whole name:
+            // `ink*` marks "InkyCap" in "InkyCap - Build Binaries" and leaves
+            // the rest alone. Mirrors how `find_wildcard` matches.
+            let anchored = format!("^{}$", pattern.replace('*', ".*"));
+            match compile_bounded_regex(&anchored) {
+                Some(re) => filename_word_ranges(text, |word| re.is_match(word)),
+                None => Vec::new(),
             }
         }
         QueryNode::And(left, right) | QueryNode::Or(left, right) => {
@@ -1263,19 +1310,6 @@ fn collect_filename_ranges(node: &QueryNode, text: &str) -> Vec<(usize, usize)> 
             out
         }
         _ => Vec::new(),
-    }
-}
-
-/// Case-insensitive occurrences of an already-escaped pattern in `text`,
-/// as byte ranges into the original string.
-fn regex_ranges(escaped_pattern: &str, text: &str) -> Vec<(usize, usize)> {
-    match compile_bounded_regex(&format!("(?i){escaped_pattern}")) {
-        Some(re) => re
-            .find_iter(text)
-            .filter(|m| m.end() > m.start())
-            .map(|m| (m.start(), m.end()))
-            .collect(),
-        None => Vec::new(),
     }
 }
 
@@ -1833,5 +1867,139 @@ mod tests {
             !replacements[0].1.contains("Rust"),
             "Rust should be removed"
         );
+    }
+
+    /// Notes whose *names* exercise the whole-word rule. Bodies are unrelated
+    /// so every assertion below is about file-name matching alone.
+    fn name_engine() -> SearchEngine {
+        let names = [
+            "InkyCap",
+            "Ink and Switch",
+            "InkyCap - Build Binaries",
+            "Linked thinking",
+            "inkycapping notes",
+        ];
+        SearchEngine::build(
+            names
+                .iter()
+                .map(|n| {
+                    (
+                        PathBuf::from(format!("/notebox/{n}.md")),
+                        "unrelated body text\n".to_string(),
+                        Vec::new(),
+                        None,
+                        Vec::new(),
+                        HashMap::new(),
+                    )
+                })
+                .collect(),
+        )
+    }
+
+    /// File name stems of the matched notes, sorted.
+    fn matched_names(engine: &SearchEngine, query: &str) -> Vec<String> {
+        let node = parse_query(query).unwrap();
+        let mut names: Vec<String> = engine
+            .search(&node, 100)
+            .iter()
+            .map(|r| {
+                r.path
+                    .rsplit('/')
+                    .next()
+                    .unwrap()
+                    .trim_end_matches(".md")
+                    .to_string()
+            })
+            .collect();
+        names.sort();
+        names.dedup();
+        names
+    }
+
+    /// The matched note's name with its highlight ranges bracketed.
+    fn highlighted_name(engine: &SearchEngine, query: &str, stem: &str) -> String {
+        let node = parse_query(query).unwrap();
+        let results = engine.search(&node, 100);
+        let hit = results
+            .iter()
+            .find(|r| r.path.contains(stem))
+            .unwrap_or_else(|| panic!("{query} did not match {stem}"));
+        let name = stem;
+        let mut out = String::new();
+        let mut cursor = 0;
+        for (start, end) in &hit.file_name_ranges {
+            out.push_str(&name[cursor..*start]);
+            out.push('[');
+            out.push_str(&name[*start..*end]);
+            out.push(']');
+            cursor = *end;
+        }
+        out.push_str(&name[cursor..]);
+        out
+    }
+
+    #[test]
+    fn bare_term_matches_a_file_name_a_whole_word_at_a_time() {
+        // A bare term is whole-word in body text; file names now agree, so
+        // "ink" no longer drags in every name with those three letters buried
+        // inside a longer word.
+        let engine = name_engine();
+        assert_eq!(matched_names(&engine, "ink"), vec!["Ink and Switch"]);
+        assert_eq!(
+            matched_names(&engine, "inkycap"),
+            vec!["InkyCap", "InkyCap - Build Binaries"]
+        );
+    }
+
+    #[test]
+    fn a_wildcard_is_how_a_partial_file_name_word_is_matched() {
+        let engine = name_engine();
+        assert_eq!(
+            matched_names(&engine, "ink*"),
+            vec![
+                "Ink and Switch",
+                "InkyCap",
+                "InkyCap - Build Binaries",
+                "inkycapping notes",
+            ]
+        );
+        // Trailing wildcard, too — the pattern is anchored to the word, not
+        // to the start of the name.
+        assert_eq!(
+            matched_names(&engine, "*cap"),
+            vec!["InkyCap", "InkyCap - Build Binaries"]
+        );
+    }
+
+    #[test]
+    fn a_file_name_highlight_covers_only_the_word_that_matched() {
+        let engine = name_engine();
+        // A wildcard used to highlight the whole name, because it was matched
+        // against the whole name with `.*` soaking up the rest.
+        assert_eq!(
+            highlighted_name(&engine, "ink*", "InkyCap - Build Binaries"),
+            "[InkyCap] - Build Binaries"
+        );
+        assert_eq!(
+            highlighted_name(&engine, "inkycap", "InkyCap - Build Binaries"),
+            "[InkyCap] - Build Binaries"
+        );
+    }
+
+    #[test]
+    fn a_quoted_phrase_matches_a_run_of_whole_file_name_words() {
+        let engine = name_engine();
+        assert_eq!(
+            highlighted_name(&engine, "\"ink and switch\"", "Ink and Switch"),
+            "[Ink and Switch]"
+        );
+    }
+
+    #[test]
+    fn the_file_filter_keeps_its_substring_rule() {
+        // `file:` is explicit and scoped, and documented as substring — the
+        // whole-word default applies to bare terms, not to this.
+        let engine = name_engine();
+        assert_eq!(matched_names(&engine, "file:ink").len(), 5);
     }
 }

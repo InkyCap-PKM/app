@@ -28,6 +28,10 @@ pub struct SearchResult {
     /// File creation time as a Unix timestamp in seconds. Falls back to
     /// `modified_time` on platforms that don't expose creation time.
     pub created_time: i64,
+    /// The note's `#note(zid:)`, when it has one. Filled by the command
+    /// layer from the property index (the engine indexes text, not note
+    /// metadata), so search sorts by zid exactly as the file tree does.
+    pub zid: Option<String>,
     /// Lines immediately before `line_text` (max 2). The notebox-library
     /// import line is filtered out so users never see auto-injected
     /// preamble in search results.

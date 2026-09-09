@@ -14,7 +14,7 @@
 
 import { Component, For, Show, createResource, createSignal, createEffect, createMemo } from "solid-js";
 import * as ipc from "../lib/ipc";
-import { fuzzyMatch } from "../lib/fuzzy";
+import { fuzzyMatch, compareMatches, type FuzzyMatch } from "../lib/fuzzy";
 import { activeEditorView } from "../stores/editor";
 import { getActiveTab, openCreatedNote } from "../stores/tabs";
 import { triggerCreationRule } from "../stores/creation-rules";
@@ -54,12 +54,12 @@ const ScaffoldPicker: Component<ScaffoldPickerProps> = (props) => {
     const all = entries() ?? [];
     const q = query().trim();
     if (q.length === 0) return all;
-    const scored: { entry: ipc.TemplateEntry; score: number }[] = [];
+    const scored: { entry: ipc.TemplateEntry; match: FuzzyMatch }[] = [];
     for (const entry of all) {
       const m = fuzzyMatch(q, entry.name);
-      if (m) scored.push({ entry, score: m.score });
+      if (m) scored.push({ entry, match: m });
     }
-    scored.sort((a, b) => b.score - a.score);
+    scored.sort((a, b) => compareMatches(a.match, b.match));
     return scored.map((s) => s.entry);
   });
 

@@ -114,6 +114,17 @@ pub async fn notebox_search(
         }
     }
 
+    // Join each result against the property index for its `zid`, so the panel
+    // can offer the zid sort orders the rest of the app has. One brief read
+    // lock and a hashmap lookup per row (results are already paginated), the
+    // same enrichment `get_file_tree` does for the tree.
+    {
+        let pi = session.property_index.read().await;
+        for r in &mut results {
+            r.zid = pi.notes.get(&PathBuf::from(&r.path)).and_then(|m| m.zid());
+        }
+    }
+
     Ok(SearchResponse {
         results,
         total_count,

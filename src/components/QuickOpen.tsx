@@ -10,7 +10,7 @@ import {
   Show,
 } from "solid-js";
 import { fileList, type FileEntry } from "../stores/filelist";
-import { fuzzyMatch, type FuzzyMatch } from "../lib/fuzzy";
+import { fuzzyMatch, compareMatches, type FuzzyMatch } from "../lib/fuzzy";
 import { compareName } from "../lib/sort";
 import { openTab } from "../stores/tabs";
 import { useI18n } from "../lib/i18n";
@@ -80,7 +80,10 @@ const QuickOpen: Component<QuickOpenProps> = (props) => {
             b.modified_time - a.modified_time ||
             compareName(a.name, b.name),
         )
-        .map((entry) => ({ entry, match: { score: 0, ranges: [] } }));
+        .map((entry) => ({
+          entry,
+          match: { score: 0, ranges: [], kind: "substring" as const },
+        }));
     }
 
     // Match (and later display) against the extension-less name, so the
@@ -93,21 +96,14 @@ const QuickOpen: Component<QuickOpenProps> = (props) => {
       }
     }
 
-    // Primary: fuzzy score. Tiebreak by recency so equally-good matches list
-    // the more recently edited note first.
+    // Kind first, then score: a name that spells the query out in order beats
+    // one that merely has those letters sprinkled through it, and a name that
+    // *is* the query tops both. Tiebreak by recency so equally-good matches
+    // list the more recently edited note first.
     scored.sort(
       (a, b) =>
-        b.match.score - a.match.score ||
+        compareMatches(a.match, b.match) ||
         b.entry.modified_time - a.entry.modified_time,
-    );
-    // A file whose name (sans extension) is exactly the query jumps to the
-    // top — the result the user almost certainly meant. The sort is stable,
-    // so this only lifts the exact match; fuzzy order is otherwise kept.
-    const ql = q.toLowerCase();
-    const stem = (n: string) => displayName(n).trim().toLowerCase();
-    scored.sort(
-      (a, b) =>
-        Number(stem(b.entry.name) === ql) - Number(stem(a.entry.name) === ql),
     );
     return scored;
   });

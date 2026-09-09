@@ -1,11 +1,42 @@
-// Simple fuzzy match scoring for quick-open file search.
-// Returns null if no match, otherwise a score and the matched character ranges.
+// Match scoring for the app's pickers — quick open, the scaffold picker, the
+// reference and citation lists, the command palette.
+
+/**
+ * How the query matched, independent of where in the target it landed. A
+ * better kind always outranks a worse one, so ordering is decided by shape
+ * first and points second: someone who types "PDA" means the note called
+ * "PDA notes" before "Update Release Page and Downloads", however many word
+ * boundaries the scattered letters happen to land on.
+ */
+export type MatchKind =
+  /** The target is the query. */
+  | "exact"
+  /** The query appears in the target as one unbroken run. */
+  | "substring"
+  /** The query's letters appear in order but with gaps between them. */
+  | "scattered";
+
+const KIND_RANK: Record<MatchKind, number> = {
+  exact: 2,
+  substring: 1,
+  scattered: 0,
+};
 
 export interface FuzzyMatch {
-  /** Higher is better. */
+  /** Higher is better, but only ever compared within one {@link MatchKind}. */
   score: number;
   /** Character index ranges that matched (for highlighting). */
   ranges: [number, number][];
+  kind: MatchKind;
+}
+
+/**
+ * Order two matches, best first. Every picker sorts through this so they all
+ * rank the same way and none of them has to remember that kind comes before
+ * score. Callers add their own tiebreak (recency, name) after it.
+ */
+export function compareMatches(a: FuzzyMatch, b: FuzzyMatch): number {
+  return KIND_RANK[b.kind] - KIND_RANK[a.kind] || b.score - a.score;
 }
 
 /**
@@ -17,10 +48,12 @@ export interface FuzzyMatch {
  * scattered across the string — "exp" matches "Export" but not "edit panel".
  */
 export function substringMatch(query: string, target: string): FuzzyMatch | null {
-  if (query.length === 0) return { score: 0, ranges: [] };
-
   const q = query.toLowerCase();
   const t = target.toLowerCase();
+  const kind: MatchKind = t.trim() === q.trim() ? "exact" : "substring";
+
+  if (query.length === 0) return { score: 0, ranges: [], kind };
+
   const idx = t.indexOf(q);
   if (idx === -1) return null;
 
@@ -32,70 +65,54 @@ export function substringMatch(query: string, target: string): FuzzyMatch | null
   }
   score += Math.max(0, 20 - target.length); // prefer shorter / more specific targets
 
-  return { score, ranges: [[idx, idx + q.length]] };
+  return { score, ranges: [[idx, idx + q.length]], kind };
 }
 
 /**
- * Score how well `query` fuzzy-matches `target`.
- * Consecutive matches are weighted higher. Case-insensitive.
+ * Score how well `query` matches `target`, preferring an unbroken run of
+ * characters and falling back to the query's letters in order with gaps
+ * between them, so "inkbuild" still finds "InkyCap - Build Binaries".
+ * Case-insensitive. Sort results with {@link compareMatches}, not by `score`
+ * alone — a scattered match can otherwise out-point a contiguous one by
+ * collecting word-boundary bonuses across a long name.
  */
 export function fuzzyMatch(query: string, target: string): FuzzyMatch | null {
-  if (query.length === 0) return { score: 0, ranges: [] };
+  if (query.length === 0) return { score: 0, ranges: [], kind: "substring" };
 
-  const queryLower = query.toLowerCase();
-  const targetLower = target.toLowerCase();
+  const contiguous = substringMatch(query, target);
+  if (contiguous) return contiguous;
+
+  const q = query.toLowerCase();
+  const t = target.toLowerCase();
 
   let qi = 0; // query index
   let score = 0;
-  let consecutiveBonus = 0;
-  const ranges: [number, number][] = [];
-  let rangeStart = -1;
+  let run = 0; // length of the current unbroken stretch
 
-  for (let ti = 0; ti < targetLower.length && qi < queryLower.length; ti++) {
-    if (targetLower[ti] === queryLower[qi]) {
-      // Character matches
-      qi++;
-      consecutiveBonus++;
-      score += 1 + consecutiveBonus;
-
-      // Bonus for matching at word boundaries (after /, -, _, space, or start)
-      if (ti === 0 || "/- _".includes(target[ti - 1])) {
-        score += 5;
-      }
-
-      // Track highlight range
-      if (rangeStart === -1) {
-        rangeStart = ti;
-      }
-    } else {
-      // Break in match
-      consecutiveBonus = 0;
-      if (rangeStart !== -1) {
-        ranges.push([rangeStart, ti]);
-        rangeStart = -1;
-      }
+  for (let ti = 0; ti < t.length && qi < q.length; ti++) {
+    if (t[ti] !== q[qi]) {
+      run = 0;
+      continue;
+    }
+    qi++;
+    run++;
+    score += 1 + run; // longer stretches are worth more per character
+    // Bonus for matching at word boundaries (after /, -, _, space, or start)
+    if (ti === 0 || "/- _".includes(target[ti - 1])) {
+      score += 5;
     }
   }
 
-  // Close final range
-  if (rangeStart !== -1) {
-    ranges.push([rangeStart, ranges.length > 0 ? rangeStart + (qi - (ranges.reduce((s, r) => s + r[1] - r[0], 0))) : qi + rangeStart]);
-    // Simpler: just track where we stopped
-  }
-
   // Did we match all query characters?
-  if (qi < queryLower.length) return null;
-
-  // Rebuild ranges more accurately with a second pass
-  const accurateRanges = buildRanges(queryLower, targetLower);
+  if (qi < q.length) return null;
 
   // Bonus for shorter targets (prefer more specific matches)
   score += Math.max(0, 20 - target.length);
 
-  return { score, ranges: accurateRanges };
+  return { score, ranges: buildRanges(q, t), kind: "scattered" };
 }
 
-/** Build accurate highlight ranges by re-tracing the match. */
+/** Build highlight ranges by re-tracing the match. */
 function buildRanges(query: string, target: string): [number, number][] {
   const ranges: [number, number][] = [];
   let qi = 0;

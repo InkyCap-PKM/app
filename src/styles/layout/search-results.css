@@ -379,3 +379,22 @@
   color: var(--accent-text);
 }
 
+
+/* Filter-value completions: the tags / property keys / property values a
+   half-typed `tag:` or `property:` filter could be finished with. Shares the
+   search-tips block's look; capped so a long list scrolls instead of pushing
+   the results out of view. */
+.search-panel__hints--completions {
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.search-panel__hint--selected {
+  background: var(--bg-hover);
+}
+
+/* The completion list is a single column of values, so it drops the tips
+   list's fixed alignment column. */
+.search-panel__hints--completions .search-panel__hint-prefix {
+  min-width: 0;
+}

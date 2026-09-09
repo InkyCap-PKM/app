@@ -112,12 +112,12 @@ import {
   type LinksSortMode,
   type LinksSection,
 } from "../stores/linksPanel";
+import {
+  KNOWN_PROPERTY_KEYS as KNOWN_FIELDS_ORDERED,
+  KNOWN_PROPERTY_KEY_SET as KNOWN_FIELDS,
+  notePropertyKeys,
+} from "../lib/note-properties";
 
-const KNOWN_FIELDS_ORDERED = [
-  "title", "aliases", "description", "tags", "date", "due",
-  "task", "disposition", "source", "zid", "collection",
-];
-const KNOWN_FIELDS = new Set(KNOWN_FIELDS_ORDERED);
 
 const KNOWN_FIELD_TYPES: Record<string, PropertyType> = {
   title: "text",
@@ -1099,11 +1099,7 @@ const RightPanel: Component = () => {
 
   async function loadPropertyKeysForAutocomplete() {
     try {
-      const keys = await ipc.getAllPropertyKeys();
-      const filtered = keys.filter((k) => !k.startsWith("file."));
-      // Always include standard properties (in canonical order) plus any custom ones
-      const custom = filtered.filter((k) => !KNOWN_FIELDS.has(k)).sort();
-      setAllPropKeys([...KNOWN_FIELDS_ORDERED, ...custom]);
+      setAllPropKeys(notePropertyKeys(await ipc.getAllPropertyKeys()));
     } catch {
       setAllPropKeys([...KNOWN_FIELDS_ORDERED]);
     }

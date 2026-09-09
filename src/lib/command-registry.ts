@@ -2,7 +2,7 @@
 // Used by the command palette (Ctrl+P) and for keybinding display.
 
 import { createSignal } from "solid-js";
-import { substringMatch, type FuzzyMatch } from "./fuzzy";
+import { substringMatch, compareMatches, type FuzzyMatch } from "./fuzzy";
 
 export type CommandCategory =
   | "File"
@@ -182,7 +182,7 @@ export function searchCommands(query: string, maxResults = 30): ScoredCommand[] 
     // Return all commands grouped by category
     return all.map((command) => ({
       command,
-      match: { score: 0, ranges: [] },
+      match: { score: 0, ranges: [], kind: "substring" as const },
     }));
   }
 
@@ -199,12 +199,17 @@ export function searchCommands(query: string, maxResults = 30): ScoredCommand[] 
     const combined = `${command.category}: ${command.title}`;
     const combinedMatch = substringMatch(query, combined);
     if (combinedMatch) {
-      // Adjust ranges to only cover the title portion
-      scored.push({ command, match: { score: combinedMatch.score - 5, ranges: [] } });
+      // Adjust ranges to only cover the title portion. Kept a "substring"
+      // match even when the combined string is exactly the query, so it can
+      // never outrank a command whose own title the user typed.
+      scored.push({
+        command,
+        match: { score: combinedMatch.score - 5, ranges: [], kind: "substring" },
+      });
     }
   }
 
-  scored.sort((a, b) => b.match.score - a.match.score);
+  scored.sort((a, b) => compareMatches(a.match, b.match));
   return scored.slice(0, maxResults);
 }
 

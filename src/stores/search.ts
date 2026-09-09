@@ -15,7 +15,9 @@ export type SortMode =
   | "modified-desc"
   | "modified-asc"
   | "created-desc"
-  | "created-asc";
+  | "created-asc"
+  | "zid-asc"
+  | "zid-desc";
 
 // Query and results.
 export const [searchQuery, setSearchQuery] = createSignal<string>("");

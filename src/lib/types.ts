@@ -956,6 +956,8 @@ export interface SearchResult {
   score: number;
   modified_time: number;
   created_time: number;
+  /** The note's `#note(zid:)`, or null when it has none. */
+  zid: string | null;
   context_before: string[];
   context_after: string[];
 }

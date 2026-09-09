@@ -2,6 +2,7 @@
 // Used by quick-open for fuzzy searching.
 
 import { createSignal } from "solid-js";
+import { compareName } from "../lib/sort";
 import type { FileTreeNode } from "../lib/types";
 
 export interface FileEntry {
@@ -39,6 +40,26 @@ export function buildFileList(tree: FileTreeNode[], basePath = "") {
 
   walk(tree, basePath);
   setFileList(entries);
+}
+
+/**
+ * Every folder the notebox's notes live in, notebox-root-relative with `/`
+ * separators and each intermediate level included, in natural name order.
+ *
+ * Derived from the same flat list rather than re-walking the tree, so it stays
+ * in step with it for free. Used by the search box to complete a `path:`
+ * filter — the folder a note is in is what people actually want to scope to.
+ */
+export function folderPaths(entries: FileEntry[]): string[] {
+  const seen = new Set<string>();
+  for (const entry of entries) {
+    if (!entry.folder) continue;
+    const parts = entry.folder.split("/");
+    for (let depth = 1; depth <= parts.length; depth++) {
+      seen.add(parts.slice(0, depth).join("/"));
+    }
+  }
+  return [...seen].sort(compareName);
 }
 
 export { fileList };
