@@ -46,6 +46,7 @@ import { symbolGlyph } from "./symbols";
 import { highlight, buildHighlightMark } from "./visual-colors";
 import { visualTheme } from "./visual-theme";
 import { computePreambleImportRanges, isLeadingLocaleDirective, commentHideRange, isCommentClosed, createProtectedRangesField, createProtectedCursorFilter, createProtectedChangeFilter, externalReload } from "./visual-protected";
+import { lineStartCaretFilter } from "./line-start-caret";
 export { externalReload } from "./visual-protected";
 import { linkClickHandler } from "./visual-links";
 import { tableClipboardHandler, tablePasteHandler, createTableEntryKeymap } from "./visual-tables";
@@ -692,13 +693,29 @@ function markerHasSeparator(state: EditorState, node: { to: number }): boolean {
   return /^[ \t]/.test(state.doc.sliceString(node.to, node.to + 1));
 }
 
+/**
+ * Whether a list/enum marker opens its line — nothing but whitespace before it.
+ *
+ * Typst also reads a second marker further along the line (`- - item`) as a
+ * nested list, but the visual editor leaves that one as plain text. Its bullet
+ * would have to sit mid-line rather than in the hanging-indent margin, and
+ * hiding it is how a stray marker left behind by an edit stays invisible: the
+ * line renders as one bullet with a mysterious extra indent and no way to
+ * outdent it. Drawn as a literal `-`, the writer can see it and delete it.
+ */
+function markerOpensLine(state: EditorState, node: { from: number }): boolean {
+  const line = state.doc.lineAt(node.from);
+  return state.doc.sliceString(line.from, node.from).trim() === "";
+}
+
 function markerReplaceRange(
   state: EditorState,
   node: { from: number; to: number },
 ): [number, number] {
   const lineFrom = state.doc.lineAt(node.from).from;
-  // Callers only reach here for markers that have a separator (see the
-  // ListMarker/EnumMarker cases), so the separator space is always folded in.
+  // Callers only reach here for markers that have a separator and open their
+  // line (see the ListMarker/EnumMarker cases), so the separator space is
+  // always folded in and everything back to the line start is whitespace.
   return [lineFrom, node.to + (markerHasSeparator(state, node) ? 1 : 0)];
 }
 
@@ -872,7 +889,7 @@ export function buildDecorations(state: EditorState, onlyRanges?: { from: number
             // space, so their next keystroke produced `-text` (not a list) and
             // the bullet vanished. Gating on the space matches how markdown
             // editors form lists and keeps the display honest.
-            if (!markerHasSeparator(state, node)) break;
+            if (!markerHasSeparator(state, node) || !markerOpensLine(state, node)) break;
             pushListIndent(decos, state, node.from);
             decos.push(
               Decoration.replace({ widget: new BulletWidget("•") }).range(...markerReplaceRange(state, node)),
@@ -880,7 +897,7 @@ export function buildDecorations(state: EditorState, onlyRanges?: { from: number
             return false;
           }
           case "EnumMarker": {
-            if (!markerHasSeparator(state, node)) break;
+            if (!markerHasSeparator(state, node) || !markerOpensLine(state, node)) break;
             pushListIndent(decos, state, node.from);
             decos.push(
               Decoration.replace({ widget: new BulletWidget(enumItemNumber(state, node.from)) }).range(...markerReplaceRange(state, node)),
@@ -2848,6 +2865,13 @@ const markupAtomicRanges = EditorView.atomicRanges.of(
   (view) => atomicMarkupRanges(view.state.field(visualField, false)),
 );
 
+// The same replaced ranges, reused to close the one gap CodeMirror's atomic
+// handling leaves: the position *at* the start of markup that opens a line.
+// See line-start-caret.ts for why that position is unreachable by eye.
+const lineStartCaretGuard = lineStartCaretFilter(
+  (state) => atomicMarkupRanges(state.field(visualField, false)),
+);
+
 // Round the caret OUT of a rendered `#due(...)` pill to just past the call.
 //
 // The pill renders only once the date is a complete `YYYY-MM-DD` (see
@@ -2924,6 +2948,6 @@ const dueCursorRoundOut = ViewPlugin.fromClass(class {
 // a block whose two states measure differently, and that belongs in the block's
 // own geometry (see the shared block variables in visual-theme.ts).
 export function typstVisualMode() {
-  return [expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, dueCursorRoundOut, Prec.high(tableEntryKeymap), Prec.high(verseEntryKeymap), visualField, softBreakRangesField, softBreakAtomicRanges, markupAtomicRanges, postHistoryRebuild, visualTheme, linkClickHandler, tableClipboardHandler, tablePasteHandler, pillBoundaryNav];
+  return [expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, lineStartCaretGuard, dueCursorRoundOut, Prec.high(tableEntryKeymap), Prec.high(verseEntryKeymap), visualField, softBreakRangesField, softBreakAtomicRanges, markupAtomicRanges, postHistoryRebuild, visualTheme, linkClickHandler, tableClipboardHandler, tablePasteHandler, pillBoundaryNav];
 }
 
