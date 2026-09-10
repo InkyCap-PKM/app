@@ -38,11 +38,19 @@
 // drew it, and the first Tab suddenly revealed a cursor several rows down
 // from where the user thought they were. A class we set ourselves cannot
 // disagree with where the focus actually is.
+//
+// The mark only appears for focus the keyboard caused. A menu that focuses
+// its first item as it opens (the pill menu does, so keys work at once) must
+// not show a cursor the user never asked for beside the row the mouse is on
+// and the row that is checked. Once the arrows are in use the menu carries
+// `.is-kbd-nav`, which the stylesheets use to silence the hover highlight so
+// there is one cursor, the keyboard's; moving the mouse takes it back.
 
 /**
  * The menu surfaces, as (container, item) selector pairs. A menu whose markup
  * uses one of these class pairs gets keyboard control for free. Keep this list
- * in step when a new kind of menu appears — it is the one registry.
+ * in step when a new kind of menu appears — it is the one registry, mirrored
+ * only by the hover-silencing rule in styles/layout/context-menu.css.
  */
 const MENU_SURFACES: ReadonlyArray<{ menu: string; item: string }> = [
   // The shared app menu: panel sort menus, right-click menus, Dropdown's
@@ -65,22 +73,59 @@ const OPT_OUT = '[data-menu-nav="off"]';
  *  list panels use for their keyboard cursor (see lib/list-nav.ts). */
 const ACTIVE_CLASS = "is-kbd-active";
 
+/** Marks a menu the keyboard is driving, so the stylesheets can stand the
+ *  hover highlight down until the mouse moves again. */
+const KBD_NAV_CLASS = "is-kbd-nav";
+
 /** Where focus was before the keyboard entered a menu, so it can be restored. */
 let focusBeforeMenu: HTMLElement | null = null;
 /** Watches for the entered menu leaving the DOM, to restore focus. */
 let closeWatcher: MutationObserver | null = null;
+/** Was the last input a key rather than a pointer? Focus that lands inside a
+ *  menu is marked only when it is; focus a menu moves by script as it opens,
+ *  or a click, gets no cursor. */
+let lastInputWasKey = false;
+/** Set while a menu carries the keyboard-driving class, so the mousemove
+ *  listener has nothing to do the rest of the time. */
+let keyboardDriving = false;
 
 /** Install the menu keyboard controller. Call once, from App.tsx. */
 export function initMenuNav(): void {
   document.addEventListener("keydown", handleKeyDown, true);
   document.addEventListener("focusin", handleFocusIn, true);
+  document.addEventListener("pointerdown", handlePointerDown, true);
+  document.addEventListener("mousemove", handleMouseMove, true);
 }
 
 export function destroyMenuNav(): void {
   document.removeEventListener("keydown", handleKeyDown, true);
   document.removeEventListener("focusin", handleFocusIn, true);
+  document.removeEventListener("pointerdown", handlePointerDown, true);
+  document.removeEventListener("mousemove", handleMouseMove, true);
   clearActiveMarks();
+  releaseToMouse();
   stopWatching();
+  lastInputWasKey = false;
+}
+
+function handlePointerDown(): void {
+  lastInputWasKey = false;
+}
+
+/** The mouse moving hands the cursor back to it: the keyboard's mark goes,
+ *  and the hover highlight is allowed to show again. */
+function handleMouseMove(): void {
+  if (!keyboardDriving) return;
+  lastInputWasKey = false;
+  clearActiveMarks();
+  releaseToMouse();
+}
+
+function releaseToMouse(): void {
+  keyboardDriving = false;
+  for (const el of document.querySelectorAll<HTMLElement>(`.${KBD_NAV_CLASS}`)) {
+    el.classList.remove(KBD_NAV_CLASS);
+  }
 }
 
 /** Is any menu on one of the surfaces above open right now? Lets a
@@ -95,6 +140,7 @@ export function menuIsOpen(): boolean {
  *  user reaches an item some other way — Tab, or a click. */
 function handleFocusIn(e: FocusEvent): void {
   clearActiveMarks();
+  if (!lastInputWasKey) return;
   const target = e.target;
   if (!(target instanceof HTMLElement)) return;
   for (const surface of MENU_SURFACES) {
@@ -210,10 +256,19 @@ function inTextField(target: EventTarget | null): boolean {
 }
 
 /** Move focus onto a menu item, making it focusable first if it is a plain
- *  `<div>` rather than a button. */
+ *  `<div>` rather than a button. The menu holding it becomes keyboard-driven
+ *  until the mouse moves. */
 function focusItem(item: HTMLElement): void {
   if (!item.hasAttribute("tabindex") && item.tagName !== "BUTTON" && item.tagName !== "A") {
     item.tabIndex = -1;
+  }
+  for (const surface of MENU_SURFACES) {
+    const menu = item.closest<HTMLElement>(surface.menu);
+    if (menu) {
+      menu.classList.add(KBD_NAV_CLASS);
+      keyboardDriving = true;
+      break;
+    }
   }
   item.focus({ preventScroll: true });
   item.scrollIntoView({ block: "nearest" });
@@ -247,6 +302,8 @@ function stopWatching(): void {
 }
 
 function handleKeyDown(e: KeyboardEvent): void {
+  // Any key, Tab included: focus that moves from here on is the keyboard's.
+  lastInputWasKey = true;
   if (e.altKey || e.ctrlKey || e.metaKey) return;
   const navKey =
     e.key === "ArrowDown" ||

@@ -50,6 +50,26 @@
   outline: none;
 }
 
+/* One cursor at a time. While the arrows drive a menu it carries
+   `.is-kbd-nav` (lib/menu-nav.ts), and the row the mouse happens to be
+   resting on stops reading as hovered, so the keyboard's row is the only
+   highlighted one. Moving the mouse removes the class and hover returns.
+   This rule covers every menu surface the controller drives — the item
+   classes here mirror its MENU_SURFACES registry — so each surface's own
+   hover rule needs no counterpart. */
+.is-kbd-nav :is(
+  .context-menu__item,
+  .cm-typst-pill-menu-item,
+  .selection-toolbar__menu-item,
+  .tab-bar__menu-item,
+  .mycelial-context-menu__item,
+  .cm-table-context-menu button
+):hover:not(.is-kbd-active) {
+  background: transparent;
+  color: inherit;
+  box-shadow: none;
+}
+
 /* Icon + label menu items (e.g. the New-note dropdown's
    "Folder" / "Upload into notebox" entries). Uses flex so the icon
    sits inline with the label rather than inheriting the default

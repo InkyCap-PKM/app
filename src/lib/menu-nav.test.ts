@@ -290,6 +290,37 @@ describe("menu keyboard navigation", () => {
     expect(markedLabel()).toBe("Three");
   });
 
+  // A menu that focuses its first item as it opens must not show a cursor the
+  // user never asked for, beside the row the mouse is on and the checked row.
+  it("does not mark an item a menu focuses by script as it opens", () => {
+    const { menu } = buildMenu(["One", "Two"]);
+    document.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    (menu.firstChild as HTMLElement).focus();
+    expect(markedLabel()).toBe(null);
+    expect(menu.classList.contains("is-kbd-nav")).toBe(false);
+  });
+
+  it("takes the cursor for the keyboard once the arrows are used", () => {
+    const { menu } = buildMenu(["One", "Two"]);
+    document.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    (menu.firstChild as HTMLElement).focus();
+    press("ArrowDown");
+    expect(markedLabel()).toBe("Two");
+    expect(menu.classList.contains("is-kbd-nav")).toBe(true);
+  });
+
+  it("hands the cursor back to the mouse when it moves", () => {
+    const { menu } = buildMenu(["One", "Two"]);
+    press("ArrowDown");
+    expect(markedLabel()).toBe("One");
+    menu.children[1].dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
+    expect(markedLabel()).toBe(null);
+    expect(menu.classList.contains("is-kbd-nav")).toBe(false);
+    // The keys pick up from where the focus still is.
+    press("ArrowDown");
+    expect(markedLabel()).toBe("Two");
+  });
+
   it("follows the focus when Tab moves it instead of the arrows", () => {
     const { menu } = buildMenu(["One", "Two"]);
     press("ArrowDown");
