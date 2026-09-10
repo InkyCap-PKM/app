@@ -22,6 +22,7 @@
 // trigger's own toggle handler, leaving the menu flickering open.
 
 import { onCleanup } from "solid-js";
+import { menuIsOpen } from "./menu-nav";
 
 export interface ClickOutsideOptions {
   onDismiss: () => void;
@@ -62,7 +63,12 @@ export function clickOutside(
     opts.onDismiss();
   };
   const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key === "Escape") value().onDismiss();
+    if (e.key !== "Escape") return;
+    // The element only exists while the surface is open, so this Escape has
+    // done its job: claim it, or the sidebar's Escape-to-editor handler would
+    // also move the focus away.
+    e.preventDefault();
+    value().onDismiss();
   };
   const onResize = () => value().onDismiss();
 
@@ -88,10 +94,18 @@ export function clickOutside(
  * nothing for `clickOutside` to attach to. This gives those the other half of
  * the same contract: call it once, next to the existing click dismissal, with
  * the same close function. Registers for the lifetime of the calling component.
+ *
+ * The listener lives as long as the component, not the menu, so it cannot tell
+ * from its own state whether there is anything to close. It asks the menu
+ * controller instead: when a menu is on screen the Escape is claimed, so the
+ * handlers further along (Escape-to-editor, distraction-free mode) leave the
+ * focus where it is; otherwise the key passes through untouched.
  */
 export function dismissOnEscape(close: () => void): void {
   const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key === "Escape") close();
+    if (e.key !== "Escape") return;
+    if (menuIsOpen()) e.preventDefault();
+    close();
   };
   document.addEventListener("keydown", onKeyDown, true);
   onCleanup(() => document.removeEventListener("keydown", onKeyDown, true));

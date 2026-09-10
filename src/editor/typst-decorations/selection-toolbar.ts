@@ -194,6 +194,11 @@ let activeView: EditorView | null = null;
 // search panel refreshes via `relocalize`.)
 let builtLocaleVersion = -1;
 
+// The dismissal listeners on the document belong to the module, not to one
+// build of the toolbar: a locale switch rebuilds the DOM but must not add a
+// second copy of them.
+let documentListenersInstalled = false;
+
 function ensureFreshLocale() {
   const v = localeVersion();
   if (v === builtLocaleVersion) return;
@@ -364,27 +369,44 @@ function getToolbar(): HTMLElement {
     toolbar.appendChild(mathBtn);
 
     document.body.appendChild(toolbar);
-
-    /* Escape closes them, like every other menu in the app. */
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") closeAllPopups();
-    }, true);
-
-    /* Close popups on outside click */
-    document.addEventListener("mousedown", (e) => {
-      if (dropdown && dropdown.style.display !== "none" &&
-          !dropdown.contains(e.target as Node) &&
-          !(e.target as Element)?.closest(".selection-toolbar__dropdown-trigger")) {
-        closeDropdown();
-      }
-      if (alignPopup && alignPopup.style.display !== "none" &&
-          !alignPopup.contains(e.target as Node) &&
-          !(e.target as Element)?.closest(".selection-toolbar__btn")) {
-        closeAlignPopup();
-      }
-    });
+    installDocumentListeners();
   }
   return toolbar;
+}
+
+/** Is either pop-up (the overflow menu or the alignment picker) showing? */
+function anyPopupOpen(): boolean {
+  const showing = (el: HTMLElement | null) => !!el && el.style.display !== "none";
+  return showing(dropdown) || showing(alignPopup);
+}
+
+/** Dismiss the pop-ups on Escape and on an outside click. Installed once. */
+function installDocumentListeners(): void {
+  if (documentListenersInstalled) return;
+  documentListenersInstalled = true;
+
+  /* Escape closes them, like every other menu in the app. Claimed only when
+   * there is something to close, so an idle Escape still reaches the handlers
+   * further along (Escape-to-editor, distraction-free mode). */
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || !anyPopupOpen()) return;
+    e.preventDefault();
+    closeAllPopups();
+  }, true);
+
+  /* Close popups on outside click */
+  document.addEventListener("mousedown", (e) => {
+    if (dropdown && dropdown.style.display !== "none" &&
+        !dropdown.contains(e.target as Node) &&
+        !(e.target as Element)?.closest(".selection-toolbar__dropdown-trigger")) {
+      closeDropdown();
+    }
+    if (alignPopup && alignPopup.style.display !== "none" &&
+        !alignPopup.contains(e.target as Node) &&
+        !(e.target as Element)?.closest(".selection-toolbar__btn")) {
+      closeAlignPopup();
+    }
+  });
 }
 
 function createSeparator(): HTMLElement {

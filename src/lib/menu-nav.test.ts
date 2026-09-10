@@ -177,6 +177,90 @@ describe("menu keyboard navigation", () => {
     expect(document.activeElement).toBe(input);
   });
 
+  it("drives the menu from a text field underneath it", () => {
+    // The spellcheck and selection-toolbar menus open while the editor, a
+    // contentEditable element, still holds the focus.
+    buildMenu(["One", "Two"]);
+    const editor = document.createElement("textarea");
+    document.body.appendChild(editor);
+    editor.focus();
+    const e = press("ArrowDown");
+    expect(e.defaultPrevented).toBe(true);
+    expect(focusedLabel()).toBe("One");
+  });
+
+  describe("a submenu nested inside an item", () => {
+    /** A menu whose middle item holds an open submenu, the way the property
+     *  key menu's "Property type" row does. */
+    function buildNested() {
+      const { menu } = buildMenu(["Rename"]);
+      const row = document.createElement("div");
+      row.className = "context-menu__item context-menu__item--submenu";
+      row.append("Type");
+      const sub = document.createElement("div");
+      sub.className = "context-menu context-menu--submenu";
+      for (const label of ["Auto", "Date"]) {
+        const item = document.createElement("button");
+        item.className = "context-menu__item";
+        item.textContent = label;
+        sub.appendChild(item);
+      }
+      row.appendChild(sub);
+      menu.appendChild(row);
+      const del = document.createElement("button");
+      del.className = "context-menu__item";
+      del.textContent = "Delete";
+      menu.appendChild(del);
+      return { menu, row, sub };
+    }
+
+    const focusedText = () => (document.activeElement as HTMLElement)?.firstChild?.textContent;
+
+    it("moves through the outer menu's own items, skipping the submenu's", () => {
+      buildNested();
+      press("ArrowDown");
+      expect(focusedText()).toBe("Rename");
+      press("ArrowDown");
+      expect(focusedText()).toBe("Type");
+      press("ArrowDown");
+      expect(focusedText()).toBe("Delete");
+    });
+
+    it("enters the submenu with Right and leaves it with Left", () => {
+      buildNested();
+      press("ArrowDown");
+      press("ArrowDown");
+      expect(focusedText()).toBe("Type");
+      press("ArrowRight");
+      expect(focusedText()).toBe("Auto");
+      press("ArrowDown");
+      expect(focusedText()).toBe("Date");
+      press("ArrowUp");
+      press("ArrowUp");
+      expect(focusedText()).toBe("Date"); // wraps inside the submenu
+      press("ArrowLeft");
+      expect(focusedText()).toBe("Type");
+    });
+
+    it("enters the submenu with Enter instead of clicking the row", () => {
+      const { row } = buildNested();
+      let clicks = 0;
+      row.addEventListener("click", () => clicks++);
+      press("ArrowDown");
+      press("ArrowDown");
+      press("Enter");
+      expect(focusedText()).toBe("Auto");
+      expect(clicks).toBe(0);
+    });
+
+    it("leaves the sideways arrows alone until the keyboard is on an item", () => {
+      buildNested();
+      const e = press("ArrowRight");
+      expect(e.defaultPrevented).toBe(false);
+      expect(focusedLabel()).toBe("trigger");
+    });
+  });
+
   it("works for a menu that is not the shared .context-menu surface", () => {
     buildMenu(["One", "Two"], {
       menuClass: "cm-typst-pill-menu",

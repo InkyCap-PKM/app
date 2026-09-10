@@ -11,6 +11,7 @@
 //   ↑ ↓         move through the items, wrapping at the ends
 //   Home End    first / last item
 //   Enter Space activate the item the keyboard is on
+//   → ←         enter / leave a submenu
 //   Escape      dismiss (owned by the menu itself — see clickOutside.ts)
 //
 // It listens on the document in capture phase because a menu is usually opened
@@ -18,6 +19,9 @@
 // leaves the caret focused, so there is no element on the menu that would
 // receive the first arrow key. Capture also means the key never reaches the
 // editor underneath, so ↓ moves through the menu instead of moving the caret.
+// That editor is a contentEditable element, so being in a text field is not
+// by itself a reason to stand aside: only a field *inside* the menu (a filter
+// box) keeps its own keys.
 //
 // Navigation moves real DOM focus onto the item. Menu items are buttons, so
 // focus is what announces them to a screen reader and what makes Enter mean
@@ -79,6 +83,13 @@ export function destroyMenuNav(): void {
   stopWatching();
 }
 
+/** Is any menu on one of the surfaces above open right now? Lets a
+ *  dismissal handler that outlives its menu tell whether Escape has
+ *  something to close (see clickOutside.ts). */
+export function menuIsOpen(): boolean {
+  return openMenu() !== null;
+}
+
 /** Keep the visible mark on whatever holds focus inside a menu. Driven by
  *  focus rather than by the arrow keys themselves so it stays right when the
  *  user reaches an item some other way — Tab, or a click. */
@@ -110,34 +121,83 @@ function isVisible(el: HTMLElement): boolean {
   return el.getClientRects().length > 0 && el.style.visibility !== "hidden";
 }
 
+/** A menu on screen, with the selector that finds its items. */
+interface OpenMenu {
+  el: HTMLElement;
+  menuSelector: string;
+  itemSelector: string;
+}
+
 /**
- * The menu the keys belong to: the last visible one in document order. A
- * submenu renders after the menu that opened it, so "last" is the innermost
- * one — which is the one the user is looking at.
+ * The menu the keys belong to. When the focus is inside a menu, that menu —
+ * the innermost one, so a submenu the keyboard has entered wins over the menu
+ * that holds it, but a submenu merely open beside the item the keyboard is on
+ * does not. Otherwise the last visible menu in document order, which is the
+ * one opened most recently; a submenu nested inside another menu's item is
+ * passed over there, since the keyboard enters the outer menu first.
  */
-function openMenu(): { el: HTMLElement; itemSelector: string } | null {
-  let found: { el: HTMLElement; itemSelector: string } | null = null;
+function openMenu(): OpenMenu | null {
+  const active = document.activeElement;
+  let last: OpenMenu | null = null;
+  let focused: OpenMenu | null = null;
   for (const surface of MENU_SURFACES) {
     for (const el of document.querySelectorAll<HTMLElement>(surface.menu)) {
       if (el.closest(OPT_OUT)) continue;
       if (!isVisible(el)) continue;
-      if (!found || found.el.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) {
-        found = { el, itemSelector: surface.item };
+      const candidate = { el, menuSelector: surface.menu, itemSelector: surface.item };
+      if (!isNested(el) && (!last || follows(last.el, el))) last = candidate;
+      if (active && el.contains(active) && (!focused || follows(focused.el, el))) {
+        focused = candidate;
       }
     }
   }
-  return found;
+  return focused ?? last;
 }
 
-/** The items the keyboard can land on: visible and not disabled. */
-function itemsOf(menu: HTMLElement, selector: string): HTMLElement[] {
-  return Array.from(menu.querySelectorAll<HTMLElement>(selector)).filter(
+/** Is this menu drawn inside another menu, as a nested submenu is? */
+function isNested(menu: HTMLElement): boolean {
+  const parent = menu.parentElement;
+  return !!parent && MENU_SURFACES.some((s) => parent.closest(s.menu));
+}
+
+/** Does `b` come after `a` in document order? A nested element follows its
+ *  ancestor, so "later" also means "deeper". */
+function follows(a: HTMLElement, b: HTMLElement): boolean {
+  return (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+}
+
+/** The items the keyboard can land on: visible, not disabled, and this
+ *  menu's own rather than a submenu's nested inside one of its items. */
+function itemsOf(menu: OpenMenu): HTMLElement[] {
+  return Array.from(menu.el.querySelectorAll<HTMLElement>(menu.itemSelector)).filter(
     (el) =>
+      el.closest(menu.menuSelector) === menu.el &&
       el.getClientRects().length > 0 &&
       !el.hasAttribute("disabled") &&
       el.getAttribute("aria-disabled") !== "true" &&
       !el.classList.contains("is-disabled"),
   );
+}
+
+/** The visible submenu an item holds, if any: the menu the → key enters. */
+function submenuOf(item: HTMLElement): OpenMenu | null {
+  for (const surface of MENU_SURFACES) {
+    const el = item.querySelector<HTMLElement>(surface.menu);
+    if (el && isVisible(el) && !el.closest(OPT_OUT)) {
+      return { el, menuSelector: surface.menu, itemSelector: surface.item };
+    }
+  }
+  return null;
+}
+
+/** The item of an outer menu that holds `menu`, if it is a submenu: where the
+ *  ← key goes back to. */
+function parentItemOf(menu: OpenMenu): HTMLElement | null {
+  for (const surface of MENU_SURFACES) {
+    const item = menu.el.parentElement?.closest<HTMLElement>(surface.item) ?? null;
+    if (item && item.closest(surface.menu) !== menu.el) return item;
+  }
+  return null;
 }
 
 /** True when the key should be left to a text field the user is typing in. */
@@ -191,6 +251,8 @@ function handleKeyDown(e: KeyboardEvent): void {
   const navKey =
     e.key === "ArrowDown" ||
     e.key === "ArrowUp" ||
+    e.key === "ArrowRight" ||
+    e.key === "ArrowLeft" ||
     e.key === "Home" ||
     e.key === "End" ||
     e.key === "Enter" ||
@@ -202,22 +264,39 @@ function handleKeyDown(e: KeyboardEvent): void {
     stopWatching();
     return;
   }
-  // A filter box or other field inside the menu owns its own keys.
-  if (inTextField(e.target)) return;
+  // A filter box or other field inside the menu owns its own keys. A field
+  // underneath the menu — the editor a right-click menu was opened from — does
+  // not: the menu is what the user is looking at.
+  if (inTextField(e.target) && menu.el.contains(e.target as Node)) return;
 
-  const items = itemsOf(menu.el, menu.itemSelector);
+  const items = itemsOf(menu);
   if (items.length === 0) return;
 
   const active = document.activeElement;
   const current = items.findIndex((el) => el === active || el.contains(active as Node));
 
-  if (e.key === "Enter" || e.key === " ") {
-    // Only claim these once the keyboard is actually on an item — otherwise
-    // Enter still belongs to whatever the user was typing in.
+  // Enter, Space and the sideways arrows are only claimed once the keyboard is
+  // actually on an item — otherwise they still belong to whatever the user
+  // was typing in.
+  if (e.key === "Enter" || e.key === " " || e.key === "ArrowRight") {
     if (current < 0) return;
     e.preventDefault();
     e.stopPropagation();
-    items[current].click();
+    const submenu = submenuOf(items[current]);
+    if (submenu) {
+      const first = itemsOf(submenu)[0];
+      if (first) focusItem(first);
+      return;
+    }
+    if (e.key !== "ArrowRight") items[current].click();
+    return;
+  }
+  if (e.key === "ArrowLeft") {
+    if (current < 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const parent = parentItemOf(menu);
+    if (parent) focusItem(parent);
     return;
   }
 
