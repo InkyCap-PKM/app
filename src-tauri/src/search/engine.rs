@@ -1765,7 +1765,11 @@ mod tests {
             Vec::new(),
             HashMap::new(),
         )]);
-        for query in ["path:\"archive/2024/\"", "path:archive", r"path:archive\2024"] {
+        for query in [
+            "path:\"archive/2024/\"",
+            "path:archive",
+            r"path:archive\2024",
+        ] {
             let node = parse_query(query).unwrap();
             assert_eq!(engine.search(&node, 10).len(), 1, "{query} should match");
         }
