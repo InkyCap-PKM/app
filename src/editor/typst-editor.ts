@@ -660,6 +660,18 @@ const scrollPastEndHalf = (() => {
   ];
 })();
 
+// Lines of breathing room kept below the cursor when the editor scrolls to
+// keep it in view — so typing or arrowing down never leaves the caret flush
+// against the bottom edge with nothing visible beneath it.
+const CURSOR_BOTTOM_MARGIN_LINES = 2;
+
+// Applies only when the editor itself scrolls the cursor into view (typing,
+// cursor keys, jumps); wheel and scrollbar scrolling are untouched. Typewriter
+// mode centres the caret and so never reaches this margin.
+const cursorBottomMargin = EditorView.scrollMargins.of((view) => ({
+  bottom: view.defaultLineHeight * CURSOR_BOTTOM_MARGIN_LINES,
+}));
+
 function baseExtensions(options: TypstEditorOptions): Extension[] {
   const exts: Extension[] = [
     lineNumbers(),
@@ -711,6 +723,7 @@ function baseExtensions(options: TypstEditorOptions): Extension[] {
     // the middle of the viewport instead of staying pinned to the bottom while
     // typing. Half the reach of CM's built-in scrollPastEnd (see definition).
     scrollPastEndHalf,
+    cursorBottomMargin,
   ];
 
   if (options.readOnly) {
