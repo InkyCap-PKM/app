@@ -9,6 +9,7 @@
 
 import * as ipc from "./ipc";
 import { t } from "./i18n";
+import { showContextMenu } from "./context-menu";
 import { openTab } from "../stores/tabs";
 import { isEnabled as isScrollEnabled, toggleScroll } from "../stores/journal-scroll";
 
@@ -105,12 +106,9 @@ async function openInMycelialView(target: string): Promise<void> {
 
 /**
  * Show the right-click context menu for a wikilink at viewport coordinates
- * `(x, y)`. Offers the three "open as…" destinations. Dismisses on outside
- * click, Escape, scroll, or after an action runs.
- *
- * Built as plain DOM (not a Solid component) so it can be summoned identically
- * from CodeMirror widgets and Solid components. Reuses the shared `.context-menu`
- * styling from styles/layout/context-menu.css.
+ * `(x, y)`. Offers the three "open as…" destinations. Built on the shared
+ * plain-DOM menu (lib/context-menu.ts) so it can be summoned identically from
+ * CodeMirror widgets and Solid components.
  */
 export function showWikilinkContextMenu(
   x: number,
@@ -118,65 +116,9 @@ export function showWikilinkContextMenu(
   target: string,
   label?: string,
 ): void {
-  // Only one wikilink menu at a time — a second right-click moves it.
-  document.querySelectorAll(".wikilink-context-menu").forEach((m) => m.remove());
-
-  const menu = document.createElement("div");
-  menu.className = "context-menu wikilink-context-menu";
-  menu.setAttribute("role", "menu");
-
-  const close = () => {
-    menu.remove();
-    document.removeEventListener("mousedown", onDocMouse, true);
-    document.removeEventListener("keydown", onDocKey, true);
-    window.removeEventListener("scroll", close, true);
-  };
-
-  const addItem = (textKey: string, run: () => void) => {
-    const item = document.createElement("button");
-    item.type = "button";
-    item.className = "context-menu__item";
-    item.setAttribute("role", "menuitem");
-    item.textContent = t(textKey);
-    item.addEventListener("click", () => {
-      close();
-      run();
-    });
-    menu.appendChild(item);
-  };
-
-  addItem("wikilink.menu.openNewTab", () => void openInNewTab(target, label));
-  addItem("wikilink.menu.openScroll", () => void openInJournalScroll(target));
-  addItem("wikilink.menu.openMycelial", () => void openInMycelialView(target));
-
-  const onDocMouse = (e: MouseEvent) => {
-    if (!menu.contains(e.target as Node)) close();
-  };
-  const onDocKey = (e: KeyboardEvent) => {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      close();
-    }
-  };
-
-  // Position at the cursor, then clamp into the viewport once measured.
-  menu.style.left = `${x}px`;
-  menu.style.top = `${y}px`;
-  menu.style.visibility = "hidden";
-  document.body.appendChild(menu);
-  requestAnimationFrame(() => {
-    const r = menu.getBoundingClientRect();
-    if (r.right > window.innerWidth - 8) {
-      menu.style.left = `${Math.max(8, window.innerWidth - 8 - r.width)}px`;
-    }
-    if (r.bottom > window.innerHeight - 8) {
-      menu.style.top = `${Math.max(8, y - r.height)}px`;
-    }
-    menu.style.visibility = "";
-    menu.querySelector<HTMLElement>(".context-menu__item")?.focus();
-  });
-
-  document.addEventListener("mousedown", onDocMouse, true);
-  document.addEventListener("keydown", onDocKey, true);
-  window.addEventListener("scroll", close, true);
+  showContextMenu(x, y, [
+    { label: t("wikilink.menu.openNewTab"), run: () => void openInNewTab(target, label) },
+    { label: t("wikilink.menu.openScroll"), run: () => void openInJournalScroll(target) },
+    { label: t("wikilink.menu.openMycelial"), run: () => void openInMycelialView(target) },
+  ]);
 }

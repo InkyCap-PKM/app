@@ -6,6 +6,7 @@ import {
   createResource,
   For,
   Show,
+  on,
   onCleanup,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
@@ -33,6 +34,7 @@ import RuleIcon from "./RuleIcon";
 import { LibraryPlusIcon } from "./icons";
 import type { CollectionInfo, FileTreeNode, PropertyType } from "../lib/types";
 import * as ipc from "../lib/ipc";
+import { REVEAL_IN_FILE_TREE_EVENT } from "../lib/file-tree-reveal";
 import { pathEquals, pathStartsWith } from "../lib/paths";
 import { isLinux } from "../lib/platform";
 import { attachListNav } from "../lib/list-nav";
@@ -760,16 +762,26 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   // "Show in File Tree" reveal support
   const [revealPath, setRevealPath] = createSignal<string | null>(null);
 
+  // The row the tree draws as selected after a reveal. Normally the selected
+  // row is the active tab's note, but a revealed attachment has no tab, so
+  // without this the tree would scroll to it and mark nothing. The reveal
+  // holds the selection until the active tab changes or the user clicks
+  // another row; then the active tab's row takes over again.
+  const [revealedPath, setRevealedPath] = createSignal<string | null>(null);
+  createEffect(on(() => getActiveTab()?.path, () => setRevealedPath(null), { defer: true }));
+  const selectedTreePath = () => revealedPath() ?? getActiveTab()?.path ?? null;
+
   const onRevealInTree = (e: Event) => {
     const path = (e as CustomEvent<string>).detail;
     if (!path) return;
     setMode("filetree");
+    setRevealedPath(path);
     setRevealPath(path);
     // Clear after a tick so scroll-into-view has time to fire
     setTimeout(() => setRevealPath(null), 500);
   };
-  document.addEventListener("inkycap:reveal-in-tree", onRevealInTree);
-  onCleanup(() => document.removeEventListener("inkycap:reveal-in-tree", onRevealInTree));
+  document.addEventListener(REVEAL_IN_FILE_TREE_EVENT, onRevealInTree);
+  onCleanup(() => document.removeEventListener(REVEAL_IN_FILE_TREE_EVENT, onRevealInTree));
 
   // Reveal a path: expand its (possibly collapsed, thus unmounted) ancestor
   // folders, then scroll its row into view by index. Driven here rather than
@@ -1055,6 +1067,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     // Keep the keyboard cursor in step with clicks, so arrowing after a click
     // continues from the row that was clicked.
     setFocusedTreePath(node.path);
+    setRevealedPath(null);
     if (node.is_dir) {
       toggleDir(node.path);
     } else {
@@ -1868,7 +1881,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                             onRenameInput={setFileRenameValue}
                             onRenameCommit={commitFileRename}
                             onRenameCancel={() => setFileRenamingPath(null)}
-                            activePath={getActiveTab()?.path ?? null}
+                            activePath={selectedTreePath()}
                             noteboxRoot={noteboxInfo()?.path ?? ""}
                             expandedDirs={expandedDirs}
                             onToggleDir={toggleDir}

@@ -3,6 +3,7 @@ import { type StateField } from "@codemirror/state";
 import { getSearchQuery, setSearchQuery } from "@codemirror/search";
 import { openLink } from "../../lib/open-link";
 import { loadImageObjectUrl, loadMediaObjectUrl, revokeBlobUrls } from "../../lib/media-src";
+import { showAttachmentContextMenu } from "../../lib/attachment-nav";
 import { highlightCodeInto } from "./code-highlight";
 import { buildPillButton, findCallEnd, applyCallTransform, upsertNamedArg, type PillMenuSection } from "./pill";
 import { getPillOptions } from "./pill-options";
@@ -608,6 +609,16 @@ export class CodeBlockWidget extends WidgetType {
   }
 }
 
+/** Right-click on an embedded image or media element opens the attachment
+ *  menu (show in file tree / system file manager) for the file behind it. */
+function attachAttachmentMenu(el: HTMLElement, path: string): void {
+  el.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    void showAttachmentContextMenu(e.clientX, e.clientY, path);
+  });
+}
+
 export class ImageWidget extends WidgetType {
   constructor(
     readonly path: string,
@@ -724,6 +735,7 @@ export class ImageBlockWidget extends WidgetType {
 
     const inner = document.createElement("div");
     inner.style.textAlign = this.align;
+    attachAttachmentMenu(inner, this.path);
 
     const label = document.createElement("div");
     label.className = "cm-typst-image-label";
@@ -767,7 +779,9 @@ export class ImageBlockWidget extends WidgetType {
     wrap.appendChild(inner);
   }
 
-  ignoreEvent() { return false; }
+  // Right-click is the attachment menu's; everything else stays CM's so the
+  // block behaves like editor content (click places the caret, drag selects).
+  ignoreEvent(e: Event) { return e.type === "contextmenu"; }
 }
 
 /// Block widget for `#video(...)` / `#audio(...)`: an inline player rendered
@@ -821,6 +835,7 @@ export class MediaBlockWidget extends WidgetType {
 
     const inner = document.createElement("div");
     inner.style.textAlign = "center";
+    attachAttachmentMenu(inner, this.path);
 
     const label = document.createElement("div");
     label.className = "cm-typst-image-label";

@@ -13,6 +13,7 @@ import { normalizePath } from "../lib/paths";
 import { compareName, compareZid } from "../lib/sort";
 import { createNoteForTarget } from "../lib/wikilink-nav";
 import * as ipc from "../lib/ipc";
+import { revealInFileTree } from "../lib/file-tree-reveal";
 import type { OutboundLink, PotentialLink } from "../lib/ipc";
 import type { SearchResult } from "../lib/types";
 import { indexReady, bumpPropertyVersion } from "../stores/notebox";
@@ -1215,7 +1216,7 @@ const RightPanel: Component = () => {
     try {
       await ipc.showInExplorer(tab.path);
     } catch (err) {
-      toastError(t("rightPanel.toast.showExplorerFailed"), err);
+      toastError(t("common.showInFileManagerFailed"), err);
     }
   }
 
@@ -1223,9 +1224,7 @@ const RightPanel: Component = () => {
     setFileMenu(null);
     const tab = activeFileTab();
     if (!tab) return;
-    document.dispatchEvent(
-      new CustomEvent("inkycap:reveal-in-tree", { detail: tab.path }),
-    );
+    revealInFileTree(tab.path);
   }
 
   async function menuDelete() {
@@ -2353,10 +2352,10 @@ const RightPanel: Component = () => {
             </button>
             <div class="context-menu__separator" />
             <button class="context-menu__item" onClick={menuShowInFileTree}>
-              {t("rightPanel.menu.showInTree")}
+              {t("common.showInFileTree")}
             </button>
             <button class="context-menu__item" onClick={menuShowInExplorer}>
-              {t("rightPanel.menu.showInExplorer")}
+              {t("common.showInFileManager")}
             </button>
             <div class="context-menu__separator" />
             <button class="context-menu__item context-menu__item--danger" onClick={menuDelete}>
