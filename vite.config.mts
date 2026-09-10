@@ -3,11 +3,20 @@ import { defineConfig } from "vite";
 import solid from "vite-plugin-solid";
 import wasm from "vite-plugin-wasm";
 import path from "path";
+import vitestWasmLoader from "./scripts/vitest-wasm-loader.mts";
 
 const host = process.env.TAURI_DEV_HOST;
+// Vitest sets this before it loads the config. Two things differ under test:
+//
+//   - `.wasm` modules go through scripts/vitest-wasm-loader.mts rather than
+//     vite-plugin-wasm, whose shared helper is a virtual module Vitest cannot
+//     load on Windows (see that file).
+//   - Solid's hot-reload transform is off. It imports `@solid-refresh`, another
+//     virtual module with the same problem, and has nothing to do in a test.
+const testing = !!process.env.VITEST;
 
 export default defineConfig({
-  plugins: [wasm(), solid()],
+  plugins: [testing ? vitestWasmLoader() : wasm(), solid({ hot: !testing })],
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "src"),
@@ -50,9 +59,10 @@ export default defineConfig({
     setupFiles: ["./src/test-setup.ts"],
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
     // `codemirror-lang-typst` ships a `.wasm` parser. Inlining it routes the
-    // import through `vite-plugin-wasm` so Vite transforms the `.wasm` module;
-    // otherwise Vitest externalizes the dep and Node's ESM loader rejects the
-    // unknown `.wasm` extension, failing every suite that touches the parser.
+    // import through Vite's plugins (the test wasm loader above) so the
+    // `.wasm` module is transformed; otherwise Vitest externalizes the dep
+    // and Node's ESM loader rejects the unknown `.wasm` extension, failing
+    // every suite that touches the parser.
     server: { deps: { inline: [/solid-js/, /@solid-primitives\//, /codemirror-lang-typst/] } },
   },
 });
