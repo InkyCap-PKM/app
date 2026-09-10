@@ -12,6 +12,7 @@
 
 import { EditorView } from "@codemirror/view";
 import type { EditorState } from "@codemirror/state";
+import { dispatchVisible } from "./dispatch-visible";
 
 /** A list marker (`-`, `+`, or `N.`) plus its trailing space, at line start. */
 const LEADING_MARKER = /^(\s*)(?:[-+]|\d+\.)[ \t]+/;
@@ -49,7 +50,7 @@ export const listPasteHandler = EditorView.domEventHandlers({
     const clipboard = event.clipboardData?.getData("text/plain") ?? "";
     const insert = listPasteInsertion(view.state, clipboard);
     if (insert === null) return false;
-    view.dispatch(view.state.replaceSelection(insert));
+    dispatchVisible(view, view.state.replaceSelection(insert));
     event.preventDefault();
     return true;
   },

@@ -29,6 +29,7 @@
 import { EditorView, keymap } from "@codemirror/view";
 import { EditorSelection, type Extension } from "@codemirror/state";
 import { settings } from "../../stores/settings";
+import { dispatchVisible } from "./dispatch-visible";
 
 const PAIR_CHARS = new Set(["*", "_", "`", "$"]);
 
@@ -51,7 +52,7 @@ const autoPairInput = EditorView.inputHandler.of(
     // toolbar and Mod-b/Mod-i shortcuts use.
     if (sel.from !== sel.to) {
       const selected = state.doc.sliceString(sel.from, sel.to);
-      view.dispatch({
+      dispatchVisible(view, {
         changes: { from: sel.from, to: sel.to, insert: text + selected + text },
         selection: EditorSelection.range(sel.from + 1, sel.to + 1),
       });
@@ -73,7 +74,7 @@ const autoPairInput = EditorView.inputHandler.of(
     // so the full gesture is: ``` → language → Enter → code.
     const before = state.doc.sliceString(Math.max(0, from - 2), from);
     if (before === "``") {
-      view.dispatch({
+      dispatchVisible(view, {
         changes: { from, to, insert: "`\n\n```" },
         selection: EditorSelection.cursor(from + 1),
       });
@@ -85,7 +86,7 @@ const autoPairInput = EditorView.inputHandler.of(
     // Type-over: typing the closing backtick of a pair we (or the user) already
     // placed steps past it rather than inserting a second one.
     if (next === "`") {
-      view.dispatch({ selection: EditorSelection.cursor(from + 1) });
+      dispatchVisible(view, { selection: EditorSelection.cursor(from + 1) });
       return true;
     }
 
@@ -94,7 +95,7 @@ const autoPairInput = EditorView.inputHandler.of(
     // closeBrackets applies to ( and [. Mid-word, fall through to a single
     // backtick so we don't split what the user is writing.
     if (next === "" || /\s/.test(next) || CLOSE_BEFORE.includes(next)) {
-      view.dispatch({
+      dispatchVisible(view, {
         changes: { from, to, insert: "``" },
         selection: EditorSelection.cursor(from + 1),
       });
@@ -120,7 +121,7 @@ const deleteBacktickPair = keymap.of([
       const before = state.doc.sliceString(sel.from - 1, sel.from);
       const after = state.doc.sliceString(sel.from, sel.from + 1);
       if (before !== "`" || after !== "`") return false;
-      view.dispatch({
+      dispatchVisible(view, {
         changes: { from: sel.from - 1, to: sel.from + 1 },
         selection: EditorSelection.cursor(sel.from - 1),
         userEvent: "delete.backward",

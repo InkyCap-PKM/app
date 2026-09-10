@@ -17,6 +17,7 @@
 import { EditorView } from "@codemirror/view";
 import type { ChangeSpec, Extension } from "@codemirror/state";
 import { expandFunc } from "./effects";
+import { dispatchVisible } from "./dispatch-visible";
 
 const HR_INSERT = "#line(length: 100%)";
 
@@ -54,7 +55,7 @@ function handleSpace(view: EditorView, from: number): boolean {
     // the raw source while the cursor stays on the line, so typing flows into
     // the string; moving away collapses it back to the widget. The pill menu
     // (right-click / click) remains available for done/due/label. See issue #23.
-    view.dispatch({
+    dispatchVisible(view, {
       changes: { from: line.from, to: from, insert } as ChangeSpec,
       selection: { anchor: funcFrom + '#task("'.length },
       effects: expandFunc.of(funcFrom),
@@ -81,7 +82,7 @@ function handleSpace(view: EditorView, from: number): boolean {
   // Markdown's `>` is semantically a blockquote — map to the form that
   // actually renders attribution and gets block styling. The pill's
   // Inline option lets the user demote to `#quote[…]` after the fact.
-  view.dispatch({
+  dispatchVisible(view, {
     changes: { from: line.from, to: line.to, insert } as ChangeSpec,
     selection: { anchor: line.from + prefix.length },
     effects: expandFunc.of(line.from),
@@ -95,7 +96,7 @@ function handlePlus(view: EditorView, from: number): boolean {
 
   // +++ on a line by itself → horizontal rule
   if (beforeCursor === "++") {
-    view.dispatch({
+    dispatchVisible(view, {
       changes: { from: line.from, to: from, insert: HR_INSERT } as ChangeSpec,
       selection: { anchor: line.from + HR_INSERT.length },
     });
@@ -123,7 +124,7 @@ function handlePlus(view: EditorView, from: number): boolean {
 
   const start = line.from + openIdx;
   const insert = `#footnote[${content}]`;
-  view.dispatch({
+  dispatchVisible(view, {
     changes: { from: start, to: from, insert } as ChangeSpec,
     selection: { anchor: start + insert.length },
   });

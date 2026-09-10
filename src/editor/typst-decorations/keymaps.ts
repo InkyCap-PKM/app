@@ -5,6 +5,7 @@ import { moveLineUp, moveLineDown } from "@codemirror/commands";
 import { toggleEmphasis, toggleWrap } from "./wrap-format";
 import { listSubtreeEndLine, leadingWhitespace } from "./list-scan";
 import { listBlockRange, linesOfRange, markerWidth, renumberListLines } from "./list-renumber";
+import { dispatchVisible } from "./dispatch-visible";
 
 /**
  * When true, indent/outdent of a list item also moves any nested
@@ -200,9 +201,8 @@ function smartLineStart(view: EditorView, extend: boolean): boolean {
       ? EditorSelection.range(range.anchor, target)
       : EditorSelection.cursor(target);
   });
-  view.dispatch({
+  dispatchVisible(view, {
     selection: EditorSelection.create(ranges, state.selection.mainIndex),
-    scrollIntoView: true,
   });
   return true;
 }
@@ -323,7 +323,7 @@ function stepIntoOpenFence(view: EditorView): boolean {
   if (raw.from < line.from) return false;
   if (!EMPTY_FENCE_TAIL.test(doc.sliceString(line.to, raw.to))) return false;
 
-  view.dispatch({ selection: { anchor: line.to + 1 }, scrollIntoView: true });
+  dispatchVisible(view, { selection: { anchor: line.to + 1 } });
   return true;
 }
 
@@ -604,7 +604,7 @@ function indentList(state: EditorState, direction: 1 | -1): IndentPlan | null {
 
 /** Apply a planned list indent/outdent as one undoable transaction. */
 function applyIndentPlan(view: EditorView, plan: IndentPlan): void {
-  view.dispatch({
+  dispatchVisible(view, {
     changes: plan.change,
     selection: plan.selection,
     userEvent: plan.userEvent,
@@ -760,11 +760,10 @@ function moveListItem(view: EditorView, dir: -1 | 1): boolean {
     }
   });
 
-  view.dispatch({
+  dispatchVisible(view, {
     changes: { from: regionFrom, to: regionTo, insert },
     selection: { anchor: newHead },
     effects: refolds,
-    scrollIntoView: true,
     userEvent: "move.line",
   });
   return true;
@@ -784,7 +783,7 @@ export const typstKeymap: KeyBinding[] = [
     run(view) {
       const result = toggleBold(view.state);
       if (!result) return false;
-      view.dispatch({ changes: result.changes, selection: result.selection });
+      dispatchVisible(view, { changes: result.changes, selection: result.selection });
       return true;
     },
   },
@@ -793,7 +792,7 @@ export const typstKeymap: KeyBinding[] = [
     run(view) {
       const result = toggleItalic(view.state);
       if (!result) return false;
-      view.dispatch({ changes: result.changes, selection: result.selection });
+      dispatchVisible(view, { changes: result.changes, selection: result.selection });
       return true;
     },
   },
@@ -802,7 +801,7 @@ export const typstKeymap: KeyBinding[] = [
     run(view) {
       const result = toggleStrikethrough(view.state);
       if (!result) return false;
-      view.dispatch({ changes: result.changes, selection: result.selection });
+      dispatchVisible(view, { changes: result.changes, selection: result.selection });
       return true;
     },
   },
@@ -811,7 +810,7 @@ export const typstKeymap: KeyBinding[] = [
     run(view) {
       const result = toggleHighlight(view.state);
       if (!result) return false;
-      view.dispatch({ changes: result.changes, selection: result.selection });
+      dispatchVisible(view, { changes: result.changes, selection: result.selection });
       return true;
     },
   },
@@ -820,7 +819,7 @@ export const typstKeymap: KeyBinding[] = [
     run(view) {
       const result = toggleLink(view.state);
       if (!result) return false;
-      view.dispatch({ changes: result.changes, selection: result.selection });
+      dispatchVisible(view, { changes: result.changes, selection: result.selection });
       return true;
     },
   },
@@ -829,7 +828,7 @@ export const typstKeymap: KeyBinding[] = [
     run(view) {
       const result = toggleInlineCode(view.state);
       if (!result) return false;
-      view.dispatch({ changes: result.changes, selection: result.selection });
+      dispatchVisible(view, { changes: result.changes, selection: result.selection });
       return true;
     },
   },
@@ -838,7 +837,7 @@ export const typstKeymap: KeyBinding[] = [
     run(view) {
       const result = toggleInlineMath(view.state);
       if (!result) return false;
-      view.dispatch({ changes: result.changes, selection: result.selection });
+      dispatchVisible(view, { changes: result.changes, selection: result.selection });
       return true;
     },
   },
@@ -847,7 +846,7 @@ export const typstKeymap: KeyBinding[] = [
     run(view) {
       const result = adjustHeading(view.state, -1);
       if (!result) return false;
-      view.dispatch({ changes: result.changes, selection: result.selection });
+      dispatchVisible(view, { changes: result.changes, selection: result.selection });
       return true;
     },
   },
@@ -856,7 +855,7 @@ export const typstKeymap: KeyBinding[] = [
     run(view) {
       const result = adjustHeading(view.state, 1);
       if (!result) return false;
-      view.dispatch({ changes: result.changes, selection: result.selection });
+      dispatchVisible(view, { changes: result.changes, selection: result.selection });
       return true;
     },
   },
@@ -888,7 +887,7 @@ export const typstKeymap: KeyBinding[] = [
             cur = cur.parent;
           }
           if (canStep) {
-            view.dispatch({ selection: { anchor: pos + 1 } });
+            dispatchVisible(view, { selection: { anchor: pos + 1 } });
             return true;
           }
         }
@@ -905,7 +904,7 @@ export const typstKeymap: KeyBinding[] = [
 
       const listResult = continueList(view.state);
       if (listResult) {
-        view.dispatch({ changes: listResult.changes, selection: listResult.selection });
+        dispatchVisible(view, { changes: listResult.changes, selection: listResult.selection });
         return true;
       }
 
@@ -933,7 +932,7 @@ export const typstKeymap: KeyBinding[] = [
         const prev = prevLine.text;
         if (prev.endsWith("\\") && !prev.endsWith("\\\\")) {
           const slashFrom = prevLine.from + prev.length - 1;
-          view.dispatch({
+          dispatchVisible(view, {
             changes: { from: slashFrom, to: slashFrom + 1, insert: "" },
             selection: { anchor: cursor - 1 },
             userEvent: "input",
@@ -944,7 +943,7 @@ export const typstKeymap: KeyBinding[] = [
       }
 
       if (!shouldInsertAutoLineBreak(view.state, cursor)) return false;
-      view.dispatch({
+      dispatchVisible(view, {
         changes: { from: cursor, insert: "\\\n" },
         selection: { anchor: cursor + 2 },
         userEvent: "input",
