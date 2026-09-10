@@ -48,12 +48,9 @@ pub async fn save_notebox_tab_session(
     tab_sessions::save(&root, &session)
 }
 
-/// Forget the current notebox's recorded tabs.
+/// Forget the recorded tabs of every notebox. Called when the user turns the
+/// "previous tabs" startup behaviour off; needs no notebox to be open.
 #[tauri::command]
-pub async fn clear_notebox_tab_session(
-    state: State<'_, AppState>,
-    window: tauri::WebviewWindow,
-) -> Result<()> {
-    let root = canonical_root(&state, &window).await?;
-    tab_sessions::clear(&root)
+pub async fn clear_all_notebox_tab_sessions() -> Result<()> {
+    tab_sessions::clear_all()
 }

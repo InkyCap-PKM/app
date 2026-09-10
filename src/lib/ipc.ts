@@ -635,9 +635,9 @@ export async function saveNoteboxTabSession(session: NoteboxTabSession): Promise
   return invoke<void>("save_notebox_tab_session", { session });
 }
 
-/** Forget the current notebox's recorded tabs. */
-export async function clearNoteboxTabSession(): Promise<void> {
-  return invoke<void>("clear_notebox_tab_session");
+/** Forget the recorded tabs of every notebox. Needs no notebox to be open. */
+export async function clearAllNoteboxTabSessions(): Promise<void> {
+  return invoke<void>("clear_all_notebox_tab_sessions");
 }
 
 export async function generateZid(): Promise<string> {

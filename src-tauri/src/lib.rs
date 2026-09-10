@@ -336,7 +336,7 @@ pub fn run() {
             commands::settings::generate_zid,
             commands::tab_session::get_notebox_tab_session,
             commands::tab_session::save_notebox_tab_session,
-            commands::tab_session::clear_notebox_tab_session,
+            commands::tab_session::clear_all_notebox_tab_sessions,
             commands::properties::get_property_types,
             commands::properties::get_system_property_keys,
             commands::properties::set_property_type,

@@ -175,16 +175,17 @@ pub fn save(canonical_root: &Path, session: &NoteboxTabSession) -> Result<()> {
     write_store(&store)
 }
 
-/// Forget this notebox's tabs — used when the user turns the startup behaviour
-/// off, so the record doesn't linger after they stop asking for it.
-pub fn clear(canonical_root: &Path) -> Result<()> {
+/// Forget every notebox's tabs — used when the user turns the startup
+/// behaviour off, so no record lingers after they stop asking for it. The
+/// behaviour is a user-wide setting, so the whole store goes, not just the
+/// notebox that happens to be open.
+pub fn clear_all() -> Result<()> {
     let _guard = FILE_LOCK.lock();
-    let mut store = read_store();
-    if store.noteboxes.remove(&key_for(canonical_root)).is_none() {
-        return Ok(());
+    match std::fs::remove_file(store_path()) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e.into()),
     }
-    prune_missing_noteboxes(&mut store);
-    write_store(&store)
 }
 
 /// Drop entries for noteboxes that no longer exist on disk, the same

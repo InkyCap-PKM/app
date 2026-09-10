@@ -482,9 +482,10 @@ export async function showNoteboxPicker(): Promise<void> {
  * writes first so in-flight edits still land on disk while the folder exists.
  */
 export async function closeActiveNotebox(): Promise<void> {
-  // The notebox is being unloaded, not left for later, so the emptied
-  // workspace must not be recorded as "no tabs open". Recording resumes when a
-  // notebox is opened again.
+  // Record the tabs as they stand, then stop: the notebox is being unloaded,
+  // not left for later, so the emptied workspace must not be recorded as "no
+  // tabs open". Recording resumes when a notebox is opened again.
+  await recordTabSession();
   suspendTabSessionRecording();
   closeAllTabs();
   await awaitAllPendingWrites();
