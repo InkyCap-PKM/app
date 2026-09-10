@@ -75,6 +75,12 @@ export function computePreambleImportRanges(state: EditorState): ProtectedRange[
  * of the document; hiding and locking that would make the rest of the note
  * vanish the moment those two characters are typed. Line comments end at the
  * line break, so they are always complete.
+ *
+ * Block comments nest, the way Typst's lexer reads them: every opening
+ * delimiter inside one deepens it and every closing delimiter closes one
+ * level, so a comment is complete only when the depth returns to zero at its
+ * end. Checking just the last two characters would accept an unclosed `/*`
+ * typed above a note that already ends with a closed comment.
  */
 export function isCommentClosed(
   state: EditorState,
@@ -83,7 +89,23 @@ export function isCommentClosed(
   to: number,
 ): boolean {
   if (name !== "BlockComment") return true;
-  return to - from >= 4 && state.doc.sliceString(to - 2, to) === "*/";
+  const text = state.doc.sliceString(from, to);
+  if (!text.startsWith("/*")) return false;
+  let depth = 0;
+  let i = 0;
+  while (i < text.length) {
+    if (text.startsWith("/*", i)) {
+      depth++;
+      i += 2;
+    } else if (text.startsWith("*/", i)) {
+      depth--;
+      i += 2;
+      if (depth === 0) return i === text.length;
+    } else {
+      i++;
+    }
+  }
+  return false;
 }
 
 /**

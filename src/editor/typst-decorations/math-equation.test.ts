@@ -99,4 +99,20 @@ describe("half-typed block comments stay visible", () => {
     const doc = `// ok${TAIL}`;
     expect(decorations(doc, doc.length)).toEqual(["hide[0,6]"]);
   });
+
+  it("does not hide or lock after `/*` typed above a note that ends in a closed comment", () => {
+    // Block comments nest, so the new opener swallows the old comment and its
+    // closer, leaving one unclosed comment that happens to end with `*/`.
+    const doc = `/*${TAIL}\n/* old */`;
+    const state = EditorState.create({ doc, extensions: [typst()] });
+    expect(decorations(doc, doc.length)).toEqual([]);
+    expect(computeProtectedRanges(state, null)).toEqual([]);
+  });
+
+  it("still hides a closed comment with another nested inside it", () => {
+    const doc = `/* a /* b */ c */${TAIL}`;
+    const state = EditorState.create({ doc, extensions: [typst()] });
+    expect(decorations(doc, doc.length)).toEqual(["hide[0,18]"]);
+    expect(computeProtectedRanges(state, null)).toEqual([{ from: 0, to: 18 }]);
+  });
 });
