@@ -17,10 +17,16 @@ import { createHoverGuard } from "../lib/picker-hover";
  *   Tab                                 close and carry on out of the panel
  *
  * The highlight is a signal, not DOM focus: focus stays in the filter box so
- * the writer can keep typing while arrowing through the matches (the usual
- * combobox arrangement, described to assistive tech with
- * `aria-activedescendant`). Where there is no filter box, the list itself
- * takes focus and answers the same keys.
+ * the writer can keep typing while arrowing through the matches. Where there
+ * is no filter box, the list itself takes focus and answers the same keys.
+ *
+ * For assistive tech, whichever element holds the focus while the list is
+ * open is the one that describes it: the filter box is the combobox, and the
+ * focused list is a listbox, each naming the highlighted row through
+ * `aria-activedescendant`. The chips row is only the button that opens them.
+ * Putting the combobox role on the row instead would leave the focused
+ * element with nothing a screen reader recognises, so the highlight would go
+ * unannounced.
  */
 
 export interface MultiSelectPickerProps {
@@ -194,7 +200,8 @@ const MultiSelectPicker: Component<MultiSelectPickerProps> = (props) => {
         class="property-editor__tags"
         ref={triggerRef}
         tabindex="0"
-        role="combobox"
+        role="button"
+        aria-haspopup="listbox"
         aria-expanded={props.open}
         aria-controls={`${domId}-list`}
         aria-label={props.label}
@@ -219,7 +226,11 @@ const MultiSelectPicker: Component<MultiSelectPickerProps> = (props) => {
               type="text"
               placeholder={props.filterPlaceholder}
               value={props.filterValue ?? ""}
+              role="combobox"
+              aria-expanded="true"
+              aria-autocomplete="list"
               aria-controls={`${domId}-list`}
+              aria-label={props.label}
               aria-activedescendant={rowCount() > 0 ? rowId(highlight()) : undefined}
               onInput={(e) => {
                 props.onFilterChange?.(e.currentTarget.value);
@@ -237,6 +248,11 @@ const MultiSelectPicker: Component<MultiSelectPickerProps> = (props) => {
             aria-multiselectable="true"
             aria-label={props.label}
             tabindex={props.filterable ? -1 : 0}
+            /* The list names its own highlighted row only when it is the
+               focused element; with a filter box, that box does. */
+            aria-activedescendant={
+              !props.filterable && rowCount() > 0 ? rowId(highlight()) : undefined
+            }
             /* Bound unconditionally on purpose. A handler written as a
                conditional expression makes Solid rebuild this whole block
                whenever anything that expression reads changes — which would

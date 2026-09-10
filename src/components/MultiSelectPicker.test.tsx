@@ -196,6 +196,45 @@ describe("MultiSelectPicker keyboard control", () => {
   });
 });
 
+describe("MultiSelectPicker roles for assistive tech", () => {
+  // Whichever element holds the focus while the list is open must be the one
+  // that describes the list and names the highlighted row; a role on an
+  // element that has lost focus is never read out.
+  it("makes the focused filter box the combobox that names the highlight", async () => {
+    const h = mount(["alpha", "beta"]);
+    expect(h.trigger.getAttribute("role")).toBe("button");
+    expect(h.trigger.getAttribute("aria-haspopup")).toBe("listbox");
+    expect(h.trigger.getAttribute("aria-expanded")).toBe("false");
+    h.trigger.focus();
+    h.press("ArrowDown");
+    await settle();
+    const input = h.root.querySelector<HTMLElement>(".multi-select__filter")!;
+    const list = h.root.querySelector<HTMLElement>(".multi-select__list")!;
+    expect(document.activeElement).toBe(input);
+    expect(input.getAttribute("role")).toBe("combobox");
+    expect(input.getAttribute("aria-expanded")).toBe("true");
+    expect(input.getAttribute("aria-controls")).toBe(list.id);
+    expect(h.trigger.getAttribute("aria-expanded")).toBe("true");
+    h.press("ArrowDown");
+    const named = document.getElementById(input.getAttribute("aria-activedescendant")!);
+    expect(named?.textContent).toBe("beta");
+    expect(list.hasAttribute("aria-activedescendant")).toBe(false);
+  });
+
+  it("lets a focused list without a filter box name its own highlight", async () => {
+    const h = mount(["alpha", "beta"], { filter: false });
+    h.trigger.focus();
+    h.press("Enter");
+    await settle();
+    const list = h.root.querySelector<HTMLElement>(".multi-select__list")!;
+    expect(document.activeElement).toBe(list);
+    expect(list.getAttribute("role")).toBe("listbox");
+    h.press("ArrowDown");
+    const named = document.getElementById(list.getAttribute("aria-activedescendant")!);
+    expect(named?.textContent).toBe("beta");
+  });
+});
+
 describe("MultiSelectPicker highlight bookkeeping", () => {
   it("keeps the highlight on a row that still exists as the list shrinks", () =>
     createRoot(async (disposeRoot) => {
