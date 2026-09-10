@@ -1,4 +1,4 @@
-import { type EditorView, type KeyBinding } from "@codemirror/view";
+import { EditorView, type KeyBinding } from "@codemirror/view";
 import { Facet, EditorSelection, type EditorState, type ChangeSpec, type Line, type StateEffect } from "@codemirror/state";
 import { syntaxTree, foldedRanges, foldEffect } from "@codemirror/language";
 import { moveLineUp, moveLineDown } from "@codemirror/commands";
@@ -6,6 +6,7 @@ import { toggleEmphasis, toggleWrap } from "./wrap-format";
 import { listSubtreeEndLine, leadingWhitespace } from "./list-scan";
 import { listBlockRange, linesOfRange, markerWidth, renumberListLines } from "./list-renumber";
 import { dispatchVisible } from "./dispatch-visible";
+import { pastLineLeadingMarkup } from "./line-start-caret";
 
 /**
  * When true, indent/outdent of a list item also moves any nested
@@ -188,15 +189,24 @@ export function listContentStart(line: Line): number {
  * a Home-then-Shift-End selection, or an empty-selection line copy, still
  * carries the marker and the item pastes back as a complete bullet.
  *
+ * That second press only applies where the marker can be seen. In the visual
+ * editor the marker is hidden behind a bullet widget and the position before
+ * it is not one the caret can occupy (see line-start-caret.ts), so the caret
+ * stays on the content start instead.
+ *
  * `extend` mirrors the same toggle for Shift-Home, keeping the selection anchor
  * fixed. Operates on every cursor in a multi-selection.
  */
 function smartLineStart(view: EditorView, extend: boolean): boolean {
   const { state } = view;
+  const atomics = state.facet(EditorView.atomicRanges);
   const ranges = state.selection.ranges.map((range) => {
     const line = state.doc.lineAt(range.head);
     const cs = listContentStart(line);
-    const target = range.head === cs ? line.from : cs;
+    const markerHidden = atomics.some(
+      (get) => pastLineLeadingMarkup(get(view), state.doc, line.from) !== line.from,
+    );
+    const target = range.head === cs && !markerHidden ? line.from : cs;
     return extend
       ? EditorSelection.range(range.anchor, target)
       : EditorSelection.cursor(target);

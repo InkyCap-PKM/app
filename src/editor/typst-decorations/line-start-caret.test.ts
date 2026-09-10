@@ -1,7 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { EditorSelection, EditorState } from "@codemirror/state";
+import { EditorView, keymap } from "@codemirror/view";
+import { cursorCharLeft } from "@codemirror/commands";
 import { typst } from "codemirror-lang-typst";
 import { buildDecorations, typstVisualMode } from "./visual-plugin";
+import { typstKeymap } from "./keymaps";
 
 // The visual editor's bullet widget has a zero-width margin box (it is pulled
 // into the hanging-indent margin), so the caret in front of a list marker and
@@ -58,6 +61,79 @@ describe("caret in front of a list marker", () => {
     const doc = "- alpha\nprose";
     const prose = doc.indexOf("prose");
     expect(select(visual(doc), prose).head).toBe(prose);
+  });
+
+  it("lands after the marker when the caret arrives from another line", () => {
+    // Up from the gamma line with the goal column at zero: a vertical move,
+    // not a step back along beta's own line.
+    const gamma = DOC.indexOf("- gamma");
+    expect(select(visual(DOC, { anchor: gamma + 3 }), BETA).head).toBe(BETA + 2);
+  });
+});
+
+describe("stepping back onto a list marker", () => {
+  // Left from the start of an item's text: CodeMirror's atomic handling has
+  // already pushed the caret from after the marker to the line start. Sending
+  // it forward again would pin it there for good, so it continues to where
+  // the writer was heading.
+  const DOC = "- alpha\n- beta\n- gamma";
+  const BETA = DOC.indexOf("- beta");
+  const ALPHA_END = DOC.indexOf("\n");
+
+  const view = (anchor: number) =>
+    new EditorView({
+      state: EditorState.create({
+        doc: DOC,
+        selection: { anchor },
+        extensions: [typst(), typstVisualMode(), keymap.of(typstKeymap)],
+      }),
+      parent: document.body,
+    });
+
+  it("goes to the end of the previous line", () => {
+    // Cursor-motion commands annotate their transactions as "select".
+    const tr = visual(DOC, { anchor: BETA + 2 }).update({
+      selection: EditorSelection.single(BETA),
+      userEvent: "select",
+    });
+    expect(tr.state.selection.main.head).toBe(ALPHA_END);
+  });
+
+  it("treats an unannotated jump to the line start as a placement", () => {
+    expect(select(visual(DOC, { anchor: BETA + 2 }), BETA).head).toBe(BETA + 2);
+  });
+
+  it("Left arrow crosses to the previous line", () => {
+    const v = view(BETA + 2);
+    cursorCharLeft(v);
+    expect(v.state.selection.main.head).toBe(ALPHA_END);
+    v.destroy();
+  });
+
+  it("does not step back off the first line", () => {
+    const v = view(2);
+    cursorCharLeft(v);
+    expect(v.state.selection.main.head).toBe(2);
+    v.destroy();
+  });
+
+  it("a click on the line start still lands after the marker", () => {
+    const v = view(BETA + 4);
+    v.dispatch({ selection: EditorSelection.single(BETA), userEvent: "select.pointer" });
+    expect(v.state.selection.main.head).toBe(BETA + 2);
+    v.destroy();
+  });
+
+  it("Home stays on the start of the item's text", () => {
+    // In source mode a second Home jumps before the marker; here the marker
+    // is hidden, so there is nowhere visible to go.
+    const v = view(BETA + 4);
+    const home = typstKeymap.find((b) => b.key === "Home")!;
+    home.run!(v);
+    expect(v.state.selection.main.head).toBe(BETA + 2);
+    home.run!(v);
+    expect(v.state.selection.main.head).toBe(BETA + 2);
+    v.destroy();
   });
 });
 

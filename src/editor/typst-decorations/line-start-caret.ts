@@ -69,6 +69,14 @@ export function pastLineLeadingMarkup(
  * set the visual layer already makes atomic and the two can't disagree about
  * what counts as markup.
  *
+ * A caret that lands there normally moves forward, past the markup. The one
+ * exception is a caret that stepped *back* onto it from the same line — Left,
+ * Ctrl+Left, and the like — which CodeMirror's atomic handling has already
+ * pushed from the content side to the range's start. Sending that caret
+ * forward again would pin it at the start of the item's text, so it goes where
+ * the writer was heading: the end of the previous line. A pointer click is
+ * never a step, whatever the caret was doing before it.
+ *
  * Only the *forward* end of a non-empty selection moves, and only when the
  * selection starts mid-line. Pulling the start end forward as well would leave
  * the first selected item's marker behind, which is the `- - item` bug wearing
@@ -90,13 +98,28 @@ export function lineStartCaretFilter(
     const atoms = atomsFor(tr.startState);
     if (atoms.size === 0) return tr;
     const doc = tr.startState.doc;
+    const before = tr.startState.selection.ranges;
+    // Cursor-motion commands annotate their transactions as "select"; a click
+    // is "select.pointer". Anything else (a search hit, a restored selection)
+    // is a jump, not a step.
+    const keyboardMove = tr.isUserEvent("select") && !tr.isUserEvent("select.pointer");
 
     let moved = false;
-    const ranges = tr.selection.ranges.map((range) => {
+    const ranges = tr.selection.ranges.map((range, i) => {
       if (range.empty) {
         const head = pastLineLeadingMarkup(atoms, doc, range.head);
         if (head === range.head) return range;
         moved = true;
+        const line = doc.lineAt(range.head);
+        const prev = before.length === tr.selection!.ranges.length ? before[i] : null;
+        const steppedBack =
+          keyboardMove &&
+          prev !== null &&
+          prev.empty &&
+          prev.head > range.head &&
+          prev.head <= line.to &&
+          line.number > 1;
+        if (steppedBack) return EditorSelection.cursor(doc.line(line.number - 1).to);
         // assoc 1 draws the caret on the content side of the markup.
         return EditorSelection.cursor(head, 1);
       }
