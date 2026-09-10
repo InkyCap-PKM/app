@@ -25,7 +25,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::errors::Result;
-use crate::storage::to_frontend_string;
+use crate::storage::{to_frontend_string, validate_notebox_path};
 
 /// Most tabs we will remember for one notebox. A generous ceiling that still
 /// bounds the file if someone leaves hundreds of tabs open.
@@ -99,18 +99,20 @@ fn write_store(store: &TabSessionStore) -> Result<()> {
 }
 
 /// Make a recorded path relative to the notebox root, so the record survives
-/// the notebox being moved or renamed. Paths already relative are kept as-is;
-/// a path outside the notebox is rejected by returning `None` so it is dropped
-/// rather than persisted.
+/// the notebox being moved or renamed. A path outside the notebox, or one
+/// that climbs out of it with `..`, is rejected by returning `None` so it is
+/// dropped rather than persisted.
+///
+/// Resolution goes through [`validate_notebox_path`] rather than a bare
+/// `std::fs::canonicalize`: the notebox root is held without the Windows
+/// `\\?\` verbatim prefix, and only that helper resolves the tab's path to the
+/// same shape, so the prefix strip below works on every platform.
 fn to_relative(canonical_root: &Path, path: &str) -> Option<String> {
-    let p = PathBuf::from(path);
-    if p.is_relative() {
-        return Some(to_frontend_string(&p));
+    if path.is_empty() {
+        return Some(String::new());
     }
-    // Compare canonicalized where possible (symlinked notebox roots), falling
-    // back to the literal path for entries that no longer exist on disk.
-    let resolved = std::fs::canonicalize(&p).unwrap_or(p);
-    resolved
+    validate_notebox_path(canonical_root, Path::new(path))
+        .ok()?
         .strip_prefix(canonical_root)
         .ok()
         .map(to_frontend_string)
@@ -208,7 +210,7 @@ mod tests {
     #[test]
     fn absolute_paths_are_stored_relative_to_the_notebox() {
         let dir = tempfile::tempdir().unwrap();
-        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let root = crate::storage::canonicalize_root(dir.path()).unwrap();
         std::fs::write(root.join("note.typ"), "= Hi").unwrap();
 
         let abs = to_frontend_string(&root.join("note.typ"));
@@ -221,16 +223,28 @@ mod tests {
     #[test]
     fn paths_outside_the_notebox_are_dropped() {
         let dir = tempfile::tempdir().unwrap();
-        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let root = crate::storage::canonicalize_root(dir.path()).unwrap();
         let outside = std::fs::canonicalize(std::env::temp_dir()).unwrap();
 
         assert!(to_relative(&root, &to_frontend_string(&outside)).is_none());
     }
 
     #[test]
+    fn a_relative_path_that_climbs_out_of_the_notebox_is_dropped() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = crate::storage::canonicalize_root(dir.path()).unwrap();
+
+        assert!(to_relative(&root, "../elsewhere.typ").is_none());
+        assert_eq!(
+            to_relative(&root, "inside.typ").as_deref(),
+            Some("inside.typ")
+        );
+    }
+
+    #[test]
     fn a_missing_file_is_not_restored() {
         let dir = tempfile::tempdir().unwrap();
-        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let root = crate::storage::canonicalize_root(dir.path()).unwrap();
         std::fs::write(root.join("kept.typ"), "= Hi").unwrap();
 
         let session = expand(
@@ -250,7 +264,7 @@ mod tests {
     #[test]
     fn a_notebox_wide_graph_tab_survives_without_a_file() {
         let dir = tempfile::tempdir().unwrap();
-        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let root = crate::storage::canonicalize_root(dir.path()).unwrap();
 
         let graph = SessionTab {
             kind: "mycelial".to_string(),

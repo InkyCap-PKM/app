@@ -891,6 +891,11 @@ impl SearchEngine {
         collections: &CollectionMembership,
     ) -> HashMap<usize, HashMap<usize, Vec<WordPosition>>> {
         let value_lower = value.to_lowercase();
+        // A path filter is compared in the frontend's forward-slash shape, with
+        // the value folded to the same, so a folder completed from the file
+        // tree (or typed with either separator) matches on Windows as well as
+        // Unix. Indexed paths carry the OS-native separator.
+        let path_value = value_lower.replace('\\', "/");
         let mut result = HashMap::new();
 
         for (doc_id, doc) in self.docs.iter().enumerate() {
@@ -899,11 +904,9 @@ impl SearchEngine {
             }
 
             let matches = match kind {
-                FilterKind::Path => doc
-                    .path
-                    .to_string_lossy()
+                FilterKind::Path => to_frontend_string(&doc.path)
                     .to_lowercase()
-                    .contains(&value_lower),
+                    .contains(&path_value),
                 FilterKind::File => doc.file_name.to_lowercase().contains(&value_lower),
                 FilterKind::Tag => doc
                     .tags
@@ -1748,6 +1751,24 @@ mod tests {
         let results = engine.search(&query, 10);
         assert_eq!(results.len(), 1);
         assert!(results[0].path.contains("daily"));
+    }
+
+    #[test]
+    fn path_filter_matches_across_separators() {
+        // Indexed paths carry the OS-native separator; the filter value comes
+        // from the file tree (or the user) with forward slashes.
+        let engine = SearchEngine::build(vec![(
+            PathBuf::from(r"C:\notebox\Archive\2024\note.md"),
+            "body".to_string(),
+            Vec::new(),
+            None,
+            Vec::new(),
+            HashMap::new(),
+        )]);
+        for query in ["path:\"archive/2024/\"", "path:archive", r"path:archive\2024"] {
+            let node = parse_query(query).unwrap();
+            assert_eq!(engine.search(&node, 10).len(), 1, "{query} should match");
+        }
     }
 
     #[test]
