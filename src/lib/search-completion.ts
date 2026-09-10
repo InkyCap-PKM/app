@@ -65,10 +65,21 @@ export function completionContext(
 }
 
 /**
+ * Whether a value can be written into a filter at all. The query language has
+ * no way to escape a double quote — a quote always opens or closes a run — so
+ * a tag or property value containing one cannot be searched for by name, and
+ * offering it would only produce a filter for some other string.
+ */
+export function canComplete(value: string): boolean {
+  return !value.includes('"');
+}
+
+/**
  * Replace the filter value with `value`, quoting it when it contains anything
  * that would otherwise end the token. `suffix` is appended outside the quotes —
  * a chosen property key carries its `=` so the value can be typed next.
- * Returns the new query text and where the caret belongs in it.
+ * Returns the new query text and where the caret belongs in it. `value` must
+ * pass `canComplete`.
  */
 export function applyCompletion(
   query: string,
@@ -76,7 +87,7 @@ export function applyCompletion(
   value: string,
   suffix = "",
 ): { text: string; caret: number } {
-  const quoted = /[\s()"]/.test(value) ? `"${value.replace(/"/g, "")}"` : value;
+  const quoted = /[\s()]/.test(value) ? `"${value}"` : value;
   const inserted = quoted + suffix;
   return {
     text: query.slice(0, context.from) + inserted + query.slice(context.to),

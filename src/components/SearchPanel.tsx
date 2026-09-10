@@ -15,6 +15,7 @@ import {
   completionContext,
   applyCompletion,
   type SearchCompletionContext,
+  canComplete,
 } from "../lib/search-completion";
 import {
   Component,
@@ -170,6 +171,10 @@ const SearchPanel: Component = () => {
   const folders = createMemo(() => folderPaths(fileList()));
   const [caretPos, setCaretPos] = createSignal(0);
   const [completionIndex, setCompletionIndex] = createSignal(0);
+  /** True once the arrows have moved the highlight, so Enter means "this
+   *  one"; false while the highlight is only the default first row, when
+   *  Enter runs the query as typed. Reset by typing. */
+  const [completionChosen, setCompletionChosen] = createSignal(false);
   /** Set by Escape; cleared as soon as the caret moves to a new filter. */
   const [completionsDismissed, setCompletionsDismissed] = createSignal(false);
 
@@ -326,6 +331,7 @@ const SearchPanel: Component = () => {
     // longer applies.
     setCompletionsDismissed(false);
     setCompletionIndex(0);
+    setCompletionChosen(false);
     syncCaret();
     if (searchTimeout) clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
@@ -334,29 +340,30 @@ const SearchPanel: Component = () => {
   }
 
   function handleKeyDown(e: KeyboardEvent) {
-    // The completion list owns the arrows and Enter while it is open, so
-    // choosing a tag doesn't also fire the search.
+    // The completion list owns the arrows, Tab and Escape while it is open.
+    // Enter is claimed only once the arrows have picked a row: a filter value
+    // is a substring match, so `tag:dr` typed on purpose is a complete query,
+    // and Enter must run it rather than swap in whatever ranks first.
     const items = completionItems();
-    if (showCompletions() && items.length > 0) {
-      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-        e.preventDefault();
-        const step = e.key === "ArrowDown" ? 1 : -1;
-        setCompletionIndex((i) => (i + step + items.length) % items.length);
-        return;
-      }
-      const selected = items[completionIndex()];
-      // Enter runs the search once there is nothing left to complete, so
-      // typing a tag out in full and pressing Enter does what it looks like.
-      const alreadyTyped = selected.toLowerCase() === completion()?.typed;
-      if (e.key === "Tab" || (e.key === "Enter" && !alreadyTyped)) {
-        e.preventDefault();
-        acceptCompletion(selected);
-        return;
-      }
+    if (showCompletions()) {
       if (e.key === "Escape") {
         e.preventDefault();
         setCompletionsDismissed(true);
         return;
+      }
+      if (items.length > 0) {
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          e.preventDefault();
+          const step = e.key === "ArrowDown" ? 1 : -1;
+          setCompletionIndex((i) => (i + step + items.length) % items.length);
+          setCompletionChosen(true);
+          return;
+        }
+        if (e.key === "Tab" || (e.key === "Enter" && completionChosen())) {
+          e.preventDefault();
+          acceptCompletion(items[completionIndex()]);
+          return;
+        }
       }
     }
     if (e.key === "Enter") {
@@ -411,23 +418,27 @@ const SearchPanel: Component = () => {
     (key: string) => ipc.getPropertyValues(key).catch(() => [] as string[]),
   );
 
-  /** Everything the current filter could be completed with, unfiltered. */
+  /** Everything the current filter could be completed with, unfiltered
+   *  except for values the query language cannot express at all. */
   const completionSource = createMemo((): string[] => {
     const c = completion();
     if (!c) return [];
-    switch (c.kind) {
-      case "path":
-        // The trailing `/` keeps the filter to the folder rather than also
-        // matching a note whose name merely starts the same way, and showing
-        // it in the list is how the user learns the shape.
-        return folders().map((folder) => `${folder}/`);
-      case "tag":
-        return allTags().map(([name]) => name);
-      case "property-key":
-        return allPropertyKeys();
-      case "property-value":
-        return propertyValues() ?? [];
-    }
+    const all = (): string[] => {
+      switch (c.kind) {
+        case "path":
+          // The trailing `/` keeps the filter to the folder rather than also
+          // matching a note whose name merely starts the same way, and showing
+          // it in the list is how the user learns the shape.
+          return folders().map((folder) => `${folder}/`);
+        case "tag":
+          return allTags().map(([name]) => name);
+        case "property-key":
+          return allPropertyKeys();
+        case "property-value":
+          return propertyValues() ?? [];
+      }
+    };
+    return all().filter(canComplete);
   });
 
   /** The source narrowed to what the user has typed, best match first. */
@@ -478,6 +489,7 @@ const SearchPanel: Component = () => {
     const { text, caret } = applyCompletion(searchQuery(), c, value, isKey ? "=" : "");
     setSearchQuery(text);
     setCompletionIndex(0);
+    setCompletionChosen(false);
     setCompletionsDismissed(!isKey);
     if (searchTimeout) clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => executeSearch(), 300);

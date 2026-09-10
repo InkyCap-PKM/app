@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { completionContext, applyCompletion } from "./search-completion";
+import { completionContext, applyCompletion, canComplete } from "./search-completion";
 
 /** Context for a query written with `|` marking the caret. */
 function at(marked: string) {
@@ -14,6 +14,20 @@ function accept(marked: string, value: string, suffix = "") {
   const { text, caret } = applyCompletion(query, context, value, suffix);
   return `${text.slice(0, caret)}|${text.slice(caret)}`;
 }
+
+describe("values that can be completed at all", () => {
+  it("leaves out a value the query language cannot quote", () => {
+    // A double quote always opens or closes a run and cannot be escaped, so
+    // a filter for such a value would search for some other string.
+    expect(canComplete('say "hi"')).toBe(false);
+    expect(canComplete("plain")).toBe(true);
+    expect(canComplete("with space")).toBe(true);
+  });
+
+  it("keeps a quoted value whole", () => {
+    expect(accept("tag:|", "in progress")).toBe('tag:"in progress"|');
+  });
+});
 
 describe("recognizing the filter under the caret", () => {
   it("offers tags inside a tag filter", () => {
