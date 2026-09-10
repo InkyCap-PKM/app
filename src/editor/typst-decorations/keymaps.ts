@@ -394,55 +394,14 @@ function continueList(state: EditorState): { changes: ChangeSpec; selection: { a
   const pos = Math.max(from, contentStart);
 
   // The new item's indent, marker and separator — everything before its text.
-  const opening = `${indent}${nextMarker} `;
-  const renumbered = continuationWithRenumber(state, line, pos, opening);
-  if (renumbered) return renumbered;
-
-  const insert = `\n${opening}`;
+  // Only the new line is written: the items already there keep the numbers
+  // the writer typed, so a deliberate restart survives and the Enter undo step
+  // stays small. Numbers are brought back into step when the list's shape
+  // changes, on Tab and Shift+Tab (see indentList).
+  const insert = `\n${indent}${nextMarker} `;
   return {
     changes: { from: pos, insert },
     selection: { anchor: pos + insert.length },
-  };
-}
-
-/**
- * The Enter continuation rewritten to cover the whole list block, so that
- * inserting an item in the middle of a `1. 2. 3.` list pushes the numbers below
- * it along instead of leaving a duplicate. Returns null when no number would
- * change, so the ordinary case stays the small, cheap insertion.
- *
- * `opening` is the new item's indent and marker (with its separator); the text
- * to the right of the caret moves onto the new line after it.
- */
-function continuationWithRenumber(
-  state: EditorState,
-  line: Line,
-  pos: number,
-  opening: string,
-): { changes: ChangeSpec; selection: { anchor: number } } | null {
-  const [first, last] = listBlockRange(state.doc, line.number);
-  const before = state.doc.sliceString(line.from, pos);
-  const after = state.doc.sliceString(pos, line.to);
-
-  const index = line.number - first;
-  const original = linesOfRange(state.doc, first, last);
-  const withNewItem = [
-    ...original.slice(0, index),
-    before,
-    opening + after,
-    ...original.slice(index + 1),
-  ];
-  const rewritten = renumberListLines(withNewItem);
-  if (rewritten.join("\n") === withNewItem.join("\n")) return null;
-
-  const regionFrom = state.doc.line(first).from;
-  let caret = regionFrom;
-  for (let i = 0; i <= index; i++) caret += rewritten[i].length + 1;
-  caret += markerWidth(rewritten[index + 1]);
-
-  return {
-    changes: { from: regionFrom, to: state.doc.line(last).to, insert: rewritten.join("\n") },
-    selection: { anchor: caret },
   };
 }
 
@@ -457,6 +416,8 @@ interface IndentPlan {
   selection: { anchor: number; head: number };
   /** CodeMirror user-event name, so history and other extensions can react. */
   userEvent: string;
+  /** Folds inside the replaced region, re-issued at their new positions. */
+  refolds: StateEffect<unknown>[];
 }
 
 /** A line that opens a list item: indent, then a `-`/`+`/`N.` marker and a space. */
@@ -571,8 +532,12 @@ function indentList(state: EditorState, direction: 1 | -1): IndentPlan | null {
   // Moving an item between levels invalidates the explicit `N.` numbers of the
   // level it left and the one it joined, so the rewrite covers the whole list
   // block, not just the shifted lines. Lines outside the shift are reproduced
-  // unchanged unless their number moved (see list-renumber.ts).
-  const [blockFirst, blockLast] = listBlockRange(state.doc, shiftedFirst);
+  // unchanged unless their number moved (see list-renumber.ts). A selection
+  // can span more than one block, with prose between; the region then runs
+  // from the first block's start to the last block's end, and each block
+  // still counts on its own.
+  const [blockFirst] = listBlockRange(state.doc, shiftedFirst);
+  const [, blockLast] = listBlockRange(state.doc, shiftedLast);
   const first = Math.min(blockFirst, shiftedFirst);
   const last = Math.max(blockLast, shiftedLast);
 
@@ -605,10 +570,21 @@ function indentList(state: EditorState, direction: 1 | -1): IndentPlan | null {
     return lineStart + Math.max(0, column + shift + numberShift);
   };
 
+  // Replacing the region drops every fold that lies inside it, so those are
+  // put back where their lines end up. A fold that reaches outside the region
+  // is mapped by CodeMirror itself and needs no help.
+  const refolds: StateEffect<unknown>[] = [];
+  foldedRanges(state).between(startLine.from, endLine.to, (from, to) => {
+    if (from >= startLine.from && to <= endLine.to) {
+      refolds.push(foldEffect.of({ from: mapPos(from), to: mapPos(to) }));
+    }
+  });
+
   return {
     change: { from: startLine.from, to: endLine.to, insert: rewritten.join("\n") },
     selection: { anchor: mapPos(anchor), head: mapPos(head) },
     userEvent: direction === 1 ? "input.indent" : "delete.dedent",
+    refolds,
   };
 }
 
@@ -618,6 +594,7 @@ function applyIndentPlan(view: EditorView, plan: IndentPlan): void {
     changes: plan.change,
     selection: plan.selection,
     userEvent: plan.userEvent,
+    effects: plan.refolds,
   });
 }
 

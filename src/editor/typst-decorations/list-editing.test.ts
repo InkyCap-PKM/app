@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { EditorState } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { history, historyKeymap, undo } from "@codemirror/commands";
+import { codeFolding, foldEffect, foldedRanges } from "@codemirror/language";
 import { typstKeymap, listContentStart, smartIndentListsFacet } from "./keymaps";
 import { listPasteHandler, listPasteInsertion } from "./list-paste";
 
@@ -27,7 +28,12 @@ function mkSel(doc: string, anchor: number, head: number, smart = false) {
     state: EditorState.create({
       doc,
       selection: { anchor, head },
-      extensions: [history(), keymap.of([...typstKeymap, ...historyKeymap]), smartIndentListsFacet.of(smart)],
+      extensions: [
+        history(),
+        codeFolding(),
+        keymap.of([...typstKeymap, ...historyKeymap]),
+        smartIndentListsFacet.of(smart),
+      ],
     }),
     parent: document.body,
   });
@@ -324,6 +330,53 @@ describe("numbered list renumbering on indent and outdent", () => {
     const v = mkSel(doc, caret, caret);
     pressTab(v);
     expect(v.state.doc.toString()).toBe("1. one\n  1. two\n\nProse.");
+    v.destroy();
+  });
+
+  it("renumbers each block of a selection that spans two lists", () => {
+    const doc = "1. a\n2. b\n\nProse\n\n1. c\n2. d\n3. e";
+    const v = mkSel(doc, doc.indexOf("2. b"), caretAtEndOfLine(doc, 6));
+    pressTab(v);
+    expect(v.state.doc.toString()).toBe("1. a\n  1. b\n\nProse\n\n  1. c\n  2. d\n1. e");
+    v.destroy();
+  });
+});
+
+describe("folds survive a list indent", () => {
+  /** `from-to` for every fold in the editor. */
+  const folds = (v: EditorView) => {
+    const out: string[] = [];
+    foldedRanges(v.state).between(0, v.state.doc.length, (from, to) => {
+      out.push(`${from}-${to}`);
+    });
+    return out;
+  };
+
+  it("keeps a fold elsewhere in the list when an item is indented", () => {
+    const doc = "- a\n  - x\n  - y\n- b\n- c";
+    const v = mkSel(doc, doc.length, doc.length);
+    // Fold a's children: from the end of "- a" to the end of "  - y".
+    v.dispatch({ effects: foldEffect.of({ from: 3, to: doc.indexOf("- b") - 1 }) });
+    expect(folds(v)).toEqual(["3-15"]);
+    pressTab(v);
+    expect(v.state.doc.toString()).toBe("- a\n  - x\n  - y\n- b\n  - c");
+    expect(folds(v)).toEqual(["3-15"]);
+    v.destroy();
+  });
+
+  it("moves a fold whose lines shift", () => {
+    const doc = "1. a\n2. b\n  - x\n  - y\n3. c";
+    const bEnd = doc.indexOf("2. b") + "2. b".length;
+    const yEnd = doc.indexOf("3. c") - 1;
+    // Smart indent, so b's children ride along and the fold's lines shift.
+    const v = mkSel(doc, bEnd, bEnd, true);
+    v.dispatch({ effects: foldEffect.of({ from: bEnd, to: yEnd }) });
+    pressTab(v);
+    const after = v.state.doc.toString();
+    expect(after).toBe("1. a\n  1. b\n    - x\n    - y\n2. c");
+    const newBEnd = after.indexOf("  1. b") + "  1. b".length;
+    const newYEnd = after.indexOf("2. c") - 1;
+    expect(folds(v)).toEqual([`${newBEnd}-${newYEnd}`]);
     v.destroy();
   });
 });

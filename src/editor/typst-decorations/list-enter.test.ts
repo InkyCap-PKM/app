@@ -97,13 +97,16 @@ describe("list Enter behaviour", () => {
   });
 });
 
-describe("numbered list Enter renumbering", () => {
-  it("pushes the numbers below along when an item is inserted mid-list", () => {
+describe("numbered list Enter leaves existing numbers alone", () => {
+  // An explicit `N.` is a literal Typst prints as typed. Enter writes only the
+  // new line; numbers are brought back into step on Tab and Shift+Tab, when
+  // the list's shape actually changes.
+  it("inserts mid-list without rewriting the items below", () => {
     const doc = "1. one\n2. two\n3. three";
     const v = mk(doc);
     v.dispatch({ selection: { anchor: "1. one".length } });
     pressEnter(v);
-    expect(v.state.doc.toString()).toBe("1. one\n2. \n3. two\n4. three");
+    expect(v.state.doc.toString()).toBe("1. one\n2. \n2. two\n3. three");
     expect(v.state.selection.main.head).toBe("1. one\n2. ".length);
     v.destroy();
   });
@@ -121,16 +124,16 @@ describe("numbered list Enter renumbering", () => {
     const v = mk(doc);
     v.dispatch({ selection: { anchor: "1. one".length } });
     pressEnter(v);
-    expect(v.state.doc.toString()).toBe("1. one\n2. two\n3. three");
+    expect(v.state.doc.toString()).toBe("1. one\n2. two\n2. three");
     expect(v.state.selection.main.head).toBe("1. one\n2. ".length);
     v.destroy();
   });
 
-  it("straightens a list whose numbers were already wrong", () => {
-    const doc = "1. one\n  2. child\n3. two";
+  it("keeps a restart the writer typed", () => {
+    const doc = "1. one\n1. again";
     const v = mk(doc);
     pressEnter(v);
-    expect(v.state.doc.toString()).toBe("1. one\n  1. child\n2. two\n3. ");
+    expect(v.state.doc.toString()).toBe("1. one\n1. again\n2. ");
     v.destroy();
   });
 });

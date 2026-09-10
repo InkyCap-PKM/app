@@ -110,7 +110,7 @@ export function renumberListLines(lines: string[]): string[] {
  * Commands renumber over this whole range rather than from the edit downwards:
  * one contiguous replacement is what the incremental parser handles cleanly,
  * and it means a list whose numbers were already wrong straightens itself out
- * the next time the writer edits it.
+ * the next time the writer indents or outdents an item in it.
  */
 export function listBlockRange(doc: Text, lineNumber: number): [number, number] {
   let first = lineNumber;
