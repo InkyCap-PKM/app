@@ -40,6 +40,7 @@ import { TableWidget } from "./table-widget";
 import { parseCanonicalTable } from "./table-parser";
 import { fileList } from "../../stores/filelist";
 import { getCachedBibKeys, activeReferenceSearchAt } from "./reference-suggest";
+import { isEmailLikeAt } from "./reference-form";
 import { scanDocumentLabels, type DocLabel } from "./document-labels";
 import { FuncPillWidget, FuncChipWidget, BulletWidget, ShorthandWidget, HrWidget, AngleBracketWarningWidget, ANGLE_BRACKET_TAGS, StylePreambleWidget, SetRuleWidget, SymWidget } from "./visual-widgets";
 import { symbolGlyph } from "./symbols";
@@ -983,14 +984,8 @@ export function buildDecorations(state: EditorState, onlyRanges?: { from: number
             return false;
           }
           case "Ref": {
-            if (isCursorAdjacentOrInside(state, node.from, node.to, cursors)) return false;
             const refText = state.doc.sliceString(node.from, node.to);
             if (refText.startsWith("@")) {
-              // While this `@…` is the target of a live citation search, leave it
-              // as plain editable text — pilling it mid-search (e.g. `@einstein`
-              // while the writer is still typing `relativity` to find the paper)
-              // would make a multi-word query feel like it had already resolved.
-              if (activeReferenceSearchAt() === node.from) return false;
               // Typst's `@` is the universal reference operator: it resolves to a
               // bibliography entry (a citation) OR an in-document `<label>`
               // (heading, figure, equation, table). Decide which by consulting
@@ -998,6 +993,23 @@ export function buildDecorations(state: EditorState, onlyRanges?: { from: number
               const key = refText.slice(1);
               const bibKeys = getCachedBibKeys();
               const label = getDocLabelMap().get(key);
+              // An unresolved `@` glued to an email local part (`athena@inkycap.org`)
+              // is an address, not a reference — the one rule shared with the
+              // `@` popup and the compile pipeline's escape pass. It is marked
+              // as plain text even with the caret on it: a mark never swallows
+              // the caret, and without it the syntax highlighter colours the
+              // address like a reference for as long as it is being typed.
+              const before = node.from > 0 ? state.doc.sliceString(node.from - 1, node.from) : "";
+              if (isEmailLikeAt(before) && !bibKeys.has(key) && !label) {
+                decos.push(refPlainMark.range(node.from, node.to));
+                return false;
+              }
+              if (isCursorAdjacentOrInside(state, node.from, node.to, cursors)) return false;
+              // While this `@…` is the target of a live citation search, leave it
+              // as plain editable text — pilling it mid-search (e.g. `@einstein`
+              // while the writer is still typing `relativity` to find the paper)
+              // would make a multi-word query feel like it had already resolved.
+              if (activeReferenceSearchAt() === node.from) return false;
               if (bibKeys.has(key)) {
                 decos.push(
                   Decoration.replace({
@@ -1026,16 +1038,12 @@ export function buildDecorations(state: EditorState, onlyRanges?: { from: number
                   }).range(node.from, node.to),
                 );
               } else {
-                // Resolves to neither a citation nor a label. Distinguish an
-                // email's `@domain` (preceded by a word character — render as
-                // plain text) from a standalone reference that didn't resolve
-                // (preceded by whitespace/punctuation — flag it so the writer
-                // sees it won't resolve).
-                const before = node.from > 0 ? state.doc.sliceString(node.from - 1, node.from) : "";
-                const attached = /[\p{L}\p{N}]/u.test(before);
-                decos.push((attached ? refPlainMark : refBrokenMark).range(node.from, node.to));
+                // A standalone reference that resolves to nothing — flag it so
+                // the writer sees it won't compile.
+                decos.push(refBrokenMark.range(node.from, node.to));
               }
             } else {
+              if (isCursorAdjacentOrInside(state, node.from, node.to, cursors)) return false;
               decos.push(refMark.range(node.from, node.to));
             }
             return false;

@@ -752,12 +752,14 @@ fn strip_code_spans(source: &str) -> String {
 /// or equation into `\@...` whenever a bibliography was present — breaking
 /// the reference in the rendered output.
 ///
-/// An `@` attached to a preceding word character (an email or handle, e.g.
-/// `athena@inkycap.org`) is always escaped, even with no bibliography loaded:
-/// Typst never parses a citation mid-word, so such an `@` cannot be a real
-/// citation. A *standalone* unresolved `@key` is only escaped when
-/// `valid_keys` is non-empty; with none loaded it may be a transiently
-/// unresolved citation and is left untouched.
+/// An unresolved `@` glued to the tail of an email local part (an email or
+/// handle, e.g. `athena@inkycap.org`) is always escaped, even with no
+/// bibliography loaded. Typst does lex it as a reference, but InkyCap reads
+/// that shape as an address on every surface (see [`is_email_like_at`]), and
+/// escaping it can only rescue a compile that would otherwise fail. A
+/// *standalone* unresolved `@key` is only escaped when `valid_keys` is
+/// non-empty; with none loaded it may be a transiently unresolved citation and
+/// is left untouched.
 pub fn escape_invalid_citations(
     source: &str,
     valid_keys: &std::collections::HashSet<String>,
@@ -790,18 +792,12 @@ pub fn escape_invalid_citations(
         if valid_keys.contains(target) || labels.contains(target) {
             continue;
         }
-        // Typst only ever parses a citation or cross-reference at a word
-        // boundary, so an `@` sitting directly after a letter or digit —
-        // `athena@inkycap.org` — is never a citation and is always safe to
-        // render literally, regardless of whether a bibliography is loaded.
-        // This mirrors the visual editor's email heuristic (the `attached`
-        // branch in `visual-plugin.ts`) so the two paths agree. UTF-8-safe:
-        // `*pos` is the byte offset of the ASCII `@`, so slicing to it lands on
-        // a char boundary and `next_back()` yields the whole preceding char.
-        let attached_to_word = source[..*pos]
-            .chars()
-            .next_back()
-            .is_some_and(|c| c.is_alphanumeric());
+        // An unresolved `@` right after an email character — `athena@inkycap.org`
+        // — is an address, not a citation, and is safe to render literally
+        // whether or not a bibliography is loaded. UTF-8-safe: `*pos` is the
+        // byte offset of the ASCII `@`, so slicing to it lands on a char
+        // boundary and `next_back()` yields the whole preceding char.
+        let attached_to_word = is_email_like_at(source[..*pos].chars().next_back());
         // A *standalone* stray `@` is only escaped when we have keys to compare
         // against. With none loaded (a failed or not-yet-loaded bibliography)
         // we can't tell a real, transiently-unresolved citation from a typo, so
@@ -820,6 +816,20 @@ pub fn escape_invalid_citations(
     }
     out.extend_from_slice(&bytes[last..]);
     String::from_utf8(out).unwrap_or_else(|_| source.to_string())
+}
+
+/// Whether an `@` preceded by `char_before` is the join of an email address or
+/// handle rather than the start of a reference. Typst lexes an `@` as a
+/// reference wherever a label character follows it, even mid-word, so
+/// `athena@inkycap.org` is text plus a reference to `<inkycap.org>`. InkyCap
+/// reads that shape as an address instead, with one rule on every surface: the
+/// `@` suggestion popup does not open, the visual editor shows plain text, and
+/// this pass escapes it. The set is ASCII-only on purpose — an email's local
+/// part is ASCII, and a citation written directly after a CJK word
+/// (`参见@smith2020`) is a real reference that must keep working. The frontend
+/// twin is `isEmailLikeAt` in `reference-form.ts`; keep the two in step.
+fn is_email_like_at(char_before: Option<char>) -> bool {
+    char_before.is_some_and(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '+' | '-'))
 }
 
 /// Recursively gather every `<label>` definition and `@target` reference in
@@ -1336,11 +1346,11 @@ mod tests {
     fn escape_invalid_keeps_valid_citations() {
         let valid: std::collections::HashSet<String> =
             ["smith2020"].iter().map(|s| s.to_string()).collect();
-        let src = "See @smith2020 and paulgott9@gmail.com for details.";
+        let src = "See @smith2020 and athena@inkycap.org for details.";
         let out = escape_invalid_citations(src, &valid);
         assert!(out.contains("@smith2020"));
-        assert!(out.contains(r"\@gmail"));
-        assert!(!out.contains(" @gmail"));
+        assert!(out.contains(r"\@inkycap"));
+        assert!(!out.contains(" @inkycap"));
     }
 
     #[test]
@@ -1365,6 +1375,34 @@ mod tests {
         let src = "e-mail: athena@inkycap.org";
         let out = escape_invalid_citations(src, &valid);
         assert_eq!(out, r"e-mail: athena\@inkycap.org");
+    }
+
+    #[test]
+    fn escape_email_ending_in_local_part_punctuation() {
+        // `+` tags and `_` / `-` / `.` are all legal at the end of a local part.
+        let valid: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for src in [
+            "me+news@example.org",
+            "first_@example.org",
+            "a-@b.c",
+            "x.@y.z",
+        ] {
+            let out = escape_invalid_citations(src, &valid);
+            assert_eq!(out, src.replacen('@', r"\@", 1), "{src}");
+        }
+    }
+
+    #[test]
+    fn escape_leaves_reference_after_cjk_word_as_a_reference() {
+        // A citation written directly after a CJK word is a real reference, not
+        // an address: with no bibliography loaded it is left for a later compile
+        // to resolve, exactly like a space-separated `@key`.
+        let valid: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let src = "参见@smith2020。";
+        assert_eq!(escape_invalid_citations(src, &valid), src);
+        // With keys loaded it is unresolved like any other stray reference.
+        let valid: std::collections::HashSet<String> = ["other".to_string()].into_iter().collect();
+        assert_eq!(escape_invalid_citations(src, &valid), r"参见\@smith2020。");
     }
 
     #[test]
@@ -1404,14 +1442,14 @@ mod tests {
     #[test]
     fn escape_still_escapes_unresolved_reference_with_bibliography() {
         // A reference that is neither a citation key nor a defined label (here
-        // an email's `@gmail`) is still escaped so Typst doesn't error.
+        // an email's `@inkycap`) is still escaped so Typst doesn't error.
         let valid: std::collections::HashSet<String> =
             ["smith2020"].iter().map(|s| s.to_string()).collect();
-        let src = "Mail me at paulgott9@gmail.com or cite @smith2020.";
+        let src = "Mail me at athena@inkycap.org or cite @smith2020.";
         let out = escape_invalid_citations(src, &valid);
         assert!(
-            out.contains(r"\@gmail"),
-            "email @gmail should be escaped: {out}"
+            out.contains(r"\@inkycap"),
+            "email @inkycap should be escaped: {out}"
         );
         assert!(out.contains("@smith2020"), "citation should survive");
     }

@@ -41,6 +41,25 @@ export function canReferenceWithAt(kind: LabelKind, headingsNumbered: boolean): 
   return ALWAYS_REFERENCEABLE.has(kind);
 }
 
+// Typst lexes an `@` as a reference wherever a label character follows it,
+// even in the middle of a word: `athena@inkycap.org` is text plus a reference
+// to `<inkycap.org>`. InkyCap deliberately reads that shape as an email address
+// or handle instead, on every surface that looks at an `@` — the suggestion
+// popup does not open, the visual editor shows it as plain text, and the
+// compile pipeline escapes it so the note still builds. The test is ASCII-only
+// on purpose: an email's local part is ASCII, and a citation written directly
+// after a CJK word (`参见@smith2020`) is a real reference that must keep working.
+const EMAIL_LOCAL_PART_TAIL_RE = /[A-Za-z0-9._+-]/;
+
+/**
+ * Whether an `@` preceded by `charBefore` is the join of an email address or
+ * handle rather than the start of a reference. `charBefore` is the single
+ * character before the `@`, or an empty string at the start of the document.
+ */
+export function isEmailLikeAt(charBefore: string): boolean {
+  return charBefore.length > 0 && EMAIL_LOCAL_PART_TAIL_RE.test(charBefore);
+}
+
 /** Escape `[` / `]` so arbitrary text can sit inside a `#link[...]` content block. */
 export function escapeLinkContent(text: string): string {
   return text.replace(/([[\]])/g, "\\$1");

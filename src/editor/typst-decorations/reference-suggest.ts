@@ -6,7 +6,12 @@ import * as ipc from "../../lib/ipc";
 import { t } from "../../lib/i18n";
 import type { BibEntry } from "../../lib/types";
 import { scanDocumentLabels, type DocLabel, type LabelKind } from "./document-labels";
-import { canReferenceWithAt, documentNumbersHeadings, linkReference } from "./reference-form";
+import {
+  canReferenceWithAt,
+  documentNumbersHeadings,
+  isEmailLikeAt,
+  linkReference,
+} from "./reference-form";
 
 // The `@` popup. In Typst `@` is the *universal reference* operator — it points
 // at any `<label>` (heading, figure, equation, table) as well as bibliography
@@ -221,16 +226,16 @@ function detectReferenceContext(view: EditorView): SuggestState {
   if (query.length > QUERY_MAX_CHARS) return EMPTY;
   if (queryTokens(query).length > QUERY_MAX_WORDS) return EMPTY;
 
-  // Typst (and the backend's `extract_citations`) treat `@key` as a reference
-  // wherever it appears — including right after a letter, digit, or a previous
-  // reference's last character (`@a@b`, `word@key`). The only `@` that is *not*
-  // a reference is an escaped one: a `\` before the `@` is `\@`, a literal
-  // at-sign. Skipping it keeps us in step with the backend, and avoids the
-  // failure mode where an `@` lands just after a line's hidden trailing
-  // soft-break `\` — treating that as a reference would insert `\@key`, escaping
-  // it and making the `\` render visibly.
-  const charBefore = atIdx > 0 ? textBefore[atIdx - 1] : " ";
+  // Two shapes of `@` are never a search. An escaped `\@` is a literal
+  // at-sign; skipping it also avoids the failure where an `@` typed right after
+  // a line's hidden trailing soft-break `\` would insert `\@key` and make the
+  // backslash render. And an `@` glued to the tail of a word or email local
+  // part (`athena@inkycap.org`) is an email address, not a reference — the
+  // same reading the visual editor and the compile pipeline apply, so the popup
+  // stays closed while an address is being typed. See `isEmailLikeAt`.
+  const charBefore = atIdx > 0 ? textBefore[atIdx - 1] : "";
   if (charBefore === "\\") return EMPTY;
+  if (isEmailLikeAt(charBefore)) return EMPTY;
 
   return { active: true, from: line.from + atIdx, query };
 }

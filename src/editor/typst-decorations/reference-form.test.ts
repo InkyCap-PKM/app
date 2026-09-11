@@ -3,6 +3,7 @@ import {
   canReferenceWithAt,
   documentNumbersHeadings,
   findPreambleEnd,
+  isEmailLikeAt,
   linkReference,
   setRuleForElement,
 } from "./reference-form";
@@ -92,5 +93,32 @@ describe("findPreambleEnd", () => {
   it("skips blank lines and comments", () => {
     const doc = "// a note\n\n#import \"/lib.typ\": *\n\nbody";
     expect(doc.slice(findPreambleEnd(doc))).toBe("body");
+  });
+});
+
+// One rule decides whether an `@` is the join of an email address or the start
+// of a reference, on every surface that looks at one (the popup, the visual
+// pill, and the compile pipeline's escape pass mirrors it in Rust).
+describe("isEmailLikeAt", () => {
+  it("treats an @ after an ASCII letter or digit as an email", () => {
+    expect(isEmailLikeAt("r")).toBe(true);
+    expect(isEmailLikeAt("Z")).toBe(true);
+    expect(isEmailLikeAt("7")).toBe(true);
+  });
+
+  it("treats an @ after the other characters an email local part can end in as an email", () => {
+    for (const c of [".", "_", "+", "-"]) expect(isEmailLikeAt(c)).toBe(true);
+  });
+
+  it("keeps an @ after whitespace, punctuation, or at the document start as a reference", () => {
+    expect(isEmailLikeAt("")).toBe(false);
+    for (const c of [" ", "\n", "(", "[", '"', "—", "…", "\\"]) expect(isEmailLikeAt(c)).toBe(false);
+  });
+
+  it("keeps an @ written directly after a non-ASCII word as a reference", () => {
+    // `参见@smith2020` and `voir«@key` are real citations in Typst; only ASCII
+    // email characters count as an address.
+    expect(isEmailLikeAt("见")).toBe(false);
+    expect(isEmailLikeAt("é")).toBe(false);
   });
 });
