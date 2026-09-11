@@ -27,6 +27,14 @@ name: CI
 # gate can be re-run without pushing anything.
 on:
   push:
+    # Branches only. A release tag points at a commit that already went through
+    # this gate when it was pushed to its branch, so a tag push would just run
+    # everything a second time and staple a second verdict onto the same commit
+    # — which is how a flake ends up showing as a failed check on the release
+    # page. `**` matches every branch, including names containing a slash, and
+    # excludes tags.
+    branches:
+      - "**"
   pull_request:
   workflow_dispatch:
 
@@ -85,7 +93,14 @@ jobs:
         # so the Tauri build script refuses to run without it. It is ~30 MB and
         # deliberately not in the repo, which is why a fresh clone (and this
         # job) has to fetch it before anything will compile.
-        run: ./scripts/download-tinymist.sh x86_64-unknown-linux-gnu
+        #
+        # No target triple on purpose: CodeFloe's `docker` pool mixes amd64 and
+        # arm64 machines, and which one a job lands on varies run to run. Naming
+        # a triple here fetches the wrong binary whenever the runner is arm64,
+        # and Tauri's build script then fails on the missing
+        # `binaries/inkycap-tinymist-aarch64-unknown-linux-gnu`. Letting the
+        # script detect the host keeps both architectures working.
+        run: ./scripts/download-tinymist.sh
       - name: Lint with clippy (warnings are errors)
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --lib --tests -- -D warnings
 
@@ -118,7 +133,14 @@ jobs:
         # so the Tauri build script refuses to run without it. It is ~30 MB and
         # deliberately not in the repo, which is why a fresh clone (and this
         # job) has to fetch it before anything will compile.
-        run: ./scripts/download-tinymist.sh x86_64-unknown-linux-gnu
+        #
+        # No target triple on purpose: CodeFloe's `docker` pool mixes amd64 and
+        # arm64 machines, and which one a job lands on varies run to run. Naming
+        # a triple here fetches the wrong binary whenever the runner is arm64,
+        # and Tauri's build script then fails on the missing
+        # `binaries/inkycap-tinymist-aarch64-unknown-linux-gnu`. Letting the
+        # script detect the host keeps both architectures working.
+        run: ./scripts/download-tinymist.sh
       - name: Run Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
 

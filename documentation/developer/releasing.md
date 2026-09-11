@@ -91,7 +91,6 @@ runs in Rust rather than the webview because neither host sends CORS headers.
 | Feed generator | `scripts/release-manifest.mjs` (`npm run release:manifest`) |
 | In-app UI | `src/components/UpdateChecker.tsx`, `src/stores/updater.ts` |
 | Settings toggles | `src/components/settings/BehaviourSettingsSection.tsx` (`updates.check_on_startup`, `updates.include_beta`) |
-| Linux `.deb`/`.rpm` build (CI, optional — see "Cutting a release") | `.forgejo/workflows/release.yml` (Ubuntu 22.04 container) |
 | Linux `.deb`/`.rpm` build (local) | `scripts/build-linux-docker.sh` |
 | Linux Flatpak build (local) | `scripts/build-flatpak.sh` (+ `flatpak/com.inkycap.editor.yml`) |
 | macOS + Windows installer build (CI) | `.github/workflows/build-desktop.yml` on the GitHub build mirror |
@@ -267,13 +266,13 @@ Upload it to `https://inkycap.org/releases/latest.json`. Once it's live,
 **Check for updates** in 26.9+ builds shows the notice; builds from 26.6.10 to
 26.8 pick it up through the forge-API fallback instead.
 
-> **CI build (`.forgejo/workflows/release.yml`) is optional and off the happy
-> path.** It fires on a `v*` tag push and tries to build the Linux packages into
-> a draft, but two things work against it: the runners have been unreliable, and
-> a tag push is exactly what auto-publishes a draft (above) — so it fights this
-> flow rather than helping it. The dependable path is the local
-> `scripts/build-linux-docker.sh`. The workflow is kept for the day the runners
-> are reliable *and* the ordering is reworked; until then, don't lean on it.
+> **There is no CI build for the Linux packages, by design.** A
+> `.forgejo/workflows/release.yml` used to try it on a `v*` tag push and was
+> removed in September 2026: it never once succeeded, and two things work
+> against the idea. CodeFloe's shared runners are unreliable, and a tag push is
+> exactly what auto-publishes a draft (above) — so a tag-triggered build fights
+> this flow rather than helping it. `scripts/build-linux-docker.sh` is the way
+> Linux packages are built.
 
 > **macOS note:** macOS builds are produced by the mirror workflow, but macOS
 > is not yet a *fully* first-class target: code-signing and notarization aren't
