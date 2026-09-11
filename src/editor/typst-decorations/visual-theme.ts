@@ -1089,21 +1089,23 @@ export const visualTheme = EditorView.theme({
     textAlign: "left",
   },
 
-  // ── Editable cell ──
+  // ── Cell: painted idle, or hosting the cell editor while being edited ──
   ".cm-typst-table-cell": {
     minHeight: "1.6em",
     padding: "4px 8px",
     outline: "none",
     lineHeight: "1.5",
     cursor: "default",
-    "-webkit-user-select": "text",
-    userSelect: "text",
+    "-webkit-user-select": "none",
+    userSelect: "none",
     whiteSpace: "pre-wrap",
     wordBreak: "break-word",
   },
-  ".cm-typst-table-cell:focus, .cm-typst-table-cell.cm-typst-table-cell--editing": {
+  ".cm-typst-table-cell.cm-typst-table-cell--editing": {
     boxShadow: "inset 0 0 0 2px var(--accent)",
     cursor: "text",
+    "-webkit-user-select": "text",
+    userSelect: "text",
   },
   // WebKitGTK honours only `background-color` (not the `background`
   // shorthand) inside `::selection`; using the shorthand left cell text with
@@ -1192,7 +1194,22 @@ export const visualTheme = EditorView.theme({
     userSelect: "none",
     borderRadius: "2px",
   },
-  ".cm-table-col-handle:hover, .cm-table-row-handle:hover": {
+  ".cm-table-corner-handle": {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "100%",
+    height: "100%",
+    color: "var(--fg-dim)",
+    cursor: "pointer",
+    userSelect: "none",
+    borderRadius: "2px",
+  },
+  ".cm-table-corner-handle .cm-table-handle-grip svg": {
+    width: "10px",
+    height: "10px",
+  },
+  ".cm-table-col-handle:hover, .cm-table-row-handle:hover, .cm-table-corner-handle:hover": {
     backgroundColor: "var(--bg-hover)",
     color: "var(--fg-primary)",
   },
@@ -1260,12 +1277,6 @@ export const visualTheme = EditorView.theme({
     padding: "0 2.5px",
     cursor: "col-resize",
   },
-  ".cm-table-resize-handle--row": {
-    height: "7px",
-    marginTop: "-3.5px",
-    padding: "2.5px 0",
-    cursor: "row-resize",
-  },
   ".cm-typst-table-wrap:hover .cm-table-resize-handle, .cm-typst-table-wrap:focus-within .cm-table-resize-handle": {
     opacity: "0.25",
     pointerEvents: "auto",
@@ -1279,11 +1290,7 @@ export const visualTheme = EditorView.theme({
     padding: "0 2px",
     boxShadow: "0 0 3px var(--accent)",
   },
-  ".cm-table-resize-handle--row.cm-table-resize-handle--active": {
-    padding: "2px 0",
-    boxShadow: "0 0 3px var(--accent)",
-  },
-  // The column/row whose edge is being dragged is tinted for the duration.
+  // The column whose edge is being dragged is tinted for the duration.
   ".cm-table-cell--resizing": {
     backgroundColor: "color-mix(in srgb, var(--accent) 12%, transparent)",
   },

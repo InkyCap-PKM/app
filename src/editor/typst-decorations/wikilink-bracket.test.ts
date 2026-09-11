@@ -3,6 +3,7 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { closeBrackets } from "@codemirror/autocomplete";
 import { wikilinkSuggest } from "./wikilink-suggest";
+import { inlineOnlyFacet, scopeRangeConfig, scopeRangeField } from "./cell-scope";
 
 // Regression guard for the `[[` wikilink shortcut. `closeBrackets()` lives in
 // the editor's baseExtensions, ahead of the visual-mode wikilinkSuggest, so
@@ -92,6 +93,55 @@ describe("[[ wikilink manual close (]])", () => {
     const v = mk();
     typeAll(v, "[[]]");
     expect(v.state.doc.toString()).toBe("[[]]");
+    v.destroy();
+  });
+});
+
+// Inside a table cell editor (inline-only mode) the cell's brackets have to
+// stay balanced at every keystroke, or the table around it stops parsing.
+describe("[[ wikilink brackets inside a cell editor", () => {
+  function mkCell() {
+    return new EditorView({
+      state: EditorState.create({
+        doc: "",
+        extensions: [closeBrackets(), wikilinkSuggest, inlineOnlyFacet.of(true)],
+      }),
+      parent: document.body,
+    });
+  }
+  function typeAll(v: EditorView, s: string) {
+    for (const ch of s) typeChar(v, ch);
+  }
+
+  it("typing [[ keeps the closing pair, with the caret in the middle", () => {
+    const v = mkCell();
+    typeAll(v, "[[");
+    expect(v.state.doc.toString()).toBe("[[]]");
+    expect(v.state.selection.main.head).toBe(2);
+    v.destroy();
+  });
+
+  it("a hand-typed ]] seals the link and leaves no stray bracket", () => {
+    const v = mkCell();
+    typeAll(v, "[[Name]]");
+    expect(v.state.doc.toString()).toBe('#wikilink("Name")');
+    v.destroy();
+  });
+
+  it("does not mistake the cell's own opening bracket for the first [ of [[", () => {
+    const v = new EditorView({
+      state: EditorState.create({
+        doc: "[a]",
+        selection: { anchor: 1 },
+        extensions: [closeBrackets(), wikilinkSuggest, inlineOnlyFacet.of(true), scopeRangeConfig.of({ from: 1, to: 2 }), scopeRangeField],
+      }),
+      parent: document.body,
+    });
+    typeChar(v, "[");
+    expect(v.state.doc.toString()).toBe("[[a]");
+    typeChar(v, "[");
+    expect(v.state.doc.toString()).toBe("[[[]]a]");
+    expect(v.state.selection.main.head).toBe(3);
     v.destroy();
   });
 });

@@ -1,13 +1,15 @@
 /**
- * Table-related keyboard and clipboard handlers for the visual editor.
+ * The note editor's side of tables: entering a table with the arrow keys,
+ * clipboard routing, and keeping open cell editors in step with the note.
  *
- * Extracted from visual-plugin.ts to keep table interaction logic in one
- * place alongside table-widget.ts and table-parser.ts.
+ * Kept apart from visual-plugin.ts so table interaction logic lives in one
+ * place alongside table-widget.ts, table-cell-editor.ts and table-parser.ts.
  */
 
-import { EditorView, ViewPlugin, type DecorationSet, keymap } from "@codemirror/view";
+import { EditorView, ViewPlugin, type DecorationSet, type ViewUpdate, keymap } from "@codemirror/view";
 import { type StateField } from "@codemirror/state";
-import { TableWidget, tableWidgetAt, getSelectedCellsText } from "./table-widget";
+import { TableWidget, tableWidgetAt, getSelectedCellsText, activeCellEditors, closeCellEditors } from "./table-widget";
+import { cellSync } from "./table-cell-editor";
 import { type TableData, type TableCell, parseClipboardAsGrid, textToGrid, serializeTable } from "./table-parser";
 import { inVerbatimLineContext } from "./keymaps";
 
@@ -118,6 +120,53 @@ const tableBodyPaste = EditorView.domEventHandlers({
 const tableClipboardHandler = [tableFocusClipboard, tableBodyPaste];
 
 // ---------------------------------------------------------------------------
+// Cell editors
+// ---------------------------------------------------------------------------
+
+/**
+ * Keeps open cell editors in step with the note. Every change made in the
+ * note itself (an undo, an edit elsewhere) is mirrored into them — changes
+ * that came *from* a cell editor carry `cellSync` and are already there.
+ * Focus returning to the note closes them.
+ *
+ * Focus also has to be defended. When the note's editor redraws the line
+ * that holds the table, it takes the table's DOM out of the line and puts
+ * it back, and the browser drops focus (and the caret) the moment the
+ * focused cell editor leaves the document. A keystroke in a cell causes
+ * exactly such a redraw, so after every update the cell editor that had
+ * focus going in gets it back, once the DOM has settled.
+ */
+const cellEditorSync = [
+  ViewPlugin.fromClass(class {
+    update(update: ViewUpdate) {
+      const editors = activeCellEditors(update.view);
+      if (editors.length === 0) return;
+      // Keyed on the active element rather than `hasFocus`, which also asks
+      // whether the window itself is focused.
+      const focused = editors.find((editor) => editor.hasFocus);
+      if (update.docChanged) {
+        for (const tr of update.transactions) {
+          if (!tr.docChanged || tr.annotation(cellSync)) continue;
+          for (const editor of editors) editor.applyMainChanges(tr.changes);
+        }
+      }
+      if (focused) {
+        queueMicrotask(() => {
+          const active = document.activeElement;
+          if (!active || active === document.body) focused.restoreFocus();
+        });
+      }
+    }
+  }),
+  EditorView.domEventHandlers({
+    focus(_event, view) {
+      closeCellEditors(view);
+      return false;
+    },
+  }),
+];
+
+// ---------------------------------------------------------------------------
 // Table entry via arrow keys
 // ---------------------------------------------------------------------------
 
@@ -226,4 +275,4 @@ export function createTableEntryKeymap(decoField: StateField<DecorationSet>) {
   ]);
 }
 
-export { tableClipboardHandler };
+export { tableClipboardHandler, cellEditorSync };

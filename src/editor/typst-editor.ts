@@ -144,7 +144,8 @@ function typstLanguage(): Extension {
   return [Prec.high(typstUpdateListenerForcingFreshParseOnHistory(parser)), support];
 }
 
-import { typstVisualMode, autoExpandFacet, protectedRangesField, findStylePreamble, rebuildVisualDecorations, externalReload } from "./typst-decorations/visual-plugin";
+import { typstVisualMode, buildDecorations, autoExpandFacet, protectedRangesField, findStylePreamble, rebuildVisualDecorations, externalReload } from "./typst-decorations/visual-plugin";
+import { cellEditorConfig } from "./typst-decorations/table-cell-editor";
 import { verseFocusRouter, verseSearchHighlighter } from "./typst-decorations/widgets";
 import { selectionToolbar } from "./typst-decorations/selection-toolbar";
 import { commandPalette } from "./typst-decorations/command-palette";
@@ -672,6 +673,39 @@ const cursorBottomMargin = EditorView.scrollMargins.of((view) => ({
   bottom: view.defaultLineHeight * CURSOR_BOTTOM_MARGIN_LINES,
 }));
 
+/**
+ * What a table cell editor is made of: the same language, theme, caret,
+ * bracket and input helpers as the note, the visual decorations kept
+ * inline, and the suggestion popups. The note's editor owns undo history and
+ * spell-check settings; the cell editor borrows the latter and forwards the
+ * former (see table-cell-editor.ts).
+ */
+function tableCellEditorConfig(options: TypstEditorOptions): Extension {
+  return cellEditorConfig.of({
+    extensions: (main) => {
+      const checker = main.state.facet(spellCheckerFacet);
+      return [
+        typstLanguage(),
+        syntaxHighlighting(inkycapHighlight),
+        inkycapTheme,
+        drawnCaret,
+        closeBrackets(),
+        autocompletion({ activateOnTyping: true }),
+        tooltips({ position: "fixed" }),
+        autoPairTypstInput,
+        markdownShortcuts,
+        keymap.of([...typstKeymap, ...closeBracketsKeymap, ...defaultKeymap, ...completionKeymap]),
+        typstVisualMode({ inlineOnly: true }),
+        wikilinkSuggest,
+        referenceSuggest,
+        options.commandPalette !== false ? commandPalette : [],
+        checker ? [spellcheck, spellCheckerFacet.of(checker)] : [],
+      ];
+    },
+    inlineDecorations: (state, from, to) => buildDecorations(state, [{ from, to }], { inlineOnly: true }),
+  });
+}
+
 function baseExtensions(options: TypstEditorOptions): Extension[] {
   const exts: Extension[] = [
     lineNumbers(),
@@ -815,6 +849,7 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
   const visualModeExtensions = () => [
     typstVisualMode(), verseFocusRouter, verseSearchHighlighter,
     wikilinkSuggest, referenceSuggest, visualModeFacet.of(true),
+    tableCellEditorConfig(options),
   ];
   const visualExts = options.visualMode ? visualModeExtensions() : [];
   const activeLineExts = options.visualMode ? [] : [highlightActiveLine(), highlightActiveLineGutter()];

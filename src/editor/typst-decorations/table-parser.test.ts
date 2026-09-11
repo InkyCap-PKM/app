@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseCanonicalTable, serializeTable, textToGrid } from "./table-parser";
+import { parseCanonicalTable, serializeTable, textToGrid, tableToTsv } from "./table-parser";
 
 // The visual editor renders a `#table(...)` as an editable grid only when
 // `parseCanonicalTable` recognizes it. A cell whose inline-raw content carries
@@ -105,6 +105,16 @@ describe("parseCanonicalTable", () => {
     expect(serializeTable(t!)).toBe(src);
   });
 
+  // Every intermediate state of typing a wikilink inside a cell — the cell
+  // editor keeps the brackets balanced — must still parse as one cell.
+  it("accepts nested content blocks inside a cell, as a wikilink being typed leaves them", () => {
+    for (const cell of ["[a[]]", "[a[[]]]", "[a[[Na]]]", "[[[Na]]]", '[#wikilink("Na")]']) {
+      const t = parseCanonicalTable(`#table(\n  columns: (auto, auto),\n  ${cell}, [b],\n)`);
+      expect(t, cell).not.toBeNull();
+      expect(t!.rows[0].map((c) => c.content), cell).toEqual([cell.slice(1, -1), "b"]);
+    }
+  });
+
   it("steps over embedded function calls and their arguments inside a cell", () => {
     const src =
       "#table(\n  columns: (auto, auto),\n" +
@@ -131,5 +141,12 @@ describe("textToGrid", () => {
 
   it("yields nothing for empty text", () => {
     expect(textToGrid("")).toBeNull();
+  });
+});
+
+describe("tableToTsv", () => {
+  it("emits the header first, then every row, as cell source", () => {
+    const t = parseCanonicalTable("#table(\n  columns: (auto, auto),\n  table.header([H1], [H2]),\n  [*a*], [#wikilink(\"N\")],\n)");
+    expect(tableToTsv(t!)).toBe('H1\tH2\n*a*\t#wikilink("N")');
   });
 });

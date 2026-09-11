@@ -36,7 +36,8 @@ import {
   CALLOUT_COLORS,
   createVerseEntryKeymap,
 } from "./widgets";
-import { TableWidget } from "./table-widget";
+import { TableWidget, editingTableRange, editingTableStarts } from "./table-widget";
+import { inlineOnlyFacet, scopeRangeField } from "./cell-scope";
 import { parseCanonicalTable } from "./table-parser";
 import { fileList } from "../../stores/filelist";
 import { getCachedBibKeys, activeReferenceSearchAt } from "./reference-suggest";
@@ -50,7 +51,7 @@ import { computePreambleImportRanges, isLeadingLocaleDirective, commentHideRange
 import { lineStartCaretFilter } from "./line-start-caret";
 export { externalReload } from "./visual-protected";
 import { linkClickHandler } from "./visual-links";
-import { tableClipboardHandler, createTableEntryKeymap } from "./visual-tables";
+import { tableClipboardHandler, cellEditorSync, createTableEntryKeymap } from "./visual-tables";
 import { pillBoundaryNav } from "./pill-boundary-nav";
 import { leadingWhitespace } from "./list-scan";
 
@@ -743,7 +744,19 @@ function pushListIndent(decos: Range<Decoration>[], state: EditorState, markerFr
  *  tests can assert on decorations that only appear once the syntax tree is
  *  walked (nested calls, markers); the editor reaches it through
  *  `typstVisualMode()`. */
-export function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: number }[]): DecorationSet {
+export function buildDecorations(
+  state: EditorState,
+  onlyRanges?: { from: number; to: number }[],
+  options?: { inlineOnly?: boolean },
+): DecorationSet {
+  // Inline-only mode (a table cell editor, or an idle cell rendered from the
+  // note's own state): block constructs are left as raw markup — see
+  // cell-scope.ts. A cell editor also narrows the build to its own range.
+  const inlineOnly = options?.inlineOnly === true || state.facet(inlineOnlyFacet);
+  if (!options?.inlineOnly && state.facet(inlineOnlyFacet)) {
+    const scope = state.field(scopeRangeField, false);
+    if (scope) onlyRanges = [scope];
+  }
   const focused = cursorLines(state);
   const cursors = cursorPositions(state);
   const autoExpand = state.facet(autoExpandFacet);
@@ -1162,6 +1175,10 @@ export function buildDecorations(state: EditorState, onlyRanges?: { from: number
             // correctedFuncCallEnd / expandRangesToBlockElements).
             const funcTo = correctedFuncCallEnd(state, funcFrom, node.to);
             const callOnCursor = isOnCursorLine(state, funcFrom, funcTo, focused);
+            const fn = funcCallName(state.doc.sliceString(funcFrom, funcTo));
+            // Inline-only: a block-level call keeps its raw markup and its
+            // body is still traversed, so inline markup inside it decorates.
+            if (inlineOnly && fn !== null && BLOCK_LEVEL_FUNCS.has(fn)) break;
             // Decorate this call defensively: a single malformed or unusual call
             // — e.g. a collaborator's `#suggestion(…)` tracked-change markup with
             // content the extractors don't expect — must not throw out of the
@@ -1183,20 +1200,10 @@ export function buildDecorations(state: EditorState, onlyRanges?: { from: number
               if (funcTo > node.to) consumedUntil = funcTo;
               return false;
             }
-            const funcText = state.doc.sliceString(funcFrom, funcTo);
-            const funcHashOff = funcText.startsWith("#") ? 1 : 0;
-            const funcDelim = funcText.indexOf("(", funcHashOff);
-            const funcBrack = funcText.indexOf("[", funcHashOff);
-            const funcDIdx = (funcDelim >= 0 && funcBrack >= 0)
-              ? Math.min(funcDelim, funcBrack)
-              : (funcDelim >= 0 ? funcDelim : funcBrack);
-            if (funcDIdx >= 0) {
-              const fn = funcText.substring(funcHashOff, funcDIdx).trim();
-              if (fn === "strike") activeFormatting.strike = true;
-              else if (fn === "highlight") activeFormatting.highlight = true;
-              else if (fn === "strong") activeFormatting.bold = true;
-              else if (fn === "emph") activeFormatting.italic = true;
-            }
+            if (fn === "strike") activeFormatting.strike = true;
+            else if (fn === "highlight") activeFormatting.highlight = true;
+            else if (fn === "strong") activeFormatting.bold = true;
+            else if (fn === "emph") activeFormatting.italic = true;
             break;
           }
         }
@@ -1311,13 +1318,45 @@ export function buildDecorations(state: EditorState, onlyRanges?: { from: number
     }
   }
 
+  // Only the note's own decorations render tables; a cell editor leaves the
+  // call as inline markup and must not get a stand-in painted over its cell.
+  if (!inlineOnly) keepEditedTables(state, decos, onlyRanges);
+
   decos.sort((a, b) => a.from - b.from || a.value.startSide - b.value.startSide);
   return RangeSet.of(decos);
+}
+
+/**
+ * Mid-keystroke in a cell editor, a table's source can be momentarily
+ * unparseable — a bracket typed before its closer — and the syntax tree may
+ * not even show the call any more. Rather than dropping the rendered table
+ * (and the editor in it) to raw source, keep a stand-in widget over the
+ * range the table is known to occupy; the next parseable state repaints.
+ */
+function keepEditedTables(state: EditorState, decos: Range<Decoration>[], onlyRanges?: { from: number; to: number }[]) {
+  for (const from of editingTableStarts()) {
+    const range = editingTableRange(from, state.doc.length);
+    if (!range || range.to <= range.from || range.to > state.doc.length) continue;
+    if (onlyRanges && !nodeOverlapsRanges(range.from, range.to, onlyRanges)) continue;
+    if (decos.some((d) => d.from === from && d.value.spec?.widget instanceof TableWidget)) continue;
+    if (!state.doc.sliceString(from, from + 7).startsWith("#table(")) continue;
+    decos.push(Decoration.replace({ widget: TableWidget.unparsed(range.from, range.to) }).range(range.from, range.to));
+  }
 }
 
 const BLOCK_FUNCS = new Set([
   "callout", "quote", "verse", "note", "bibliography", "table",
 ]);
+
+/** The name of the function a `#name(…)` / `#name[…]` call text invokes, or
+ *  null when the text has no argument delimiter. */
+function funcCallName(funcText: string): string | null {
+  const hashOff = funcText.startsWith("#") ? 1 : 0;
+  const paren = funcText.indexOf("(", hashOff);
+  const bracket = funcText.indexOf("[", hashOff);
+  const delim = paren >= 0 && bracket >= 0 ? Math.min(paren, bracket) : paren >= 0 ? paren : bracket;
+  return delim >= 0 ? funcText.substring(hashOff, delim).trim() : null;
+}
 
 // These funcs always render as widgets even on cursor line — click navigates,
 // edit via source mode or cursor-adjacent positioning.
@@ -1353,6 +1392,10 @@ function extractDateLiteral(s: string): string | null {
 
 // Block widgets that collapse to pill + editable value when cursor is on line.
 const BLOCK_WIDGET_FUNCS = new Set(["image", "video", "audio"]);
+
+/** Calls that produce block-level widgets, left as raw markup in inline-only
+ *  mode (`inlineOnlyFacet`). */
+const BLOCK_LEVEL_FUNCS = new Set([...BLOCK_FUNCS, ...BLOCK_WIDGET_FUNCS, "annotation"]);
 
 /**
  * Decorate a single `#func(...)` / `#func[...]` call, pushing its decorations
@@ -1806,6 +1849,8 @@ export function handleFuncCall(
           }).range(from, to),
         );
       }
+      // An unparseable table hosting a cell editor is handled after the
+      // tree walk (see `keepEditedTables`), tree or no tree.
       return false;
     }
     case "verse": {
@@ -2677,6 +2722,9 @@ export const rebuildVisualDecorations = StateEffect.define<null>();
  * full rebuild or an incremental one depending on what changed.
  */
 function computeVisualDecorations(decos: DecorationSet, tr: Transaction): DecorationSet {
+  // A cell editor builds for one small range, so a rebuild per transaction
+  // is cheaper than working out what an incremental pass may keep.
+  if (tr.state.facet(inlineOnlyFacet)) return buildDecorations(tr.state);
   for (const e of tr.effects) {
     if (e.is(rebuildVisualDecorations)) {
       return buildDecorations(tr.state);
@@ -2955,7 +3003,13 @@ const dueCursorRoundOut = ViewPlugin.fromClass(class {
 // happen. Don't reintroduce one — if a click makes the page jump, the cause is
 // a block whose two states measure differently, and that belongs in the block's
 // own geometry (see the shared block variables in visual-theme.ts).
-export function typstVisualMode() {
-  return [expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, lineStartCaretGuard, dueCursorRoundOut, Prec.high(tableEntryKeymap), Prec.high(verseEntryKeymap), visualField, softBreakRangesField, softBreakAtomicRanges, markupAtomicRanges, postHistoryRebuild, visualTheme, linkClickHandler, tableClipboardHandler, pillBoundaryNav];
+export function typstVisualMode(options?: { inlineOnly?: boolean }) {
+  // The inline-only variant serves a table cell editor: it edits a copy of
+  // the note narrowed to one cell, so table/verse entry, the table clipboard
+  // routing, and the post-undo rebuild (undo runs in the main editor) stay out.
+  if (options?.inlineOnly) {
+    return [inlineOnlyFacet.of(true), expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, lineStartCaretGuard, visualField, softBreakRangesField, softBreakAtomicRanges, markupAtomicRanges, visualTheme, linkClickHandler, pillBoundaryNav];
+  }
+  return [expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, lineStartCaretGuard, dueCursorRoundOut, Prec.high(tableEntryKeymap), Prec.high(verseEntryKeymap), visualField, softBreakRangesField, softBreakAtomicRanges, markupAtomicRanges, postHistoryRebuild, visualTheme, linkClickHandler, tableClipboardHandler, cellEditorSync, pillBoundaryNav];
 }
 

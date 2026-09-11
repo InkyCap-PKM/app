@@ -586,6 +586,12 @@ function parseHtmlTableToGrid(html: string): string[][] | null {
   return grid.length > 0 ? grid : null;
 }
 
+/** The whole table, header first, as tab-separated rows of cell source. */
+export function tableToTsv(data: TableData): string {
+  const rows = data.header ? [data.header, ...data.rows] : data.rows;
+  return rows.map((row) => row.map((cell) => cell.content).join("\t")).join("\n");
+}
+
 /** Clipboard text as a grid: tab-separated rows when it has tabs, otherwise
  *  the whole text as a single cell. Empty text yields null. */
 export function textToGrid(text: string): string[][] | null {

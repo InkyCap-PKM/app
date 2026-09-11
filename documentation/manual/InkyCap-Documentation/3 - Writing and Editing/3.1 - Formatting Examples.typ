@@ -282,7 +282,7 @@ $ sum_(k=1)^n k = (n (n + 1)) / 2 $
 
 == Tables
 
-Choose *Table* from the `/` menu to drop in a starter grid; in the visual editor it becomes an interactive table (click a cell to edit, drag an edge to resize, paste a grid from a spreadsheet). The underlying markup is `#table(...)`:
+Choose *Table* from the `/` menu to drop in a starter grid; in the visual editor it becomes an interactive table (click a cell to edit, drag a column edge to set its width, paste a grid from a spreadsheet). The underlying markup is `#table(...)`:
 
 #demo-block(
   [```typ

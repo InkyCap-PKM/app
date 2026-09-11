@@ -142,7 +142,7 @@ You can also insert math from the toolbar (the *∑* button, or *Ctrl/Cmd+Shift+
 Choose *Table* from the "/" menu to drop in a starter grid. In the visual editor it becomes an interactive table you can work with directly:
 
 - Click a cell to *edit it in place*
-- *Drag a column or row edge* to resize it
+- *Drag a column edge* to set its width; rows grow with their content
 - Move between cells with *Enter* and *Tab*
 - *Paste* a grid copied from a spreadsheet straight into the table
 

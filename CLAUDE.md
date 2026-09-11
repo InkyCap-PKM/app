@@ -293,8 +293,25 @@ InkyCap is built to be picked up and extended by future human contributors who h
   **5. Broad `ignoreEvent: () => true`** at the decoration level.
 
   Canonical reference: [VerseWidget](src/editor/typst-decorations/widgets.ts).
-  [TableWidget](src/editor/typst-decorations/table-widget.ts) follows the
-  same pattern for table cells.
+
+  **Nested CodeMirror views.** A widget that needs real Typst editing inside
+  it (inline markup, wikilinks, the `/` palette, suggestions) mounts a
+  nested `EditorView` over a mirrored copy of the note rather than a
+  contentEditable, with everything outside its range hidden and locked and
+  changes forwarded both ways. The table cell editor in
+  [table-cell-editor.ts](src/editor/typst-decorations/table-cell-editor.ts)
+  is the reference: idle cells are painted from the note's own decorations,
+  one cell at a time hosts the editor, and
+  [TableWidget](src/editor/typst-decorations/table-widget.ts) implements
+  `updateDOM` so a keystroke updates the table in place instead of
+  rebuilding it around the editor. One sharp edge: whenever the note's
+  editor redraws the line holding a widget, it takes the widget's DOM out
+  of the line and puts it back, and WebKit drops focus to `body` the moment
+  the focused nested editor leaves the document. Every outer update while a
+  nested editor has focus must therefore be followed by restoring that
+  focus (see `cellEditorSync` in
+  [visual-tables.ts](src/editor/typst-decorations/visual-tables.ts)).
+  jsdom does not model this, so verify such flows in a real WebKitGTK view.
 
 ### UI typography
 - **Never use `text-transform: uppercase` or `font-variant: small-caps` for headings, section labels, or category headers.** All UI text stays mixed-case as authored.

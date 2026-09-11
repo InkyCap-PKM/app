@@ -5,6 +5,7 @@ import { aliases } from "../../stores/aliases";
 import { wikilinkScore } from "./wikilink-match";
 import { positionPopupAtAnchor } from "./popup-position";
 import { inVerbatimLineContext } from "./keymaps";
+import { inlineOnlyFacet, scopeRangeField } from "./cell-scope";
 import { typstStringEscape } from "../../lib/typst";
 import { t } from "../../lib/i18n";
 import * as ipc from "../../lib/ipc";
@@ -516,6 +517,9 @@ function updateSelection(delta: number) {
 const wikilinkBracketHandler = Prec.high(EditorView.inputHandler.of((view, from, to, text) => {
   if (text !== "[") return false;
   if (from === 0 || view.state.doc.sliceString(from - 1, from) !== "[") return false;
+  // In a cell editor the character before the cell is the cell's own `[`.
+  const scope = view.state.field(scopeRangeField, false);
+  if (scope && from - 1 < scope.from) return false;
 
   // Selection-wrap case. On the first `[`, closeBrackets wrapped the selection
   // as `[sel]` and kept `sel` selected (so `from..to` still spans it, with the
@@ -541,8 +545,24 @@ const wikilinkBracketHandler = Prec.high(EditorView.inputHandler.of((view, from,
   // No selection: collapse the auto-paired `]` so `[[` stays clean (the picker
   // completes the closing brackets on accept).
   const after = view.state.doc.sliceString(from, from + 1);
-  const deleteTo = after === "]" ? from + 1 : from;
 
+  // Inside a table cell editor the cell's own brackets must stay balanced
+  // at every keystroke, or the table stops parsing; keep the auto-paired
+  // `]` and add its twin, giving `[[|]]`. The picker and the manual close
+  // both consume a trailing `]]`.
+  if (view.state.facet(inlineOnlyFacet)) {
+    const closer = after === "]" ? "]" : "]]";
+    view.dispatch({
+      changes: [
+        { from, to: from, insert: "[" },
+        { from: after === "]" ? from + 1 : from, insert: closer },
+      ],
+      selection: { anchor: from + 1 },
+    });
+    return true;
+  }
+
+  const deleteTo = after === "]" ? from + 1 : from;
   view.dispatch({
     changes: { from, to: deleteTo, insert: "[" },
     selection: { anchor: from + 1 },
@@ -582,7 +602,9 @@ const wikilinkCloseHandler = Prec.high(EditorView.inputHandler.of((view, from, t
   if (inVerbatimLineContext(view.state, line.from + openIdx + 1)) return false;
 
   const fromPos = line.from + openIdx;
-  const replaceTo = from; // consumes `[[content]`; the typed `]` is dropped.
+  // Consumes `[[content]` and the typed `]` is dropped. An auto-paired `]`
+  // still waiting after the caret (a cell editor keeps one) goes too.
+  const replaceTo = view.state.doc.sliceString(from, from + 1) === "]" ? from + 1 : from;
 
   const sepIdx = content.indexOf("::");
   const headingText = sepIdx >= 0 ? content.slice(sepIdx + 2) : "";
