@@ -54,11 +54,15 @@ export const visualTheme = EditorView.theme({
     // as a margin instead to keep the block's edges where the widget's are.
     "--line-inset": "6px",
     "--line-inset-end": "2px",
-    // Block quote: outer gap, inner padding, text inset past the bar, and
-    // line height.
+    // Block quote: outer gap, inner padding, text inset past the opening
+    // quotation mark on the left, the plain inset on the right, the mark's
+    // size, and line height. The mark is drawn out of flow, so only the
+    // inset (not the mark) contributes to the block's width.
     "--quote-margin": "10px",
     "--quote-pad": "8px",
-    "--quote-inset": "16px",
+    "--quote-inset": "1.9em",
+    "--quote-inset-end": "16px",
+    "--quote-mark-size": "3.5em",
     "--quote-line-height": "1.6",
     // Callout (and annotation, which reuses the callout frame).
     "--callout-margin": "10px",
@@ -698,15 +702,37 @@ export const visualTheme = EditorView.theme({
     fontWeight: "bold",
   },
   // ── Block quote ──
-  // Rendered widget (caret away).
+  // Rendered widget (caret away). Instead of a bar, a large opening quotation
+  // mark sits in the left inset (see the shared `::before` rule below).
   ".cm-typst-blockquote": {
     display: "block",
-    borderLeft: "3px solid var(--border-primary)",
-    padding: "var(--quote-pad) var(--quote-inset)",
+    position: "relative",
+    padding: "var(--quote-pad) var(--quote-inset-end) var(--quote-pad) var(--quote-inset)",
     margin: "var(--quote-margin) 0",
     lineHeight: "var(--quote-line-height)",
     fontStyle: "italic",
     color: "var(--fg-muted)",
+  },
+  // The decorative opening quotation mark, shared by the rendered widget and
+  // the first edit-state line so it sits in the same spot in both states. It
+  // is absolutely positioned, so it adds no height and the two states still
+  // measure the same. Pseudo-elements are safe here (unlike the inline smart
+  // quotes, see QuoteGlyphWidget) because the mark is out of flow and never
+  // sits between characters the caret can land on.
+  ".cm-typst-blockquote::before, .cm-typst-blockquote-line.cm-typst-block-edit-first::before": {
+    content: '"\u201C"',
+    position: "absolute",
+    left: "0",
+    // Nudge up so the visible part of the glyph lines up with the first row.
+    top: "calc(var(--quote-pad) - 0.2em)",
+    fontFamily: "serif",
+    fontSize: "var(--quote-mark-size)",
+    lineHeight: "1",
+    fontStyle: "normal",
+    color: "var(--fg-dim)",
+    opacity: "0.5",
+    pointerEvents: "none",
+    userSelect: "none",
   },
   ".cm-typst-blockquote-attr": {
     marginTop: "4px",
@@ -714,16 +740,17 @@ export const visualTheme = EditorView.theme({
     fontStyle: "normal",
     color: "var(--fg-dim)",
   },
-  // Edit state (caret inside): each body line carries the bar and inset, and
-  // the first and last lines add the widget's outer gap and inner padding, so
-  // the quote is the same height as its rendered form. The italic/muted fill
-  // is a separate mark bounded to the body, so text trailing after the closing
-  // `]` on the same line keeps its ordinary style.
+  // Edit state (caret inside): each body line carries the inset, the first
+  // line draws the quotation mark, and the first and last lines add the
+  // widget's outer gap and inner padding, so the quote is the same height as
+  // its rendered form. The italic/muted fill is a separate mark bounded to the
+  // body, so text trailing after the closing `]` on the same line keeps its
+  // ordinary style.
   ".cm-typst-blockquote-line": {
     marginLeft: "var(--line-inset)",
     marginRight: "var(--line-inset-end)",
-    borderLeft: "3px solid var(--border-primary)",
-    padding: "0 var(--quote-inset)",
+    position: "relative",
+    padding: "0 var(--quote-inset-end) 0 var(--quote-inset)",
     lineHeight: "var(--quote-line-height)",
     // Rows here are taller than body rows, so a pill on one sizes to this.
     "--editor-line-height": "var(--quote-line-height)",
