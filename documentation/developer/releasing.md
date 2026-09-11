@@ -233,8 +233,20 @@ reads the new one. If it's wrong, delete `src-tauri\target\release` (or run
 `cargo clean -p inkycap`) and rebuild.
 
 **6. Publish the draft.** In the web UI, edit the draft and publish it — **this
-is what creates the `vXX.YY.Z` tag** (at the `main` target). (`git fetch --tags`
-to pull the new tag locally.)
+is what creates the `vXX.YY.Z` tag** (at the `main` target).
+
+```sh
+git fetch --tags                # pull the newly created tag locally
+git push github vXX.YY.Z        # mirror it, so the mirror keeps tag parity
+```
+
+Mirroring the tag is housekeeping, not a build step — the installers were
+already built from `main` in step 5. It keeps the mirror's refs matching
+CodeFloe's and makes the workflow's `v*` trigger usable for an after-the-fact
+rebuild. It does fire one redundant build of the commit that is already `main`;
+let it run or cancel it, the artifacts are discarded either way. The Forgejo
+draft-auto-publish hazard warned about above is a *CodeFloe* behaviour — GitHub
+has nothing equivalent, and `build-desktop.yml` never creates a GitHub release.
 
 **7. Update the release feed.** Nothing tells users about the release until this
 is uploaded.
@@ -298,9 +310,11 @@ still queries CodeFloe's API, and nothing in the app points at GitHub.
    allowed. No secrets are needed; the workflow only reads the repository and
    uploads artifacts.
 
-**Keeping it in sync.** Push to `github` whenever you're about to cut a release.
-There is no automatic mirroring, and that's deliberate: the mirror is a build
-tool you reach for, not a second source of truth that can drift silently.
+**Keeping it in sync.** Push `main` to `github` whenever you're about to cut a
+release (step 5), then push the tag across once publishing the draft has created
+it (step 6). There is no automatic mirroring, and that's deliberate: the mirror
+is a build tool you reach for, not a second source of truth that can drift
+silently.
 
 **Ongoing cost.** The `.forgejo/workflows/ci.yml` gates (rustfmt, clippy, tests,
 typecheck) are *not* duplicated on the mirror. CodeFloe remains the place where
