@@ -13,6 +13,145 @@ each tagged release, newest first, grouping entries under **Added**, **Changed**
 **Fixed**, **Removed**, **Security**, or **Deprecated** as needed.
 
 
+## [26.9.8] - 2026-09-11
+
+### Added
+
+- Table cells are edited with the full visual editor. Wikilinks, emphasis,
+  links, the `/` palette and spell-check now work inside a cell, which used to
+  be a plain text box holding raw Typst source.
+- A table menu on the corner handle: copy as TSV, let rows fit their content,
+  reset column widths, header toggle, edit source, delete table. "Set as
+  header" is offered on the first row only, where Typst allows it.
+- "Previously open tabs" startup behaviour (Settings > Behaviour > Startup
+  behaviour). It restores each tab in the order it was shown, brings back the
+  one that was in front, and keeps each tab's editor mode, reading format and
+  zoom. The record is kept per computer, outside of the notebox folder.
+- "Show in file tree" and "Show in system file manager" on the right-click
+  menu of an image, video, or audio block in the visual editor to help manage the file.
+- Search filters complete themselves from the notebox: typing `tag:`,
+  `property:` or `path:` lists what the notebox actually contains, filtered as
+  you type. Choosing a property key appends its `=` so the value list follows;
+  choosing a folder writes the quotes and trailing slash the filter needs.
+- ZID (ascending) and ZID (descending) sort orders in the search panel.
+- Search tips carry an example per filter and provide a reminder that a filter value with spaces has to be quoted or only its first word
+  counts.
+- Menus can be driven entirely from the keyboard - arrows, Home/End,
+  Enter/Space and Escape - including menus opened by right-click or by the
+  mouse, and submenus, which Right or Enter steps into and Left steps back out
+  of.
+- The Properties panel's tag and collection pickers work from the keyboard, and
+  are one control instead of two near-copies.
+
+### Changed
+
+- Block quotes in the visual editor are marked with a large quotation mark
+  instead of a bar down the left side.
+- The editor keeps two lines of space below the cursor when it scrolls to it,
+  so there is always some text visible below the line being written.
+- File names are searched a whole word at a time, the way body text already
+  was, so `ink` no longer pulls in every name containing those letters; `*`
+  widens the match. The explicit `file:` filter keeps its substring rule.
+- Quick open and the other pickers rank a contiguous match above letters found
+  scattered through a long name, which prioritizes the more likely file match.
+- Ordered lists are renumbered correctly when their indentation changes, on Tab and Shift+Tab,
+  rather than on every Enter. A restart typed on purpose is no longer
+  overwritten.
+- Enter in the search box runs the query as typed; a completion is accepted
+  only once the arrows have picked a row. Tab still accepts the highlighted
+  one.
+- The keyboard cursor in a menu appears only once the keyboard is used.
+- The gap between a sidebar list and its divider is narrower for a better use of space.
+
+### Fixed
+
+- A lone `$` no longer wraps every line below the caret in an equation block
+  until the closing `$` arrives, and an unclosed or nested block comment no
+  longer hides and locks the rest of the note. (issue #1)
+- Email addresses are no longer read as references: the reference menu stays
+  closed while one is typed, and the domain keeps its ordinary text colour.
+- The cursor no longer slips in front of a list bullet, which could put typed
+  characters before the marker or leave a stray marker behind that Typst then
+  read as a nested list.
+- Left arrow, and Ctrl+Left, can leave a list item again.
+- The cursor stays on screen when a keyboard shortcut moves it, so a new line
+  started at the bottom of the page no longer lands just out of sight.
+- Tables: structural edits such as inserting a row or moving a column no longer
+  write to stale positions after an edit above the table, cell edits are no
+  longer silently dropped, and a cell containing a quote or a bracket such as
+  `[smile :)]` no longer drops the whole table to raw source.
+- Table keyboard handling: typing over a selected cell replaces it, Escape
+  after an edit keeps the focus in the table, dragging a column moves it rather
+  than swapping, pasting a single value works, and right-click keeps the
+  selection.
+- The Properties panel's value picker describes itself correctly to a screen
+  reader, so the highlight moving through the list is announced.
+- Windows: open tabs are recorded, and a `path:` filter matches.
+
+### Removed
+
+- Dragging table row heights. Typst treats a `rows:` length as exact, so a
+  height chosen against the editor's fonts overflowed in the compiled note.
+  "Let rows fit their content" in the new table menu replaces it.
+
+
+## [26.9.6] - 2026-09-07
+
+Mostly aesthetic polish: a great many small refinements to how surfaces,
+menus and chrome are drawn, so the app reads as one continuous flow while
+still distinguishing its functional elements.
+
+### Added
+
+- Red and violet as preset options in the highlight pill's menu.
+- The hints on the new tab page are clickable shortcuts, and one of them opens
+  a quick Typst cheatsheet.
+
+### Changed
+
+- InkyCap's home moved to CodeFloe. The in-app update check and the releases
+  link point there. The Codeberg repository is archived and read-only, and
+  keeps the earlier issue history and every release up to 26.9.4.
+- Floating menus have a crisper edge: a single hairline border derived from the
+  theme's own ink and surface, with the shadow moved off the boundary and
+  re-weighted so a menu reads as lifted rather than blurred. In-menu dividers,
+  drop-ups and dropdowns attached to a control each gained their own token, so
+  five dropdowns that had picked five different radii for the same role now
+  agree.
+- The pane headers line up with the editor toolbar on one shared band, and
+  every control in that row stands the same height, so the three columns end on
+  the same line.
+- The active editor tab sits forward instead of shouting: a softer edge, a
+  shadow spread wider than its offset, and per-palette tokens, since a fill
+  that lifts a tab out of the strip in a light theme made it sink in a dark
+  one.
+- The header band's gradient is even in the warm light palette, which had
+  changed temperature down its height rather than reading as one surface.
+- The writing surface runs to the column edges. The column's side hairlines and
+  the toolbar and status-bar lip shadows come back with it, each shorter,
+  tapered further in, and dissolving before it meets a hairline rather than
+  boxing the content in.
+- In the default light theme the editor and HTML preview match the paper colour
+  of the paged reading view.
+- Resize handles separate the area the pointer can grab from the line that is
+  drawn, so a 3px divider is easy to find without getting thicker.
+- The Mycelial View's menus and pickers stay inside the graph canvas instead of
+  opening under the side panel or the status bar.
+
+### Fixed
+
+- The visual editor no longer shifts content when a decoration collapses.
+  Inline pills are sized to exactly one text row instead of growing the line
+  they sit on; bold and italic reveal only their delimiters when the caret
+  lands inside, so a highlight nested in bold keeps its fill; and a fenced code
+  block written as a list item no longer keeps its edit background after the
+  caret leaves.
+- The focus ring is drawn only while navigating by keyboard. Returning to the
+  window after clicking a control no longer rings it in the desktop's accent
+  colour, and controls that had no keyboard focus indicator at all now carry
+  the shared one.
+
+
 ## [26.9.4] - 2026-09-05
 
 ### Added
