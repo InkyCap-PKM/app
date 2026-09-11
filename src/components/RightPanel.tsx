@@ -581,10 +581,13 @@ const RightPanel: Component = () => {
     },
   );
 
-  // When the background index build finishes, refetch link data so that
-  // the Links tab populates without the user having to switch tabs.
+  // When the background index build finishes, refetch the note's metadata
+  // and link data so the Properties and Links tabs populate without the user
+  // having to switch tabs. Until then the metadata comes from the cache, or
+  // is missing for a note the cache doesn't hold.
   createEffect(() => {
     if (indexReady() && activeFileTab()) {
+      refetchMetadata();
       refetchBacklinks();
       refetchForwardLinks();
       refetchPotentialLinks();

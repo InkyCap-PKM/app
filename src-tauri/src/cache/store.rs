@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 
 use super::schema;
 use crate::errors::{InkyCapError, Result};
@@ -46,6 +46,73 @@ pub struct CachedFile {
 /// sufficient and avoids the complexity of a connection pool.
 pub struct MetadataCache {
     conn: Mutex<Connection>,
+}
+
+/// The `files` columns both loaders select, in [`FileRow`] order.
+const FILE_COLUMNS: &str = "path, mtime, size, properties_json, title, content, agenda_json, \
+                            unresolved_suggestions, recurrence_json";
+
+/// One `files` row as read from SQLite, before its JSON columns are decoded.
+type FileRow = (
+    String,
+    i64,
+    i64,
+    String,
+    Option<String>,
+    Option<String>,
+    String,
+    i64,
+    String,
+);
+
+fn read_file_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<FileRow> {
+    Ok((
+        row.get(0)?,
+        row.get(1)?,
+        row.get(2)?,
+        row.get(3)?,
+        row.get(4)?,
+        row.get(5)?,
+        row.get(6)?,
+        row.get(7)?,
+        row.get(8)?,
+    ))
+}
+
+/// Decode a `files` row into a [`CachedFile`]. Tags and links start empty;
+/// the loaders fill them from the joined tables.
+fn cached_file_from_row(row: FileRow) -> Result<CachedFile> {
+    let (
+        path,
+        mtime,
+        size,
+        properties_json,
+        title,
+        content,
+        agenda_json,
+        unresolved_suggestions,
+        recurrence_json,
+    ) = row;
+    let properties: HashMap<String, PropertyValue> = serde_json::from_str(&properties_json)
+        .map_err(|e| InkyCapError::Cache(format!("corrupt properties_json for {path}: {e}")))?;
+    // A corrupt agenda blob degrades to "no markers" rather than failing the
+    // whole cache read — the markers are rebuilt on the next compile of that
+    // file anyway. Same degrade-to-default policy for the recurrence rule.
+    let agenda_markers = serde_json::from_str(&agenda_json).unwrap_or_default();
+    let recurrence = serde_json::from_str(&recurrence_json).unwrap_or_default();
+    Ok(CachedFile {
+        path: PathBuf::from(&path),
+        mtime,
+        size: size.max(0) as u64,
+        properties,
+        title,
+        tags: Vec::new(),
+        links: Vec::new(),
+        agenda_markers,
+        recurrence,
+        unresolved_suggestions: unresolved_suggestions.max(0) as u32,
+        content,
+    })
 }
 
 impl MetadataCache {
@@ -129,71 +196,13 @@ impl MetadataCache {
 
         // Pull all `files` rows for this notebox.
         {
-            let mut stmt = conn.prepare(
-                "SELECT path, mtime, size, properties_json, title, content, agenda_json, unresolved_suggestions, recurrence_json \
-                 FROM files WHERE notebox_id = ?1",
-            )?;
-            let rows = stmt.query_map(params![notebox_id], |row| {
-                let path: String = row.get(0)?;
-                let mtime: i64 = row.get(1)?;
-                let size: i64 = row.get(2)?;
-                let properties_json: String = row.get(3)?;
-                let title: Option<String> = row.get(4)?;
-                let content: Option<String> = row.get(5)?;
-                let agenda_json: String = row.get(6)?;
-                let unresolved_suggestions: i64 = row.get(7)?;
-                let recurrence_json: String = row.get(8)?;
-                Ok((
-                    path,
-                    mtime,
-                    size,
-                    properties_json,
-                    title,
-                    content,
-                    agenda_json,
-                    unresolved_suggestions,
-                    recurrence_json,
-                ))
-            })?;
-
+            let mut stmt = conn.prepare(&format!(
+                "SELECT {FILE_COLUMNS} FROM files WHERE notebox_id = ?1"
+            ))?;
+            let rows = stmt.query_map(params![notebox_id], read_file_row)?;
             for row in rows {
-                let (
-                    path,
-                    mtime,
-                    size,
-                    properties_json,
-                    title,
-                    content,
-                    agenda_json,
-                    unresolved_suggestions,
-                    recurrence_json,
-                ) = row?;
-                let properties: HashMap<String, PropertyValue> =
-                    serde_json::from_str(&properties_json).map_err(|e| {
-                        InkyCapError::Cache(format!("corrupt properties_json for {path}: {e}"))
-                    })?;
-                // A corrupt agenda blob degrades to "no markers" rather than
-                // failing the whole cache read — the markers are rebuilt on
-                // the next compile of that file anyway.
-                let agenda_markers = serde_json::from_str(&agenda_json).unwrap_or_default();
-                // Same degrade-to-default policy for the recurrence rule.
-                let recurrence = serde_json::from_str(&recurrence_json).unwrap_or_default();
-                files.insert(
-                    PathBuf::from(&path),
-                    CachedFile {
-                        path: PathBuf::from(&path),
-                        mtime,
-                        size: size.max(0) as u64,
-                        properties,
-                        title,
-                        tags: Vec::new(),
-                        links: Vec::new(),
-                        agenda_markers,
-                        recurrence,
-                        unresolved_suggestions: unresolved_suggestions.max(0) as u32,
-                        content,
-                    },
-                );
+                let file = cached_file_from_row(row?)?;
+                files.insert(file.path.clone(), file);
             }
         }
 
@@ -233,6 +242,45 @@ impl MetadataCache {
         }
 
         Ok(files)
+    }
+
+    /// Load one cached file by its notebox-relative path, with its tags and
+    /// links. `None` when the notebox has no entry for that path.
+    pub fn load_file(&self, notebox_root: &Path, relpath: &Path) -> Result<Option<CachedFile>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| InkyCapError::Cache("metadata cache mutex poisoned".to_string()))?;
+        let notebox_id = Self::get_or_create_notebox_id(&conn, notebox_root)?;
+        let path_str = relpath.to_string_lossy().to_string();
+
+        let row = conn
+            .query_row(
+                &format!("SELECT {FILE_COLUMNS} FROM files WHERE notebox_id = ?1 AND path = ?2"),
+                params![notebox_id, &path_str],
+                read_file_row,
+            )
+            .optional()?;
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        let mut file = cached_file_from_row(row)?;
+
+        let mut tags =
+            conn.prepare("SELECT tag FROM file_tags WHERE notebox_id = ?1 AND path = ?2")?;
+        file.tags = tags
+            .query_map(params![notebox_id, &path_str], |row| row.get(0))?
+            .collect::<rusqlite::Result<Vec<String>>>()?;
+
+        let mut links = conn.prepare(
+            "SELECT target_text FROM file_links \
+             WHERE notebox_id = ?1 AND source_path = ?2 ORDER BY ordinal",
+        )?;
+        file.links = links
+            .query_map(params![notebox_id, &path_str], |row| row.get(0))?
+            .collect::<rusqlite::Result<Vec<String>>>()?;
+
+        Ok(Some(file))
     }
 
     /// Insert or replace a batch of files in a single transaction. Tags and
@@ -383,4 +431,86 @@ impl MetadataCache {
 /// content-changing edits that don't change length.
 pub fn is_fresh(cached: &CachedFile, mtime: i64, size: u64) -> bool {
     cached.mtime == mtime && cached.size == size
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cache_in(dir: &tempfile::TempDir) -> MetadataCache {
+        MetadataCache::open(&dir.path().join("cache.sqlite")).unwrap()
+    }
+
+    fn entry(relpath: &str) -> CachedFile {
+        let mut properties = HashMap::new();
+        properties.insert(
+            "title".to_string(),
+            PropertyValue::String("Fourth Space".to_string()),
+        );
+        CachedFile {
+            path: PathBuf::from(relpath),
+            mtime: 1_700_000_000,
+            size: 42,
+            properties,
+            title: Some("Fourth Space".to_string()),
+            tags: vec!["place".to_string(), "idea".to_string()],
+            links: vec!["Third Space".to_string(), "Commons".to_string()],
+            agenda_markers: Vec::new(),
+            recurrence: None,
+            unresolved_suggestions: 1,
+            content: Some("#note(title: \"Fourth Space\")\n".to_string()),
+        }
+    }
+
+    /// The single-row lookup returns the same entry the whole-notebox load
+    /// does, tags and links included, so a reader can trust either.
+    #[test]
+    fn load_file_matches_load_notebox() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = cache_in(&dir);
+        let root = dir.path().join("notebox");
+        let relpath = PathBuf::from("2 Box/4th Space.typ");
+        cache
+            .upsert_file(&root, &entry("2 Box/4th Space.typ"))
+            .unwrap();
+
+        let one = cache.load_file(&root, &relpath).unwrap().expect("cached");
+        let all = cache.load_notebox(&root).unwrap();
+        let from_all = all.get(&relpath).expect("cached");
+
+        assert_eq!(one.path, from_all.path);
+        assert_eq!(one.mtime, 1_700_000_000);
+        assert_eq!(one.size, 42);
+        assert_eq!(one.properties, from_all.properties);
+        assert_eq!(one.title.as_deref(), Some("Fourth Space"));
+        assert_eq!(one.tags, from_all.tags);
+        assert_eq!(one.links, vec!["Third Space", "Commons"]);
+        assert_eq!(one.unresolved_suggestions, 1);
+        assert_eq!(one.content, from_all.content);
+    }
+
+    /// A path with no row is a clean miss, and rows are scoped to their
+    /// notebox, so another notebox's entry for the same relative path is not
+    /// served.
+    #[test]
+    fn load_file_misses_unknown_and_other_notebox_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = cache_in(&dir);
+        let root = dir.path().join("notebox");
+        let other = dir.path().join("other");
+        cache.upsert_file(&other, &entry("note.typ")).unwrap();
+
+        assert!(cache
+            .load_file(&root, Path::new("note.typ"))
+            .unwrap()
+            .is_none());
+        assert!(cache
+            .load_file(&root, Path::new("missing.typ"))
+            .unwrap()
+            .is_none());
+        assert!(cache
+            .load_file(&other, Path::new("note.typ"))
+            .unwrap()
+            .is_some());
+    }
 }

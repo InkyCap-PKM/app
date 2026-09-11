@@ -82,6 +82,13 @@ pub enum InkyCapError {
     /// the shipped manual stays intact.
     #[error("The documentation notebox is read-only; changes are not saved")]
     DocumentationReadOnly,
+
+    /// A read that needs the notebox indexes was made while they are still
+    /// being built after open, and nothing cached could stand in for the
+    /// answer. Not a failure to report: the frontend leaves the surface empty
+    /// and asks again when `notebox:index-ready` fires.
+    #[error("The notebox is still being indexed")]
+    IndexNotReady,
 }
 
 impl InkyCapError {
@@ -111,6 +118,7 @@ impl InkyCapError {
             InkyCapError::NoteboxAlreadyOpen(_) => "notebox-already-open",
             InkyCapError::Cancelled => "cancelled",
             InkyCapError::DocumentationReadOnly => "documentation-read-only",
+            InkyCapError::IndexNotReady => "index-not-ready",
         }
     }
 
@@ -137,7 +145,8 @@ impl InkyCapError {
             InkyCapError::NoteboxNotOpen
             | InkyCapError::FilenameRequired
             | InkyCapError::Cancelled
-            | InkyCapError::DocumentationReadOnly => None,
+            | InkyCapError::DocumentationReadOnly
+            | InkyCapError::IndexNotReady => None,
         }
     }
 }

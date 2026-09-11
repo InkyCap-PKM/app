@@ -87,6 +87,11 @@ each tagged release, newest first, grouping entries under **Added**, **Changed**
 - The Properties panel's value picker describes itself correctly to a screen
   reader, so the highlight moving through the list is announced.
 - Windows: open tabs are recorded, and a `path:` filter matches.
+- A note opened while the notebox is still being indexed after launch shows
+  its properties at once, from the metadata cache, instead of waiting for the
+  whole notebox to be scanned. This was most visible with the new "Previously
+  open tabs" startup behaviour on a large notebox. The first edit after launch
+  also no longer rewrites the whole search index.
 
 ### Removed
 

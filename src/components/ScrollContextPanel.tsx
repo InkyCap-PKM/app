@@ -28,6 +28,7 @@ import { ChevronDown, ChevronRight } from "lucide-solid";
 import * as ipc from "../lib/ipc";
 import { compareName } from "../lib/sort";
 import { getEntries, getVisibleEntries } from "../stores/journal-scroll";
+import { indexReady } from "../stores/notebox";
 import { openTab } from "../stores/tabs";
 import { useI18n, tPlural } from "../lib/i18n";
 import CitationRow from "./CitationRow";
@@ -276,12 +277,14 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
     onCleanup(() => document.removeEventListener("inkycap:note-saved", onNoteSaved));
   }
 
+  // Keyed on the index build too: while it runs, notes the cache doesn't
+  // hold have no metadata yet, so the counts are redone once it finishes.
   const [tagConcentration] = createResource<
     Array<{ tag: string; count: number }>,
-    VisibleNote[]
+    { notes: VisibleNote[]; ready: boolean }
   >(
-    visible,
-    async (notes) => {
+    () => ({ notes: visible(), ready: indexReady() }),
+    async ({ notes }) => {
       if (notes.length === 0) return [];
       const counts = new Map<string, number>();
       await Promise.all(

@@ -87,6 +87,12 @@ pub struct NoteboxSession {
     /// keyed internally by notebox root, so a single handle safely serves every
     /// window. Optional because cache open is best-effort.
     metadata_cache: Option<Arc<MetadataCache>>,
+    /// True once [`NoteboxSession::build_indexes`] has finished for the open
+    /// notebox, whether or not it succeeded. Cleared on every open. While
+    /// false, reads that miss the (still empty) indexes answer from the
+    /// metadata cache instead of parsing on demand, so they never wait behind
+    /// the notebox-wide scan.
+    index_ready: AtomicBool,
     /// Unix timestamp of the last search index save. Used to debounce
     /// persistence — the index is only written to disk if at least
     /// `SEARCH_SAVE_INTERVAL_SECS` have elapsed since the last save.
@@ -119,6 +125,7 @@ impl NoteboxSession {
             property_types: RwLock::new(PropertyTypeRegistry::new()),
             typst_compiler: Mutex::new(None),
             metadata_cache,
+            index_ready: AtomicBool::new(false),
             last_search_save: AtomicI64::new(0),
             last_corpus_save: AtomicI64::new(0),
             is_documentation: AtomicBool::new(false),
@@ -188,6 +195,7 @@ impl NoteboxSession {
         *self.property_index.write().await = PropertyIndex::new();
         *self.link_index.write().await = LinkIndex::new();
         *self.search_engine.write().await = SearchEngine::new();
+        self.index_ready.store(false, Ordering::Relaxed);
 
         *self.collection_files.write().await = collection_files;
         *self.property_types.write().await = PropertyTypeRegistry::load(&canonical_path);
@@ -232,7 +240,35 @@ impl NoteboxSession {
     /// [`NoteboxSession::open_notebox_fast`]; the indexes are computed locally
     /// and then swapped in with brief write locks so that read-side IPC
     /// commands aren't blocked for the entire build.
+    ///
+    /// Marks the session index-ready when it returns, on success or failure,
+    /// so reads stop answering from the cache and fall back to on-demand
+    /// parsing for anything the indexes do not know.
     pub async fn build_indexes(&self) -> crate::errors::Result<IndexStats> {
+        let result = self.build_indexes_inner().await;
+        self.index_ready.store(true, Ordering::Relaxed);
+        result
+    }
+
+    /// True once the index build for the open notebox has finished.
+    pub fn index_ready(&self) -> bool {
+        self.index_ready.load(Ordering::Relaxed)
+    }
+
+    /// One note's metadata from the persistent cache, without the compiler.
+    /// `None` when there is no cache, no open notebox, or nothing fresh cached
+    /// for the note. See [`crate::scanner::walker::note_from_cache`].
+    pub async fn cached_note(
+        &self,
+        path: &std::path::Path,
+    ) -> Option<crate::models::note::NoteMetadata> {
+        let cache = self.metadata_cache.clone()?;
+        let root = self.notebox_root.read().await.clone()?;
+        let storage = self.get_storage().await.ok()?;
+        crate::scanner::walker::note_from_cache(storage.as_ref(), cache.as_ref(), &root, path).await
+    }
+
+    async fn build_indexes_inner(&self) -> crate::errors::Result<IndexStats> {
         let (storage, notebox_root) = {
             let storage = self
                 .storage
@@ -446,6 +482,9 @@ impl NoteboxSession {
             saved_at: now,
         };
         persisted.save_to_file(&index_path);
+        // Record the save so the first edit after open does not write the
+        // whole index out again straight away.
+        self.last_search_save.store(now, Ordering::Relaxed);
         let search_engine = persisted.engine;
 
         let stats = IndexStats {

@@ -187,6 +187,59 @@ pub(crate) fn note_to_cached_file(
     }
 }
 
+/// Whether a cache entry that is fresh by mtime and size still looks like the
+/// leftover of a bad parse, and should be re-parsed rather than trusted.
+///
+/// Two shapes are rejected. No properties and no tags for a file that visibly
+/// has a `#note(...)` call: older builds stored an empty result when a
+/// body-only error (an unresolved citation, say) failed the whole compile,
+/// and the body-stripped fallback in `compile_and_query` now succeeds on the
+/// re-parse. And an empty link list for a file that visibly contains a
+/// `#wikilink(...)` or `[[...]]`: without this the Links pane silently shows
+/// "No outbound links" after the user adds wikilinks, because the cache hit
+/// short-circuits the reparse. Both are cheap substring checks; a false
+/// positive only costs one unnecessary reparse.
+fn cache_entry_looks_stale(cached: &CachedFile, content: &str) -> bool {
+    let non_file_props = cached.properties.keys().any(|k| !k.starts_with("file."));
+    let cached_empty = !non_file_props && cached.tags.is_empty();
+    let looks_like_note = content.contains("#note(");
+    let cached_no_links = cached.links.is_empty();
+    let content_has_wikilinks = content.contains("#wikilink(") || content.contains("[[");
+    (cached_empty && looks_like_note) || (cached_no_links && content_has_wikilinks)
+}
+
+/// Metadata for one note straight from the cache, without the compiler: what
+/// the next scan would produce for it as a cache hit. Lets the Properties
+/// panel show a note while the indexes are still being built after open,
+/// instead of waiting for the scan to release the compiler.
+///
+/// `None` when the file has no cache entry, the entry is stale (its recorded
+/// mtime and size no longer match the file, or it fails
+/// [`cache_entry_looks_stale`]), or the file cannot be stat'd or read. Only an
+/// entry the scan itself would reuse is served, so the caller never shows
+/// values the finished index will contradict.
+pub async fn note_from_cache(
+    storage: &dyn NoteboxStorage,
+    cache: &MetadataCache,
+    notebox_root: &Path,
+    abs_path: &Path,
+) -> Option<NoteMetadata> {
+    let relpath = abs_path.strip_prefix(notebox_root).ok()?;
+    let stat = stat_file(abs_path).await.ok()?;
+    let cached = cache.load_file(notebox_root, relpath).ok().flatten()?;
+    if !crate::cache::store::is_fresh(&cached, stat.mtime, stat.size) {
+        return None;
+    }
+    let content = match cached.content.clone() {
+        Some(content) => content,
+        None => storage.read_file(abs_path).await.ok()?,
+    };
+    if cache_entry_looks_stale(&cached, &content) {
+        return None;
+    }
+    Some(cached_to_note(&cached, abs_path, notebox_root, &stat))
+}
+
 /// Reconstitute a [`NoteMetadata`] from a cache hit, deriving the `file.*`
 /// properties from the path strings and the filesystem stat obtained during
 /// the scan.
@@ -433,31 +486,7 @@ pub async fn scan_notebox_cached(
                 };
 
                 if let Ok(content) = content_result {
-                    // Reject cache entries that look like a previous compile
-                    // failure: zero properties parsed from a file that visibly
-                    // has a `#note(...)` call. These come from older builds
-                    // where a body-only error (e.g. unresolved citation)
-                    // tanked the whole compile and stored an empty result.
-                    // The body-stripped fallback in `compile_and_query` will
-                    // succeed on the re-parse path below.
-                    let non_file_props = cached.properties.keys().any(|k| !k.starts_with("file."));
-                    let cached_empty = !non_file_props && cached.tags.is_empty();
-                    let looks_like_note = content.contains("#note(");
-                    // Same idea but specifically for wikilinks: a cached
-                    // `links = []` for a file that visibly contains a
-                    // `#wikilink("…")` (or the `[[…]]` shortcut) means the
-                    // earlier parse missed them. Without this the right-
-                    // panel Links pane silently shows "No outbound links"
-                    // even after the user adds wikilinks, because the
-                    // cache lookup short-circuits the reparse path. Cheap
-                    // substring check — false positives just trigger an
-                    // unnecessary reparse, which is harmless.
-                    let cached_no_links = cached.links.is_empty();
-                    let content_has_wikilinks =
-                        content.contains("#wikilink(") || content.contains("[[");
-                    if (cached_empty && looks_like_note)
-                        || (cached_no_links && content_has_wikilinks)
-                    {
+                    if cache_entry_looks_stale(cached, &content) {
                         // fall through to reparse
                     } else {
                         let note = cached_to_note(cached, path, notebox_root, &stat);
@@ -525,4 +554,107 @@ pub async fn scan_notebox_cached(
         },
         stats,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::local::LocalNoteboxStorage;
+
+    const CONTENT: &str = "#note(title: \"A\")\n#wikilink(\"B\")\n";
+
+    /// A notebox with one note on disk and a cache entry for it that matches
+    /// the file's current mtime and size.
+    async fn notebox_with_cached_note(
+        dir: &tempfile::TempDir,
+    ) -> (LocalNoteboxStorage, MetadataCache, PathBuf, CachedFile) {
+        let root = dir.path().join("notebox");
+        std::fs::create_dir_all(&root).unwrap();
+        let storage = LocalNoteboxStorage::new(root.clone()).unwrap();
+        let root = storage.canonical_root().to_path_buf();
+        let abs = root.join("note.typ");
+        std::fs::write(&abs, CONTENT).unwrap();
+        let stat = stat_file(&abs).await.unwrap();
+
+        let cache = MetadataCache::open(&dir.path().join("cache.sqlite")).unwrap();
+        let mut properties = HashMap::new();
+        properties.insert("title".to_string(), PropertyValue::String("A".to_string()));
+        let entry = CachedFile {
+            path: PathBuf::from("note.typ"),
+            mtime: stat.mtime,
+            size: stat.size,
+            properties,
+            title: Some("A".to_string()),
+            tags: Vec::new(),
+            links: vec!["B".to_string()],
+            agenda_markers: Vec::new(),
+            recurrence: None,
+            unresolved_suggestions: 0,
+            content: Some(CONTENT.to_string()),
+        };
+        cache.upsert_file(&root, &entry).unwrap();
+        (storage, cache, abs, entry)
+    }
+
+    /// A fresh entry is served as the scan would reconstitute it: the cached
+    /// properties and links, plus the `file.*` properties from the path.
+    #[tokio::test]
+    async fn note_from_cache_serves_a_fresh_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        let (storage, cache, abs, _) = notebox_with_cached_note(&dir).await;
+        let root = storage.canonical_root().to_path_buf();
+
+        let note = note_from_cache(&storage, &cache, &root, &abs)
+            .await
+            .expect("fresh entry is served");
+        assert_eq!(note.path, abs);
+        assert_eq!(
+            note.properties.get("title"),
+            Some(&PropertyValue::String("A".to_string()))
+        );
+        assert_eq!(
+            note.properties.get("file.name"),
+            Some(&PropertyValue::String("note.typ".to_string()))
+        );
+        assert_eq!(note.links, vec!["B".to_string()]);
+    }
+
+    /// Once the file on disk no longer matches the entry's recorded size, the
+    /// entry is not served, so a reader never sees values the next scan will
+    /// replace.
+    #[tokio::test]
+    async fn note_from_cache_refuses_an_entry_the_file_has_outgrown() {
+        let dir = tempfile::tempdir().unwrap();
+        let (storage, cache, abs, _) = notebox_with_cached_note(&dir).await;
+        let root = storage.canonical_root().to_path_buf();
+
+        std::fs::write(&abs, format!("{CONTENT}#tag(\"new\")\n")).unwrap();
+
+        assert!(note_from_cache(&storage, &cache, &root, &abs)
+            .await
+            .is_none());
+    }
+
+    /// An entry the scan would re-parse anyway (no links recorded for a file
+    /// that visibly has a wikilink) is not served either, and a file with no
+    /// entry is a miss.
+    #[tokio::test]
+    async fn note_from_cache_refuses_stale_looking_and_missing_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let (storage, cache, abs, entry) = notebox_with_cached_note(&dir).await;
+        let root = storage.canonical_root().to_path_buf();
+
+        let mut no_links = entry.clone();
+        no_links.links.clear();
+        cache.upsert_file(&root, &no_links).unwrap();
+        assert!(note_from_cache(&storage, &cache, &root, &abs)
+            .await
+            .is_none());
+
+        let other = root.join("other.typ");
+        std::fs::write(&other, CONTENT).unwrap();
+        assert!(note_from_cache(&storage, &cache, &root, &other)
+            .await
+            .is_none());
+    }
 }

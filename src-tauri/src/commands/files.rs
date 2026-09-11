@@ -98,7 +98,16 @@ fn enrich_tree_zids(
     }
 }
 
-/// Return parsed `#note(...)` metadata for a file, falling back to on-demand reindex if not yet cached.
+/// Return parsed `#note(...)` metadata for a file.
+///
+/// Answered from the property index once it is built. While the indexes are
+/// still being built after open, the answer comes from the metadata cache
+/// instead, when it holds a fresh entry for the file (the same entry the build
+/// will reuse), so the Properties panel does not wait behind the notebox-wide
+/// scan. With nothing trustworthy cached the call fails with `IndexNotReady`
+/// and the panel asks again on `notebox:index-ready`. After the build, a file
+/// the index does not know (created out-of-band) is read and indexed on
+/// demand.
 #[tauri::command]
 pub async fn get_file_metadata(
     path: String,
@@ -115,10 +124,18 @@ pub async fn get_file_metadata(
         }
     }
 
-    // Fallback: file isn't in the index yet (initial notebox scan may have
-    // missed it, or it was created out-of-band). Read it and reindex on
-    // demand so the panel doesn't stay permanently blank until the user
-    // edits the file.
+    // The build holds the compiler for the whole scan, so an on-demand parse
+    // here would wait for it to finish. Serve the cache instead, or nothing.
+    if !session.index_ready() {
+        return session
+            .cached_note(&path_buf)
+            .await
+            .ok_or(InkyCapError::IndexNotReady);
+    }
+
+    // Fallback: file isn't in the index (created out-of-band, or missed by the
+    // scan). Read it and reindex on demand so the panel doesn't stay
+    // permanently blank until the user edits the file.
     let storage = session.get_storage().await?;
     let content = storage.read_file(&path_buf).await?;
     session.reindex_note(&path_buf, &content).await;

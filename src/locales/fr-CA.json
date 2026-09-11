@@ -2354,6 +2354,7 @@
   "errors.notebox-already-open": "Cette boîte de notes est déjà ouverte dans une autre fenêtre.",
   "errors.cancelled": "Annulé",
   "errors.documentation-read-only": "La documentation est en lecture seule — les modifications ne sont pas enregistrées.",
+  "errors.index-not-ready": "La boîte de notes est encore en cours d'indexation.",
   "pill.editSource": "Modifier la source",
   "pill.openInVisualEditor": "Ouvrir dans l'éditeur visuel",
   "pill.openInSourceEditor": "Ouvrir dans l'éditeur de source",

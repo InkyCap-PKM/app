@@ -2354,6 +2354,7 @@
   "errors.notebox-already-open": "This notebox is already open in another window.",
   "errors.cancelled": "Cancelled",
   "errors.documentation-read-only": "The documentation is read-only — changes aren't saved.",
+  "errors.index-not-ready": "The notebox is still being indexed.",
   "pill.editSource": "Edit source",
   "pill.openInVisualEditor": "Open in visual editor",
   "pill.openInSourceEditor": "Open in source editor",
