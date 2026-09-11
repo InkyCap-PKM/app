@@ -1,6 +1,8 @@
-import { WidgetType, type EditorView } from "@codemirror/view";
-import { type TableData, type TableCell, serializeTable, parseClipboardAsGrid, parseTsvToGrid } from "./table-parser";
+import { WidgetType, EditorView } from "@codemirror/view";
+import { type TableData, type TableCell, serializeTable, parseClipboardAsGrid, textToGrid } from "./table-parser";
 import { compareName } from "../../lib/sort";
+import { t, tPlural } from "../../lib/i18n";
+import { showContextMenu, type ContextMenuEntry } from "../../lib/context-menu";
 
 // Lucide grip glyphs for the reorder handles — crisper and less fragile than
 // hand-laid dot grids. `grip-horizontal` suits the wide/short column handle,
@@ -63,18 +65,31 @@ function extraArgsEqual(
 /**
  * Cross-rebuild focus target.
  *
- * Editing a cell and then advancing (Tab / Enter / arrow) blurs the cell,
- * which dispatches a doc change to sync the edit. That dispatch rebuilds the
- * whole table widget — the old cell DOM is torn down and a fresh `toDOM`
+ * Editing a cell and then leaving it (Tab / Enter / arrow / Escape) blurs the
+ * cell, which dispatches a doc change to sync the edit. That dispatch rebuilds
+ * the whole table widget — the old cell DOM is torn down and a fresh `toDOM`
  * runs. Focusing a cell element captured *before* the blur therefore targets
  * a detached node, focus silently falls back to CM's contentDOM, and the user
  * appears to be ejected from the table. Instead the navigator records the
- * destination here (keyed by the table's stable start offset); the rebuilt
- * widget's `toDOM` consumes it and focuses the correct fresh cell. When the
- * blur triggers no rebuild (content unchanged), the navigator clears this and
- * focuses directly.
+ * destination here (keyed by the table's start offset); the rebuilt widget's
+ * `toDOM` consumes it and lands on the correct fresh cell, either editing it
+ * or selecting it in navigation mode. When the blur triggers no rebuild
+ * (content unchanged), the navigator clears this and applies it directly.
  */
-let pendingCellFocus: { tableFrom: number; row: number; col: number } | null = null;
+let pendingCellFocus: { tableFrom: number; row: number; col: number; mode: CellFocusMode } | null = null;
+
+/** `edit`: caret in the cell with its content selected. `select`: the cell is
+ *  highlighted and the table wrapper has focus (navigation mode). */
+type CellFocusMode = "edit" | "select";
+
+/** Where the keyboard's cell cursor is in navigation mode. Shared between the
+ *  mouse selection and the keyboard handler so each sees the other's moves. */
+interface NavState {
+  anchorRow: number;
+  anchorCol: number;
+  headRow: number;
+  headCol: number;
+}
 
 /**
  * Forward a keyboard shortcut to the CM6 editor by refocusing it and
@@ -179,7 +194,7 @@ export class TableWidget extends WidgetType {
       const handle = document.createElement("div");
       handle.className = "cm-table-col-handle";
       handle.innerHTML = `<span class="cm-table-handle-grip">${GRIP_HORIZONTAL}</span>`;
-      handle.title = "Right-click for options · drag to reorder";
+      handle.title = t("table.handle.reorder");
       const colIdx = c;
 
       handle.addEventListener("pointerdown", (e) => {
@@ -192,7 +207,7 @@ export class TableWidget extends WidgetType {
       handle.addEventListener("contextmenu", (e) => {
         e.preventDefault();
         e.stopPropagation();
-        this.showColumnMenu(view, wrap, colIdx, handle);
+        this.showColumnMenu(view, wrap, colIdx, e);
       });
       td.appendChild(handle);
 
@@ -219,7 +234,7 @@ export class TableWidget extends WidgetType {
       const handle = document.createElement("div");
       handle.className = "cm-table-row-handle";
       handle.innerHTML = `<span class="cm-table-handle-grip">${GRIP_VERTICAL}</span>`;
-      handle.title = "Right-click for options · drag to reorder";
+      handle.title = t("table.handle.reorder");
       const rowIdx = r;
 
       handle.addEventListener("pointerdown", (e) => {
@@ -232,7 +247,7 @@ export class TableWidget extends WidgetType {
       handle.addEventListener("contextmenu", (e) => {
         e.preventDefault();
         e.stopPropagation();
-        this.showRowMenu(view, wrap, rowIdx, handle);
+        this.showRowMenu(view, wrap, rowIdx, e);
       });
       handleCell.appendChild(handle);
 
@@ -250,7 +265,7 @@ export class TableWidget extends WidgetType {
         cellEl.addEventListener("contextmenu", (e) => {
           e.preventDefault();
           e.stopPropagation();
-          this.showCellMenu(view, wrap, cellRowIdx, cellColIdx, cellEl);
+          this.showCellMenu(view, wrap, cellRowIdx, cellColIdx, cellEl, e);
         });
         tr.appendChild(cellEl);
       }
@@ -260,23 +275,18 @@ export class TableWidget extends WidgetType {
 
     wrap.appendChild(table);
 
-    this.setupCellSelection(wrap);
-    this.setupTableNavigation(view, wrap);
-    this.setupClipboard(view, wrap);
+    const nav: NavState = { anchorRow: 0, anchorCol: 0, headRow: 0, headCol: 0 };
+    this.setupCellSelection(wrap, nav);
+    this.setupTableNavigation(view, wrap, nav);
     this.setupResize(view, wrap, table, colCount);
 
-    // If a prior cell-to-cell navigation triggered a rebuild (see
-    // `pendingCellFocus`), restore focus to the intended destination cell in
-    // this freshly-built DOM once it is mounted.
+    // If leaving a cell triggered a rebuild (see `pendingCellFocus`), land on
+    // the intended destination cell in this freshly-built DOM once mounted.
     if (pendingCellFocus && pendingCellFocus.tableFrom === this.from) {
-      const { row, col } = pendingCellFocus;
+      const { row, col, mode } = pendingCellFocus;
       pendingCellFocus = null;
       queueMicrotask(() => {
-        const target = getCellAt(wrap, row, col);
-        if (target && document.body.contains(target)) {
-          target.focus({ preventScroll: true });
-          selectAllContent(target);
-        }
+        if (document.body.contains(wrap)) applyCellFocus(wrap, row, col, mode);
       });
     }
 
@@ -347,7 +357,7 @@ export class TableWidget extends WidgetType {
     for (let c = 0; c < colCount; c++) {
       const h = document.createElement("div");
       h.className = "cm-table-resize-handle cm-table-resize-handle--col";
-      h.title = "Drag to set column width · double-click to fit content";
+      h.title = t("table.handle.resize_column");
       this.bindColumnResize(view, wrap, table, h, c);
       overlay.appendChild(h);
       colHandles.push(h);
@@ -357,7 +367,7 @@ export class TableWidget extends WidgetType {
     for (let r = 0; r < rowCount; r++) {
       const h = document.createElement("div");
       h.className = "cm-table-resize-handle cm-table-resize-handle--row";
-      h.title = "Drag to set row height · double-click to fit content";
+      h.title = t("table.handle.resize_row");
       this.bindRowResize(view, wrap, table, h, r);
       overlay.appendChild(h);
       rowHandles.push(h);
@@ -604,7 +614,6 @@ export class TableWidget extends WidgetType {
     cellDiv.spellcheck = false;
     cellDiv.textContent = cell.content;
 
-    const tableFrom = this.from;
     const relFrom = cell.relFrom;
     const relTo = cell.relTo;
 
@@ -618,6 +627,7 @@ export class TableWidget extends WidgetType {
       cellDiv.classList.remove("cm-typst-table-cell--editing");
       const newContent = cellDiv.textContent ?? "";
       if (newContent !== cell.content) {
+        const { from: tableFrom } = this.liveRange(view);
         const absFrom = tableFrom + relFrom + 1;
         const absTo = tableFrom + relTo - 1;
         const currentFull = view.state.doc.sliceString(tableFrom, tableFrom + relTo + 1);
@@ -675,12 +685,12 @@ export class TableWidget extends WidgetType {
           let r = row, c = col - 1;
           if (c < 0) { c = cols - 1; r--; }
           if (r < 0) { cellDiv.blur(); this.exitToEditor(view, "before"); return; }
-          this.moveToCell(view, wrap, cellDiv, r, c);
+          this.leaveCell(view, wrap, cellDiv, r, c, "edit");
         } else {
           let r = row, c = col + 1;
           if (c >= cols) { c = 0; r++; }
           if (r >= rows) { this.commitWithNewRow(view, cellDiv, cell, row, col); return; }
-          this.moveToCell(view, wrap, cellDiv, r, c);
+          this.leaveCell(view, wrap, cellDiv, r, c, "edit");
         }
         return;
       }
@@ -692,43 +702,33 @@ export class TableWidget extends WidgetType {
         if (row + 1 >= rows) {
           this.commitWithNewRow(view, cellDiv, cell, row, col);
         } else {
-          this.moveToCell(view, wrap, cellDiv, row + 1, col);
+          this.leaveCell(view, wrap, cellDiv, row + 1, col, "edit");
         }
         return;
       }
 
       if (e.key === "Escape") {
         e.preventDefault();
-        cellDiv.blur();
-        clearCellSelection(wrap);
-        cellDiv.classList.add("cm-typst-table-cell--selected");
-        wrap.focus();
+        const { row, col } = this.cellPosition(wrap, el);
+        this.leaveCell(view, wrap, cellDiv, row, col, "select");
         return;
       }
     });
 
-    cellDiv.addEventListener("copy", (e) => {
-      const selected = wrap.querySelectorAll(".cm-typst-table-cell--selected");
-      if (selected.length > 1) {
-        e.preventDefault();
-        const text = getSelectedCellsText(wrap);
-        e.clipboardData!.setData("text/plain", text);
-      }
-    });
-
     cellDiv.addEventListener("paste", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
       const grid = parseClipboardAsGrid(e);
-      if (grid && (grid.length > 1 || (grid.length === 1 && grid[0].length > 1))) {
-        e.preventDefault();
-        e.stopPropagation();
+      if (grid && (grid.length > 1 || grid[0].length > 1)) {
         cellDiv.blur();
-        const allDataRows = Array.from(wrap.querySelectorAll<HTMLElement>("tr[data-logical-row]"));
-        const row = el.closest<HTMLElement>("tr[data-logical-row]")!;
-        const rowIdx = allDataRows.indexOf(row);
-        const dataCells = Array.from(row.querySelectorAll<HTMLElement>("th, td:not(.cm-table-row-handle-cell)"));
-        const colIdx = dataCells.indexOf(el);
-        this.fillCellsFromGrid(view, rowIdx, colIdx, grid);
+        const { row, col } = this.cellPosition(wrap, el);
+        this.fillCellsFromGrid(view, row, col, grid);
+        return;
       }
+      // A single value goes in at the caret as plain text, never as the
+      // browser's rich-HTML paste.
+      const text = e.clipboardData?.getData("text/plain") ?? "";
+      if (text) document.execCommand("insertText", false, text);
     });
 
     el.appendChild(cellDiv);
@@ -750,7 +750,7 @@ export class TableWidget extends WidgetType {
       return;
     }
     const cellDiv = currentTd.querySelector<HTMLElement>(".cm-typst-table-cell");
-    if (cellDiv && view) this.moveToCell(view, wrap, cellDiv, newRow, newCol);
+    if (cellDiv && view) this.leaveCell(view, wrap, cellDiv, newRow, newCol, "edit");
   }
 
   /** Logical (row, col) of the data cell containing `cellOrTd`. */
@@ -771,22 +771,19 @@ export class TableWidget extends WidgetType {
   }
 
   /**
-   * Move edit focus from the current cell to the cell at (targetRow,
-   * targetCol). Blurring the source cell may dispatch a sync change that
-   * rebuilds the widget; in that case the rebuilt `toDOM` honours
-   * `pendingCellFocus`. If no rebuild happens (content unchanged), the token
-   * survives the blur and we focus the destination directly.
+   * Leave the cell being edited and land on the cell at (targetRow,
+   * targetCol), either editing it or selecting it in navigation mode.
+   * Blurring the source cell may dispatch a sync change that rebuilds the
+   * widget; in that case the rebuilt `toDOM` honours `pendingCellFocus`. If
+   * no rebuild happens (content unchanged), the token survives the blur and
+   * the destination is applied directly.
    */
-  private moveToCell(view: EditorView, wrap: HTMLElement, fromCellDiv: HTMLElement, targetRow: number, targetCol: number) {
-    pendingCellFocus = { tableFrom: this.from, row: targetRow, col: targetCol };
+  private leaveCell(view: EditorView, wrap: HTMLElement, fromCellDiv: HTMLElement, targetRow: number, targetCol: number, mode: CellFocusMode) {
+    pendingCellFocus = { tableFrom: this.liveRange(view).from, row: targetRow, col: targetCol, mode };
     fromCellDiv.blur();
     if (pendingCellFocus) {
       pendingCellFocus = null;
-      const target = getCellAt(wrap, targetRow, targetCol);
-      if (target) {
-        target.focus({ preventScroll: true });
-        selectAllContent(target);
-      }
+      applyCellFocus(wrap, targetRow, targetCol, mode);
     }
   }
 
@@ -806,12 +803,13 @@ export class TableWidget extends WidgetType {
     allRows.push(this.data.columns.map(() => ({ ...EMPTY_CELL })));
     const rs = this.currentRowSizes();
     if (rs) rs.push("auto");
-    pendingCellFocus = { tableFrom: this.from, row: allRows.length - 1, col: 0 };
+    pendingCellFocus = { tableFrom: this.liveRange(view).from, row: allRows.length - 1, col: 0, mode: "edit" };
     this.replaceTable(view, this.rebuildFromAllRows(allRows, this.data.header !== null, rs));
   }
 
   private exitToEditor(view: EditorView, direction: "before" | "after") {
-    const pos = direction === "before" ? this.from : this.to;
+    const live = this.liveRange(view);
+    const pos = direction === "before" ? live.from : live.to;
     const line = view.state.doc.lineAt(pos);
     const target = direction === "before"
       ? (line.number > 1 ? view.state.doc.line(line.number - 1).from : 0)
@@ -824,7 +822,7 @@ export class TableWidget extends WidgetType {
   // Cell selection (navigation mode)
   // ────────────────────────────────────────────────────────
 
-  private setupCellSelection(wrap: HTMLElement) {
+  private setupCellSelection(wrap: HTMLElement, nav: NavState) {
     let selecting = false;
     let startCell: HTMLElement | null = null;
 
@@ -832,9 +830,25 @@ export class TableWidget extends WidgetType {
       const target = e.target as HTMLElement;
       const cell = target.closest<HTMLElement>(".cm-typst-table-cell");
       if (!cell) return;
-      if (e.button !== 0) return;
-
       if (document.activeElement === cell) return;
+
+      if (e.button === 2) {
+        // Right-click: keep focus where it is so the browser does not start
+        // editing the cell (which would drop the selection the menu acts on).
+        // An unselected cell becomes the selection, as in a spreadsheet.
+        e.preventDefault();
+        if (!cell.classList.contains("cm-typst-table-cell--selected")) {
+          clearCellSelection(wrap);
+          clearHandleSelection(wrap);
+          cell.classList.add("cm-typst-table-cell--selected");
+          const { row, col } = this.cellPosition(wrap, cell);
+          nav.anchorRow = nav.headRow = row;
+          nav.anchorCol = nav.headCol = col;
+        }
+        wrap.focus({ preventScroll: true });
+        return;
+      }
+      if (e.button !== 0) return;
 
       e.preventDefault();
       selecting = true;
@@ -842,6 +856,9 @@ export class TableWidget extends WidgetType {
       clearCellSelection(wrap);
       clearHandleSelection(wrap);
       cell.classList.add("cm-typst-table-cell--selected");
+      const { row, col } = this.cellPosition(wrap, cell);
+      nav.anchorRow = nav.headRow = row;
+      nav.anchorCol = nav.headCol = col;
     });
 
     wrap.addEventListener("mousemove", (e) => {
@@ -854,6 +871,19 @@ export class TableWidget extends WidgetType {
 
       clearCellSelection(wrap);
       selectCellRange(wrap, startCell, cell);
+      const { row, col } = this.cellPosition(wrap, cell);
+      nav.headRow = row;
+      nav.headCol = col;
+    });
+
+    // A highlight left behind after focus moves to the note body would keep
+    // showing a stale selection, so drop it — unless focus went to a context
+    // menu opened on the selection, whose actions still need it.
+    wrap.addEventListener("focusout", (e) => {
+      const next = e.relatedTarget;
+      if (next instanceof Node && (wrap.contains(next) || (next instanceof Element && next.closest(".context-menu")))) return;
+      clearCellSelection(wrap);
+      clearHandleSelection(wrap);
     });
 
     wrap.addEventListener("mouseup", () => {
@@ -881,19 +911,16 @@ export class TableWidget extends WidgetType {
   // Table-level keyboard navigation (when wrap has focus)
   // ────────────────────────────────────────────────────────
 
-  private setupTableNavigation(view: EditorView, wrap: HTMLElement) {
-    let anchorRow = 0;
-    let anchorCol = 0;
-    let headRow = 0;
-    let headCol = 0;
-
+  private setupTableNavigation(view: EditorView, wrap: HTMLElement, nav: NavState) {
     wrap.addEventListener("keydown", (e) => {
       if (document.activeElement !== wrap) return;
 
       if ((e.ctrlKey || e.metaKey) && !e.altKey) {
-        if (e.key === "c" || e.key === "v") {
-          return;
-        }
+        // The modifier's own keydown arrives before the letter; forwarding it
+        // would move focus to the note body before the shortcut completes.
+        if (e.key === "Control" || e.key === "Meta" || e.key === "Shift" || e.key === "Alt") return;
+        // Native copy/paste — routed back to this table by visual-tables.ts.
+        if (e.key === "c" || e.key === "v") return;
         if (e.key === "a") {
           e.preventDefault();
           e.stopPropagation();
@@ -909,6 +936,18 @@ export class TableWidget extends WidgetType {
       }
 
       const selected = wrap.querySelector<HTMLElement>(".cm-typst-table-cell--selected");
+
+      // A selection made by Tab or by entering the table from the note body
+      // does not pass through this handler, so re-anchor the keyboard cursor
+      // on it before moving.
+      if (selected) {
+        const headCell = getCellAt(wrap, nav.headRow, nav.headCol);
+        if (!headCell?.classList.contains("cm-typst-table-cell--selected")) {
+          const { row, col } = this.cellPosition(wrap, selected);
+          nav.anchorRow = nav.headRow = row;
+          nav.anchorCol = nav.headCol = col;
+        }
+      }
 
       if (e.key === "F2" || e.key === "Enter") {
         if (selected) {
@@ -931,7 +970,7 @@ export class TableWidget extends WidgetType {
         const colCount = allRows[0]?.querySelectorAll("th, td:not(.cm-table-row-handle-cell)").length ?? 0;
 
         if (!selected) {
-          anchorRow = anchorCol = headRow = headCol = 0;
+          nav.anchorRow = nav.anchorCol = nav.headRow = nav.headCol = 0;
           const first = getCellAt(wrap, 0, 0);
           if (first) {
             clearCellSelection(wrap);
@@ -940,8 +979,8 @@ export class TableWidget extends WidgetType {
           return;
         }
 
-        let newRow = headRow;
-        let newCol = headCol;
+        let newRow = nav.headRow;
+        let newCol = nav.headCol;
         if (e.key === "ArrowDown") newRow++;
         if (e.key === "ArrowUp") newRow--;
         if (e.key === "ArrowRight") newCol++;
@@ -953,19 +992,19 @@ export class TableWidget extends WidgetType {
         }
         if (newCol < 0 || newCol >= colCount) return;
 
-        headRow = newRow;
-        headCol = newCol;
+        nav.headRow = newRow;
+        nav.headCol = newCol;
 
         if (e.shiftKey) {
           clearCellSelection(wrap);
-          const a = getCellAt(wrap, anchorRow, anchorCol);
-          const h = getCellAt(wrap, headRow, headCol);
+          const a = getCellAt(wrap, nav.anchorRow, nav.anchorCol);
+          const h = getCellAt(wrap, nav.headRow, nav.headCol);
           if (a && h) selectCellRange(wrap, a, h);
         } else {
-          anchorRow = headRow;
-          anchorCol = headCol;
+          nav.anchorRow = nav.headRow;
+          nav.anchorCol = nav.headCol;
           clearCellSelection(wrap);
-          const cell = getCellAt(wrap, headRow, headCol);
+          const cell = getCellAt(wrap, nav.headRow, nav.headCol);
           if (cell) cell.classList.add("cm-typst-table-cell--selected");
         }
         return;
@@ -1024,13 +1063,15 @@ export class TableWidget extends WidgetType {
         return;
       }
 
-      // Any printable character: enter edit mode and type
+      // Any printable character: enter edit mode and type over the content.
+      // Focus first — the cell's focus handler resets its text — then select
+      // everything so the typed character replaces it.
       if (selected && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
         e.stopPropagation();
         clearCellSelection(wrap);
-        selected.textContent = "";
         selected.focus();
+        selectAllContent(selected);
         document.execCommand("insertText", false, e.key);
         return;
       }
@@ -1038,25 +1079,19 @@ export class TableWidget extends WidgetType {
   }
 
   // ────────────────────────────────────────────────────────
-  // Clipboard (copy / paste)
+  // Clipboard (paste into the selection)
   // ────────────────────────────────────────────────────────
 
-  private setupClipboard(view: EditorView, wrap: HTMLElement) {
-    wrap.addEventListener("copy", (e) => {
-      const selected = wrap.querySelectorAll(".cm-typst-table-cell--selected");
-      if (selected.length > 0) {
-        e.preventDefault();
-        e.clipboardData!.setData("text/plain", getSelectedCellsText(wrap));
-      }
-    });
-
-    wrap.addEventListener("paste", (e) => {
-      e.preventDefault();
-      const grid = parseClipboardAsGrid(e);
-      if (!grid || grid.length === 0) return;
-      const anchor = getSelectionAnchor(wrap);
-      this.fillCellsFromGrid(view, anchor.row, anchor.col, grid);
-    });
+  /**
+   * Paste a grid over the cells starting at the selection anchor, growing the
+   * table downward if needed. Copy and paste events never reach the table
+   * wrapper in navigation mode (the DOM selection stays in the note body), so
+   * the editor-level handler in `visual-tables.ts` routes them here.
+   */
+  pasteAtSelection(view: EditorView, wrap: HTMLElement, grid: string[][]) {
+    const anchor = getSelectionAnchor(wrap);
+    if (!anchor) return;
+    this.fillCellsFromGrid(view, anchor.row, anchor.col, grid);
   }
 
   private fillCellsFromGrid(view: EditorView, startRow: number, startCol: number, grid: string[][]) {
@@ -1083,20 +1118,17 @@ export class TableWidget extends WidgetType {
   // Context menus
   // ────────────────────────────────────────────────────────
 
-  private showCellMenu(view: EditorView, wrap: HTMLElement, rowIdx: number, colIdx: number, anchor: HTMLElement) {
-    removeExistingMenu();
-    const rect = anchor.getBoundingClientRect();
+  private showCellMenu(view: EditorView, wrap: HTMLElement, rowIdx: number, colIdx: number, anchor: HTMLElement, e: MouseEvent) {
     const hasSelection = wrap.querySelectorAll(".cm-typst-table-cell--selected").length > 0;
     const selRows = getSelectedRowIndices(wrap);
     const selCols = getSelectedColIndices(wrap);
     const multiRow = selRows.length > 1;
     const multiCol = selCols.length > 1;
 
-    const menu = buildMenuAtPos(rect.left, rect.bottom + 2, [
+    const entries: ContextMenuEntry[] = [
       {
-        label: "Copy",
-        icon: ICON_COPY,
-        action: () => {
+        label: t("common.copy"),
+        run: () => {
           if (!hasSelection) {
             clearCellSelection(wrap);
             const cell = anchor.querySelector<HTMLElement>(".cm-typst-table-cell");
@@ -1106,106 +1138,100 @@ export class TableWidget extends WidgetType {
         },
       },
       {
-        label: "Paste",
-        icon: ICON_PASTE,
-        action: () => {
+        label: t("common.paste"),
+        run: () => {
           navigator.clipboard.readText().then((text) => {
-            const grid = parseTsvToGrid(text);
-            if (grid) {
-              const startRow = hasSelection ? getSelectionAnchor(wrap).row : rowIdx;
-              const startCol = hasSelection ? getSelectionAnchor(wrap).col : colIdx;
-              this.fillCellsFromGrid(view, startRow, startCol, grid);
-            }
+            const grid = textToGrid(text);
+            if (!grid) return;
+            const start = getSelectionAnchor(wrap) ?? { row: rowIdx, col: colIdx };
+            this.fillCellsFromGrid(view, start.row, start.col, grid);
           });
         },
       },
-      null,
-      { label: "Insert row above", icon: "⊞", action: () => this.insertRow(view, rowIdx) },
-      { label: "Insert row below", icon: "⊞", action: () => this.insertRow(view, multiRow ? selRows[selRows.length - 1] + 1 : rowIdx + 1) },
-      { label: "Insert column before", icon: "⊞", action: () => this.insertColumn(view, colIdx) },
-      { label: "Insert column after", icon: "⊞", action: () => this.insertColumn(view, multiCol ? selCols[selCols.length - 1] + 1 : colIdx + 1) },
-      null,
+      "separator",
+      { label: t("table.menu.insert_row_above"), run: () => this.insertRow(view, rowIdx) },
+      { label: t("table.menu.insert_row_below"), run: () => this.insertRow(view, multiRow ? selRows[selRows.length - 1] + 1 : rowIdx + 1) },
+      { label: t("table.menu.insert_column_before"), run: () => this.insertColumn(view, colIdx) },
+      { label: t("table.menu.insert_column_after"), run: () => this.insertColumn(view, multiCol ? selCols[selCols.length - 1] + 1 : colIdx + 1) },
+      "separator",
       {
-        label: multiRow ? `Delete ${selRows.length} rows` : "Delete row",
-        icon: "",
-        action: () => multiRow ? this.deleteRows(view, selRows) : this.deleteRow(view, rowIdx),
+        label: tPlural("table.menu.delete_rows", multiRow ? selRows.length : 1),
+        run: () => multiRow ? this.deleteRows(view, selRows) : this.deleteRow(view, rowIdx),
         danger: true,
       },
       {
-        label: multiCol ? `Delete ${selCols.length} columns` : "Delete column",
-        icon: "",
-        action: () => multiCol ? this.deleteColumns(view, selCols) : this.deleteColumn(view, colIdx),
+        label: tPlural("table.menu.delete_columns", multiCol ? selCols.length : 1),
+        run: () => multiCol ? this.deleteColumns(view, selCols) : this.deleteColumn(view, colIdx),
         danger: true,
       },
-    ]);
-    document.body.appendChild(menu);
-    installMenuCloseHandler(menu);
+    ];
+    showContextMenu(e.clientX, e.clientY, entries);
   }
 
-  private showColumnMenu(view: EditorView, wrap: HTMLElement, colIdx: number, anchor: HTMLElement) {
-    removeExistingMenu();
-    const rect = anchor.getBoundingClientRect();
+  private showColumnMenu(view: EditorView, wrap: HTMLElement, colIdx: number, e: MouseEvent) {
     const selCols = getSelectedColIndices(wrap);
     const multi = selCols.length > 1 && selCols.includes(colIdx);
 
-    const menu = buildMenuAtPos(rect.left, rect.bottom + 2, [
-      { label: "Sort by column (A to Z)", icon: "↓₂", action: () => this.sortColumn(view, colIdx, "asc") },
-      { label: "Sort by column (Z to A)", icon: "↑₂", action: () => this.sortColumn(view, colIdx, "desc") },
-      null,
-      { label: "Add column before", icon: "⊞", action: () => this.insertColumn(view, colIdx) },
-      { label: "Add column after", icon: "⊞", action: () => this.insertColumn(view, multi ? selCols[selCols.length - 1] + 1 : colIdx + 1) },
-      null,
-      { label: "Move column left", icon: "←", action: () => this.moveColumn(view, colIdx, colIdx - 1) },
-      { label: "Move column right", icon: "→", action: () => this.moveColumn(view, colIdx, colIdx + 1) },
-      null,
-      { label: "Align left", icon: "≡", action: () => this.setColumnAlign(view, colIdx, "left") },
-      { label: "Align centre", icon: "≡", action: () => this.setColumnAlign(view, colIdx, "center") },
-      { label: "Align right", icon: "≡", action: () => this.setColumnAlign(view, colIdx, "right") },
-      null,
-      { label: "Duplicate column", icon: "⊟", action: () => this.duplicateColumn(view, colIdx) },
+    const entries: ContextMenuEntry[] = [
+      { label: t("table.menu.sort_asc"), run: () => this.sortColumn(view, colIdx, "asc") },
+      { label: t("table.menu.sort_desc"), run: () => this.sortColumn(view, colIdx, "desc") },
+      "separator",
+      { label: t("table.menu.insert_column_before"), run: () => this.insertColumn(view, colIdx) },
+      { label: t("table.menu.insert_column_after"), run: () => this.insertColumn(view, multi ? selCols[selCols.length - 1] + 1 : colIdx + 1) },
+      "separator",
+      { label: t("table.menu.move_column_left"), run: () => this.moveColumn(view, colIdx, colIdx - 1) },
+      { label: t("table.menu.move_column_right"), run: () => this.moveColumn(view, colIdx, colIdx + 1) },
+      "separator",
+      { label: t("table.menu.align_left"), run: () => this.setColumnAlign(view, colIdx, "left") },
+      { label: t("table.menu.align_centre"), run: () => this.setColumnAlign(view, colIdx, "center") },
+      { label: t("table.menu.align_right"), run: () => this.setColumnAlign(view, colIdx, "right") },
+      "separator",
+      { label: t("table.menu.duplicate_column"), run: () => this.duplicateColumn(view, colIdx) },
       {
-        label: multi ? `Delete ${selCols.length} columns` : "Delete column",
-        icon: "",
-        action: () => multi ? this.deleteColumns(view, selCols) : this.deleteColumn(view, colIdx),
+        label: tPlural("table.menu.delete_columns", multi ? selCols.length : 1),
+        run: () => multi ? this.deleteColumns(view, selCols) : this.deleteColumn(view, colIdx),
         danger: true,
       },
-    ]);
-    document.body.appendChild(menu);
-    installMenuCloseHandler(menu);
+    ];
+    showContextMenu(e.clientX, e.clientY, entries);
   }
 
-  private showRowMenu(view: EditorView, wrap: HTMLElement, rowIdx: number, anchor: HTMLElement) {
-    removeExistingMenu();
-    const rect = anchor.getBoundingClientRect();
+  private showRowMenu(view: EditorView, wrap: HTMLElement, rowIdx: number, e: MouseEvent) {
     const isHeaderRow = this.data.header !== null && rowIdx === 0;
     const selRows = getSelectedRowIndices(wrap);
     const multi = selRows.length > 1 && selRows.includes(rowIdx);
 
-    const menu = buildMenuAtPos(rect.right + 2, rect.top, [
-      { label: "Add row above", icon: "⊞", action: () => this.insertRow(view, rowIdx) },
-      { label: "Add row below", icon: "⊞", action: () => this.insertRow(view, multi ? selRows[selRows.length - 1] + 1 : rowIdx + 1) },
-      null,
-      { label: "Move row up", icon: "↑", action: () => this.moveRow(view, rowIdx, rowIdx - 1) },
-      { label: "Move row down", icon: "↓", action: () => this.moveRow(view, rowIdx, rowIdx + 1) },
-      null,
+    const entries: ContextMenuEntry[] = [
+      { label: t("table.menu.insert_row_above"), run: () => this.insertRow(view, rowIdx) },
+      { label: t("table.menu.insert_row_below"), run: () => this.insertRow(view, multi ? selRows[selRows.length - 1] + 1 : rowIdx + 1) },
+      "separator",
+      { label: t("table.menu.move_row_up"), run: () => this.moveRow(view, rowIdx, rowIdx - 1) },
+      { label: t("table.menu.move_row_down"), run: () => this.moveRow(view, rowIdx, rowIdx + 1) },
+      "separator",
+    ];
+    // Typst's `table.header` is always the first row, so only that row can
+    // become (or stop being) the header.
+    if (rowIdx === 0) {
+      entries.push({
+        label: isHeaderRow ? t("table.menu.remove_header") : t("table.menu.set_header"),
+        run: () => this.toggleHeaderRow(view),
+      });
+    }
+    entries.push(
       {
-        label: isHeaderRow ? "Remove header" : "Set as header",
-        icon: "H",
-        action: () => this.toggleHeaderRow(view, rowIdx),
+        label: tPlural("table.menu.duplicate_rows", multi ? selRows.length : 1),
+        run: () => {
+          if (multi) { for (let i = selRows.length - 1; i >= 0; i--) this.duplicateRow(view, selRows[i]); }
+          else this.duplicateRow(view, rowIdx);
+        },
       },
-      { label: multi ? `Duplicate ${selRows.length} rows` : "Duplicate row", icon: "⊟", action: () => {
-        if (multi) { for (let i = selRows.length - 1; i >= 0; i--) this.duplicateRow(view, selRows[i]); }
-        else this.duplicateRow(view, rowIdx);
-      }},
       {
-        label: multi ? `Delete ${selRows.length} rows` : "Delete row",
-        icon: "",
-        action: () => multi ? this.deleteRows(view, selRows) : this.deleteRow(view, rowIdx),
+        label: tPlural("table.menu.delete_rows", multi ? selRows.length : 1),
+        run: () => multi ? this.deleteRows(view, selRows) : this.deleteRow(view, rowIdx),
         danger: true,
       },
-    ]);
-    document.body.appendChild(menu);
-    installMenuCloseHandler(menu);
+    );
+    showContextMenu(e.clientX, e.clientY, entries);
   }
 
   // ────────────────────────────────────────────────────────
@@ -1243,9 +1269,33 @@ export class TableWidget extends WidgetType {
   // ────────────────────────────────────────────────────────
 
   private replaceTable(view: EditorView, newData: TableData) {
+    const { from, to } = this.liveRange(view);
     view.dispatch({
-      changes: { from: this.from, to: this.to, insert: serializeTable(newData) },
+      changes: { from, to, insert: serializeTable(newData) },
     });
+  }
+
+  /**
+   * The table's current source range. Edits elsewhere in the note move the
+   * decoration that carries this widget, but not the offsets captured when it
+   * was built, so anything that writes back to the source resolves the range
+   * here first. Falls back to the construction offsets when the widget is not
+   * in the decoration set (a fresh, equal widget replaced it at the same
+   * place).
+   */
+  private liveRange(view: EditorView): { from: number; to: number } {
+    for (const set of view.state.facet(EditorView.decorations)) {
+      if (typeof set === "function") continue;
+      let found: { from: number; to: number } | null = null;
+      set.between(0, view.state.doc.length, (from, to, deco) => {
+        if (deco.spec?.widget === this) {
+          found = { from, to };
+          return false;
+        }
+      });
+      if (found) return found;
+    }
+    return { from: this.from, to: this.to };
   }
 
   private getAllRows(): TableCell[][] {
@@ -1364,19 +1414,22 @@ export class TableWidget extends WidgetType {
     this.replaceTable(view, { ...this.data, columns: cols, align, header, rows });
   }
 
+  /** Move column `from` so it sits at index `to`, shifting the columns in
+   *  between — the same semantics as `moveRow` and as the drop indicator. */
   private moveColumn(view: EditorView, from: number, to: number) {
-    if (to < 0 || to >= this.data.columns.length) return;
-    const swap = <T>(arr: T[]): T[] => {
+    if (to < 0 || to >= this.data.columns.length || from === to) return;
+    const move = <T>(arr: T[]): T[] => {
       const copy = [...arr];
-      [copy[from], copy[to]] = [copy[to], copy[from]];
+      const [item] = copy.splice(from, 1);
+      copy.splice(to, 0, item);
       return copy;
     };
     this.replaceTable(view, {
       ...this.data,
-      columns: swap(this.data.columns),
-      align: this.data.align ? swap(this.data.align) : null,
-      header: this.data.header ? swap(this.data.header) : null,
-      rows: this.data.rows.map((r) => swap(r)),
+      columns: move(this.data.columns),
+      align: this.data.align ? move(this.data.align) : null,
+      header: this.data.header ? move(this.data.header) : null,
+      rows: this.data.rows.map((r) => move(r)),
     });
   }
 
@@ -1424,21 +1477,19 @@ export class TableWidget extends WidgetType {
     this.replaceTable(view, { ...this.data, rows: sorted });
   }
 
-  private toggleHeaderRow(view: EditorView, logicalRow: number) {
-    if (this.data.header && logicalRow === 0) {
-      // Demote the header to a body row — logical row order is unchanged, so
-      // any explicit row heights stay aligned.
+  /** Make the first row the header, or demote the header to a body row.
+   *  Logical row order is unchanged either way, so explicit row heights stay
+   *  aligned. */
+  private toggleHeaderRow(view: EditorView) {
+    if (this.data.header) {
       this.replaceTable(view, {
         ...this.data,
         header: null,
         rows: [this.data.header, ...this.data.rows],
       });
-    } else {
-      const all = this.getAllRows();
-      const [newHeader] = all.splice(logicalRow, 1);
-      const rs = this.currentRowSizes();
-      if (rs) { const [s] = rs.splice(logicalRow, 1); rs.unshift(s); }
-      this.replaceTable(view, this.rebuildFromAllRows([newHeader, ...all], true, rs));
+    } else if (this.data.rows.length > 0) {
+      const [first, ...rest] = this.data.rows;
+      this.replaceTable(view, { ...this.data, header: first, rows: rest });
     }
   }
 }
@@ -1453,6 +1504,44 @@ function selectAllContent(el: HTMLElement) {
   const sel = window.getSelection();
   sel?.removeAllRanges();
   sel?.addRange(range);
+}
+
+/** Land on the cell at (row, col): edit it, or select it in navigation mode. */
+function applyCellFocus(wrap: HTMLElement, row: number, col: number, mode: CellFocusMode) {
+  const target = getCellAt(wrap, row, col);
+  if (!target) return;
+  if (mode === "edit") {
+    target.focus({ preventScroll: true });
+    selectAllContent(target);
+  } else {
+    clearCellSelection(wrap);
+    target.classList.add("cm-typst-table-cell--selected");
+    wrap.focus({ preventScroll: true });
+  }
+}
+
+/** The widget rendered as `wrap`, resolved through the decoration set so the
+ *  instance is the one the editor currently holds. Null if `wrap` is not
+ *  mounted in `view`. */
+export function tableWidgetAt(view: EditorView, wrap: HTMLElement): TableWidget | null {
+  let pos: number;
+  try {
+    pos = view.posAtDOM(wrap);
+  } catch {
+    return null;
+  }
+  let found: TableWidget | null = null;
+  for (const set of view.state.facet(EditorView.decorations)) {
+    if (typeof set === "function") continue;
+    set.between(pos, pos, (from, _to, deco) => {
+      if (from === pos && deco.spec?.widget instanceof TableWidget) {
+        found = deco.spec.widget;
+        return false;
+      }
+    });
+    if (found) break;
+  }
+  return found;
 }
 
 function clearCellSelection(wrap: HTMLElement) {
@@ -1488,21 +1577,18 @@ function getCellAt(wrap: HTMLElement, row: number, col: number): HTMLElement | n
   return dataCells[col]?.querySelector<HTMLElement>(".cm-typst-table-cell") ?? null;
 }
 
-function getSelectionAnchor(wrap: HTMLElement): { row: number; col: number } {
+/** Top-left selected cell, or null when nothing is selected. */
+function getSelectionAnchor(wrap: HTMLElement): { row: number; col: number } | null {
   const selected = wrap.querySelector<HTMLElement>(".cm-typst-table-cell--selected");
-  if (selected) {
-    const td = selected.closest<HTMLElement>("td, th");
-    if (td) {
-      const table = td.closest("table")!;
-      const allRows = Array.from(table.querySelectorAll<HTMLElement>("tr[data-logical-row]"));
-      const row = td.closest<HTMLElement>("tr[data-logical-row]")!;
-      const rowIdx = allRows.indexOf(row);
-      const dataCells = Array.from(row.querySelectorAll<HTMLElement>("th, td:not(.cm-table-row-handle-cell)"));
-      const colIdx = dataCells.indexOf(td);
-      if (rowIdx >= 0 && colIdx >= 0) return { row: rowIdx, col: colIdx };
-    }
-  }
-  return { row: 0, col: 0 };
+  if (!selected) return null;
+  const td = selected.closest<HTMLElement>("td, th");
+  const row = td?.closest<HTMLElement>("tr[data-logical-row]");
+  if (!td || !row) return null;
+  const allRows = Array.from(wrap.querySelectorAll<HTMLElement>("tr[data-logical-row]"));
+  const dataCells = Array.from(row.querySelectorAll<HTMLElement>("th, td:not(.cm-table-row-handle-cell)"));
+  const rowIdx = allRows.indexOf(row);
+  const colIdx = dataCells.indexOf(td);
+  return rowIdx >= 0 && colIdx >= 0 ? { row: rowIdx, col: colIdx } : null;
 }
 
 function clearHandleSelection(wrap: HTMLElement) {
@@ -1545,7 +1631,8 @@ function selectCellRange(wrap: HTMLElement, start: HTMLElement, end: HTMLElement
   }
 }
 
-function getSelectedCellsText(wrap: HTMLElement): string {
+/** The selected cells as tab-separated rows, for the clipboard. */
+export function getSelectedCellsText(wrap: HTMLElement): string {
   const allRows = Array.from(wrap.querySelectorAll<HTMLElement>("tr[data-logical-row]"));
   const lines: string[] = [];
   for (const row of allRows) {
@@ -1567,123 +1654,4 @@ function wrapSelection(el: HTMLElement, before: string, after: string) {
   range.deleteContents();
   range.insertNode(document.createTextNode(before + text + after));
   sel.collapseToEnd();
-}
-
-// ── Context menu helpers ──
-
-interface MenuItem {
-  label: string;
-  icon: string;
-  action: () => void;
-  danger?: boolean;
-}
-
-function removeExistingMenu() {
-  document.querySelectorAll(".cm-table-context-menu").forEach((m) => m.remove());
-}
-
-const ICON_TRASH = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 0 1 1.34-1.34h2.66a1.33 1.33 0 0 1 1.34 1.34V4M13 4v9.33a1.33 1.33 0 0 1-1.33 1.34H4.33A1.33 1.33 0 0 1 3 13.33V4"/></svg>';
-const ICON_COPY = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="9" height="9" rx="1"/><path d="M3 11H2.5A1.5 1.5 0 0 1 1 9.5v-7A1.5 1.5 0 0 1 2.5 1h7A1.5 1.5 0 0 1 11 2.5V3"/></svg>';
-const ICON_PASTE = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2h2.5A1.5 1.5 0 0 1 14 3.5v10a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 13.5v-10A1.5 1.5 0 0 1 3.5 2H6"/><rect x="5.5" y="1" width="5" height="3" rx="1"/></svg>';
-
-function buildMenuAtPos(x: number, y: number, items: (MenuItem | null)[]): HTMLElement {
-  const menu = document.createElement("div");
-  menu.className = "cm-table-context-menu";
-  // Shared popup surface — see --popup-* tokens in themes.css.
-  menu.style.cssText = `
-    position: fixed;
-    z-index: var(--z-menu, 1000);
-    left: ${x}px;
-    top: ${y}px;
-    background: var(--popup-bg, #fff);
-    border: 1px solid var(--popup-border-color, #ddd);
-    border-radius: var(--popup-radius, 6px);
-    padding: var(--popup-padding-block, 4px) 0;
-    box-shadow: var(--popup-shadow, 0 4px 12px rgba(0,0,0,0.18));
-    min-width: 200px;
-    font-size: 0.85em;
-    font-family: inherit;
-    color: var(--fg-primary, #222);
-  `;
-
-  for (const item of items) {
-    if (!item) {
-      const sep = document.createElement("div");
-      sep.style.cssText = "height:1px;background:var(--popup-separator-color,#ddd);margin:4px 0;";
-      menu.appendChild(sep);
-      continue;
-    }
-    const btn = document.createElement("button");
-    btn.style.cssText = `
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      width: 100%;
-      padding: var(--popup-item-padding, 5px 12px);
-      border: none;
-      background: transparent;
-      color: ${item.danger ? "var(--danger, #e53e3e)" : "inherit"};
-      cursor: pointer;
-      text-align: left;
-      font-size: inherit;
-      font-family: inherit;
-    `;
-    const iconSpan = document.createElement("span");
-    iconSpan.style.cssText = "width:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0";
-    iconSpan.innerHTML = item.danger ? ICON_TRASH : item.icon; // static-only: internal SVG/emoji constants
-    btn.appendChild(iconSpan);
-    btn.appendChild(document.createTextNode(` ${item.label}`));
-    const highlight = () => { btn.style.background = "var(--bg-hover, #f0f0f0)"; };
-    const unhighlight = () => { btn.style.background = "transparent"; };
-    btn.addEventListener("mouseenter", highlight);
-    btn.addEventListener("mouseleave", unhighlight);
-    // The arrow keys walk focus through this menu (lib/menu-nav.ts). The row
-    // colours are inline here, so a stylesheet `:focus-visible` rule could not
-    // override them — the focus cue has to be set the same way.
-    btn.addEventListener("focus", highlight);
-    btn.addEventListener("blur", unhighlight);
-    btn.addEventListener("mousedown", (ev) => { ev.preventDefault(); ev.stopPropagation(); });
-    btn.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      menu.remove();
-      item.action();
-    });
-    menu.appendChild(btn);
-  }
-
-  // Clamp to viewport after layout
-  requestAnimationFrame(() => {
-    const r = menu.getBoundingClientRect();
-    const pad = 8;
-    let cx = x, cy = y;
-    if (r.right > window.innerWidth - pad) cx = window.innerWidth - pad - r.width;
-    if (r.bottom > window.innerHeight - pad) cy = window.innerHeight - pad - r.height;
-    if (cx < pad) cx = pad;
-    if (cy < pad) cy = pad;
-    menu.style.left = `${cx}px`;
-    menu.style.top = `${cy}px`;
-  });
-
-  return menu;
-}
-
-function installMenuCloseHandler(menu: HTMLElement) {
-  const cleanup = () => {
-    menu.remove();
-    document.removeEventListener("pointerdown", ptrHandler, true);
-    document.removeEventListener("keydown", keyHandler, true);
-  };
-  const ptrHandler = (ev: PointerEvent) => {
-    if (!menu.contains(ev.target as Node)) cleanup();
-  };
-  const keyHandler = (ev: KeyboardEvent) => {
-    if (ev.key === "Escape") cleanup();
-  };
-  // Use two rAFs to ensure we're past all events from the triggering interaction
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      document.addEventListener("pointerdown", ptrHandler, true);
-      document.addEventListener("keydown", keyHandler, true);
-    });
-  });
 }

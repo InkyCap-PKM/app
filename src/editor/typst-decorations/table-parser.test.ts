@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseCanonicalTable, serializeTable } from "./table-parser";
+import { parseCanonicalTable, serializeTable, textToGrid } from "./table-parser";
 
 // The visual editor renders a `#table(...)` as an editable grid only when
 // `parseCanonicalTable` recognizes it. A cell whose inline-raw content carries
@@ -87,5 +87,49 @@ describe("parseCanonicalTable", () => {
     // as an opaque arg, not modelled structurally.
     expect(t!.align).toBeNull();
     expect(t!.extraArgs).toEqual([{ key: "align", value: "center" }]);
+  });
+  // Inside a `[…]` cell the content is Typst markup, where quotes, parentheses
+  // and commas are ordinary text. Only a `#` expression switches back to code,
+  // and there its string arguments may carry commas and parentheses.
+  it("treats quotes, parentheses and commas inside a cell as plain text", () => {
+    const src =
+      "#table(\n  columns: (auto, auto),\n" +
+      "  [He said \"yes], [and \"no],\n" +
+      "  [smile :)], [a, b (c)],\n)";
+    const t = parseCanonicalTable(src);
+    expect(t).not.toBeNull();
+    expect(t!.rows.map((r) => r.map((c) => c.content))).toEqual([
+      ['He said "yes', 'and "no'],
+      ["smile :)", "a, b (c)"],
+    ]);
+    expect(serializeTable(t!)).toBe(src);
+  });
+
+  it("steps over embedded function calls and their arguments inside a cell", () => {
+    const src =
+      "#table(\n  columns: (auto, auto),\n" +
+      '  [#wikilink("Foo, bar")], [*bold* and _it_],\n' +
+      '  [#link("https://x.y/a)b")[label]], [see \\] here],\n)';
+    const t = parseCanonicalTable(src);
+    expect(t).not.toBeNull();
+    expect(t!.rows.map((r) => r.map((c) => c.content))).toEqual([
+      ['#wikilink("Foo, bar")', "*bold* and _it_"],
+      ['#link("https://x.y/a)b")[label]', "see \\] here"],
+    ]);
+    expect(serializeTable(t!)).toBe(src);
+  });
+});
+
+describe("textToGrid", () => {
+  it("splits tab-separated text into rows and columns", () => {
+    expect(textToGrid("a\tb\nc\td")).toEqual([["a", "b"], ["c", "d"]]);
+  });
+
+  it("keeps text without tabs as one cell, newlines included", () => {
+    expect(textToGrid("one line\nanother")).toEqual([["one line\nanother"]]);
+  });
+
+  it("yields nothing for empty text", () => {
+    expect(textToGrid("")).toBeNull();
   });
 });

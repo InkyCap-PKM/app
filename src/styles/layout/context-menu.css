@@ -62,8 +62,7 @@
   .cm-typst-pill-menu-item,
   .selection-toolbar__menu-item,
   .tab-bar__menu-item,
-  .mycelial-context-menu__item,
-  .cm-table-context-menu button
+  .mycelial-context-menu__item
 ):hover:not(.is-kbd-active) {
   background: transparent;
   color: inherit;

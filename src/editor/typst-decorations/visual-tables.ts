@@ -5,41 +5,71 @@
  * place alongside table-widget.ts and table-parser.ts.
  */
 
-import { EditorView, type DecorationSet, keymap } from "@codemirror/view";
+import { EditorView, ViewPlugin, type DecorationSet, keymap } from "@codemirror/view";
 import { type StateField } from "@codemirror/state";
-import { TableWidget } from "./table-widget";
-import { type TableData, type TableCell, parseClipboardAsGrid, serializeTable } from "./table-parser";
+import { TableWidget, tableWidgetAt, getSelectedCellsText } from "./table-widget";
+import { type TableData, type TableCell, parseClipboardAsGrid, textToGrid, serializeTable } from "./table-parser";
 import { inVerbatimLineContext } from "./keymaps";
 
 // ---------------------------------------------------------------------------
-// Clipboard handlers
+// Clipboard
 // ---------------------------------------------------------------------------
 
-/** Copy handler that serialises selected table cells as tab-separated text. */
-const tableClipboardHandler = EditorView.domEventHandlers({
-  copy(event: ClipboardEvent, view: EditorView) {
-    const selected = view.dom.querySelectorAll(".cm-typst-table-cell--selected");
-    if (selected.length === 0) return false;
+/**
+ * The table wrapper that holds keyboard focus in `view`, if any. In
+ * navigation mode the DOM selection stays wherever it last was — usually the
+ * note body, sometimes outside the editor — and that, not the focused
+ * element, is where the browser fires copy and paste.
+ */
+function focusedTableWrap(view: EditorView): HTMLElement | null {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLElement)) return null;
+  if (!active.classList.contains("cm-typst-table-wrap") || !view.dom.contains(active)) return null;
+  return active;
+}
 
-    const wrap = selected[0].closest<HTMLElement>(".cm-typst-table-wrap");
-    if (!wrap) return false;
+/**
+ * Copy and paste for a table in navigation mode. Listens on the document in
+ * the capture phase so the event is caught wherever the browser fires it,
+ * and stops it there so the editor's own clipboard handling stays out.
+ */
+const tableFocusClipboard = ViewPlugin.fromClass(class {
+  constructor(private readonly view: EditorView) {
+    document.addEventListener("copy", this.onCopy, true);
+    document.addEventListener("paste", this.onPaste, true);
+  }
 
+  destroy() {
+    document.removeEventListener("copy", this.onCopy, true);
+    document.removeEventListener("paste", this.onPaste, true);
+  }
+
+  /** Copies the selected cells as tab-separated text. */
+  private onCopy = (event: ClipboardEvent) => {
+    const wrap = focusedTableWrap(this.view);
+    if (!wrap) return;
+    const text = getSelectedCellsText(wrap);
+    if (!text) return;
     event.preventDefault();
-    const allRows = Array.from(wrap.querySelectorAll<HTMLElement>("tr[data-logical-row]"));
-    const lines: string[] = [];
-    for (const row of allRows) {
-      const cells = Array.from(row.querySelectorAll<HTMLElement>(".cm-typst-table-cell--selected"));
-      if (cells.length > 0) {
-        lines.push(cells.map(c => c.textContent ?? "").join("\t"));
-      }
-    }
-    event.clipboardData!.setData("text/plain", lines.join("\n"));
-    return true;
-  },
+    event.stopPropagation();
+    event.clipboardData?.setData("text/plain", text);
+  };
+
+  /** Pastes over the selection, growing the table downward if needed. */
+  private onPaste = (event: ClipboardEvent) => {
+    const wrap = focusedTableWrap(this.view);
+    if (!wrap) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const widget = tableWidgetAt(this.view, wrap);
+    const grid = parseClipboardAsGrid(event) ?? textToGrid(event.clipboardData?.getData("text/plain") ?? "");
+    if (widget && grid) widget.pasteAtSelection(this.view, wrap, grid);
+  };
 });
 
-/** Paste handler that converts a pasted grid (≥2 columns) into a Typst table. */
-const tablePasteHandler = EditorView.domEventHandlers({
+/** Converts a grid (two or more columns) pasted into the note body into a
+ *  new Typst table after the current line. */
+const tableBodyPaste = EditorView.domEventHandlers({
   paste(event: ClipboardEvent, view: EditorView) {
     const target = event.target as HTMLElement;
     if (target.closest?.(".cm-typst-table-wrap")) return false;
@@ -84,6 +114,8 @@ const tablePasteHandler = EditorView.domEventHandlers({
     return true;
   },
 });
+
+const tableClipboardHandler = [tableFocusClipboard, tableBodyPaste];
 
 // ---------------------------------------------------------------------------
 // Table entry via arrow keys
@@ -194,4 +226,4 @@ export function createTableEntryKeymap(decoField: StateField<DecorationSet>) {
   ]);
 }
 
-export { tableClipboardHandler, tablePasteHandler };
+export { tableClipboardHandler };

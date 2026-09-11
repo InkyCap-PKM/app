@@ -283,50 +283,16 @@ function tryParseNamedArg(
 }
 
 /**
- * Find the end of an argument value at the top level. Stops at a
- * top-level comma or end of string. Respects nested parens, brackets, strings.
+ * Find the end of a top-level argument value: the next `,` (or a stray `)` /
+ * `]`) that is not nested inside a code group, a markup block, a string, or
+ * inline raw. The argument list is code, so strings count here; inside a
+ * `[…]` cell the rules switch to markup (see `skipBracket`).
  */
 function findArgEnd(text: string, start: number): number {
   let i = start;
-  let parenDepth = 0;
-  let bracketDepth = 0;
-
   while (i < text.length) {
     const ch = text[i];
-    if (ch === "," && parenDepth === 0 && bracketDepth === 0) {
-      return i;
-    }
-    if (ch === '"') {
-      i = skipString(text, i);
-      continue;
-    }
-    if (ch === "`") {
-      // Inline raw (`` `…` ``): brackets/parens/quotes inside are literal —
-      // e.g. a shortcut cell `[`Ctrl+Shift+]`]` carries a `]` that must not
-      // close the cell early. Skip the whole span.
-      i = skipInlineRaw(text, i);
-      continue;
-    }
-    if (ch === "(") parenDepth++;
-    if (ch === ")") {
-      if (parenDepth === 0) return i;
-      parenDepth--;
-    }
-    if (ch === "[") bracketDepth++;
-    if (ch === "]") {
-      if (bracketDepth === 0) return i;
-      bracketDepth--;
-    }
-    i++;
-  }
-  return i;
-}
-
-function findMatchingParen(text: string, openIdx: number): number {
-  let depth = 1;
-  let i = openIdx + 1;
-  while (i < text.length && depth > 0) {
-    const ch = text[i];
+    if (ch === "," || ch === ")" || ch === "]") return i;
     if (ch === '"') {
       i = skipString(text, i);
       continue;
@@ -335,10 +301,9 @@ function findMatchingParen(text: string, openIdx: number): number {
       i = skipInlineRaw(text, i);
       continue;
     }
-    if (ch === "(") depth++;
-    if (ch === ")") {
-      depth--;
-      if (depth === 0) return i;
+    if (ch === "(") {
+      i = skipParen(text, i);
+      continue;
     }
     if (ch === "[") {
       i = skipBracket(text, i);
@@ -346,7 +311,103 @@ function findMatchingParen(text: string, openIdx: number): number {
     }
     i++;
   }
-  return -1;
+  return i;
+}
+
+/** Index of the `)` that closes the group opened at `openIdx`, or -1. */
+function findMatchingParen(text: string, openIdx: number): number {
+  const end = skipParen(text, openIdx);
+  return text[end - 1] === ")" && end > openIdx + 1 ? end - 1 : -1;
+}
+
+/**
+ * Skip a code-mode `(…)` group starting at `text[start] === "("`. Returns the
+ * index just past the closing `)`, or `text.length` if it never closes.
+ * Strings, nested groups, and embedded markup blocks are stepped over as
+ * units, so a `)` inside `"…"` or `[…]` never closes the group.
+ */
+function skipParen(text: string, start: number): number {
+  let i = start + 1;
+  while (i < text.length) {
+    const ch = text[i];
+    if (ch === '"') {
+      i = skipString(text, i);
+      continue;
+    }
+    if (ch === "`") {
+      i = skipInlineRaw(text, i);
+      continue;
+    }
+    if (ch === "(") {
+      i = skipParen(text, i);
+      continue;
+    }
+    if (ch === "[") {
+      i = skipBracket(text, i);
+      continue;
+    }
+    if (ch === ")") return i + 1;
+    i++;
+  }
+  return i;
+}
+
+/**
+ * Skip a markup block starting at `text[start] === "["`. Returns the index
+ * just past the closing `]`, or `text.length` if it never closes.
+ *
+ * Inside markup, quotes, parentheses, and commas are ordinary text — a cell
+ * such as `[She said "no (twice), then left]` is one cell. Only three things
+ * change the mode: a nested `[…]`, inline raw, and a `#` expression, whose
+ * argument groups are code again (`[#wikilink("a, b")]`). A backslash escapes
+ * the next character, so `\]` does not close the block.
+ */
+function skipBracket(text: string, start: number): number {
+  let i = start + 1;
+  while (i < text.length) {
+    const ch = text[i];
+    if (ch === "\\") {
+      i += 2;
+      continue;
+    }
+    if (ch === "`") {
+      i = skipInlineRaw(text, i);
+      continue;
+    }
+    if (ch === "[") {
+      i = skipBracket(text, i);
+      continue;
+    }
+    if (ch === "]") return i + 1;
+    if (ch === "#") {
+      i = skipHashExpr(text, i);
+      continue;
+    }
+    i++;
+  }
+  return i;
+}
+
+/**
+ * Skip a `#` expression embedded in markup: the name (dots allowed, as in
+ * `#table.cell`) followed by any run of `(…)` and `[…]` argument groups, e.g.
+ * `#link("https://x.y")[label]`. A `#` not followed by a name is left as text.
+ */
+function skipHashExpr(text: string, start: number): number {
+  let i = start + 1;
+  while (i < text.length && (isAlphanumeric(text[i]) || text[i] === "_" || text[i] === "-" || text[i] === ".")) {
+    i++;
+  }
+  if (i === start + 1) return i;
+  for (;;) {
+    if (text[i] === "(") {
+      i = skipParen(text, i);
+    } else if (text[i] === "[") {
+      i = skipBracket(text, i);
+    } else {
+      return i;
+    }
+  }
 }
 
 /** If `text[start]` opens an inline raw run (one or more backticks), return the
@@ -370,24 +431,6 @@ function skipString(text: string, start: number): number {
       continue;
     }
     if (text[i] === '"') return i + 1;
-    i++;
-  }
-  return i;
-}
-
-function skipBracket(text: string, start: number): number {
-  let depth = 1;
-  let i = start + 1;
-  while (i < text.length && depth > 0) {
-    if (text[i] === "[") depth++;
-    else if (text[i] === "]") depth--;
-    else if (text[i] === '"') {
-      i = skipString(text, i);
-      continue;
-    } else if (text[i] === "`") {
-      i = skipInlineRaw(text, i);
-      continue;
-    }
     i++;
   }
   return i;
@@ -541,6 +584,13 @@ function parseHtmlTableToGrid(html: string): string[][] | null {
   }
 
   return grid.length > 0 ? grid : null;
+}
+
+/** Clipboard text as a grid: tab-separated rows when it has tabs, otherwise
+ *  the whole text as a single cell. Empty text yields null. */
+export function textToGrid(text: string): string[][] | null {
+  if (text.length === 0) return null;
+  return parseTsvToGrid(text) ?? [[text]];
 }
 
 export function parseTsvToGrid(text: string): string[][] | null {

@@ -59,8 +59,6 @@ const MENU_SURFACES: ReadonlyArray<{ menu: string; item: string }> = [
   // Visual editor: the pill menu and the selection toolbar's overflow menu.
   { menu: ".cm-typst-pill-menu", item: ".cm-typst-pill-menu-item" },
   { menu: ".selection-toolbar__menu", item: ".selection-toolbar__menu-item" },
-  // Table cell menu, drawn as plain DOM with inline styles.
-  { menu: ".cm-table-context-menu", item: "button" },
   // Pane/tab bar menu and the mycelial graph's node menu.
   { menu: ".tab-bar__menu-popup", item: ".tab-bar__menu-item" },
   { menu: ".mycelial-context-menu", item: ".mycelial-context-menu__item" },

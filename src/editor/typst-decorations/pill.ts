@@ -489,7 +489,7 @@ function buildUniversalSection(view: EditorView, model: PillModel): PillMenuSect
   return {
     items: [
       {
-        label: t("pill.copy"),
+        label: t("common.copy"),
         title: t("pill.copy.title"),
         onSelect: () => {
           void navigator.clipboard.writeText(callSource).catch((err) => {

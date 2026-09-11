@@ -50,7 +50,7 @@ import { computePreambleImportRanges, isLeadingLocaleDirective, commentHideRange
 import { lineStartCaretFilter } from "./line-start-caret";
 export { externalReload } from "./visual-protected";
 import { linkClickHandler } from "./visual-links";
-import { tableClipboardHandler, tablePasteHandler, createTableEntryKeymap } from "./visual-tables";
+import { tableClipboardHandler, createTableEntryKeymap } from "./visual-tables";
 import { pillBoundaryNav } from "./pill-boundary-nav";
 import { leadingWhitespace } from "./list-scan";
 
@@ -2956,6 +2956,6 @@ const dueCursorRoundOut = ViewPlugin.fromClass(class {
 // a block whose two states measure differently, and that belongs in the block's
 // own geometry (see the shared block variables in visual-theme.ts).
 export function typstVisualMode() {
-  return [expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, lineStartCaretGuard, dueCursorRoundOut, Prec.high(tableEntryKeymap), Prec.high(verseEntryKeymap), visualField, softBreakRangesField, softBreakAtomicRanges, markupAtomicRanges, postHistoryRebuild, visualTheme, linkClickHandler, tableClipboardHandler, tablePasteHandler, pillBoundaryNav];
+  return [expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, lineStartCaretGuard, dueCursorRoundOut, Prec.high(tableEntryKeymap), Prec.high(verseEntryKeymap), visualField, softBreakRangesField, softBreakAtomicRanges, markupAtomicRanges, postHistoryRebuild, visualTheme, linkClickHandler, tableClipboardHandler, pillBoundaryNav];
 }
 
