@@ -11,6 +11,8 @@ import { expandFunc } from "./effects";
 import { inVerbatimLineContext, lineIsNonProse } from "./keymaps";
 import { findCallEnd } from "./pill";
 import { syntaxTree } from "@codemirror/language";
+import type { SyntaxNode } from "@lezer/common";
+import { caretLineErrorMute } from "./caret-line-errors";
 import {
   CalloutBlockWidget,
   AnnotationBlockWidget,
@@ -284,6 +286,17 @@ export function rawBlockEditLineClasses(state: EditorState, from: number, to: nu
     out.push(classes.join(" "));
   }
   return out;
+}
+
+/**
+ * True once an equation has a `$` at both ends. Typst's parser is
+ * error-tolerant, so a lone `$` already parses as an Equation node that runs
+ * to the end of the document; nothing should decorate it until it closes.
+ */
+export function isClosedEquation(node: SyntaxNode): boolean {
+  const open = node.firstChild;
+  const close = node.lastChild;
+  return open?.name === "Dollar" && close?.name === "Dollar" && open.from !== close.from;
 }
 
 function pushRawBlockEditLines(decos: Range<Decoration>[], state: EditorState, from: number, to: number) {
@@ -954,25 +967,37 @@ export function buildDecorations(
           case "Equation": {
             // Typst's parser is error-tolerant, so a lone `$` already opens an
             // Equation node that runs to the end of the document. Decorating
-            // that would restyle and re-lay-out every following line until the
-            // closing `$` arrives — the text jumps down a line mid-typing and
-            // snaps back at the end. Wait for a matched pair of delimiters,
-            // the same rule the raw spans above use.
-            const open = node.node.firstChild;
-            const close = node.node.lastChild;
-            if (open?.name !== "Dollar" || close?.name !== "Dollar" || open.from === close.from) {
-              return false;
-            }
+            // that would restyle every following line until the closing `$`
+            // arrives. Wait for a matched pair of delimiters, the same rule
+            // the raw spans above use.
+            //
+            // A matched pair is not proof the equation is finished: a `$`
+            // typed above other equations pairs with the next equation's
+            // opening `$`, so this node can span several lines of prose until
+            // the writer closes it. That is why the math marks in
+            // visual-theme.ts are colour and font only (a layout-affecting
+            // style would move the text on every keystroke) and why nothing
+            // is painted while the caret is inside.
+            if (!isClosedEquation(node.node)) return false;
+            // With the caret inside, an equation is shown as plain source:
+            // no mark and, for inline math, no hidden `$`. Besides matching
+            // how the other markup behaves under the caret, this keeps a
+            // half-typed equation from tinting the note below it. A `$`
+            // typed above other equations pairs with the next equation's
+            // opener, so until the writer closes it the node spans lines of
+            // prose, and the incremental rebuild leaves those lines alone as
+            // long as nothing here paints them.
+            if (isCursorAdjacentOrInside(state, node.from, node.to, cursors)) return false;
+            if (autoExpand && onCursor) return false;
             // Typst sets an equation on its own line only when a space sits
             // just inside both delimiters (`$ x $`); `$ x$` stays inline. This
             // mirrors `Equation::block()` in typst-syntax.
             const isDisplay =
-              open.nextSibling?.name === "Space" && close.prevSibling?.name === "Space";
+              node.node.firstChild?.nextSibling?.name === "Space" &&
+              node.node.lastChild?.prevSibling?.name === "Space";
             if (isDisplay) {
               decos.push(mathDisplay.range(node.from, node.to));
             } else {
-              if (isCursorAdjacentOrInside(state, node.from, node.to, cursors)) return false;
-              if (autoExpand && onCursor) return false;
               decos.push(hide.range(node.from, node.from + 1));
               decos.push(hide.range(node.to - 1, node.to));
               pushMark(decos, mathInline, node.from + 1, node.to - 1);
@@ -3010,6 +3035,6 @@ export function typstVisualMode(options?: { inlineOnly?: boolean }) {
   if (options?.inlineOnly) {
     return [inlineOnlyFacet.of(true), expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, lineStartCaretGuard, visualField, softBreakRangesField, softBreakAtomicRanges, markupAtomicRanges, visualTheme, linkClickHandler, pillBoundaryNav];
   }
-  return [expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, lineStartCaretGuard, dueCursorRoundOut, Prec.high(tableEntryKeymap), Prec.high(verseEntryKeymap), visualField, softBreakRangesField, softBreakAtomicRanges, markupAtomicRanges, postHistoryRebuild, visualTheme, linkClickHandler, tableClipboardHandler, cellEditorSync, pillBoundaryNav];
+  return [expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, lineStartCaretGuard, dueCursorRoundOut, Prec.high(tableEntryKeymap), Prec.high(verseEntryKeymap), visualField, softBreakRangesField, softBreakAtomicRanges, markupAtomicRanges, postHistoryRebuild, visualTheme, caretLineErrorMute(), linkClickHandler, tableClipboardHandler, cellEditorSync, pillBoundaryNav];
 }
 

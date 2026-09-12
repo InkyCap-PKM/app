@@ -194,6 +194,14 @@ export const visualTheme = EditorView.theme({
   ".cm-link-hover": {
     cursor: "pointer",
   },
+  // Math marks must never change layout (no display, padding, margin, or
+  // min-height). Typst's parser pairs a freshly typed `$` with the next `$`
+  // anywhere below it, so while an equation is being written the mark can
+  // briefly cover several lines of ordinary prose. A layout-affecting style
+  // there moves the text and caret on every keystroke (issue #1); a colour
+  // and font change is a harmless flicker that ends when the equation closes.
+  // A display equation is told apart by a tinted background instead of by
+  // being set on its own line.
   ".cm-typst-math-inline": {
     fontFamily: "var(--editor-font-mono, monospace)",
     color: "var(--syntax-string)",
@@ -201,8 +209,8 @@ export const visualTheme = EditorView.theme({
   ".cm-typst-math-display": {
     fontFamily: "var(--editor-font-mono, monospace)",
     color: "var(--syntax-string)",
-    display: "block",
-    padding: "0.5em 0",
+    backgroundColor: "var(--syntax-mono-bg)",
+    borderRadius: "var(--radius-sm)",
   },
   ".cm-typst-label": {
     color: "var(--syntax-type)",
@@ -448,6 +456,15 @@ export const visualTheme = EditorView.theme({
   },
   ".cm-typst-codeblock-edit--last": {
     paddingBottom: "var(--codeblock-body-pad)",
+  },
+  // While the caret is on a line, that line's parser error tokens (a `$` or
+  // `(` that is not closed yet) lose their red wavy styling: the writer is in
+  // the middle of typing, not looking at a mistake. The mark is registered
+  // at the lowest precedence so it wraps the highlighter's span, which is
+  // what lets it cancel the underline as well as the colour.
+  ".cm-typst-caret-line-error, .cm-typst-caret-line-error *": {
+    color: "inherit !important",
+    textDecoration: "none !important",
   },
   ".cm-typst-block-pill-row": {
     display: "flex",

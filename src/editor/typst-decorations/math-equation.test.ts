@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { EditorState } from "@codemirror/state";
+import { readFileSync } from "node:fs";
+import { EditorSelection, EditorState } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
 import { typst } from "codemirror-lang-typst";
-import { buildDecorations } from "./visual-plugin";
+import { buildDecorations, typstVisualMode } from "./visual-plugin";
 import { computeProtectedRanges } from "./visual-protected";
 
 // Typst's parser is error-tolerant: a lone `$` (or `/*`) already opens a node
@@ -53,6 +55,96 @@ describe("half-typed equations stay undecorated", () => {
     // equation node was the final character of the note.
     const doc = `text $x more${TAIL}`;
     expect(decorations(doc, 0)).toEqual([]);
+  });
+});
+
+describe("a `$` typed above other equations pairs with the next one", () => {
+  // Typst pairs the new `$` with the next `$` anywhere below it, so the
+  // parser reports a closed equation that spans lines of ordinary prose
+  // until the writer types the real closing `$`. That transient state is
+  // unavoidable; what matters is that it can only recolour text. Nothing may
+  // be hidden or replaced across those lines, and the theme rule for the
+  // marks must stay layout-neutral (checked below).
+  const doc = `intro $ al\nmore text $ y $ end\nlast $z$ tail`;
+  const caret = "intro $ al".length;
+
+  it("emits only colour marks, never hides or replaces text", () => {
+    const decos = decorations(doc, caret);
+    expect(decos.length).toBeGreaterThan(0);
+    for (const d of decos) expect(d).toMatch(/^cm-typst-math-(inline|display)\[/);
+  });
+
+  it("styles math marks without any layout-affecting property", () => {
+    const theme = readFileSync("src/editor/typst-decorations/visual-theme.ts", "utf8");
+    for (const cls of ["cm-typst-math-inline", "cm-typst-math-display"]) {
+      const rule = theme.match(new RegExp(`"\\.${cls}": \\{([^}]*)\\}`))?.[1];
+      expect(rule, `${cls} rule present`).toBeDefined();
+      expect(rule).not.toMatch(/\b(display|padding|margin|minHeight|height|lineHeight|fontSize)\b/);
+    }
+  });
+});
+
+describe("an equation under the caret is plain source", () => {
+  it("shows a display equation without its tint while the caret is inside", () => {
+    const doc = `a $ x $ b${TAIL}`;
+    expect(decorations(doc, 4)).toEqual([]);
+  });
+});
+
+// Typing a lone `$` above a code block pairs it with the next `$` in the
+// note, so for a moment the block parses as math. The writer must not see
+// that: the lines below the caret keep their styling throughout, and the new
+// equation is tinted only once the caret has left it.
+describe("a `$` typed above other content leaves that content alone", () => {
+  const RAW = "```html\ncode\n```";
+  const DOC = `\n\n${RAW}\n\n$ x $`;
+
+  function visible(state: EditorState): string[] {
+    const out: string[] = [];
+    for (const set of state.facet(EditorView.decorations)) {
+      if (typeof set === "function") continue;
+      const iter = set.iter();
+      while (iter.value) {
+        const spec = iter.value.spec ?? {};
+        out.push(`${spec.class ?? (spec.widget ? "widget" : "hide")}[${iter.from},${iter.to}]`);
+        iter.next();
+      }
+    }
+    return out;
+  }
+  const codeBlock = (state: EditorState) => {
+    const from = state.doc.toString().indexOf(RAW);
+    return `widget[${from},${from + RAW.length}]`;
+  };
+  const type = (state: EditorState, text: string) => {
+    const at = state.selection.main.head;
+    return state.update({ changes: { from: at, insert: text }, selection: EditorSelection.cursor(at + text.length) }).state;
+  };
+  const moveTo = (state: EditorState, pos: number) =>
+    state.update({ selection: EditorSelection.cursor(pos) }).state;
+
+  it("keeps the code block and tints nothing below while the equation is open", () => {
+    const start = EditorState.create({ doc: DOC, selection: EditorSelection.cursor(0), extensions: [typst(), typstVisualMode()] });
+    expect(visible(start)).toContain(codeBlock(start));
+
+    let state = type(start, "$");
+    for (const ch of " a + b = ") state = type(state, ch);
+    const firstLineEnd = state.doc.line(1).to;
+    expect(visible(state)).toContain(codeBlock(state));
+    // Nothing painted on the caret's line may reach past it; the tint the
+    // lower equation already had simply moves with the text.
+    const spills = visible(state).some((d) => {
+      const [, from, to] = d.match(/\[(\d+),(\d+)\]$/)!.map(Number);
+      return d.startsWith("cm-typst-math") && from <= firstLineEnd && to > firstLineEnd;
+    });
+    expect(spills).toBe(false);
+
+    state = type(state, "$");
+    expect(visible(state)).toContain(codeBlock(state));
+
+    state = moveTo(state, state.doc.length);
+    expect(visible(state)).toContain(codeBlock(state));
+    expect(visible(state)).toContain("cm-typst-math-display[0,11]");
   });
 });
 
