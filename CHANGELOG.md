@@ -13,6 +13,21 @@ each tagged release, newest first, grouping entries under **Added**, **Changed**
 **Fixed**, **Removed**, **Security**, or **Deprecated** as needed.
 
 
+## [26.9.10] - 2026-09-12
+
+### Fixed
+
+- Text and the cursor no longer move while a math equation is being typed.
+  The earlier fix covered a lone `$`, but a `$` typed above other equations
+  still made the editor treat everything down to the next equation as one
+  block, so each keystroke shifted the text until the equation was closed.
+  Display math keeps its tinted background but no longer forms a block of its
+  own, and an equation with the cursor inside is shown as plain source so it
+  cannot restyle the note below it. (#1)
+- A `$` no longer turns red with a wavy underline while it is still being
+  typed. Error styling on the line holding the cursor is muted until the
+  cursor moves to another line.
+
 ## [26.9.8] - 2026-09-11
 
 ### Added
