@@ -241,11 +241,12 @@ git push github vXX.YY.Z        # mirror it, so the mirror keeps tag parity
 
 Mirroring the tag is housekeeping, not a build step — the installers were
 already built from `main` in step 5. It keeps the mirror's refs matching
-CodeFloe's and makes the workflow's `v*` trigger usable for an after-the-fact
-rebuild. It does fire one redundant build of the commit that is already `main`;
-let it run or cancel it, the artifacts are discarded either way. The Forgejo
-draft-auto-publish hazard warned about above is a *CodeFloe* behaviour — GitHub
-has nothing equivalent, and `build-desktop.yml` never creates a GitHub release.
+CodeFloe's, so a later rebuild of exactly this release is a matter of pressing
+**Run workflow** and typing the tag into its `ref` field. Pushing the tag
+starts nothing: the workflow runs only from that button, never from a push.
+The Forgejo draft-auto-publish hazard warned about above is a *CodeFloe*
+behaviour — GitHub has nothing equivalent, and `build-desktop.yml` never
+creates a GitHub release.
 
 **7. Update the release feed.** Nothing tells users about the release until this
 is uploaded.

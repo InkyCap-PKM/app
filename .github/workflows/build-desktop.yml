@@ -13,12 +13,14 @@
 # documentation/developer/releasing.md builds the Linux packages locally, then
 # attaches everything to a CodeFloe *draft* and publishes by hand — and
 # publishing the draft is what creates the git tag. So at build time the tag
-# does not exist yet, which is why this runs on `workflow_dispatch` (you press
-# the button) rather than on a tag push. Download the artifacts from the run
+# does not exist yet, which is why this runs only on `workflow_dispatch` (you
+# press the button) and never on a push. Download the artifacts from the run
 # summary and attach them to the draft alongside the .deb/.rpm/Flatpak.
 #
-# A `v*` tag trigger is included as a convenience for after-the-fact rebuilds,
-# once the tag has been mirrored across.
+# For an after-the-fact rebuild, press the button and give the `ref` input the
+# release tag once it has been mirrored across. There is deliberately no tag
+# trigger: mirroring the tag is housekeeping that happens after the installers
+# are already built, and a trigger there only rebuilt them a second time.
 #
 # WHAT IT PRODUCES
 # ----------------
@@ -39,13 +41,10 @@ on:
         description: "Branch, tag or commit to build"
         required: false
         default: main
-  push:
-    tags:
-      - "v*"
 
 # One build at a time per ref; a newer request cancels an in-flight one.
 concurrency:
-  group: build-desktop-${{ github.event.inputs.ref || github.ref }}
+  group: build-desktop-${{ github.event.inputs.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -90,7 +89,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.inputs.ref || github.ref }}
+          ref: ${{ github.event.inputs.ref }}
 
       - uses: actions/setup-node@v7
         with:
