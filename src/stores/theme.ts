@@ -31,13 +31,33 @@ function resolveTheme(pref: ThemePreference): ResolvedTheme {
   return pref;
 }
 
-/** Apply the resolved theme to the DOM. */
+/** Apply the resolved theme to the DOM and to the native window frame. */
 function applyTheme(resolved: ResolvedTheme) {
   document.documentElement.setAttribute("data-theme", resolved);
   setResolvedTheme(resolved);
   // Re-apply the palette: the active value depends on which theme is
   // currently resolved, so flipping light↔dark may swap the palette too.
   applyPalette();
+  applyNativeWindowTheme(resolved);
+}
+
+/**
+ * Keep the parts of the window that the OS draws (the Linux header bar,
+ * the Windows title bar, the macOS appearance) on the same side as the
+ * app's own theme. Without this, choosing InkyCap's dark theme on a light
+ * desktop leaves a light title bar above a dark app.
+ *
+ * Always pass the resolved value rather than `null` for "system": on Linux
+ * the window layer treats `null` as "light" until the next OS theme change,
+ * and the app already tracks the OS itself through `setupSystemListener`,
+ * so re-sending the resolved value on each change keeps both in step.
+ */
+function applyNativeWindowTheme(resolved: ResolvedTheme) {
+  getCurrentWindow()
+    .setTheme(resolved)
+    .catch((err) => {
+      console.error("Failed to apply theme to the native window:", err);
+    });
 }
 
 /** Apply the background palette appropriate to the currently resolved theme. */
