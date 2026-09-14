@@ -129,6 +129,11 @@ docker run --rm -i \
     # Cleaning just this package keeps every dependency crate cached, so the
     # rebuild stays fast. (CARGO_TARGET_DIR points at target-docker.)
     cargo clean -p inkycap --manifest-path src-tauri/Cargo.toml || true
+    # Clear the bundle output directory. Tauri never removes what it wrote on a
+    # previous run, so without this the deb/rpm of every version ever built
+    # piles up here and the collection step below copies all of them into
+    # dist-linux alongside the one just built.
+    rm -rf /app/target-docker/release/bundle
     VERBOSE_FLAG=""
     [ "$VERBOSE" = "1" ] && VERBOSE_FLAG="--verbose"
     npm run tauri build -- $VERBOSE_FLAG --bundles "$BUNDLES" $NOUPDATER
