@@ -3,6 +3,7 @@
 // reset action; each tab's body lives in its own module under ./settings/.
 
 import { Component, createEffect, createSignal, Show, For } from "solid-js";
+import { X } from "lucide-solid";
 import { resetSettingGroups, resetNoteboxSettingGroups } from "../stores/settings";
 import type { UserSettings, NoteboxSettings } from "../lib/types";
 import { useI18n } from "../lib/i18n";
@@ -126,8 +127,13 @@ const SettingsPanel: Component<SettingsPanelProps> = (props) => {
         <div class="settings__panel">
           <div class="settings__header">
             <h2 class="settings__title">{t("settings.title")}</h2>
-            <button class="settings__close" onClick={props.onClose} aria-label={t("common.close")}>
-              ×
+            <button
+              class="ui-icon-btn"
+              onClick={props.onClose}
+              aria-label={t("common.close")}
+              title={t("common.close")}
+            >
+              <X size={18} />
             </button>
           </div>
 
