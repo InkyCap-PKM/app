@@ -271,20 +271,16 @@ const StringEditor: Component<PropertyEditorProps> = (props) => {
             </span>
           }
         >
-          <span
-            class="property-editor__value"
-            ref={(el) => {
-              el.innerHTML = "";
-              for (const part of renderStringWithWikilinks(displayValue())) {
-                if (typeof part === "string") {
-                  el.appendChild(document.createTextNode(part));
-                } else {
-                  el.appendChild(part);
-                }
-              }
-            }}
-            onDblClick={startEdit}
-          />
+          {/* The parts array mixes plain strings with ready-made link spans,
+              which Solid inserts as children directly. It has to stay a
+              reactive child expression rather than a one-shot `ref` that fills
+              the element: the property rows are reused across notes (they are
+              keyed by property name), so a `ref` would only ever run for the
+              first note and every later note would keep showing that note's
+              links. */}
+          <span class="property-editor__value" onDblClick={startEdit}>
+            {renderStringWithWikilinks(displayValue())}
+          </span>
         </Show>
       }
     >
