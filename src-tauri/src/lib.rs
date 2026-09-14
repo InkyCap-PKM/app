@@ -62,8 +62,14 @@ pub mod window_state;
 ///    works as it does in any GTK app.
 ///
 /// On X11 there is nothing to do: the window manager draws the frame and
-/// handles it. If a future `tao` stops doing either of the above, this
-/// becomes a no-op.
+/// handles it.
+///
+/// This is a workaround for `tao` alone. Once a `tao` release no longer
+/// installs a header bar on Wayland and no longer claims mouse events on
+/// the window, delete this function, `block_window_press_handlers`, and
+/// their two call sites. The log lines they write show when that day has
+/// come: "No window-level ... handler found to block" means there was
+/// nothing left to undo.
 ///
 /// Safe to call more than once per window: the second call finds no header
 /// bar and stops. The main window gets it from the setup hook, before it is
