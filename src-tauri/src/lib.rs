@@ -41,113 +41,94 @@ pub mod typst_pipeline;
 pub mod watcher;
 pub mod window_state;
 
+/// Hand the window's title bar back to the desktop.
+///
+/// Two things stand in the way on Wayland, both in Tauri's window layer
+/// (the `tao` crate):
+///
+/// 1. It installs a header bar of its own, with a hard-coded
+///    minimize/maximize/close set that ignores the user's button-layout
+///    preference and takes the height of a toolbar. Removing it before the
+///    window is first shown makes GTK draw its own compact title bar
+///    instead: the same one every other GTK app gets, which follows the
+///    system theme, the dark-mode preference and the button layout.
+/// 2. It attaches mouse handlers to the window that swallow every press,
+///    release and pointer movement. GTK only runs its own frame handling
+///    (drag to move, double-click to maximize, right-click menu, resize
+///    from the edges) when nothing else has claimed the event first, so
+///    with those handlers in place the bar draws but does nothing. They
+///    exist only to report raw mouse events, which neither Tauri nor
+///    InkyCap listens to, so they are blocked. GTK's frame handling then
+///    works as it does in any GTK app.
+///
+/// On X11 there is nothing to do: the window manager draws the frame and
+/// handles it. If a future `tao` stops doing either of the above, this
+/// becomes a no-op.
+///
+/// Safe to call more than once per window: the second call finds no header
+/// bar and stops. The main window gets it from the setup hook, before it is
+/// first shown; windows the frontend opens later get it when their page
+/// starts loading.
 #[cfg(target_os = "linux")]
-fn install_gtk_headerbar(window: &tauri::WebviewWindow) {
+fn use_desktop_title_bar(window: &tauri::Window) {
     use gtk::prelude::*;
 
     let Ok(gtk_window) = window.gtk_window() else {
         return;
     };
-
-    // A real GtkHeaderBar gives us native libadwaita theming, the GNOME
-    // window shadow, and automatic respect for the user's
-    // `org.gnome.desktop.wm.preferences button-layout` setting.
-    //
-    // set_titlebar must happen before the window is mapped, otherwise the
-    // window manager does not register the headerbar as a drag source and
-    // the window becomes unmovable. The window is created with
-    // `visible: false` in tauri.conf.json; we show it after swapping in
-    // the headerbar.
-    let header = gtk::HeaderBar::builder()
-        .show_close_button(true)
-        .title("InkyCap")
-        .build();
-    // Must request the BUTTON_PRESS_MASK on the header's input window
-    // *before* it is realized, otherwise GDK never routes press events
-    // to its signal handlers (and our drag handler silently never
-    // fires). This is the real cause of "the titlebar looks native but
-    // the window is immovable" under tao.
-    header.add_events(
-        gtk::gdk::EventMask::BUTTON_PRESS_MASK | gtk::gdk::EventMask::BUTTON_RELEASE_MASK,
-    );
-    gtk_window.set_titlebar(Some(&header));
-    header.show_all();
-
-    // Dispatch left-click drags and double-click maximize toggles. The
-    // headerbar's own button-press signal never fires here (tao's
-    // webview widget intercepts the events first), so we hook the
-    // gtk_window itself and match on the press position. Crucially we
-    // must exclude the CSD resize edge band along the top/left/right,
-    // otherwise those clicks get turned into move-drags and the window
-    // becomes non-resizable.
-    let dispatch_press = {
-        let gtk_window_for_press = gtk_window.clone();
-        let tauri_window = window.clone();
-        move |event: &gtk::gdk::EventButton| -> gtk::glib::Propagation {
-            if event.button() != 1 {
-                return gtk::glib::Propagation::Proceed;
-            }
-            match event.event_type() {
-                gtk::gdk::EventType::DoubleButtonPress => {
-                    // Route maximize through Tauri so its WebviewWindow
-                    // state (and our window_state cache) stays in sync
-                    // with GTK. Raw gtk_window.maximize() bypasses
-                    // Tauri's event plumbing and makes is_maximized()
-                    // lag even more than the tao/GTK race already does.
-                    if tauri_window.is_maximized().unwrap_or(false) {
-                        let _ = tauri_window.unmaximize();
-                    } else {
-                        let _ = tauri_window.maximize();
-                    }
-                    gtk::glib::Propagation::Stop
-                }
-                gtk::gdk::EventType::ButtonPress => {
-                    // Synchronous begin_move_drag on the current event
-                    // — routing through Tauri's async start_dragging()
-                    // adds a noticeable "hold before it grabs" delay.
-                    let (root_x, root_y) = event.root();
-                    gtk_window_for_press.begin_move_drag(
-                        1,
-                        root_x as i32,
-                        root_y as i32,
-                        event.time(),
-                    );
-                    gtk::glib::Propagation::Stop
-                }
-                _ => gtk::glib::Propagation::Proceed,
-            }
-        }
-    };
-
-    {
-        let dispatch = dispatch_press.clone();
-        header.connect_button_press_event(move |_hb, event| dispatch(event));
+    if !gtk_window.display().backend().is_wayland() {
+        return;
     }
-    {
-        let dispatch = dispatch_press;
-        let header_for_alloc = header.clone();
-        // Require the click to be *inside* the headerbar's allocation
-        // with a safety margin on every side. The margin keeps CSD
-        // resize grips (top/left/right, plus the corner areas where the
-        // grip overlaps the header) reachable — otherwise our
-        // synchronous begin_move_drag grabs the event before the resize
-        // handler sees it and the window becomes non-resizable.
-        const MARGIN: i32 = 8;
-        gtk_window.connect_button_press_event(move |_win, event| {
-            let (x, y) = event.position();
-            let alloc = header_for_alloc.allocation();
-            let xi = x as i32;
-            let yi = y as i32;
-            let inside_header = xi >= alloc.x() + MARGIN
-                && xi < alloc.x() + alloc.width() - MARGIN
-                && yi >= alloc.y() + MARGIN
-                && yi < alloc.y() + alloc.height() - MARGIN;
-            if inside_header {
-                dispatch(event)
-            } else {
-                gtk::glib::Propagation::Proceed
-            }
-        });
+    if gtk_window.titlebar().is_none() {
+        return;
+    }
+    gtk_window.set_titlebar(None::<&gtk::Widget>);
+
+    // `tao` attaches its handlers from the main loop, after this setup hook
+    // has returned, so the blocking waits for the loop's first idle moment.
+    gtk::glib::idle_add_local_once(move || block_window_press_handlers(&gtk_window));
+}
+
+/// Block every handler attached to the window's button press, button
+/// release and pointer motion signals, so that GTK's own frame handling
+/// runs. See [`use_desktop_title_bar`] for why.
+#[cfg(target_os = "linux")]
+fn block_window_press_handlers(gtk_window: &gtk::ApplicationWindow) {
+    use gtk::glib::gobject_ffi as gobject;
+    use gtk::prelude::*;
+
+    for name in [
+        c"button-press-event",
+        c"button-release-event",
+        c"motion-notify-event",
+    ] {
+        // SAFETY: plain GObject signal bookkeeping on a live window. The
+        // signal names are static and belong to GtkWidget; the mask selects
+        // by signal id only, so no closure or data pointers are read.
+        let blocked = unsafe {
+            let signal_id =
+                gobject::g_signal_lookup(name.as_ptr(), gtk::ffi::gtk_widget_get_type());
+            gobject::g_signal_handlers_block_matched(
+                gtk_window.as_ptr() as *mut gobject::GObject,
+                gobject::G_SIGNAL_MATCH_ID,
+                signal_id,
+                0,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
+        if blocked == 0 {
+            log::warn!(
+                "No window-level {} handler found to block; the title bar may not respond to the mouse",
+                name.to_string_lossy()
+            );
+        } else {
+            log::info!(
+                "Blocked {blocked} window-level {} handler(s) so GTK can handle the title bar",
+                name.to_string_lossy()
+            );
+        }
     }
 }
 
@@ -204,7 +185,7 @@ pub fn run() {
                 .expect("main window missing");
 
             #[cfg(target_os = "linux")]
-            install_gtk_headerbar(&window);
+            use_desktop_title_bar(&window.as_ref().window());
 
             let saved = window_state::load(&handle);
             let initial_cache = saved.clone().unwrap_or_default();
@@ -239,6 +220,14 @@ pub fn run() {
             backup::schedule::spawn(handle.clone());
 
             Ok(())
+        })
+        .on_page_load(|webview, payload| {
+            if payload.event() == tauri::webview::PageLoadEvent::Started {
+                #[cfg(target_os = "linux")]
+                use_desktop_title_bar(&webview.window());
+                #[cfg(not(target_os = "linux"))]
+                let _ = webview;
+            }
         })
         .manage(state::AppState::new())
         .invoke_handler(tauri::generate_handler![
