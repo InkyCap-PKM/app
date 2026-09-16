@@ -1534,7 +1534,7 @@
   "settings.editor.autoPairBrackets.label": "Auto-pair brackets",
   "settings.editor.autoPairBrackets.description": "Automatically close brackets and quotes.",
   "settings.editor.autoPairTypst.label": "Auto-pair Typst markup",
-  "settings.editor.autoPairTypst.description": "Wrap selected text with *, _, `, $ when you type the delimiter. Brackets and quotes always pair.",
+  "settings.editor.autoPairTypst.description": "Wrap selected text with *, _, `, $ when you type the delimiter, and close a backtick into a pair.",
   "settings.editor.autoExpandMarkup.label": "Auto-expand markup",
   "settings.editor.autoExpandMarkup.description": "Automatically reveal Typst function source in the Visual Editor when the cursor enters a pill.",
   "settings.editor.smartIndentLists.label": "Intuitive list indentation",

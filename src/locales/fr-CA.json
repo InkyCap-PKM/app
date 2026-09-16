@@ -1534,7 +1534,7 @@
   "settings.editor.autoPairBrackets.label": "Appariement automatique des parenthèses",
   "settings.editor.autoPairBrackets.description": "Ferme automatiquement les parenthèses et les guillemets.",
   "settings.editor.autoPairTypst.label": "Appariement automatique du balisage Typst",
-  "settings.editor.autoPairTypst.description": "Entoure le texte sélectionné de *, _, `, $ lorsque vous tapez le délimiteur. Les parenthèses et les guillemets s’apparient toujours.",
+  "settings.editor.autoPairTypst.description": "Entoure le texte sélectionné de *, _, `, $ lorsque vous tapez le délimiteur, et apparie l’accent grave.",
   "settings.editor.autoExpandMarkup.label": "Développement automatique du balisage",
   "settings.editor.autoExpandMarkup.description": "Révèle automatiquement la source de la fonction Typst dans le mode visuel lorsque le curseur entre dans une pastille.",
   "settings.editor.smartIndentLists.label": "Indentation de liste intuitive",

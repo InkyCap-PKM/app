@@ -2,11 +2,46 @@ import { EditorView, type KeyBinding } from "@codemirror/view";
 import { Facet, EditorSelection, type EditorState, type ChangeSpec, type Line, type StateEffect } from "@codemirror/state";
 import { syntaxTree, foldedRanges, foldEffect } from "@codemirror/language";
 import { moveLineUp, moveLineDown } from "@codemirror/commands";
+import { closeBrackets, deleteBracketPair } from "@codemirror/autocomplete";
+import type { Extension } from "@codemirror/state";
 import { toggleEmphasis, toggleWrap } from "./wrap-format";
 import { listSubtreeEndLine, leadingWhitespace } from "./list-scan";
 import { listBlockRange, linesOfRange, markerWidth, renumberListLines } from "./list-renumber";
 import { dispatchVisible } from "./dispatch-visible";
 import { pastLineLeadingMarkup } from "./line-start-caret";
+
+/**
+ * When true, typing an opening bracket or quote adds its closing partner, and
+ * Backspace between an empty pair removes both halves. Settings → Editor →
+ * "Auto-pair brackets".
+ */
+export const autoPairBracketsFacet = Facet.define<boolean, boolean>({
+  combine: (values) => (values.length ? values[0] : true),
+});
+
+/** Bracket pairing as one switchable unit: CodeMirror's close-brackets
+ *  behaviour, plus the facet `autoPairBracketsKeymap` reads. Lives in a
+ *  compartment so the setting takes effect in an open note. */
+export function autoPairBracketsExtension(enabled: boolean): Extension {
+  return enabled
+    ? [autoPairBracketsFacet.of(true), closeBrackets()]
+    : autoPairBracketsFacet.of(false);
+}
+
+/**
+ * Backspace between an empty pair deletes both halves — the other half of
+ * bracket pairing, so it follows the same setting.
+ *
+ * Used in place of CodeMirror's `closeBracketsKeymap`, which would go on
+ * working with pairing switched off: it looks at the characters around the
+ * caret rather than at what was auto-inserted.
+ */
+export const autoPairBracketsKeymap: KeyBinding[] = [
+  {
+    key: "Backspace",
+    run: (view) => view.state.facet(autoPairBracketsFacet) && deleteBracketPair(view),
+  },
+];
 
 /**
  * When true, indent/outdent of a list item also moves any nested

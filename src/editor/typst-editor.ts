@@ -8,7 +8,7 @@ import {
   openSearchPanel,
   closeSearchPanel,
 } from "@codemirror/search";
-import { closeBrackets, closeBracketsKeymap, autocompletion, completionKeymap } from "@codemirror/autocomplete";
+import { autocompletion, completionKeymap } from "@codemirror/autocomplete";
 import { lintKeymap, lintGutter } from "@codemirror/lint";
 import { TypstParser, typstHighlight } from "codemirror-lang-typst";
 import { syntaxHighlighting, HighlightStyle, defineLanguageFacet, language, Language, LanguageSupport } from "@codemirror/language";
@@ -155,7 +155,14 @@ import { focusModeExtension, type FocusMode } from "./typst-decorations/focus-mo
 import { typewriterMode } from "./typst-decorations/typewriter-mode";
 import { spellcheck, spellCheckerFacet } from "./typst-decorations/spellcheck";
 import type { SpellChecker } from "../lib/spellchecker";
-import { typstKeymap, smartIndentListsFacet, enterInsertsLineBreakFacet } from "./typst-decorations/keymaps";
+import {
+  typstKeymap,
+  smartIndentListsFacet,
+  enterInsertsLineBreakFacet,
+  autoPairBracketsFacet,
+  autoPairBracketsExtension,
+  autoPairBracketsKeymap,
+} from "./typst-decorations/keymaps";
 import { drawnCaret } from "./typst-decorations/drawn-caret";
 import { wikilinkSuggest } from "./typst-decorations/wikilink-suggest";
 import { referenceSuggest } from "./typst-decorations/reference-suggest";
@@ -197,6 +204,7 @@ export interface TypstEditorHandle {
   setSpellChecker(checker: SpellChecker | null): void;
   setSmartIndentLists(enabled: boolean): void;
   setEnterInsertsLineBreak(enabled: boolean): void;
+  setAutoPairBrackets(enabled: boolean): void;
   setSelectionToolbar(enabled: boolean): void;
   setCommandPalette(enabled: boolean): void;
   /** Refresh editor-owned UI that captured translated strings, after a
@@ -234,6 +242,8 @@ export interface TypstEditorOptions {
   visualMode?: boolean;
   smartIndentLists?: boolean;
   enterInsertsLineBreak?: boolean;
+  /** Typing an opening bracket or quote adds the closing one. Default true. */
+  autoPairBrackets?: boolean;
   typewriterMode?: boolean;
   /** Focus mode and dimming, applied at creation. Without them a fresh editor
    *  shows neither until the user next changes one of the two settings. */
@@ -689,12 +699,15 @@ function tableCellEditorConfig(options: TypstEditorOptions): Extension {
         syntaxHighlighting(inkycapHighlight),
         inkycapTheme,
         drawnCaret,
-        closeBrackets(),
+        // The cell editor is a view of its own, so it needs its own copy of
+        // the note's pairing setting. It is built fresh each time a cell is
+        // opened, so reading the note's facet here keeps the two in step.
+        autoPairBracketsExtension(main.state.facet(autoPairBracketsFacet)),
         autocompletion({ activateOnTyping: true }),
         tooltips({ position: "fixed" }),
         autoPairTypstInput,
         markdownShortcuts,
-        keymap.of([...typstKeymap, ...closeBracketsKeymap, ...defaultKeymap, ...completionKeymap]),
+        keymap.of([...typstKeymap, ...autoPairBracketsKeymap, ...defaultKeymap, ...completionKeymap]),
         typstVisualMode({ inlineOnly: true }),
         wikilinkSuggest,
         referenceSuggest,
@@ -721,14 +734,13 @@ function baseExtensions(options: TypstEditorOptions): Extension[] {
     // confusing "+" pointer. Dropped in favour of plain prose-style selection.
     indentOnInput(),
     bracketMatching(),
-    closeBrackets(),
     autocompletion({ activateOnTyping: true }),
     tooltips({ position: "fixed" }),
     autoPairTypstInput,
     markdownShortcuts,
     keymap.of([
       ...typstKeymap,
-      ...closeBracketsKeymap,
+      ...autoPairBracketsKeymap,
       ...defaultKeymap,
       ...searchKeymap,
       ...historyKeymap,
@@ -804,15 +816,15 @@ export function readOnlyTypstExtensions(): Extension[] {
 /// but omits the note-only machinery (visual mode, LSP, wikilinks, decoration
 /// trackers). Editing essentials only: history, bracket matching/closing,
 /// indentation, and the standard keymaps.
-export function editableTypstExtensions(): Extension[] {
+export function editableTypstExtensions(options: { autoPairBrackets?: boolean } = {}): Extension[] {
   return [
     lineNumbers(),
     history(),
     indentOnInput(),
     bracketMatching(),
-    closeBrackets(),
+    autoPairBracketsExtension(options.autoPairBrackets !== false),
     keymap.of([
-      ...closeBracketsKeymap,
+      ...autoPairBracketsKeymap,
       ...defaultKeymap,
       ...historyKeymap,
       indentWithTab,
@@ -834,6 +846,7 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
   const activeLineCompartment = new Compartment();
   const smartIndentCompartment = new Compartment();
   const enterLineBreakCompartment = new Compartment();
+  const autoPairCompartment = new Compartment();
   // history() lives in a compartment so setText() can reset the undo stack
   // when loading new file content — otherwise prior edits' offsets persist
   // against a freshly-replaced doc and Ctrl-Z eventually empties the file.
@@ -888,6 +901,7 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
       spellcheckCompartment.of([]),
       activeLineCompartment.of(activeLineExts),
       smartIndentCompartment.of(smartIndentListsFacet.of(!!options.smartIndentLists)),
+      autoPairCompartment.of(autoPairBracketsExtension(options.autoPairBrackets !== false)),
       enterLineBreakCompartment.of(enterInsertsLineBreakFacet.of(enterLineBreakSetting && isVisual)),
       selectionToolbarCompartment.of(options.selectionToolbar !== false && options.visualMode ? selectionToolbar : []),
       commandPaletteCompartment.of(options.commandPalette !== false && options.visualMode ? commandPalette : []),
@@ -1036,6 +1050,11 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
     setSmartIndentLists(enabled: boolean) {
       view.dispatch({
         effects: smartIndentCompartment.reconfigure(smartIndentListsFacet.of(enabled)),
+      });
+    },
+    setAutoPairBrackets(enabled: boolean) {
+      view.dispatch({
+        effects: autoPairCompartment.reconfigure(autoPairBracketsExtension(enabled)),
       });
     },
     setEnterInsertsLineBreak(enabled: boolean) {

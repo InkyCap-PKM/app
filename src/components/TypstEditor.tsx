@@ -385,6 +385,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
       visualMode: currentMode() === "live",
       smartIndentLists: settings.editor.smart_indent_lists,
       enterInsertsLineBreak: settings.editor.enter_inserts_line_break,
+      autoPairBrackets: settings.editor.auto_pair_brackets,
       typewriterMode: settings.editor.typewriter_mode,
       focusMode: settings.editor.focus_mode,
       focusDim: settings.editor.focus_dim,
@@ -644,6 +645,12 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
   createEffect(
     on(() => settings.editor.enter_inserts_line_break, (enabled) => {
       editorHandle?.setEnterInsertsLineBreak(enabled);
+    }),
+  );
+
+  createEffect(
+    on(() => settings.editor.auto_pair_brackets, (enabled) => {
+      editorHandle?.setAutoPairBrackets(enabled);
     }),
   );
 

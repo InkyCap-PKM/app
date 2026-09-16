@@ -18,6 +18,7 @@ import { onMount, onCleanup, Show, createSignal, createMemo } from "solid-js";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { editableTypstExtensions } from "../editor/typst-editor";
+import { settings } from "../stores/settings";
 import { useI18n } from "../lib/i18n";
 import * as ipc from "../lib/ipc";
 import { toastError } from "../stores/toasts";
@@ -82,7 +83,9 @@ export default function ScaffoldEditorModal(props: ScaffoldEditorModalProps) {
       view = new EditorView({
         state: EditorState.create({
           doc,
-          extensions: editableTypstExtensions(),
+          extensions: editableTypstExtensions({
+            autoPairBrackets: settings.editor.auto_pair_brackets,
+          }),
         }),
         parent: editorParent,
       });
