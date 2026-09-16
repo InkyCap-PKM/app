@@ -1118,6 +1118,16 @@ export const visualTheme = EditorView.theme({
     whiteSpace: "pre-wrap",
     wordBreak: "break-word",
   },
+  // One box per source line of a painted cell. Each carries the line-level
+  // styling the note gives that line — the list indent above all, which is
+  // what a bullet's negative margin hangs from; without it the marker lands
+  // outside the cell. An empty line keeps its row, as it does in the note.
+  ".cm-typst-cell-line": {
+    display: "block",
+  },
+  ".cm-typst-cell-line:empty::after": {
+    content: "'\\200b'",
+  },
   ".cm-typst-table-cell.cm-typst-table-cell--editing": {
     boxShadow: "inset 0 0 0 2px var(--accent)",
     cursor: "text",

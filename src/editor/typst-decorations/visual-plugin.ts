@@ -53,7 +53,13 @@ import { computePreambleImportRanges, isLeadingLocaleDirective, commentHideRange
 import { lineStartCaretFilter } from "./line-start-caret";
 export { externalReload } from "./visual-protected";
 import { linkClickHandler } from "./visual-links";
-import { tableClipboardHandler, cellEditorSync, createTableEntryKeymap } from "./visual-tables";
+import {
+  tableClipboardHandler,
+  cellEditorSync,
+  tableSearchSync,
+  tableScrollHandler,
+  createTableEntryKeymap,
+} from "./visual-tables";
 import { pillBoundaryNav } from "./pill-boundary-nav";
 import { leadingWhitespace } from "./list-scan";
 
@@ -734,9 +740,42 @@ function markerReplaceRange(
   return [lineFrom, node.to + (markerHasSeparator(state, node) ? 1 : 0)];
 }
 
-function pushListIndent(decos: Range<Decoration>[], state: EditorState, markerFrom: number) {
+/**
+ * The indentation, in characters, that counts as no indentation at all for the
+ * list items inside `range`.
+ *
+ * A table cell's source lines are indented to sit inside the `#table(...)`
+ * call that holds them, and that indentation is not list nesting: counted as
+ * nesting it pushed a cell's bullets deep into the cell. The shallowest line
+ * of the cell is the baseline instead, so a list still nests relative to it.
+ * Outside a cell there is nothing to discount and the baseline is zero.
+ */
+function listIndentBase(state: EditorState, range: { from: number; to: number } | null): number {
+  if (!range) return 0;
+  const { doc } = state;
+  const first = doc.lineAt(range.from).number;
+  const last = doc.lineAt(range.to).number;
+  let base = Infinity;
+  for (let n = first; n <= last; n++) {
+    const line = doc.line(n);
+    const start = Math.max(line.from, range.from);
+    const text = doc.sliceString(start, Math.min(line.to, range.to));
+    if (text.trim() === "") continue; // blank lines carry no indentation
+    base = Math.min(base, start - line.from + text.length - text.trimStart().length);
+  }
+  return base === Infinity ? 0 : base;
+}
+
+function pushListIndent(
+  decos: Range<Decoration>[],
+  state: EditorState,
+  markerFrom: number,
+  baseCols: number,
+) {
   const line = state.doc.lineAt(markerFrom);
-  const cols = markerFrom - line.from; // leading-whitespace width, in chars
+  // Leading-whitespace width, in chars, less whatever indentation the item
+  // sits in for reasons that aren't nesting (see `listIndentBase`).
+  const cols = Math.max(0, markerFrom - line.from - baseCols);
   const nest = cols > 0 ? `${(cols * LIST_INDENT_CH).toFixed(2)}ch + ` : "";
   decos.push(
     Decoration.line({
@@ -770,6 +809,8 @@ export function buildDecorations(
     const scope = state.field(scopeRangeField, false);
     if (scope) onlyRanges = [scope];
   }
+  // A cell's own source indentation is not list nesting (see below).
+  const listBase = listIndentBase(state, inlineOnly && onlyRanges?.length === 1 ? onlyRanges[0] : null);
   const focused = cursorLines(state);
   const cursors = cursorPositions(state);
   const autoExpand = state.facet(autoExpandFacet);
@@ -917,7 +958,7 @@ export function buildDecorations(
             // the bullet vanished. Gating on the space matches how markdown
             // editors form lists and keeps the display honest.
             if (!markerHasSeparator(state, node) || !markerOpensLine(state, node)) break;
-            pushListIndent(decos, state, node.from);
+            pushListIndent(decos, state, node.from, listBase);
             decos.push(
               Decoration.replace({ widget: new BulletWidget("•") }).range(...markerReplaceRange(state, node)),
             );
@@ -925,7 +966,7 @@ export function buildDecorations(
           }
           case "EnumMarker": {
             if (!markerHasSeparator(state, node) || !markerOpensLine(state, node)) break;
-            pushListIndent(decos, state, node.from);
+            pushListIndent(decos, state, node.from, listBase);
             decos.push(
               Decoration.replace({ widget: new BulletWidget(enumItemNumber(state, node.from)) }).range(...markerReplaceRange(state, node)),
             );
@@ -3035,6 +3076,6 @@ export function typstVisualMode(options?: { inlineOnly?: boolean }) {
   if (options?.inlineOnly) {
     return [inlineOnlyFacet.of(true), expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, lineStartCaretGuard, visualField, softBreakRangesField, softBreakAtomicRanges, markupAtomicRanges, visualTheme, linkClickHandler, pillBoundaryNav];
   }
-  return [expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, lineStartCaretGuard, dueCursorRoundOut, Prec.high(tableEntryKeymap), Prec.high(verseEntryKeymap), visualField, softBreakRangesField, softBreakAtomicRanges, markupAtomicRanges, postHistoryRebuild, visualTheme, caretLineErrorMute(), linkClickHandler, tableClipboardHandler, cellEditorSync, pillBoundaryNav];
+  return [expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, lineStartCaretGuard, dueCursorRoundOut, Prec.high(tableEntryKeymap), Prec.high(verseEntryKeymap), visualField, softBreakRangesField, softBreakAtomicRanges, markupAtomicRanges, postHistoryRebuild, visualTheme, caretLineErrorMute(), linkClickHandler, tableClipboardHandler, cellEditorSync, tableSearchSync, tableScrollHandler, pillBoundaryNav];
 }
 

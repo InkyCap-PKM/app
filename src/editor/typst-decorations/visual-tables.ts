@@ -8,7 +8,17 @@
 
 import { EditorView, ViewPlugin, type DecorationSet, type ViewUpdate, keymap } from "@codemirror/view";
 import { type StateField } from "@codemirror/state";
-import { TableWidget, tableWidgetAt, getSelectedCellsText, activeCellEditors, closeCellEditors } from "./table-widget";
+import { searchPanelOpen, setSearchQuery } from "@codemirror/search";
+import {
+  TableWidget,
+  tableWidgetAt,
+  getSelectedCellsText,
+  activeCellEditors,
+  closeCellEditors,
+  focusTableEdge,
+  refreshTableSearchMatches,
+  tableCellDomAt,
+} from "./table-widget";
 import { cellSync } from "./table-cell-editor";
 import { type TableData, type TableCell, parseClipboardAsGrid, textToGrid, serializeTable } from "./table-parser";
 import { inVerbatimLineContext } from "./keymaps";
@@ -167,6 +177,66 @@ const cellEditorSync = [
 ];
 
 // ---------------------------------------------------------------------------
+// Scrolling to a cell, and find/replace highlights
+// ---------------------------------------------------------------------------
+
+/**
+ * Scrolls a position inside a table into view by the cell that holds it.
+ *
+ * CodeMirror sees a table as one atomic widget, so its own scrolling can only
+ * reach the table as a whole — stepping through find matches in a table taller
+ * than the window left the match itself off screen. Anything outside a cell
+ * (the table's own markup) is left to CodeMirror. This is the documented
+ * `scrollHandler` seam, so the cell is reached however the scroll was asked
+ * for: find and replace, a search result opened from the sidebar, or a jump to
+ * a label.
+ */
+const tableScrollHandler = EditorView.scrollHandler.of((view, range) => {
+  const cell = tableCellDomAt(view, range.head);
+  if (!cell) return false;
+  cell.scrollIntoView({ block: "nearest", inline: "nearest" });
+  return true;
+});
+
+/**
+ * Keeps the find panel's highlights in a table's cells up to date.
+ *
+ * A table is one atomic widget, so CodeMirror's search-match decorations are
+ * applied to source the reader never sees. The cells are painted by hand and
+ * paint the matches with them (see cell-search.ts); this plugin tells them
+ * when to look again — the query changed, the panel opened or closed, the
+ * user stepped to another match, or the text was replaced.
+ *
+ * The repaint waits for the next frame so CodeMirror has finished any widget
+ * rebuild the change triggered and the cells painted into are the current
+ * ones. Nothing runs while the panel is closed, so ordinary cursor movement in
+ * the note costs nothing.
+ */
+const tableSearchSync = ViewPlugin.fromClass(class {
+  private frame: number | null = null;
+
+  update(update: ViewUpdate) {
+    const open = searchPanelOpen(update.state);
+    const wasOpen = searchPanelOpen(update.startState);
+    if (!open && !wasOpen) return;
+    const matchesMoved =
+      open !== wasOpen ||
+      update.selectionSet ||
+      update.docChanged ||
+      update.transactions.some((tr) => tr.effects.some((e) => e.is(setSearchQuery)));
+    if (!matchesMoved || this.frame !== null) return;
+    this.frame = requestAnimationFrame(() => {
+      this.frame = null;
+      refreshTableSearchMatches(update.view);
+    });
+  }
+
+  destroy() {
+    if (this.frame !== null) cancelAnimationFrame(this.frame);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Table entry via arrow keys
 // ---------------------------------------------------------------------------
 
@@ -242,12 +312,7 @@ export function createTableEntryKeymap(decoField: StateField<DecorationSet>) {
         }
         const wrap = findTableWrapNear(view, head, "up", decoField);
         if (!wrap) return false;
-        wrap.focus();
-        const cells = wrap.querySelectorAll<HTMLElement>(".cm-typst-table-cell");
-        if (cells.length > 0) {
-          cells[cells.length - 1].classList.add("cm-typst-table-cell--selected");
-        }
-        return true;
+        return focusTableEdge(wrap, "last");
       },
     },
     {
@@ -264,15 +329,10 @@ export function createTableEntryKeymap(decoField: StateField<DecorationSet>) {
         }
         const wrap = findTableWrapNear(view, head, "down", decoField);
         if (!wrap) return false;
-        wrap.focus();
-        const cells = wrap.querySelectorAll<HTMLElement>(".cm-typst-table-cell");
-        if (cells.length > 0) {
-          cells[0].classList.add("cm-typst-table-cell--selected");
-        }
-        return true;
+        return focusTableEdge(wrap, "first");
       },
     },
   ]);
 }
 
-export { tableClipboardHandler, cellEditorSync };
+export { tableClipboardHandler, cellEditorSync, tableSearchSync, tableScrollHandler };

@@ -27,6 +27,7 @@ import {
 import { Decoration, EditorView, keymap, type DecorationSet, type WidgetType } from "@codemirror/view";
 import { redo, undo } from "@codemirror/commands";
 import { scopeRangeConfig, scopeRangeField, setScopeRange, type ScopeRange } from "./cell-scope";
+import { type CellMatch } from "./cell-search";
 import { parseClipboardAsGrid } from "./table-parser";
 
 /** Marks a transaction that mirrors a change already made in the other editor. */
@@ -55,7 +56,6 @@ export interface CellNavigation {
   tab(shift: boolean): void;
   enter(): void;
   escape(): void;
-  arrow(direction: "up" | "down"): void;
   /** A grid of two or more cells was pasted. */
   pasteGrid(grid: string[][]): void;
 }
@@ -112,14 +112,28 @@ const scopeGuard = EditorState.transactionFilter.of((tr) => {
   return [tr, { selection: clamped, sequential: true }];
 });
 
-/** True when the caret sits on the cell's first (`up`) or last (`down`) line,
- *  so a vertical arrow should leave the cell rather than move within it. */
-function onEdgeLine(view: EditorView, direction: "up" | "down"): boolean {
+/**
+ * Whether the caret is already on the cell's top (`up`) or bottom (`down`)
+ * visual line, with nowhere further to go inside the cell.
+ *
+ * While a cell is being edited the arrow keys stay in it: they move through
+ * its text — including the rows a wrapped cell takes — and stop at its edges
+ * rather than carrying the caret into a neighbouring cell. Moving between
+ * cells is what navigation mode is for (Escape leaves editing, and the arrows
+ * then step from cell to cell), and Tab and Enter still move on directly.
+ *
+ * Measured with the editor's own vertical motion so wrapped lines count, and
+ * with the same goal column the caret would keep. Everything outside the cell
+ * is hidden and collapsed onto the cell's own visual lines, so a target that
+ * falls outside the cell's range means there was nowhere left to go.
+ */
+function atCellEdge(view: EditorView, direction: "up" | "down"): boolean {
   const scope = view.state.field(scopeRangeField);
   if (!scope) return true;
-  const line = view.state.doc.lineAt(view.state.selection.main.head);
-  const edge = view.state.doc.lineAt(direction === "up" ? scope.from : scope.to);
-  return line.number === edge.number;
+  const start = view.state.selection.main;
+  const target = view.moveVertically(start, direction === "down");
+  if (target.head === start.head) return true;
+  return target.head < scope.from || target.head > scope.to;
 }
 
 function cellKeymap(main: EditorView, nav: CellNavigation): Extension {
@@ -127,8 +141,9 @@ function cellKeymap(main: EditorView, nav: CellNavigation): Extension {
     { key: "Tab", run: () => (nav.tab(false), true), shift: () => (nav.tab(true), true) },
     { key: "Enter", run: () => (nav.enter(), true) },
     { key: "Escape", run: () => (nav.escape(), true) },
-    { key: "ArrowUp", run: (view) => (onEdgeLine(view, "up") ? (nav.arrow("up"), true) : false) },
-    { key: "ArrowDown", run: (view) => (onEdgeLine(view, "down") ? (nav.arrow("down"), true) : false) },
+    // Swallowed at the cell's edges: the caret stays in the cell being edited.
+    { key: "ArrowUp", run: (view) => atCellEdge(view, "up") },
+    { key: "ArrowDown", run: (view) => atCellEdge(view, "down") },
     // The note's editor owns the undo history; the result is mirrored back.
     { key: "Mod-z", run: () => undo(main) },
     { key: "Mod-y", run: () => redo(main) },
@@ -318,6 +333,14 @@ export interface RenderedCell {
  * hidden markup is left out. Every text run carries `data-from`, the source
  * offset of its first character, so a click can be mapped back to a caret
  * position (see `sourcePosAt`).
+ *
+ * Each source line of the cell becomes a line element of its own, carrying
+ * whatever line decoration the visual layer gave it — the list indent, above
+ * all. Without it a bullet's hanging indent has nothing to hang from and the
+ * marker escapes through the cell's left border.
+ *
+ * `matches` paints the find panel's hits (see cell-search.ts); they are marks
+ * like any other, so they simply join the decorations being drawn.
  */
 export function renderIdleCell(
   main: EditorView,
@@ -325,27 +348,34 @@ export function renderIdleCell(
   from: number,
   to: number,
   config: CellEditorConfig | null,
+  matches: readonly CellMatch[] = [],
 ): RenderedCell {
   container.replaceChildren();
   const rendered: RenderedCell = { widgets: [] };
   const doc = main.state.doc;
+  const lines = new CellLines(container, from);
   if (!config) {
-    appendRun(container, doc.sliceString(from, to), from, []);
+    lines.appendText(doc.sliceString(from, to), from, []);
     return rendered;
   }
-  const decos = config.inlineDecorations(main.state, from, to);
-  RangeSet.spans([decos], from, to, {
+  const sets = [config.inlineDecorations(main.state, from, to)];
+  if (matches.length) sets.push(searchMarks(matches));
+  RangeSet.spans(sets, from, to, {
     span(spanFrom, spanTo, active) {
       if (spanFrom === spanTo) return;
-      appendRun(container, doc.sliceString(spanFrom, spanTo), spanFrom, active);
+      lines.appendText(doc.sliceString(spanFrom, spanTo), spanFrom, active);
     },
     point(pointFrom, pointTo, deco) {
+      if (isLineDecoration(deco)) {
+        lines.decorateLine(deco);
+        return;
+      }
       const widget = deco.spec?.widget as WidgetType | undefined;
       if (!widget) return;
       const dom = widget.toDOM(main);
       dom.dataset.from = String(pointFrom);
       dom.dataset.to = String(pointTo);
-      container.appendChild(dom);
+      lines.appendElement(dom);
       rendered.widgets.push({ widget, dom });
     },
   });
@@ -358,7 +388,86 @@ export function destroyRenderedCell(rendered: RenderedCell) {
   rendered.widgets.length = 0;
 }
 
-function appendRun(container: HTMLElement, text: string, from: number, marks: readonly Decoration[]) {
+/** Mark decorations for the find panel's hits, wearing CodeMirror's own
+ *  search classes so the editor theme (and its "All" toggle) styles them
+ *  exactly as it styles matches in the note body. */
+function searchMarks(matches: readonly CellMatch[]): DecorationSet {
+  return Decoration.set(
+    matches.map((m) =>
+      Decoration.mark({
+        class: m.current ? "cm-searchMatch cm-searchMatch-selected" : "cm-searchMatch",
+      }).range(m.from, m.to),
+    ),
+    true,
+  );
+}
+
+/** Line decorations carry this side value; it is how one is told apart from
+ *  the widget and replace points that arrive through the same callback. */
+const LINE_DECORATION_SIDE = Decoration.line({}).startSide;
+
+function isLineDecoration(deco: Decoration): boolean {
+  return deco.startSide === LINE_DECORATION_SIDE && deco.spec?.widget == null;
+}
+
+/** Class on each line element inside a painted cell (styled in
+ *  visual-theme.ts). */
+const CELL_LINE_CLASS = "cm-typst-cell-line";
+
+/**
+ * Builds a cell's content one line element at a time. A cell's source can run
+ * over several lines, and each needs its own box to carry the line-level
+ * styling the note gives it (list indents) and to break where the source
+ * breaks.
+ */
+class CellLines {
+  private line: HTMLElement;
+
+  constructor(private readonly container: HTMLElement, from: number) {
+    this.line = this.startLine(from);
+  }
+
+  /** Append text, starting a new line element at every line break. */
+  appendText(text: string, from: number, marks: readonly Decoration[]) {
+    let start = 0;
+    for (;;) {
+      const br = text.indexOf("\n", start);
+      const chunk = br < 0 ? text.slice(start) : text.slice(start, br);
+      if (chunk) this.line.appendChild(runSpan(chunk, from + start, marks));
+      if (br < 0) return;
+      start = br + 1;
+      this.line = this.startLine(from + start);
+    }
+  }
+
+  /** Append a widget's DOM to the line being built. */
+  appendElement(element: HTMLElement) {
+    this.line.appendChild(element);
+  }
+
+  /** Apply a line decoration to the line being built. */
+  decorateLine(deco: Decoration) {
+    const classes = deco.spec?.class ? [deco.spec.class as string] : [];
+    const attrs = deco.spec?.attributes as Record<string, string> | undefined;
+    for (const [name, value] of Object.entries(attrs ?? {})) {
+      if (name === "class") classes.push(value);
+      else this.line.setAttribute(name, value);
+    }
+    for (const cls of classes) this.line.classList.add(cls);
+  }
+
+  private startLine(from: number): HTMLElement {
+    const line = document.createElement("div");
+    line.className = CELL_LINE_CLASS;
+    // A click landing on the line but not on any of its text (past the end of
+    // a short line, or on an empty one) resolves to the line's own start.
+    line.dataset.from = String(from);
+    this.container.appendChild(line);
+    return line;
+  }
+}
+
+function runSpan(text: string, from: number, marks: readonly Decoration[]): HTMLElement {
   const span = document.createElement("span");
   span.dataset.from = String(from);
   const classes: string[] = [];
@@ -374,7 +483,7 @@ function appendRun(container: HTMLElement, text: string, from: number, marks: re
   }
   if (classes.length) span.className = classes.join(" ");
   span.textContent = text;
-  container.appendChild(span);
+  return span;
 }
 
 /**

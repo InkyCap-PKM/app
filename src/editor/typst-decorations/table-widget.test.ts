@@ -3,7 +3,14 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { typst } from "codemirror-lang-typst";
 import { history, undo } from "@codemirror/commands";
-import { TableWidget, tableWidgetAt, activeCellEditors } from "./table-widget";
+import { closeSearchPanel, openSearchPanel, search, setSearchQuery, SearchQuery } from "@codemirror/search";
+import {
+  TableWidget,
+  tableWidgetAt,
+  activeCellEditors,
+  refreshTableSearchMatches,
+  tableCellDomAt,
+} from "./table-widget";
 import { buildDecorations, typstVisualMode } from "./visual-plugin";
 import { cellEditorConfig } from "./table-cell-editor";
 
@@ -37,10 +44,18 @@ function mount(doc: string, withCellEditor = false): EditorView {
     state: EditorState.create({
       doc,
       selection: { anchor: 0 },
-      extensions: [typst(), typstVisualMode(), withCellEditor ? cellConfig : []],
+      extensions: [typst(), typstVisualMode(), search(), withCellEditor ? cellConfig : []],
     }),
     parent,
   });
+}
+
+/** Put the find panel on a query and step onto the match at `at`, the way
+ *  Next/Previous does, then refresh what the tables paint. */
+function findMatch(view: EditorView, term: string, at: number) {
+  view.dispatch({ effects: setSearchQuery.of(new SearchQuery({ search: term })) });
+  view.dispatch({ selection: { anchor: at, head: at + term.length } });
+  refreshTableSearchMatches(view);
 }
 
 function cellDiv(view: EditorView, row: number, col: number): HTMLElement {
@@ -289,6 +304,85 @@ describe("TableWidget", () => {
     // deleteTable resolves the range itself; only the view is read from the state object.
     (findTable(view).widget as unknown as { deleteTable(st: never): void }).deleteTable(st);
     expect(view.state.doc.toString()).toBe("before\nafter\n");
+    view.destroy();
+  });
+  it("keeps a list's bullets inside the cell that holds them", () => {
+    // Each source line of the cell is painted as its own box, so the list
+    // line's indent is there for the bullet's hanging indent to hang from.
+    // The indentation the cell's source sits at inside the `#table(...)` call
+    // is not nesting, so only the genuinely nested item is stepped in.
+    const view = mount(
+      "#table(\n  columns: (auto, auto),\n  [\n    - one\n    - two\n      - nested\n  ], [b],\n)",
+      true,
+    );
+    const cell = cellDiv(view, 0, 0);
+    const lines = cell.querySelectorAll<HTMLElement>(".cm-typst-cell-line");
+    expect(lines).toHaveLength(5); // empty, three items, trailing spaces
+    const indents: string[] = [];
+    for (const bullet of cell.querySelectorAll<HTMLElement>(".cm-typst-list-bullet")) {
+      const line = bullet.closest<HTMLElement>(".cm-typst-cell-line")!;
+      expect(cell.contains(line)).toBe(true);
+      indents.push(line.style.paddingLeft);
+    }
+    expect(indents).toEqual([
+      "calc(var(--line-block-inset, 0px) + var(--list-bullet-width))",
+      "calc(var(--line-block-inset, 0px) + var(--list-bullet-width))",
+      "calc(var(--line-block-inset, 0px) + 2.40ch + var(--list-bullet-width))",
+    ]);
+    view.destroy();
+  });
+
+  it("keeps the arrow keys inside the cell being edited", () => {
+    // Moving from cell to cell is what navigation mode is for; while a cell is
+    // being edited the arrows belong to its text.
+    const view = mount("hello\n\n" + TABLE + "\n", true);
+    cellDiv(view, 0, 0).dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    const [editor] = activeCellEditors(view);
+    const range = editor.range;
+    for (const key of ["ArrowDown", "ArrowUp"]) {
+      editor.view.contentDOM.dispatchEvent(
+        new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
+      );
+    }
+    expect(activeCellEditors(view)[0]).toBe(editor);
+    expect(editor.range).toEqual(range);
+    view.destroy();
+  });
+
+  it("finds the cell a source offset falls in, for scrolling to it", () => {
+    const doc = "hello\n\n" + TABLE + "\n";
+    const view = mount(doc, true);
+    expect(tableCellDomAt(view, doc.indexOf("[e]") + 1)).toBe(cellDiv(view, 1, 1));
+    // The table's own markup belongs to no cell — CodeMirror scrolls to that
+    // itself.
+    expect(tableCellDomAt(view, doc.indexOf("columns"))).toBeNull();
+    expect(tableCellDomAt(view, 0)).toBeNull();
+    view.destroy();
+  });
+
+  it("highlights find matches in its cells, marking the current one", () => {
+    const doc = "#table(\n  columns: (auto, auto),\n  [alpha beta], [beta gamma],\n)";
+    const view = mount(doc, true);
+    openSearchPanel(view);
+    findMatch(view, "beta", doc.indexOf("beta"));
+
+    const first = cellDiv(view, 0, 0).querySelector<HTMLElement>(".cm-searchMatch")!;
+    expect(first.textContent).toBe("beta");
+    expect(first.classList.contains("cm-searchMatch-selected")).toBe(true);
+    // Every other match in the table is marked too, so the "All" toggle in
+    // the find panel reaches table cells like it reaches the note body.
+    const second = cellDiv(view, 0, 1).querySelector<HTMLElement>(".cm-searchMatch")!;
+    expect(second.textContent).toBe("beta");
+    expect(second.classList.contains("cm-searchMatch-selected")).toBe(false);
+
+    // Stepping to the next match moves the highlight with it.
+    findMatch(view, "beta", doc.lastIndexOf("beta"));
+    expect(cellDiv(view, 0, 0).querySelector(".cm-searchMatch-selected")).toBeNull();
+    expect(cellDiv(view, 0, 1).querySelector(".cm-searchMatch-selected")).not.toBeNull();
+
+    closeSearchPanel(view);
+    refreshTableSearchMatches(view);
+    expect(view.dom.querySelectorAll(".cm-searchMatch")).toHaveLength(0);
     view.destroy();
   });
 });

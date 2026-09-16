@@ -10,6 +10,7 @@ import {
   type CellNavigation,
   type RenderedCell,
 } from "./table-cell-editor";
+import { cellMatchKey, cellSearchMatches } from "./cell-search";
 import { compareName } from "../../lib/sort";
 import { t, tPlural } from "../../lib/i18n";
 import { showContextMenu, type ContextMenuEntry } from "../../lib/context-menu";
@@ -37,6 +38,27 @@ function asCssLength(size: string): string | null {
  *  is the CSS px (1/96in) ratio: 1px = 0.75pt. */
 function pxToTypstPt(px: number): string {
   return `${Math.round(px * 0.75 * 10) / 10}pt`;
+}
+
+/**
+ * Take focus without the browser scrolling the note under the reader.
+ *
+ * A plain `focus()` scrolls the focused element into view, which for a table
+ * taller than a line means the whole note jumps to put the table at the top
+ * of the editor — every time a cell is clicked or the table is entered with
+ * the arrow keys. Anything that genuinely needs its target on screen asks for
+ * it with `revealCell`.
+ */
+function focusQuietly(el: HTMLElement) {
+  el.focus({ preventScroll: true });
+}
+
+/**
+ * Scroll a cell into view only if it isn't already — the caret moving past
+ * the edge of the view area is the one case where the note should move.
+ */
+function revealCell(cell: HTMLElement | null) {
+  cell?.scrollIntoView({ block: "nearest", inline: "nearest" });
 }
 
 /** Minimum drag size so a column/row can't be collapsed to nothing. */
@@ -103,6 +125,9 @@ interface NavState {
 interface CellSlot {
   cellDiv: HTMLElement;
   content: string;
+  /** Signature of the find-panel matches painted into the cell, so it is
+   *  repainted only when they change (see `repaintSearchMatches`). */
+  searchKey: string;
   rendered: RenderedCell;
 }
 
@@ -172,6 +197,39 @@ export function activeCellEditors(view: EditorView): CellEditor[] {
     if (st?.editor) editors.push(st.editor);
   }
   return editors;
+}
+
+/**
+ * Refresh the find-panel highlights painted into every rendered table in
+ * `view`. A table is one atomic widget, so CodeMirror's own search-match
+ * decorations never reach its cells; visual-tables.ts calls this whenever the
+ * query, the panel or the selection changes.
+ */
+export function refreshTableSearchMatches(view: EditorView) {
+  for (const wrap of view.dom.querySelectorAll<HTMLElement>(".cm-typst-table-wrap")) {
+    const st = domStates.get(wrap);
+    if (st) st.widget.repaintSearchMatches(st);
+  }
+}
+
+/**
+ * The painted table cell holding the source offset `pos`, in whichever table
+ * of `view` it falls in. Null when `pos` is not inside a rendered cell.
+ */
+export function tableCellDomAt(view: EditorView, pos: number): HTMLElement | null {
+  for (const wrap of view.dom.querySelectorAll<HTMLElement>(".cm-typst-table-wrap")) {
+    const st = domStates.get(wrap);
+    if (!st) continue;
+    let tableFrom: number;
+    try {
+      tableFrom = view.posAtDOM(wrap);
+    } catch {
+      continue; // posAtDOM throws for a node on its way out of the document
+    }
+    const cell = st.widget.cellDivAt(st, tableFrom, pos);
+    if (cell) return cell;
+  }
+  return null;
 }
 
 /** Close every cell editor in `view`, painting the cells idle again. */
@@ -454,7 +512,7 @@ export class TableWidget extends WidgetType {
         const cellDiv = document.createElement("div");
         cellDiv.className = "cm-typst-table-cell";
         cellEl.appendChild(cellDiv);
-        st.slots.set(`${r},${c}`, { cellDiv, content: "", rendered: { widgets: [] } });
+        st.slots.set(`${r},${c}`, { cellDiv, content: "", searchKey: "", rendered: { widgets: [] } });
         this.paintIdle(st, r, c);
         if (this.data.align && this.data.align[c]) {
           cellEl.style.textAlign = this.data.align[c];
@@ -739,14 +797,61 @@ export class TableWidget extends WidgetType {
     return { from: from + cell.relFrom + 1, to: from + cell.relTo - 1 };
   }
 
-  /** Paint a cell as it reads in the visual editor, from the note's state. */
+  /** Paint a cell as it reads in the visual editor, from the note's state,
+   *  with any find-panel matches it holds highlighted. */
   private paintIdle(st: TableDom, row: number, col: number) {
     const slot = st.slots.get(`${row},${col}`);
     const range = this.cellRange(st, row, col);
     if (!slot || !range) return;
     destroyRenderedCell(slot.rendered);
+    const matches = cellSearchMatches(st.view.state, range.from, range.to);
     slot.content = this.getAllRows()[row][col].content;
-    slot.rendered = renderIdleCell(st.view, slot.cellDiv, range.from, range.to, st.view.state.facet(cellEditorConfig));
+    slot.searchKey = cellMatchKey(matches);
+    slot.rendered = renderIdleCell(
+      st.view,
+      slot.cellDiv,
+      range.from,
+      range.to,
+      st.view.state.facet(cellEditorConfig),
+      matches,
+    );
+  }
+
+  /**
+   * Repaint the cells whose find-panel matches have changed. The cell being
+   * edited is left alone: its own editor owns what is drawn there.
+   */
+  repaintSearchMatches(st: TableDom) {
+    const rows = this.getAllRows();
+    for (let r = 0; r < rows.length; r++) {
+      for (let c = 0; c < rows[r].length; c++) {
+        if (st.editorCell && st.editorCell.row === r && st.editorCell.col === c) continue;
+        const slot = st.slots.get(`${r},${c}`);
+        const range = this.cellRange(st, r, c);
+        if (!slot || !range) continue;
+        const matches = cellSearchMatches(st.view.state, range.from, range.to);
+        if (cellMatchKey(matches) !== slot.searchKey) this.paintIdle(st, r, c);
+      }
+    }
+  }
+
+  /**
+   * The painted cell whose source holds `pos`, or null when `pos` falls in the
+   * table's own markup rather than a cell. `tableFrom` is the table's start
+   * offset, which the caller reads from the DOM — cheap enough to do on every
+   * scroll request, unlike resolving the widget's live range.
+   */
+  cellDivAt(st: TableDom, tableFrom: number, pos: number): HTMLElement | null {
+    const rows = this.getAllRows();
+    for (let r = 0; r < rows.length; r++) {
+      for (let c = 0; c < rows[r].length; c++) {
+        const cell = rows[r][c];
+        if (pos >= tableFrom + cell.relFrom && pos <= tableFrom + cell.relTo) {
+          return st.slots.get(`${r},${c}`)?.cellDiv ?? null;
+        }
+      }
+    }
+    return null;
   }
 
   /**
@@ -833,7 +938,8 @@ export class TableWidget extends WidgetType {
     target.classList.add("cm-typst-table-cell--selected");
     st.nav.anchorRow = st.nav.headRow = row;
     st.nav.anchorCol = st.nav.headCol = col;
-    st.wrap.focus({ preventScroll: true });
+    focusQuietly(st.wrap);
+    revealCell(target);
   }
 
   /** What the cell editor does when a key leaves the cell. */
@@ -863,12 +969,6 @@ export class TableWidget extends WidgetType {
       escape: () => {
         const { row, col } = here();
         st.widget.landOnCell(st, row, col, "select");
-      },
-      arrow: (direction) => {
-        const { row, col } = here();
-        const next = direction === "up" ? row - 1 : row + 1;
-        if (next < 0 || next >= this.gridSize(st.wrap).rows) st.widget.exitToEditor(st, next < 0 ? "before" : "after");
-        else st.widget.activateCell(st, next, col, "end");
       },
       pasteGrid: (grid) => {
         const { row, col } = here();
@@ -952,7 +1052,7 @@ export class TableWidget extends WidgetType {
           nav.anchorRow = nav.headRow = row;
           nav.anchorCol = nav.headCol = col;
         }
-        wrap.focus({ preventScroll: true });
+        focusQuietly(wrap);
         return;
       }
       if (e.button !== 0) return;
@@ -1011,7 +1111,7 @@ export class TableWidget extends WidgetType {
         selecting = false;
         const selected = wrap.querySelectorAll(".cm-typst-table-cell--selected");
         if (selected.length > 0) {
-          wrap.focus();
+          focusQuietly(wrap);
         }
       }
     });
@@ -1131,6 +1231,7 @@ export class TableWidget extends WidgetType {
           clearCellSelection(wrap);
           const cell = getCellAt(wrap, nav.headRow, nav.headCol);
           if (cell) cell.classList.add("cm-typst-table-cell--selected");
+          revealCell(cell);
         }
         return;
       }
@@ -1145,6 +1246,7 @@ export class TableWidget extends WidgetType {
           if (nextIdx >= 0 && nextIdx < cells.length) {
             clearCellSelection(wrap);
             cells[nextIdx].classList.add("cm-typst-table-cell--selected");
+            revealCell(cells[nextIdx]);
           }
         }
         return;
@@ -1399,7 +1501,7 @@ export class TableWidget extends WidgetType {
     st.nav.anchorRow = st.nav.anchorCol = 0;
     st.nav.headRow = Math.max(0, rows - 1);
     st.nav.headCol = Math.max(0, cols - 1);
-    st.wrap.focus({ preventScroll: true });
+    focusQuietly(st.wrap);
   }
 
   /** Reveal the table's raw markup in the note, for editing by hand. */
@@ -1433,7 +1535,7 @@ export class TableWidget extends WidgetType {
     row.querySelectorAll<HTMLElement>(".cm-typst-table-cell").forEach((c) => {
       c.classList.add("cm-typst-table-cell--selected");
     });
-    wrap.focus();
+    focusQuietly(wrap);
   }
 
   private selectColumn(wrap: HTMLElement, colIdx: number) {
@@ -1447,7 +1549,7 @@ export class TableWidget extends WidgetType {
     wrap.querySelectorAll<HTMLElement>(`tr[data-logical-row] [data-col="${colIdx}"] .cm-typst-table-cell`).forEach((c) => {
       c.classList.add("cm-typst-table-cell--selected");
     });
-    wrap.focus();
+    focusQuietly(wrap);
   }
 
   // ────────────────────────────────────────────────────────
@@ -1712,6 +1814,27 @@ export function tableWidgetAt(view: EditorView, wrap: HTMLElement): TableWidget 
     if (found) break;
   }
   return found;
+}
+
+/**
+ * Enter a rendered table from the note body: select the cell on the edge the
+ * caret arrived from and hand the table keyboard focus, in navigation mode.
+ * Returns false when the table has no cells to land on, so the caller can let
+ * ordinary cursor motion carry on.
+ *
+ * The note itself does not move; only the cell being landed on is brought
+ * into view, and only if it isn't already.
+ */
+export function focusTableEdge(wrap: HTMLElement, edge: "first" | "last"): boolean {
+  const cells = wrap.querySelectorAll<HTMLElement>(".cm-typst-table-cell");
+  if (cells.length === 0) return false;
+  const cell = edge === "first" ? cells[0] : cells[cells.length - 1];
+  clearCellSelection(wrap);
+  clearHandleSelection(wrap);
+  cell.classList.add("cm-typst-table-cell--selected");
+  focusQuietly(wrap);
+  revealCell(cell);
+  return true;
 }
 
 function clearCellSelection(wrap: HTMLElement) {
