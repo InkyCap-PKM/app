@@ -1,7 +1,7 @@
 {
   "name": "inkycap",
   "version": "26.9.10",
-  "description": "A Tauri-based Typst editor for academic and research note-taking",
+  "description": "Typst-based PKM with linked-notes for writing and academic research",
   "private": true,
   "scripts": {
     "dev": "vite",

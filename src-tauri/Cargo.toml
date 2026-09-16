@@ -2,7 +2,7 @@
 name = "inkycap"
 version = "26.9.10"
 edition = "2021"
-description = "A Tauri-based Typst editor for academic note-taking"
+description = "Typst-based PKM with linked-notes for writing and academic research"
 
 [lib]
 name = "inkycap_lib"

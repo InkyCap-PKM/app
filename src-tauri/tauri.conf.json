@@ -40,6 +40,8 @@
   "bundle": {
     "active": true,
     "category": "Productivity",
+    "shortDescription": "Typst-based PKM with linked-notes for writing and academic research",
+    "longDescription": "InkyCap focuses on academics, writers, and anyone wanting both conventional PKM functionality and advanced features for publishing, knowledge discovery, recall, and ideation, as well as agenda-keeping, project creation, and more.",
     "targets": [
       "deb",
       "rpm",
@@ -76,7 +78,11 @@
           "/usr/share/icons/hicolor/scalable/apps/inkycap.svg": "icons/icon.svg"
         },
         "postInstallScript": "deb/postinst",
-        "postRemoveScript": "deb/postrm"
+        "postRemoveScript": "deb/postrm",
+        "desktopTemplate": "linux/main.desktop"
+      },
+      "rpm": {
+        "desktopTemplate": "linux/main.desktop"
       }
     }
   }
