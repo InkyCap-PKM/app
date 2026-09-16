@@ -196,7 +196,7 @@ As #quote[essence does not involve existence] reminds us, we should take a deep 
 
 == Callouts
 
-Callouts are the tinted, bordered boxes used throughout this manual — ideal for tips, warnings, and worked examples. Insert one from the `/` menu (*Callout*) or the toolbar, then choose the kind by right-clicking its pill. The literal form is `#callout("kind")[ ... ]`, with an optional `title:`.
+Callouts are the tinted, bordered boxes used throughout this manual — ideal for tips, warnings, and worked examples. Insert one from the `/` menu (*Callout*) or the toolbar, then choose the kind by right-clicking its pill. The same menu holds a Title field for your own heading words and a Colour field for your own colour. The literal form is `#callout("kind")[ ... ]`, with an optional `title:` and `color:`.
 
 #demo-block(
   [```typ
@@ -213,6 +213,17 @@ Callouts are the tinted, bordered boxes used throughout this manual — ideal fo
 ```],
   [#callout("tip", title: "A title of your own")[
       You can rename any callout.
+    ]],
+)
+
+#demo-block(
+  [```typ
+#callout("note", color: rgb("#7c4dff"))[
+  And give it a colour of your own.
+]
+```],
+  [#callout("note", color: rgb("#7c4dff"))[
+      And give it a colour of your own.
     ]],
 )
 

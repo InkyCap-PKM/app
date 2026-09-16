@@ -18,29 +18,13 @@ import {
   type PillMenuSection,
 } from "./pill";
 import { t } from "../../lib/i18n";
-
-// Callout kinds come straight from inkycap-notebox/lib.typ's
-// `_callout-colors` dict. Keeping this list in lockstep with the notebox
-// is the team's job — when a kind is added or removed there, update
-// this constant too.
-const CALLOUT_KINDS = [
-  "note", "tip", "warning", "important", "caution", "example",
-  "quote", "abstract", "info", "todo", "success", "question",
-  "failure", "danger", "bug",
-] as const;
-
-/** Heading shown for a callout of `kind`: an explicit `title` wins, otherwise
- *  the localized kind label (falling back to a capitalized kind for any kind
- *  not in the known set). Shared by the visual-editor callout widgets and the
- *  kind menu so the editor decoration and the pill menu always agree on the
- *  wording, and both follow the UI language. The compiled reading view / export
- *  localizes from the document language in inkycap-notebox/lib.typ. */
-export function calloutKindLabel(kind: string, title?: string | null): string {
-  if (title) return title;
-  return (CALLOUT_KINDS as readonly string[]).includes(kind)
-    ? t("callout.kind." + kind)
-    : kind.charAt(0).toUpperCase() + kind.slice(1);
-}
+import {
+  CALLOUT_KINDS,
+  calloutColor,
+  calloutColorLiteral,
+  calloutKindLabel,
+  parseCalloutColorLiteral,
+} from "./callout-kinds";
 
 // Highlighter palette, listed in rainbow order. Each entry has a
 // Typst-source representation (used in `fill: rgb(...)`) and a label.
@@ -300,17 +284,67 @@ function replaceFirstPositionalKeyword(callSource: string, keyword: string): str
 
 // ── Option builders ─────────────────────────────────────────────────
 
+/**
+ * Kind, then the two things that override what the kind decides: the heading
+ * word (`title:`) and the accent colour (`color:`).
+ *
+ * Both overrides sit alongside the kind rather than replacing it, so the kind
+ * keeps travelling with the note: emptying the title, or choosing "Match the
+ * kind", returns the callout to its kind's wording and colour. Choosing a
+ * different kind leaves an override in place — it was an explicit choice, and
+ * undoing it is one click away.
+ */
 function calloutOptions(view: EditorView, from: number, to: number): PillMenuSection[] {
   const src = readCallSource(view, from, to);
   const currentKind = readFirstPositionalString(src) ?? "note";
-  return [{
-    heading: t("callout.kind.heading"),
-    items: CALLOUT_KINDS.map((kind) => ({
-      label: t("callout.kind." + kind),
-      isActive: kind === currentKind,
-      onSelect: () => applyCallTransform(view, from, (s) => replaceFirstPositionalString(s, kind)),
-    })),
-  }];
+  const title = unquote(readNamedArg(src, "title")) ?? "";
+  const customColor = parseCalloutColorLiteral(readNamedArg(src, "color"));
+  return [
+    {
+      heading: t("callout.kind.heading"),
+      items: CALLOUT_KINDS.map((kind) => ({
+        label: t("callout.kind." + kind),
+        isActive: kind === currentKind,
+        onSelect: () => applyCallTransform(view, from, (s) => replaceFirstPositionalString(s, kind)),
+      })),
+    },
+    {
+      heading: t("callout.title.heading"),
+      items: [{
+        label: t("callout.title.label"),
+        input: {
+          value: title,
+          // The kind's own word, so an empty field shows what it falls back to.
+          placeholder: calloutKindLabel(currentKind),
+          onCommit: (value) => applyCallTransform(view, from, (s) =>
+            upsertNamedArg(s, "title", value.trim() === "" ? null : quote(value)),
+          ),
+        },
+      }],
+    },
+    {
+      heading: t("callout.colour.heading"),
+      items: [
+        {
+          label: t("callout.colour.matchKind"),
+          isActive: customColor === null,
+          onSelect: () => applyCallTransform(view, from, (s) => upsertNamedArg(s, "color", null)),
+        },
+        {
+          label: t("callout.colour.custom"),
+          input: {
+            type: "color",
+            // With no override, the picker opens on the kind's own colour, so
+            // the writer starts from what they can see rather than from black.
+            value: calloutColor(currentKind, customColor),
+            onCommit: (value) => applyCallTransform(view, from, (s) =>
+              upsertNamedArg(s, "color", calloutColorLiteral(value)),
+            ),
+          },
+        },
+      ],
+    },
+  ];
 }
 
 function quoteOptions(view: EditorView, from: number, to: number): PillMenuSection[] {

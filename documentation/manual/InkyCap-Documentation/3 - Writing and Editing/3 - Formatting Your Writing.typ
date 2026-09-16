@@ -88,11 +88,14 @@ A *blockquote* sets off a passage, often for citing a source. Type `> ` at the s
 - *warning*, *caution*, *important*, *danger*, *failure*, *bug*
 - *example*, *question*, *todo*, *success*
 
+The kind sets the box's word and colour, and you can override either one from the pill's menu: type your own *heading words* in the Title field, or pick any *colour* you like. The kind stays in the note either way, so clearing the title, or choosing "Match the kind", puts the box back the way it started.
+
 The literal form, if you ever want to type one directly, is:
 
 ```typ
 #callout("warning")[ Save your work before exporting. ]
 #callout("tip", title: "My own title")[ You can rename the box. ]
+#callout("note", color: rgb("#7c4dff"))[ Any colour you like. ]
 ```
 
 To *highlight* text, select it and use the toolbar's highlighter (or *Ctrl/Cmd+Shift+H*). You can switch the highlight colour from its pill menu: Yellow (the default), Green, Blue, Pink, or Orange.

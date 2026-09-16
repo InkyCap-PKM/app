@@ -11,7 +11,7 @@
 //                         repeat rule, see _fmt-recurrence)
 //   #wikilink("Name", display: ...)
 //   link-ref("Name")      link reference value (use inside note() fields)
-//   #callout("type")[...] styled admonition block
+//   #callout("type", title: "…", color: …)[...] styled admonition block
 //   #annotation(body, ...)  margin comment on note content (reader/reviewer)
 //   #suggestion(body, kind: ..., ...)  inline tracked-change suggestion
 //                         (insert/delete/replace) — the suggesting-mode mark
@@ -635,6 +635,9 @@
 // abstract, info, todo, success, question, failure, danger, bug.
 // ---------------------------------------------------------------------------
 
+// Default colour per kind. The editor draws its callout preview from a copy of
+// this table in src/editor/typst-decorations/callout-kinds.ts; a test compares
+// the two, so a colour changed here must be changed there as well.
 #let _callout-colors = (
   note: rgb("#448aff"),
   tip: rgb("#00bfa5"),
@@ -644,13 +647,13 @@
   example: rgb("#7c4dff"),
   quote: rgb("#9e9e9e"),
   abstract: rgb("#00b0ff"),
-  info: rgb("#448aff"),
-  todo: rgb("#448aff"),
+  info: rgb("#2196f3"),
+  todo: rgb("#ff6d00"),
   success: rgb("#00c853"),
-  question: rgb("#ff9100"),
-  failure: rgb("#ff5252"),
-  danger: rgb("#ff1744"),
-  bug: rgb("#ff5252"),
+  question: rgb("#64dd17"),
+  failure: rgb("#ff1744"),
+  danger: rgb("#d50000"),
+  bug: rgb("#f50057"),
 )
 
 // Localized heading labels per callout kind. The `kind` argument stays the
@@ -688,9 +691,15 @@
   }
 }
 
-#let callout(kind, title: none, body) = {
+// `kind` selects the default colour and the default heading word. `title:`
+// replaces the word with anything the writer likes; `color:` replaces the
+// colour with any Typst colour. Both are overrides — the kind stays in the
+// source, so removing an override falls back to it.
+#let callout(kind, title: none, color: none, body) = {
   assert(type(kind) == str, message: "callout: kind must be a string")
-  let color = _callout-colors.at(kind, default: rgb("#448aff"))
+  let accent = if color != none { color } else {
+    _callout-colors.at(kind, default: rgb("#448aff"))
+  }
 
   // Typst's `typst-html` emitter drops `block(fill:/stroke:/inset:/radius:)`
   // box styling — it would emit only the title + body text with no admonition
@@ -707,7 +716,7 @@
         "div",
         attrs: (
           class: "inkycap-callout inkycap-callout--" + kind,
-          style: "--inkycap-callout-color: " + color.to-hex() + ";",
+          style: "--inkycap-callout-color: " + accent.to-hex() + ";",
         ),
         (
           html.elem("div", attrs: (class: "inkycap-callout__title"), heading-text),
@@ -718,11 +727,11 @@
       block(
         width: 100%,
         inset: (left: 12pt, rest: 8pt),
-        stroke: (left: 3pt + color),
-        fill: color.lighten(92%),
+        stroke: (left: 3pt + accent),
+        fill: accent.lighten(92%),
         radius: (right: 3pt),
         [
-          #text(fill: color, weight: "bold", size: 0.95em, heading-text) \
+          #text(fill: accent, weight: "bold", size: 0.95em, heading-text) \
           #body
         ],
       )

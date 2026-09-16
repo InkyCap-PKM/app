@@ -997,6 +997,16 @@ export const visualTheme = EditorView.theme({
     outline: "none",
     borderColor: "var(--accent)",
   },
+  // A colour field is a swatch, not a text box: it takes the height of the
+  // row's text rather than stretching, and the browser's own picker opens
+  // from it.
+  ".cm-typst-pill-menu-input--color": {
+    flex: "0 0 auto",
+    width: "44px",
+    height: "22px",
+    padding: "1px",
+    cursor: "pointer",
+  },
   ".cm-typst-citation": {
     display: "inline-block",
     backgroundColor: "var(--bg-secondary)",

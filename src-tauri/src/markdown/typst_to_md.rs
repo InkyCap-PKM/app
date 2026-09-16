@@ -75,13 +75,27 @@ static LINK_BARE_RE: LazyLock<Regex> =
 static IMAGE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"#image\("([^"]*)"((?:,[^)]*)?)\)"#).unwrap());
 
+/// Undo the escaping a Typst string literal carries, so a value read out of
+/// one reads as plain text in the markdown.
+fn unescape_typst_string(literal: &str) -> String {
+    literal.replace("\\\"", "\"").replace("\\\\", "\\")
+}
+
 // Extracts the `alt: "…"` value from an `#image(…)` argument tail.
 static IMAGE_ALT_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"alt:\s*"((?:[^"\\]|\\.)*)""#).unwrap());
 
-static CALLOUT_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"#callout\("([^"]*)"(?:,\s*title:\s*"([^"]*)")?\)\[(.*?)\]"#).unwrap()
-});
+// Kind, then whatever else the call carries (`title:`, `color:`, in any
+// order), then the body. The argument tail is lazy so it stops at the `)[`
+// that opens the body, which keeps it correct for a value with parentheses of
+// its own such as `color: rgb("#ff9100")`.
+static CALLOUT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"#callout\("([^"]*)"(.*?)\)\[(.*?)\]"#).unwrap());
+
+// Extracts the `title: "…"` value from a `#callout(…)` argument tail. Markdown
+// callouts have no colour of their own, so `color:` is simply dropped.
+static CALLOUT_TITLE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"title:\s*"((?:[^"\\]|\\.)*)""#).unwrap());
 
 static QUOTE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"#quote\(block:\s*true\)\[(.*?)\]"#).unwrap());
@@ -267,13 +281,14 @@ fn convert_line(line: &str, options: &TypstToMarkdownOptions) -> String {
     // Callout blocks (single-line form).
     if let Some(caps) = CALLOUT_RE.captures(line) {
         let kind = &caps[1];
-        let title = caps.get(2).map(|m| m.as_str());
+        let title = CALLOUT_TITLE_RE
+            .captures(&caps[2])
+            .map(|t| unescape_typst_string(&t[1]));
         let body = &caps[3];
         let converted_body = convert_inline(body, options);
-        return if let Some(t) = title {
-            format!("> [!{}] {}\n> {}", kind, t, converted_body)
-        } else {
-            format!("> [!{}]\n> {}", kind, converted_body)
+        return match title {
+            Some(t) => format!("> [!{}] {}\n> {}", kind, t, converted_body),
+            None => format!("> [!{}]\n> {}", kind, converted_body),
         };
     }
 
@@ -330,7 +345,7 @@ fn convert_inline(text: &str, options: &TypstToMarkdownOptions) -> String {
         .replace_all(&result, |caps: &regex::Captures| {
             let alt = IMAGE_ALT_RE
                 .captures(&caps[2])
-                .map(|a| a[1].replace("\\\"", "\"").replace("\\\\", "\\"))
+                .map(|a| unescape_typst_string(&a[1]))
                 .unwrap_or_default();
             format!("![{}]({})", alt, &caps[1])
         })
@@ -948,6 +963,37 @@ mod tests {
         let result = convert(input);
         assert!(result.contains("> [!warning] Careful"));
         assert!(result.contains("> Something important"));
+    }
+
+    #[test]
+    fn callout_with_colour_override() {
+        // Markdown callouts carry no colour, so `color:` is dropped — but it
+        // must not stop the callout being recognized, in any argument order.
+        let input = "#callout(\"warning\", color: rgb(\"#ff9100\"), title: \"Careful\")[Body]";
+        let result = convert(input);
+        assert!(result.contains("> [!warning] Careful"), "got: {result}");
+        assert!(result.contains("> Body"), "got: {result}");
+        assert!(
+            !result.contains("rgb("),
+            "colour leaked into markdown: {result}"
+        );
+
+        let no_title = "#callout(\"tip\", color: rgb(\"#ff9100\"))[Body]";
+        assert!(
+            convert(no_title).contains("> [!tip]\n> Body"),
+            "got: {}",
+            convert(no_title)
+        );
+    }
+
+    #[test]
+    fn callout_title_unescapes_quotes() {
+        let input = "#callout(\"note\", title: \"The \\\"good\\\" parts\")[Body]";
+        let result = convert(input);
+        assert!(
+            result.contains("> [!note] The \"good\" parts"),
+            "got: {result}"
+        );
     }
 
     #[test]

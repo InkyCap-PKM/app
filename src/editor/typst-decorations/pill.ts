@@ -39,13 +39,17 @@ export interface PillMenuItem {
   /** When true, clicking does not close the menu (e.g. for live-edit
    *  fields like color swatches that should let the user try several). */
   keepOpen?: boolean;
-  /** Render this item as an inline text input instead of a button.
+  /** Render this item as an inline input instead of a button.
    *  When set, `onSelect` is ignored — `input.onCommit` fires when the
    *  user presses Enter or the field loses focus, and the menu closes. */
   input?: {
-    /** Current value to populate the field with. */
+    /** Current value to populate the field with. A colour field takes a
+     *  `#rrggbb` string. */
     value: string;
-    /** Optional placeholder when empty. */
+    /** `"color"` renders the browser's colour picker and commits when the
+     *  user settles on a colour. Defaults to a plain text field. */
+    type?: "text" | "color";
+    /** Optional placeholder when empty. Text fields only. */
     placeholder?: string;
     /** Called on Enter or blur with the field's text. */
     onCommit: (value: string) => void;
@@ -371,11 +375,14 @@ function buildInputItem(item: PillMenuItem, close: () => void): HTMLElement {
     });
   }
 
+  const isColor = item.input!.type === "color";
   const input = document.createElement("input");
-  input.type = "text";
-  input.className = "cm-typst-pill-menu-input";
+  input.type = isColor ? "color" : "text";
+  input.className = isColor
+    ? "cm-typst-pill-menu-input cm-typst-pill-menu-input--color"
+    : "cm-typst-pill-menu-input";
   input.value = item.input!.value;
-  if (item.input!.placeholder) input.placeholder = item.input!.placeholder;
+  if (item.input!.placeholder && !isColor) input.placeholder = item.input!.placeholder;
   label.htmlFor = `cm-typst-pill-menu-input-${Math.random().toString(36).slice(2, 8)}`;
   input.id = label.htmlFor;
   wrap.appendChild(input);
@@ -404,6 +411,16 @@ function buildInputItem(item: PillMenuItem, close: () => void): HTMLElement {
       item.input!.onCommit(input.value);
     }
   });
+  // A colour picker never blurs while the user drags around it, and closing it
+  // is the moment they have chosen — commit on `change` and leave the menu open
+  // so they can try another colour against the live preview.
+  if (isColor) {
+    input.addEventListener("change", () => {
+      if (input.value === initial) return;
+      initial = input.value;
+      item.input!.onCommit(input.value);
+    });
+  }
 
   // Help text comes last so `flex-wrap` drops it onto its own full-width line
   // below the label + input.
@@ -675,14 +692,18 @@ export function findArgList(callSource: string): { open: number; close: number }
   return null;
 }
 
-/** Find the value range of a named arg `name: <value>` inside an args
- *  string. Returns `null` if not present. The returned `from..to` covers
- *  just the value (everything after `name:` and any whitespace, up to
- *  the next top-level `,` or end of string). */
-export function findNamedArgValue(argsText: string, name: string): { from: number; to: number } | null {
-  const re = new RegExp(`(^|,)\\s*${name}\\s*:\\s*`, "g");
+/** Find a named arg `name: <value>` inside an args string. Returns `null` if
+ *  not present. `from..to` covers just the value (everything after `name:` and
+ *  any whitespace, up to the next top-level `,` or end of string); `keyFrom` is
+ *  where the name itself starts, for callers that need the whole argument. */
+export function findNamedArgValue(
+  argsText: string,
+  name: string,
+): { keyFrom: number; from: number; to: number } | null {
+  const re = new RegExp(`(^|,)\\s*(${name}\\s*:\\s*)`, "g");
   const m = re.exec(argsText);
   if (!m) return null;
+  const keyFrom = m.index + m[0].length - m[2].length;
   const valueStart = m.index + m[0].length;
   // Walk forward until top-level `,` or end of string.
   let depth = 0;
@@ -694,10 +715,10 @@ export function findNamedArgValue(argsText: string, name: string): { from: numbe
     if (ch === "(" || ch === "[") depth++;
     else if (ch === ")" || ch === "]") depth--;
     else if (ch === "," && depth === 0) {
-      return { from: valueStart, to: i };
+      return { keyFrom, from: valueStart, to: i };
     }
   }
-  return { from: valueStart, to: argsText.length };
+  return { keyFrom, from: valueStart, to: argsText.length };
 }
 
 export interface UpsertOptions {
@@ -739,18 +760,23 @@ export function upsertNamedArg(
   let newArgs: string;
   if (existing) {
     if (shouldDrop) {
-      // Remove the entire `, name: value` (or leading `name: value,` if
-      // first arg). Trim whitespace cleanly.
-      const re = new RegExp(`(,\\s*)?${name}\\s*:\\s*[^,]*(\\s*,)?`);
-      const m = argsText.match(re);
-      if (!m) return callSource;
-      let next = argsText.replace(re, (full, before, after) => {
-        // If we ate a trailing comma, that's fine; if we ate a leading
-        // comma, that's also fine. If both, leave one comma.
-        return before && after ? "," : "";
-      });
-      next = next.replace(/^\s*,\s*/, "").replace(/\s*,\s*$/, "");
-      newArgs = next;
+      // Remove the whole `name: value`, plus one adjoining comma so the
+      // remaining arguments stay well formed. The value's extent comes from
+      // `findNamedArgValue`, which walks nesting and string literals, so a
+      // value carrying commas of its own (`rgb(255, 145, 0)`) is removed whole
+      // rather than cut in half.
+      let cutFrom = existing.keyFrom;
+      let cutTo = existing.to;
+      // Eat the space after the comma too, so the argument that follows keeps
+      // exactly the one separator the source already had.
+      const following = argsText.slice(cutTo).match(/^\s*,\s*/);
+      if (following) {
+        cutTo += following[0].length;
+      } else {
+        const preceding = argsText.slice(0, cutFrom).match(/,\s*$/);
+        if (preceding) cutFrom -= preceding[0].length;
+      }
+      newArgs = (argsText.slice(0, cutFrom) + argsText.slice(cutTo)).trim();
     } else {
       newArgs = argsText.substring(0, existing.from) + valueLiteral + argsText.substring(existing.to);
     }

@@ -13,7 +13,7 @@ import { buildSuggestionCall } from "./annotation-insert";
 import { parseInlineBody, type BodySegment } from "./block-body-parse";
 import { findLabelDefinition } from "./label-nav";
 import { t } from "../../lib/i18n";
-import { calloutKindLabel } from "./pill-options";
+import { calloutKindLabel } from "./callout-kinds";
 
 /** Convert a Typst length value (e.g. `40%`, `200pt`, `3cm`) to a CSS value.
  *  Typst percentages and common units map directly; unknown units pass through. */
@@ -446,67 +446,9 @@ function stripMetadata(source: string): string {
   return result.join("\n");
 }
 
-export const CALLOUT_COLORS: Record<string, string> = {
-  note: "#448aff",
-  tip: "#00bfa5",
-  warning: "#ff9100",
-  important: "#ff5252",
-  caution: "#ff6d00",
-  example: "#7c4dff",
-  quote: "#9e9e9e",
-  abstract: "#00b0ff",
-  info: "#2196f3",
-  todo: "#ff6d00",
-  success: "#00c853",
-  question: "#64dd17",
-  failure: "#ff1744",
-  danger: "#d50000",
-  bug: "#f50057",
-};
-
 // Annotation accent. Mirrors `_annotation-color` in the notebox package's
 // lib.typ so the visual-editor block and the compiled output read the same.
 const ANNOTATION_COLOR = "#8b5cf6";
-
-export class CalloutWidget extends WidgetType {
-  constructor(
-    readonly kind: string,
-    readonly title: string,
-    readonly bodyText: string,
-  ) {
-    super();
-  }
-
-  eq(other: CalloutWidget) {
-    return this.kind === other.kind && this.title === other.title && this.bodyText === other.bodyText;
-  }
-
-  toDOM() {
-    const color = CALLOUT_COLORS[this.kind] ?? CALLOUT_COLORS.note;
-    const wrap = document.createElement("div");
-    wrap.className = "cm-typst-callout";
-    wrap.style.borderLeftColor = color;
-    wrap.style.backgroundColor = `color-mix(in srgb, ${color} 8%, transparent)`;
-
-    wrap.appendChild(buildCalloutHeading(calloutKindLabel(this.kind, this.title), color));
-
-    if (this.bodyText) {
-      const body = document.createElement("div");
-      body.className = "cm-typst-callout-body";
-      renderTypstBody(this.bodyText, body);
-      wrap.appendChild(body);
-    }
-
-    return wrap;
-  }
-
-  ignoreEvent(e: Event) {
-    if (e.type === "mousedown") {
-      return !!(e.target as HTMLElement).closest(".cm-typst-wikilink");
-    }
-    return false;
-  }
-}
 
 /** Rendered fenced code block: header strip, code area, footer strip. The
  *  strips exist so the edit state's opening and closing fence lines have a
@@ -2176,6 +2118,9 @@ export class CalloutBlockWidget extends WidgetType {
   constructor(
     readonly kind: string,
     readonly title: string,
+    /** The colour to draw in, already resolved from the call's `color:`
+     *  override or its kind (see `calloutColor`). */
+    readonly color: string,
     readonly bodyText: string,
     readonly pos: number,
     readonly bodyFrom: number,
@@ -2185,6 +2130,7 @@ export class CalloutBlockWidget extends WidgetType {
 
   eq(other: CalloutBlockWidget) {
     return this.kind === other.kind && this.title === other.title
+      && this.color === other.color
       && this.bodyText === other.bodyText && this.pos === other.pos
       && this.bodyFrom === other.bodyFrom;
   }
@@ -2204,7 +2150,7 @@ export class CalloutBlockWidget extends WidgetType {
   }
 
   private renderContent(wrap: HTMLElement, view: EditorView) {
-    const color = CALLOUT_COLORS[this.kind] ?? CALLOUT_COLORS.note;
+    const color = this.color;
     const inner = document.createElement("div");
     inner.className = "cm-typst-callout";
     inner.style.borderLeftColor = color;
@@ -2351,29 +2297,32 @@ export class BlockquoteBlockWidget extends WidgetType {
 }
 
 /** Edit-state heading row for a callout. Replaces the hidden `#callout(...)[`
- *  opener at the top of the first body line and shows the pill (kind, title
- *  and "Edit source" live in its menu) beside the same heading the rendered
+ *  opener at the top of the first body line and shows the pill (kind, title,
+ *  colour and "Edit source" live in its menu) beside the same heading the rendered
  *  widget draws, so the block keeps its height while the body is edited. */
 export class CalloutHeadRowWidget extends WidgetType {
   constructor(
     readonly kind: string,
     readonly title: string,
+    /** Resolved the same way as `CalloutBlockWidget.color`, so the block looks
+     *  the same whether the caret is on it or not. */
+    readonly color: string,
     readonly pos: number,
   ) {
     super();
   }
 
   eq(other: CalloutHeadRowWidget) {
-    return this.kind === other.kind && this.title === other.title && this.pos === other.pos;
+    return this.kind === other.kind && this.title === other.title
+      && this.color === other.color && this.pos === other.pos;
   }
 
   toDOM(view: EditorView) {
     const wrap = document.createElement("div");
     wrap.className = "cm-typst-callout-head cm-typst-block-row";
-    const color = CALLOUT_COLORS[this.kind] ?? CALLOUT_COLORS.note;
     wrap.appendChild(buildCalloutHeading(
       calloutKindLabel(this.kind, this.title),
-      color,
+      this.color,
       makeBlockPill("callout", this.pos, view),
     ));
     return wrap;

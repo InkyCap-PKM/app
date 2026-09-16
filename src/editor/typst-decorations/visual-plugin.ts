@@ -35,9 +35,9 @@ import {
   FootnoteWidget,
   SuggestionWidget,
   type SuggestionKind,
-  CALLOUT_COLORS,
   createVerseEntryKeymap,
 } from "./widgets";
+import { calloutColor, readCalloutColorArg } from "./callout-kinds";
 import { TableWidget, editingTableRange, editingTableStarts } from "./table-widget";
 import { inlineOnlyFacet, scopeRangeField } from "./cell-scope";
 import { parseCanonicalTable } from "./table-parser";
@@ -1642,10 +1642,14 @@ export function handleFuncCall(
     }
     case "callout": {
       const kind = extractFirstStringArg(text);
-      const title = extractNamedStringArg(text, "title");
       if (!kind) return false;
       const bodyRange = bracketRangeAfterArgs(text, from);
       if (bodyRange === null) return false;
+      // Read the overrides from the argument list alone: a body that happens to
+      // contain the words `title:` or `color:` is prose, not an argument.
+      const argsText = text.slice(0, bodyRange.from - from);
+      const title = extractNamedStringArg(argsText, "title");
+      const color = calloutColor(kind, readCalloutColorArg(argsText));
       // "Edit source": callout is an ALWAYS_EXPAND_PILL, so clicking its pill
       // (or the menu's "Edit source") dispatches expandFunc against `from`. The
       // in-place body editing below only exposes the body text — it can't reach
@@ -1662,17 +1666,20 @@ export function handleFuncCall(
       if (!onCursor) {
         const bodyText = state.doc.sliceString(bodyRange.from, bodyRange.to);
         decos.push(
-          Decoration.replace({ widget: new CalloutBlockWidget(kind, title ?? "", bodyText, from, bodyRange.from) }).range(from, to),
+          Decoration.replace({
+            widget: new CalloutBlockWidget(kind, title ?? "", color, bodyText, from, bodyRange.from),
+          }).range(from, to),
         );
         return false;
       }
       // Cursor on the callout: the opener becomes the heading row (pill +
       // label) at the top of the first body line, the closer is hidden, and
       // each body line carries the frame's bar, inset and tint.
-      const color = CALLOUT_COLORS[kind] ?? CALLOUT_COLORS.note;
       const layout = blockEditLayout(state, bodyRange.from, bodyRange.to);
       decos.push(
-        Decoration.replace({ widget: new CalloutHeadRowWidget(kind, title ?? "", from) }).range(from, layout.hideOpenTo),
+        Decoration.replace({
+          widget: new CalloutHeadRowWidget(kind, title ?? "", color, from),
+        }).range(from, layout.hideOpenTo),
       );
       if (layout.hideCloseFrom < to) decos.push(hide.range(layout.hideCloseFrom, to));
       pushBlockEditLines(

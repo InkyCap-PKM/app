@@ -22,6 +22,8 @@ const NOTE: &str = "#import \"/.inkycap/notebox.typ\": *\n\
 \n\
 #callout(\"warning\")[Careful now.]\n\
 \n\
+#callout(\"tip\", title: \"Our own colour\", color: rgb(\"#ff00ff\"))[Tinted body.]\n\
+\n\
 #annotation(by: \"alice\", on: \"2026-05-23\")[A reviewer remark.]\n";
 
 #[test]
@@ -67,6 +69,16 @@ fn callout_and_annotation_emit_semantic_html() {
     assert!(
         html.contains("--inkycap-callout-color:"),
         "callout colour custom property missing:\n{html}"
+    );
+    // A `color:` override replaces the kind's colour, and the title replaces
+    // the kind's word — the two ways a writer personalizes a callout.
+    assert!(
+        html.contains("--inkycap-callout-color: #ff00ff"),
+        "callout colour override missing:\n{html}"
+    );
+    assert!(
+        html.contains("Our own colour"),
+        "callout title override missing:\n{html}"
     );
     // Inner markup still renders inside the HTML body (it is real Typst content).
     assert!(
