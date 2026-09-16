@@ -17,6 +17,7 @@ import {
   closeCellEditors,
   focusTableEdge,
   refreshTableSearchMatches,
+  revealCell,
   tableCellDomAt,
 } from "./table-widget";
 import { cellSync } from "./table-cell-editor";
@@ -189,12 +190,14 @@ const cellEditorSync = [
  * (the table's own markup) is left to CodeMirror. This is the documented
  * `scrollHandler` seam, so the cell is reached however the scroll was asked
  * for: find and replace, a search result opened from the sidebar, or a jump to
- * a label.
+ * a label. The request's placement (a result opened from the sidebar asks to
+ * be centred) and the editor's scroll margins are honoured as they would be
+ * for the caret.
  */
-const tableScrollHandler = EditorView.scrollHandler.of((view, range) => {
+const tableScrollHandler = EditorView.scrollHandler.of((view, range, request) => {
   const cell = tableCellDomAt(view, range.head);
   if (!cell) return false;
-  cell.scrollIntoView({ block: "nearest", inline: "nearest" });
+  revealCell(view, cell, request);
   return true;
 });
 
@@ -312,7 +315,7 @@ export function createTableEntryKeymap(decoField: StateField<DecorationSet>) {
         }
         const wrap = findTableWrapNear(view, head, "up", decoField);
         if (!wrap) return false;
-        return focusTableEdge(wrap, "last");
+        return focusTableEdge(view, wrap, "last");
       },
     },
     {
@@ -329,7 +332,7 @@ export function createTableEntryKeymap(decoField: StateField<DecorationSet>) {
         }
         const wrap = findTableWrapNear(view, head, "down", decoField);
         if (!wrap) return false;
-        return focusTableEdge(wrap, "first");
+        return focusTableEdge(view, wrap, "first");
       },
     },
   ]);

@@ -43,8 +43,13 @@ export function cellSearchMatches(state: EditorState, from: number, to: number):
   return matches;
 }
 
-/** A value that differs whenever the highlights painted for a cell would, so
- *  a cell is only repainted when its matches actually change. */
-export function cellMatchKey(matches: CellMatch[]): string {
-  return matches.map((m) => `${m.from}-${m.to}${m.current ? "*" : ""}`).join(",");
+/**
+ * A value that differs whenever the highlights painted for a cell would, so
+ * a cell is only repainted when its matches actually change. Offsets are
+ * counted from the cell's own start (`from`): typing earlier in the note
+ * moves the whole cell without changing how it looks, and must not force a
+ * repaint.
+ */
+export function cellMatchKey(matches: CellMatch[], from: number): string {
+  return matches.map((m) => `${m.from - from}-${m.to - from}${m.current ? "*" : ""}`).join(",");
 }

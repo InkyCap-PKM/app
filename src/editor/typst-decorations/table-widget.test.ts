@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { typst } from "codemirror-lang-typst";
@@ -9,6 +9,7 @@ import {
   tableWidgetAt,
   activeCellEditors,
   refreshTableSearchMatches,
+  revealCell,
   tableCellDomAt,
 } from "./table-widget";
 import { buildDecorations, typstVisualMode } from "./visual-plugin";
@@ -332,6 +333,41 @@ describe("TableWidget", () => {
     view.destroy();
   });
 
+  it("does not nest a list under text on the cell's opening line", () => {
+    // The first line is shared with the `[`; what precedes its text is the
+    // bracket, not indentation, so the list below it sits at the first level.
+    const view = mount("#table(\n  columns: (auto, auto),\n  [Items:\n    - one\n  ], [b],\n)", true);
+    const bullet = cellDiv(view, 0, 0).querySelector<HTMLElement>(".cm-typst-list-bullet")!;
+    expect(bullet.closest<HTMLElement>(".cm-typst-cell-line")!.style.paddingLeft).toBe(
+      "calc(var(--line-block-inset, 0px) + var(--list-bullet-width))",
+    );
+    view.destroy();
+  });
+
+  it("reveals a cell as the scroll request asks, clear of the editor's margins", () => {
+    const view = new EditorView({
+      state: EditorState.create({
+        doc: "hello\n\n" + TABLE + "\n",
+        extensions: [typst(), typstVisualMode(), EditorView.scrollMargins.of(() => ({ bottom: 40 }))],
+      }),
+      parent: document.body,
+    });
+    const cell = cellDiv(view, 1, 1);
+    let marginDuringScroll = "";
+    const scroll = vi.spyOn(cell, "scrollIntoView").mockImplementation(() => {
+      marginDuringScroll = cell.style.scrollMargin;
+    });
+    revealCell(view, cell, { x: "nearest", y: "center", xMargin: 0, yMargin: 5 });
+    expect(scroll).toHaveBeenCalledWith({ block: "center", inline: "nearest" });
+    // Editor margin plus the request's own, and nothing left behind afterwards.
+    expect(marginDuringScroll).toBe("5px 0px 45px 0px");
+    expect(cell.style.scrollMargin).toBe("");
+    // Without a request the cell only moves if it has to.
+    revealCell(view, cell);
+    expect(scroll).toHaveBeenLastCalledWith({ block: "nearest", inline: "nearest" });
+    view.destroy();
+  });
+
   it("keeps the arrow keys inside the cell being edited", () => {
     // Moving from cell to cell is what navigation mode is for; while a cell is
     // being edited the arrows belong to its text.
@@ -383,6 +419,20 @@ describe("TableWidget", () => {
     closeSearchPanel(view);
     refreshTableSearchMatches(view);
     expect(view.dom.querySelectorAll(".cm-searchMatch")).toHaveLength(0);
+    view.destroy();
+  });
+
+  it("leaves a highlighted cell alone when typing before the table moves it", () => {
+    // The match keeps its place inside the cell, so there is nothing to
+    // repaint: the same highlight element stays in the document.
+    const doc = "\n#table(\n  columns: (auto, auto),\n  [alpha], [beta gamma],\n)";
+    const view = mount(doc, true);
+    openSearchPanel(view);
+    findMatch(view, "beta", doc.indexOf("beta"));
+    const highlight = cellDiv(view, 0, 1).querySelector<HTMLElement>(".cm-searchMatch-selected")!;
+    view.dispatch({ changes: { from: 0, insert: "x" } });
+    refreshTableSearchMatches(view);
+    expect(cellDiv(view, 0, 1).querySelector(".cm-searchMatch-selected")).toBe(highlight);
     view.destroy();
   });
 });

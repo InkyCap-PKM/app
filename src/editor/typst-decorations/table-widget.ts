@@ -53,12 +53,41 @@ function focusQuietly(el: HTMLElement) {
   el.focus({ preventScroll: true });
 }
 
+/** How a scroll request wants its target placed: the options CodeMirror
+ *  hands to `EditorView.scrollHandler`. */
+export interface ScrollRequest {
+  x: ScrollAlignment;
+  y: ScrollAlignment;
+  xMargin: number;
+  yMargin: number;
+}
+
+type ScrollAlignment = "nearest" | "start" | "end" | "center";
+
 /**
- * Scroll a cell into view only if it isn't already — the caret moving past
- * the edge of the view area is the one case where the note should move.
+ * Scroll a cell into view the way the note editor scrolls its own caret:
+ * placed as `request` asks (nearest edge unless told otherwise, so a cell
+ * already on screen stays put), and kept clear of the editor's scroll
+ * margins — the breathing room it holds under the caret — plus any margin
+ * the request itself carries. The margins ride on the cell as a temporary
+ * `scroll-margin`, which the browser's own scrolling honours.
  */
-function revealCell(cell: HTMLElement | null) {
-  cell?.scrollIntoView({ block: "nearest", inline: "nearest" });
+export function revealCell(view: EditorView, cell: HTMLElement | null, request?: ScrollRequest) {
+  if (!cell) return;
+  let { left, right, top, bottom } = { left: 0, right: 0, top: 0, bottom: 0 };
+  for (const source of view.state.facet(EditorView.scrollMargins)) {
+    const m = source(view);
+    if (!m) continue;
+    left = Math.max(left, m.left ?? 0);
+    right = Math.max(right, m.right ?? 0);
+    top = Math.max(top, m.top ?? 0);
+    bottom = Math.max(bottom, m.bottom ?? 0);
+  }
+  const xMargin = request?.xMargin ?? 0;
+  const yMargin = request?.yMargin ?? 0;
+  cell.style.scrollMargin = `${top + yMargin}px ${right + xMargin}px ${bottom + yMargin}px ${left + xMargin}px`;
+  cell.scrollIntoView({ block: request?.y ?? "nearest", inline: request?.x ?? "nearest" });
+  cell.style.scrollMargin = "";
 }
 
 /** Minimum drag size so a column/row can't be collapsed to nothing. */
@@ -343,11 +372,12 @@ export class TableWidget extends WidgetType {
     }
     this.adoptDom(st, view);
     const rows = this.getAllRows();
+    const tableFrom = this.liveRange(view).from;
     for (let r = 0; r < rows.length; r++) {
       for (let c = 0; c < rows[r].length; c++) {
         if (st.editorCell && st.editorCell.row === r && st.editorCell.col === c) continue;
         const slot = st.slots.get(`${r},${c}`);
-        if (slot && slot.content !== rows[r][c].content) this.paintIdle(st, r, c);
+        if (slot && slot.content !== rows[r][c].content) this.paintIdle(st, r, c, tableFrom);
       }
     }
     if (st.editor && st.editorCell) {
@@ -470,6 +500,7 @@ export class TableWidget extends WidgetType {
 
     // ── Build data rows (header + body) ──
     const allLogicalRows = this.getAllRows();
+    const tableFrom = this.liveRange(view).from;
 
     for (let r = 0; r < allLogicalRows.length; r++) {
       const isHeader = this.data.header !== null && r === 0;
@@ -513,7 +544,7 @@ export class TableWidget extends WidgetType {
         cellDiv.className = "cm-typst-table-cell";
         cellEl.appendChild(cellDiv);
         st.slots.set(`${r},${c}`, { cellDiv, content: "", searchKey: "", rendered: { widgets: [] } });
-        this.paintIdle(st, r, c);
+        this.paintIdle(st, r, c, tableFrom);
         if (this.data.align && this.data.align[c]) {
           cellEl.style.textAlign = this.data.align[c];
         }
@@ -789,24 +820,32 @@ export class TableWidget extends WidgetType {
   // Cells: idle paint and the cell editor
   // ────────────────────────────────────────────────────────
 
-  /** Source range of the content inside the cell's brackets. */
-  private cellRange(st: TableDom, row: number, col: number): { from: number; to: number } | null {
+  /**
+   * Source range of the content inside the cell's brackets. Resolving the
+   * table's live position scans the note's decorations, so anything that
+   * visits every cell resolves it once and passes it in as `tableFrom`.
+   */
+  private cellRange(
+    st: TableDom,
+    row: number,
+    col: number,
+    tableFrom = this.liveRange(st.view).from,
+  ): { from: number; to: number } | null {
     const cell = this.getAllRows()[row]?.[col];
     if (!cell) return null;
-    const { from } = this.liveRange(st.view);
-    return { from: from + cell.relFrom + 1, to: from + cell.relTo - 1 };
+    return { from: tableFrom + cell.relFrom + 1, to: tableFrom + cell.relTo - 1 };
   }
 
   /** Paint a cell as it reads in the visual editor, from the note's state,
    *  with any find-panel matches it holds highlighted. */
-  private paintIdle(st: TableDom, row: number, col: number) {
+  private paintIdle(st: TableDom, row: number, col: number, tableFrom?: number) {
     const slot = st.slots.get(`${row},${col}`);
-    const range = this.cellRange(st, row, col);
+    const range = this.cellRange(st, row, col, tableFrom);
     if (!slot || !range) return;
     destroyRenderedCell(slot.rendered);
     const matches = cellSearchMatches(st.view.state, range.from, range.to);
     slot.content = this.getAllRows()[row][col].content;
-    slot.searchKey = cellMatchKey(matches);
+    slot.searchKey = cellMatchKey(matches, range.from);
     slot.rendered = renderIdleCell(
       st.view,
       slot.cellDiv,
@@ -823,14 +862,15 @@ export class TableWidget extends WidgetType {
    */
   repaintSearchMatches(st: TableDom) {
     const rows = this.getAllRows();
+    const tableFrom = this.liveRange(st.view).from;
     for (let r = 0; r < rows.length; r++) {
       for (let c = 0; c < rows[r].length; c++) {
         if (st.editorCell && st.editorCell.row === r && st.editorCell.col === c) continue;
         const slot = st.slots.get(`${r},${c}`);
-        const range = this.cellRange(st, r, c);
+        const range = this.cellRange(st, r, c, tableFrom);
         if (!slot || !range) continue;
         const matches = cellSearchMatches(st.view.state, range.from, range.to);
-        if (cellMatchKey(matches) !== slot.searchKey) this.paintIdle(st, r, c);
+        if (cellMatchKey(matches, range.from) !== slot.searchKey) this.paintIdle(st, r, c, tableFrom);
       }
     }
   }
@@ -939,7 +979,7 @@ export class TableWidget extends WidgetType {
     st.nav.anchorRow = st.nav.headRow = row;
     st.nav.anchorCol = st.nav.headCol = col;
     focusQuietly(st.wrap);
-    revealCell(target);
+    revealCell(st.view, target);
   }
 
   /** What the cell editor does when a key leaves the cell. */
@@ -1231,7 +1271,7 @@ export class TableWidget extends WidgetType {
           clearCellSelection(wrap);
           const cell = getCellAt(wrap, nav.headRow, nav.headCol);
           if (cell) cell.classList.add("cm-typst-table-cell--selected");
-          revealCell(cell);
+          revealCell(view, cell);
         }
         return;
       }
@@ -1246,7 +1286,7 @@ export class TableWidget extends WidgetType {
           if (nextIdx >= 0 && nextIdx < cells.length) {
             clearCellSelection(wrap);
             cells[nextIdx].classList.add("cm-typst-table-cell--selected");
-            revealCell(cells[nextIdx]);
+            revealCell(view, cells[nextIdx]);
           }
         }
         return;
@@ -1825,7 +1865,7 @@ export function tableWidgetAt(view: EditorView, wrap: HTMLElement): TableWidget 
  * The note itself does not move; only the cell being landed on is brought
  * into view, and only if it isn't already.
  */
-export function focusTableEdge(wrap: HTMLElement, edge: "first" | "last"): boolean {
+export function focusTableEdge(view: EditorView, wrap: HTMLElement, edge: "first" | "last"): boolean {
   const cells = wrap.querySelectorAll<HTMLElement>(".cm-typst-table-cell");
   if (cells.length === 0) return false;
   const cell = edge === "first" ? cells[0] : cells[cells.length - 1];
@@ -1833,7 +1873,7 @@ export function focusTableEdge(wrap: HTMLElement, edge: "first" | "last"): boole
   clearHandleSelection(wrap);
   cell.classList.add("cm-typst-table-cell--selected");
   focusQuietly(wrap);
-  revealCell(cell);
+  revealCell(view, cell);
   return true;
 }
 

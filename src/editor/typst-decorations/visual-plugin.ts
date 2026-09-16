@@ -749,6 +749,11 @@ function markerReplaceRange(
  * nesting it pushed a cell's bullets deep into the cell. The shallowest line
  * of the cell is the baseline instead, so a list still nests relative to it.
  * Outside a cell there is nothing to discount and the baseline is zero.
+ *
+ * Only lines that begin inside the range count. A first line the cell shares
+ * with its opening `[` has no indentation of its own: whatever precedes its
+ * text is the bracket and the table's layout, not white space a list could
+ * nest against.
  */
 function listIndentBase(state: EditorState, range: { from: number; to: number } | null): number {
   if (!range) return 0;
@@ -758,10 +763,10 @@ function listIndentBase(state: EditorState, range: { from: number; to: number } 
   let base = Infinity;
   for (let n = first; n <= last; n++) {
     const line = doc.line(n);
-    const start = Math.max(line.from, range.from);
-    const text = doc.sliceString(start, Math.min(line.to, range.to));
+    if (line.from < range.from) continue; // shared with the opening `[`
+    const text = doc.sliceString(line.from, Math.min(line.to, range.to));
     if (text.trim() === "") continue; // blank lines carry no indentation
-    base = Math.min(base, start - line.from + text.length - text.trimStart().length);
+    base = Math.min(base, text.length - text.trimStart().length);
   }
   return base === Infinity ? 0 : base;
 }
