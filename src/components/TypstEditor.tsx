@@ -26,10 +26,6 @@ import {
   consumePendingHeadingLabel,
   consumePendingMatch,
   activeTabId,
-  canGoBack,
-  canGoForward,
-  goBack,
-  goForward,
   getCachedEditorState,
   setCachedEditorState,
   getCachedScroll,
@@ -65,19 +61,13 @@ import { resolveTextFontSync } from "../lib/fontResolver";
 import { toastError } from "../stores/toasts";
 import {
   isEnabled as isScrollEnabled,
-  canScrollNavBack,
-  canScrollNavForward,
   getAnchorPath,
   getScrollDirection,
-  scrollNavBack,
-  scrollNavForward,
 } from "../stores/journal-scroll";
 import {
   BrainCircuit,
   ArrowUpFromDot,
   ArrowDownToDot,
-  ArrowLeft,
-  ArrowRight,
   BookA,
   FileCode,
   Code,
@@ -90,6 +80,7 @@ import {
 } from "lucide-solid";
 import JournalScrollPill from "./JournalScrollPill";
 import JournalScrollView from "./JournalScrollView";
+import PaneNavBar from "./panes/PaneNavBar";
 import { DiagnosticRow } from "./DiagnosticRow";
 
 export interface TypstEditorProps {
@@ -1045,27 +1036,6 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
     );
   });
 
-  // The header back/forward arrows mean different things depending on
-  // whether Journal Scroll is on. With scroll off they walk the tab's file
-  // history; with scroll on they walk the within-scroll wikilink history
-  // (and are disabled until the user has actually jumped via a wikilink).
-  const navCanBack = () =>
-    isScrollEnabled(props.tabId)
-      ? canScrollNavBack(props.tabId)
-      : canGoBack(props.tabId);
-  const navCanForward = () =>
-    isScrollEnabled(props.tabId)
-      ? canScrollNavForward(props.tabId)
-      : canGoForward(props.tabId);
-  const doNavBack = () =>
-    isScrollEnabled(props.tabId)
-      ? scrollNavBack(props.tabId)
-      : goBack(props.tabId);
-  const doNavForward = () =>
-    isScrollEnabled(props.tabId)
-      ? scrollNavForward(props.tabId)
-      : goForward(props.tabId);
-
   // Journal Scroll status line, shown centred in the editor header while
   // scroll is on — a quiet reminder of the feed's direction and anchor.
   const scrollStatusText = () => {
@@ -1241,33 +1211,10 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
   return (
     <div class="typst-editor-container" ref={containerRef}>
       <Show when={!isToolingFile()}>
-      <div class="pane-toolbar editor-header" ref={observeHeaderWidth}>
-        <div class="editor-header__nav" role="group" aria-label={t("editor.nav.label")}>
-          <button
-            type="button"
-            class="editor-header__nav-btn"
-            classList={{ "is-disabled": !navCanBack() }}
-            disabled={!navCanBack()}
-            onClick={() => doNavBack()}
-            title={t("editor.nav.back")}
-            aria-label={t("editor.nav.back")}
-          >
-            <ArrowLeft size={14} />
-          </button>
-          <button
-            type="button"
-            class="editor-header__nav-btn"
-            classList={{ "is-disabled": !navCanForward() }}
-            disabled={!navCanForward()}
-            onClick={() => doNavForward()}
-            title={t("editor.nav.forward")}
-            aria-label={t("editor.nav.forward")}
-          >
-            <ArrowRight size={14} />
-          </button>
-        </div>
-
-        <div class="editor-header__center">
+      <PaneNavBar
+        tabId={props.tabId}
+        barRef={observeHeaderWidth}
+        centre={
           <Show when={isScrollEnabled(props.tabId)}>
             <span class="editor-header__scroll-status">
               <Show
@@ -1289,20 +1236,19 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
               {scrollStatusText()}
             </span>
           </Show>
-        </div>
-
-        <div class="editor-header__right-group">
-          {/* When the pane is too narrow to hold the control cluster inline,
-              collapse it into a single "⋯" menu (priority+). RightControls
-              mounts in exactly one branch, so there's never a duplicate live
-              instance. */}
+        }
+        right={
+          /* When the pane is too narrow to hold the control cluster inline,
+             collapse it into a single "⋯" menu (priority+). RightControls
+             mounts in exactly one branch, so there's never a duplicate live
+             instance. */
           <Show when={compactToolbar()} fallback={<RightControls />}>
             <HeaderOverflowMenu>
               <RightControls layout="menu" />
             </HeaderOverflowMenu>
           </Show>
-        </div>
-      </div>
+        }
+      />
       </Show>
 
       <Show when={isDocumentationWindow()}>

@@ -345,8 +345,9 @@
 
 .main-content__body--collection {
   /* A collection paints its own full-column surface, so it supplies the page
-     colour that .main-content (chrome) does not. */
+     colour that .main-content (chrome) does not. The page inset sits on
+     `.collection-table` inside, so the pane's nav bar above it stays flush and
+     full width the way the editor's does. */
   background: var(--bg-primary);
-  padding: var(--space-6);
 }
 

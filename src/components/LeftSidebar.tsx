@@ -968,12 +968,30 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     }
   }
 
-  function openCollection(col: CollectionInfo) {
-    openTab({
-      type: "collection",
-      title: col.name,
-      path: col.path,
-    });
+  /// Open a collection from the Collections list. Ctrl/Cmd-click (and a
+  /// middle click, which arrives as the same call) opens it in its own tab
+  /// instead of replacing what the current tab is showing.
+  function openCollection(col: CollectionInfo, e?: MouseEvent) {
+    const forceNewTab = !!(e && (e.ctrlKey || e.metaKey));
+    openTab(
+      {
+        type: "collection",
+        title: col.name,
+        path: col.path,
+      },
+      { forceNewTab, newTabAction: forceNewTab },
+    );
+  }
+
+  function openCollectionInNewTab(col: CollectionInfo) {
+    openTab(
+      {
+        type: "collection",
+        title: col.name,
+        path: col.path,
+      },
+      { forceNewTab: true, newTabAction: true },
+    );
   }
 
   function openFile(node: FileTreeNode, e?: MouseEvent) {
@@ -1633,7 +1651,13 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                               getActiveTab()?.type === "collection" &&
                               pathEquals(getActiveTab()?.path, col.path),
                           }}
-                          onClick={() => openCollection(col)}
+                          onClick={(e) => openCollection(col, e)}
+                          onAuxClick={(e) => {
+                            // Middle click, the usual "open in a new tab" gesture.
+                            if (e.button !== 1) return;
+                            e.preventDefault();
+                            openCollectionInNewTab(col);
+                          }}
                           onContextMenu={(e) => handleCollectionContext(e, col)}
                         >
                           <span class="sidebar-item__icon">
@@ -2220,6 +2244,17 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
             }}
             onClick={(e) => e.stopPropagation()}
           >
+            <button
+              class="context-menu__item"
+              onClick={() => {
+                const col = menu().collection;
+                setContextMenu(null);
+                openCollectionInNewTab(col);
+              }}
+            >
+              {t("wikilink.menu.openNewTab")}
+            </button>
+            <div class="context-menu__separator" />
             <button
               class="context-menu__item"
               onClick={async () => {

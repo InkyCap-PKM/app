@@ -93,7 +93,7 @@ const PaneLeaf: Component<{ leaf: LeafPane }> = (props) => {
                   return <EmptyState />;
                 }
                 if (currentTab.type === "collection") {
-                  return <CollectionTable path={currentTab.path} />;
+                  return <CollectionTable path={currentTab.path} tabId={currentTab.id} />;
                 }
                 if (currentTab.type === "mycelial") {
                   return <MycelialView path={currentTab.path} tabId={currentTab.id} />;

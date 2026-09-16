@@ -2,11 +2,24 @@
    Split from layout.css; import order (see ../layout.css) preserves the
    original cascade. */
 
+/* A collection tab as a whole: the pane's nav bar flush at the top, the table
+   filling the rest. Mirrors the editor, which stacks its own header over
+   `.typst-editor-body` the same way. */
+.collection-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
 /* Collection table */
 .collection-table {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  /* Takes the height left under the nav bar; min-height lets the table's own
+     scroll area shrink instead of pushing the view taller than the pane. */
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-6);
 }
 
 .collection-table__view-bar {

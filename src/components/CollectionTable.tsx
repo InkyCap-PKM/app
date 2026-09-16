@@ -35,6 +35,7 @@ import BusyOverlay from "./BusyOverlay";
 import FilterBuilder from "./FilterBuilder";
 import ColumnFilterPopover from "./ColumnFilterPopover";
 import { Dropdown } from "./Dropdown";
+import PaneNavBar from "./panes/PaneNavBar";
 
 // Remember the last active view per collection for the session, so switching
 // to another tab and back doesn't reset the collection to its first view.
@@ -244,7 +245,7 @@ const ColumnPicker: Component<{
 
 // ── Main CollectionTable component ─────────────────────────────────
 
-const CollectionTable: Component<{ path: string }> = (props) => {
+const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
   const t = useI18n();
   // Seed from the per-collection session cache so the last-used view persists
   // across tab switches; `setActiveView` writes through to the cache.
@@ -972,568 +973,574 @@ const CollectionTable: Component<{ path: string }> = (props) => {
   }
 
   return (
-    <div class="collection-table">
-      <BusyOverlay
-        visible={busyMessage() !== null}
-        message={busyMessage() ?? ""}
-        detail={busyDetail()}
-      />
-      {/* Collection settings (Characteristics / Style / Book) now live in the
-          right panel's collection tab bar — see `CollectionSettings`. This view
-          is the table + views + export only. */}
-      <Show when={data()}>
-        {(d) => (
-          <>
-            {/* View tabs — always shown */}
-            <div class="collection-table__view-bar">
-              <div class="collection-table__view-tabs">
-                <Show when={canScrollViewsLeft()}>
-                  <button
-                    class="collection-table__view-scroll collection-table__view-scroll--left"
-                    onClick={() => scrollViews(-1)}
-                    aria-label={t("collection.table.scrollLeft")}
-                  >
-                    <ChevronLeft size={14} />
-                  </button>
-                </Show>
-                <div
-                  class="collection-table__view-tabs-scroll"
-                  ref={attachViewScroll}
-                  onWheel={(e) => {
-                    // A vertical mouse wheel scrolls the row horizontally; the
-                    // chevron buttons cover the no-visible-scrollbar case.
-                    if (e.deltaY !== 0) e.currentTarget.scrollLeft += e.deltaY;
-                  }}
-                >
-                <For each={d().views}>
-                  {(view, index) => (
-                    <Show
-                      when={editingViewName() === view.name}
-                      fallback={
-                        <button
-                          class="collection-table__view-tab"
-                          classList={{
-                            "collection-table__view-tab--active":
-                              activeView() === view.name ||
-                              (activeView() === "" && d().views[0]?.name === view.name),
-                            "collection-table__view-tab--dragging":
-                              draggingView() === view.name,
-                            "collection-table__view-tab--drop-before":
-                              dragOverView() === view.name && viewDropSide() === "before",
-                            "collection-table__view-tab--drop-after":
-                              dragOverView() === view.name && viewDropSide() === "after",
-                          }}
-                          draggable={true}
-                          onClick={() => setActiveView(view.name)}
-                          onDblClick={() => startRenameView(view.name)}
-                          onContextMenu={(e) => handleViewContext(e, view.name)}
-                          onDragStart={(e) => handleViewDragStart(e, view.name)}
-                          onDragEnd={handleViewDragEnd}
-                          onDragOver={(e) => handleViewDragOver(e, view.name)}
-                          onDrop={(e) => handleViewDrop(e, view.name)}
-                          onDragLeave={() => {
-                            if (dragOverView() === view.name) setDragOverView(null);
-                          }}
-                        >
-                          {view.name || t("collection.table.defaultView")}
-                          {/* The first view is the collection's default and is
-                              never deletable, so at least one view always remains. */}
-                          <Show when={index() > 0}>
-                            <span
-                              class="collection-table__view-delete"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                deleteView(view.name);
-                              }}
-                              title={t("collection.table.deleteView")}
-                            >
-                              ×
-                            </span>
-                          </Show>
-                        </button>
-                      }
+    <div class="collection-view">
+      {/* Collections navigate in place like notes do, so they carry the same
+          back/forward arrows. The editor-only controls (mode toggle, Journal
+          Scroll, Mycelial) have nothing to act on here and are left out. */}
+      <PaneNavBar tabId={props.tabId} />
+      <div class="collection-table">
+        <BusyOverlay
+          visible={busyMessage() !== null}
+          message={busyMessage() ?? ""}
+          detail={busyDetail()}
+        />
+        {/* Collection settings (Characteristics / Style / Book) now live in the
+            right panel's collection tab bar — see `CollectionSettings`. This view
+            is the table + views + export only. */}
+        <Show when={data()}>
+          {(d) => (
+            <>
+              {/* View tabs — always shown */}
+              <div class="collection-table__view-bar">
+                <div class="collection-table__view-tabs">
+                  <Show when={canScrollViewsLeft()}>
+                    <button
+                      class="collection-table__view-scroll collection-table__view-scroll--left"
+                      onClick={() => scrollViews(-1)}
+                      aria-label={t("collection.table.scrollLeft")}
                     >
-                      <input
-                        class="collection-table__view-rename-input"
-                        type="text"
-                        value={newViewNameInput()}
-                        onInput={(e) => setNewViewNameInput(e.currentTarget.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") commitRenameView();
-                          if (e.key === "Escape") setEditingViewName(null);
-                        }}
-                        onBlur={commitRenameView}
-                        ref={(el) => setTimeout(() => el.focus(), 0)}
-                      />
-                    </Show>
-                  )}
-                </For>
-                </div>
-                <Show when={canScrollViewsRight()}>
-                  <button
-                    class="collection-table__view-scroll collection-table__view-scroll--right"
-                    onClick={() => scrollViews(1)}
-                    aria-label={t("collection.table.scrollRight")}
-                  >
-                    <ChevronRight size={14} />
-                  </button>
-                </Show>
-                <div class="collection-table__add-view-wrap">
-                  <button
-                    ref={addViewBtnRef}
-                    class="collection-table__view-tab collection-table__view-tab--add"
-                    onClick={() => setShowAddViewMenu((v) => !v)}
-                    title={t("collection.table.addView")}
-                  >
-                    +
-                  </button>
-                  <Show when={showAddViewMenu()}>
-                    <div
-                      class="collection-table__add-view-menu"
-                      use:clickOutside={{
-                        onDismiss: () => setShowAddViewMenu(false),
-                        ignore: addViewBtnRef,
-                      }}
-                    >
-                      <button
-                        class="context-menu__item"
-                        onClick={() => addNewView("table")}
-                      >
-                        {t("collection.table.tableView")}
-                      </button>
-                      <button
-                        class="context-menu__item"
-                        onClick={() => addNewView("agenda")}
-                      >
-                        {t("collection.table.agendaView")}
-                      </button>
-                    </div>
+                      <ChevronLeft size={14} />
+                    </button>
                   </Show>
-                </div>
-              </div>
-              <div class="collection-table__toolbar">
-                <button
-                  class="collection-table__toolbar-btn"
-                  onClick={() => {
-                    setShowFilterBuilder(!showFilterBuilder());
-                    setShowColumnPicker(false);
-                  }}
-                  title={t("collection.table.filterTitle")}
-                >
-                  {t("collection.table.filter")}
-                </button>
-                <button
-                  class="collection-table__toolbar-btn"
-                  onClick={() => {
-                    setShowColumnPicker(!showColumnPicker());
-                    setShowFilterBuilder(false);
-                  }}
-                  title={t("collection.table.columnsTitle")}
-                >
-                  {t("collection.table.columns")}
-                </button>
-                <Show when={anyColumnFilterActive()}>
-                  <button
-                    class="collection-table__toolbar-btn"
-                    onClick={clearAllColumnFilters}
-                    title={t("columnFilter.clearAllTitle")}
+                  <div
+                    class="collection-table__view-tabs-scroll"
+                    ref={attachViewScroll}
+                    onWheel={(e) => {
+                      // A vertical mouse wheel scrolls the row horizontally; the
+                      // chevron buttons cover the no-visible-scrollbar case.
+                      if (e.deltaY !== 0) e.currentTarget.scrollLeft += e.deltaY;
+                    }}
                   >
-                    {t("columnFilter.clearAll")}
-                  </button>
-                </Show>
-                <div class="collection-table__export-wrapper">
-                  <button
-                    class="collection-table__toolbar-btn"
-                    ref={exportBtnRef}
-                    onClick={() => setShowExportMenu(!showExportMenu())}
-                    title={t("collection.table.exportTitle")}
-                  >
-                    {t("collection.table.export")}
-                  </button>
-                  <Show when={showExportMenu()}>
-                    <Portal>
-                    <div
-                      class="collection-table__export-menu"
-                      ref={(el) => anchorPanelMenu(exportBtnRef, el)}
-                      use:clickOutside={{
-                        onDismiss: () => setShowExportMenu(false),
-                        ignore: exportBtnRef,
-                      }}
-                    >
-                      <button
-                        class="context-menu__item"
-                        onClick={() => exportDelimited("comma")}
-                      >
-                        {t("collection.table.exportCsv")}
-                      </button>
-                      <button
-                        class="context-menu__item"
-                        onClick={() => exportDelimited("tab")}
-                      >
-                        {t("collection.table.exportTsv")}
-                      </button>
-                      <div class="context-menu__separator" />
-                      <div class="collection-table__export-menu-field">
-                        <label class="collection-table__export-menu-label">{t("collection.table.pdfStandard")}</label>
-                        <Dropdown<ipc.PdfStandardPreset>
-                          class="dropdown--block"
-                          value={exportPdfStandard()}
-                          options={[
-                            { value: "standard", label: t("collection.table.pdfStandard.standard") },
-                            { value: "pdf-a4", label: t("collection.table.pdfStandard.pdfa4") },
-                            { value: "pdf-ua1", label: t("collection.table.pdfStandard.pdfua1") },
-                            { value: "pdf-a2a-ua1", label: t("collection.table.pdfStandard.pdfa2aua1") },
-                          ]}
-                          onChange={setExportPdfStandard}
-                          ariaLabel={t("collection.table.pdfStandard")}
-                        />
-                      </div>
-                      <div class="collection-table__export-menu-field">
-                        <label class="collection-table__export-menu-label">{t("collection.table.reviewMarkup")}</label>
-                        <Dropdown<ipc.ReviewMarkupMode>
-                          class="dropdown--block"
-                          value={exportReviewMode()}
-                          options={[
-                            { value: "keep", label: t("collection.table.reviewMarkup.keep") },
-                            { value: "accept", label: t("collection.table.reviewMarkup.accept") },
-                            { value: "reject", label: t("collection.table.reviewMarkup.reject") },
-                          ]}
-                          onChange={setExportReviewMode}
-                          ariaLabel={t("collection.table.reviewMarkup")}
-                        />
-                      </div>
-                      <button
-                        class="context-menu__item"
-                        onClick={exportAllPdf}
-                      >
-                        {t("collection.table.exportPdfFiles")}
-                      </button>
-                      <button
-                        class="context-menu__item"
-                        onClick={exportAsBook}
-                      >
-                        {t("collection.table.exportBook")}
-                      </button>
-                      <button
-                        class="context-menu__item"
-                        onClick={exportStaticSite}
-                      >
-                        {t("collection.table.exportHtml")}
-                      </button>
-                      <button
-                        class="context-menu__item"
-                        onClick={exportAllMarkdown}
-                      >
-                        {t("collection.table.exportMarkdown")}
-                      </button>
-                    </div>
-                    </Portal>
-                  </Show>
-                </div>
-              </div>
-            </div>
-
-            {/* Column picker dropdown */}
-            <Show when={showColumnPicker() && allKeys()}>
-              <ColumnPicker
-                allKeys={allKeys()!}
-                visibleColumns={d().columns}
-                onToggle={toggleColumn}
-                onClose={() => setShowColumnPicker(false)}
-              />
-            </Show>
-
-            {/* Filter builder panel — keyed to active view so it remounts on view switch */}
-            <Show when={showFilterBuilder() && allKeys()}>
-              {(_) => (
-                <FilterBuilder
-                  filters={currentFilters()}
-                  allKeys={allKeys()!}
-                  onSave={handleFilterSave}
-                  onClose={() => setShowFilterBuilder(false)}
-                />
-              )}
-            </Show>
-
-            {/* Agenda view — tasks & dated items instead of a table grid. */}
-            <Show when={activeViewType() === "agenda"}>
-              <div class="collection-table__agenda">
-                <AgendaList
-                  items={agendaItems() ?? []}
-                  loading={agendaItems.loading}
-                  emptyMessage={t("agenda.emptyView")}
-                  onOpen={(it, opts) =>
-                    openTab(
-                      { type: "file", title: it.note_title, path: it.note_path },
-                      opts?.newTab ? { forceNewTab: true, newTabAction: true } : undefined,
-                    )
-                  }
-                />
-              </div>
-            </Show>
-
-            {/* Table */}
-            <Show when={activeViewType() !== "agenda"}>
-            <div class="collection-table__scroll">
-              <table class="collection-table__table">
-                <thead>
-                  <tr>
-                    {/* Gutter above the per-row "open in visual editor"
-                        buttons. Empty by design — the buttons carry their own
-                        labels, and a heading here would read as a sortable
-                        column. */}
-                    <th class="collection-table__gutter-th" />
-                    <For each={d().columns}>
-                      {(col) => (
-                        <th
-                          class="collection-table__th--sortable"
-                          classList={{
-                            "collection-table__th--dragging": draggingCol() === col,
-                            "collection-table__th--drop-before":
-                              dragOverCol() === col && colDropSide() === "before",
-                            "collection-table__th--drop-after":
-                              dragOverCol() === col && colDropSide() === "after",
-                          }}
-                          style={
-                            widthOf(col)
-                              ? {
-                                  width: `${widthOf(col)}px`,
-                                  "min-width": `${widthOf(col)}px`,
-                                  "max-width": `${widthOf(col)}px`,
-                                }
-                              : undefined
-                          }
-                          draggable={true}
-                          onDragStart={(e) => handleColDragStart(e, col)}
-                          onDragEnd={handleColDragEnd}
-                          onDragOver={(e) => handleColDragOver(e, col)}
-                          onDrop={(e) => handleColDrop(e, col)}
-                          onDragLeave={() => {
-                            if (dragOverCol() === col) setDragOverCol(null);
-                          }}
-                          onClick={() => handleSort(col)}
-                          title={t("collection.table.sortByTitle", { label: propertyLabel(col) })}
-                        >
-                          {propertyLabel(col)}
-                          <span class="collection-table__sort-indicator">
-                            {sortIndicator(col, currentSortRules())}
-                          </span>
+                  <For each={d().views}>
+                    {(view, index) => (
+                      <Show
+                        when={editingViewName() === view.name}
+                        fallback={
                           <button
-                            class="collection-table__filter-btn"
+                            class="collection-table__view-tab"
                             classList={{
-                              "collection-table__filter-btn--active":
-                                columnFilterGroup(col) != null,
+                              "collection-table__view-tab--active":
+                                activeView() === view.name ||
+                                (activeView() === "" && d().views[0]?.name === view.name),
+                              "collection-table__view-tab--dragging":
+                                draggingView() === view.name,
+                              "collection-table__view-tab--drop-before":
+                                dragOverView() === view.name && viewDropSide() === "before",
+                              "collection-table__view-tab--drop-after":
+                                dragOverView() === view.name && viewDropSide() === "after",
                             }}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const anchor = e.currentTarget;
-                              setOpenColumnFilter((cur) =>
-                                cur?.column === col ? null : { column: col, anchor },
-                              );
+                            draggable={true}
+                            onClick={() => setActiveView(view.name)}
+                            onDblClick={() => startRenameView(view.name)}
+                            onContextMenu={(e) => handleViewContext(e, view.name)}
+                            onDragStart={(e) => handleViewDragStart(e, view.name)}
+                            onDragEnd={handleViewDragEnd}
+                            onDragOver={(e) => handleViewDragOver(e, view.name)}
+                            onDrop={(e) => handleViewDrop(e, view.name)}
+                            onDragLeave={() => {
+                              if (dragOverView() === view.name) setDragOverView(null);
                             }}
-                            title={t("columnFilter.filterColumn", {
-                              label: propertyLabel(col),
-                            })}
-                            aria-label={t("columnFilter.filterColumn", {
-                              label: propertyLabel(col),
-                            })}
                           >
-                            <Funnel size={13} />
+                            {view.name || t("collection.table.defaultView")}
+                            {/* The first view is the collection's default and is
+                                never deletable, so at least one view always remains. */}
+                            <Show when={index() > 0}>
+                              <span
+                                class="collection-table__view-delete"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  deleteView(view.name);
+                                }}
+                                title={t("collection.table.deleteView")}
+                              >
+                                ×
+                              </span>
+                            </Show>
                           </button>
-                          <div
-                            class="collection-table__col-resize"
-                            onMouseDown={(e) => startColResize(e, col)}
-                            onClick={(e) => e.stopPropagation()}
-                            title={t("collection.table.resizeColumn")}
-                          />
-                        </th>
-                      )}
-                    </For>
-                  </tr>
-                </thead>
-                <tbody>
-                  <For each={d().rows}>
-                    {(row) => (
-                      <tr onContextMenu={(e) => handleRowContext(e, row.file_path, row.file_name)}>
-                        <td class="collection-table__gutter-td">
-                          <button
-                            class="collection-table__open-btn"
-                            onClick={(e) =>
-                              openRowNote(row.file_path, row.file_name, {
-                                newTab: e.ctrlKey || e.metaKey,
-                                editingMode: "live",
-                              })
-                            }
-                            onAuxClick={(e) => {
-                              if (e.button !== 1) return; // middle-click only
-                              e.preventDefault();
-                              openRowNote(row.file_path, row.file_name, {
-                                newTab: true,
-                                editingMode: "live",
-                              });
-                            }}
-                            title={t("collection.table.openInVisualEditor")}
-                            aria-label={t("collection.table.openInVisualEditor")}
-                          >
-                            <PenLine size={13} />
-                          </button>
-                        </td>
-                        <For each={d().columns}>
-                          {(col) => (
-                            <td
-                              style={
-                                widthOf(col)
-                                  ? {
-                                      width: `${widthOf(col)}px`,
-                                      "min-width": `${widthOf(col)}px`,
-                                      "max-width": `${widthOf(col)}px`,
-                                    }
-                                  : undefined
-                              }
-                            >
-                              <InlineCell
-                                value={row.cells[col]}
-                                filePath={row.file_path}
-                                column={col}
-                                isFileName={col === "file.name"}
-                                fileName={row.file_name}
-                                onSaved={refresh}
-                              />
-                            </td>
-                          )}
-                        </For>
-                      </tr>
+                        }
+                      >
+                        <input
+                          class="collection-table__view-rename-input"
+                          type="text"
+                          value={newViewNameInput()}
+                          onInput={(e) => setNewViewNameInput(e.currentTarget.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") commitRenameView();
+                            if (e.key === "Escape") setEditingViewName(null);
+                          }}
+                          onBlur={commitRenameView}
+                          ref={(el) => setTimeout(() => el.focus(), 0)}
+                        />
+                      </Show>
                     )}
                   </For>
-                </tbody>
-              </table>
-            </div>
+                  </div>
+                  <Show when={canScrollViewsRight()}>
+                    <button
+                      class="collection-table__view-scroll collection-table__view-scroll--right"
+                      onClick={() => scrollViews(1)}
+                      aria-label={t("collection.table.scrollRight")}
+                    >
+                      <ChevronRight size={14} />
+                    </button>
+                  </Show>
+                  <div class="collection-table__add-view-wrap">
+                    <button
+                      ref={addViewBtnRef}
+                      class="collection-table__view-tab collection-table__view-tab--add"
+                      onClick={() => setShowAddViewMenu((v) => !v)}
+                      title={t("collection.table.addView")}
+                    >
+                      +
+                    </button>
+                    <Show when={showAddViewMenu()}>
+                      <div
+                        class="collection-table__add-view-menu"
+                        use:clickOutside={{
+                          onDismiss: () => setShowAddViewMenu(false),
+                          ignore: addViewBtnRef,
+                        }}
+                      >
+                        <button
+                          class="context-menu__item"
+                          onClick={() => addNewView("table")}
+                        >
+                          {t("collection.table.tableView")}
+                        </button>
+                        <button
+                          class="context-menu__item"
+                          onClick={() => addNewView("agenda")}
+                        >
+                          {t("collection.table.agendaView")}
+                        </button>
+                      </div>
+                    </Show>
+                  </div>
+                </div>
+                <div class="collection-table__toolbar">
+                  <button
+                    class="collection-table__toolbar-btn"
+                    onClick={() => {
+                      setShowFilterBuilder(!showFilterBuilder());
+                      setShowColumnPicker(false);
+                    }}
+                    title={t("collection.table.filterTitle")}
+                  >
+                    {t("collection.table.filter")}
+                  </button>
+                  <button
+                    class="collection-table__toolbar-btn"
+                    onClick={() => {
+                      setShowColumnPicker(!showColumnPicker());
+                      setShowFilterBuilder(false);
+                    }}
+                    title={t("collection.table.columnsTitle")}
+                  >
+                    {t("collection.table.columns")}
+                  </button>
+                  <Show when={anyColumnFilterActive()}>
+                    <button
+                      class="collection-table__toolbar-btn"
+                      onClick={clearAllColumnFilters}
+                      title={t("columnFilter.clearAllTitle")}
+                    >
+                      {t("columnFilter.clearAll")}
+                    </button>
+                  </Show>
+                  <div class="collection-table__export-wrapper">
+                    <button
+                      class="collection-table__toolbar-btn"
+                      ref={exportBtnRef}
+                      onClick={() => setShowExportMenu(!showExportMenu())}
+                      title={t("collection.table.exportTitle")}
+                    >
+                      {t("collection.table.export")}
+                    </button>
+                    <Show when={showExportMenu()}>
+                      <Portal>
+                      <div
+                        class="collection-table__export-menu"
+                        ref={(el) => anchorPanelMenu(exportBtnRef, el)}
+                        use:clickOutside={{
+                          onDismiss: () => setShowExportMenu(false),
+                          ignore: exportBtnRef,
+                        }}
+                      >
+                        <button
+                          class="context-menu__item"
+                          onClick={() => exportDelimited("comma")}
+                        >
+                          {t("collection.table.exportCsv")}
+                        </button>
+                        <button
+                          class="context-menu__item"
+                          onClick={() => exportDelimited("tab")}
+                        >
+                          {t("collection.table.exportTsv")}
+                        </button>
+                        <div class="context-menu__separator" />
+                        <div class="collection-table__export-menu-field">
+                          <label class="collection-table__export-menu-label">{t("collection.table.pdfStandard")}</label>
+                          <Dropdown<ipc.PdfStandardPreset>
+                            class="dropdown--block"
+                            value={exportPdfStandard()}
+                            options={[
+                              { value: "standard", label: t("collection.table.pdfStandard.standard") },
+                              { value: "pdf-a4", label: t("collection.table.pdfStandard.pdfa4") },
+                              { value: "pdf-ua1", label: t("collection.table.pdfStandard.pdfua1") },
+                              { value: "pdf-a2a-ua1", label: t("collection.table.pdfStandard.pdfa2aua1") },
+                            ]}
+                            onChange={setExportPdfStandard}
+                            ariaLabel={t("collection.table.pdfStandard")}
+                          />
+                        </div>
+                        <div class="collection-table__export-menu-field">
+                          <label class="collection-table__export-menu-label">{t("collection.table.reviewMarkup")}</label>
+                          <Dropdown<ipc.ReviewMarkupMode>
+                            class="dropdown--block"
+                            value={exportReviewMode()}
+                            options={[
+                              { value: "keep", label: t("collection.table.reviewMarkup.keep") },
+                              { value: "accept", label: t("collection.table.reviewMarkup.accept") },
+                              { value: "reject", label: t("collection.table.reviewMarkup.reject") },
+                            ]}
+                            onChange={setExportReviewMode}
+                            ariaLabel={t("collection.table.reviewMarkup")}
+                          />
+                        </div>
+                        <button
+                          class="context-menu__item"
+                          onClick={exportAllPdf}
+                        >
+                          {t("collection.table.exportPdfFiles")}
+                        </button>
+                        <button
+                          class="context-menu__item"
+                          onClick={exportAsBook}
+                        >
+                          {t("collection.table.exportBook")}
+                        </button>
+                        <button
+                          class="context-menu__item"
+                          onClick={exportStaticSite}
+                        >
+                          {t("collection.table.exportHtml")}
+                        </button>
+                        <button
+                          class="context-menu__item"
+                          onClick={exportAllMarkdown}
+                        >
+                          {t("collection.table.exportMarkdown")}
+                        </button>
+                      </div>
+                      </Portal>
+                    </Show>
+                  </div>
+                </div>
+              </div>
 
-            <div class="collection-table__footer">
-              {tPlural("common.file", d().rows.length)}
-            </div>
-            </Show>
-
-            {/* Column header quick-filter popover */}
-            <Show when={openColumnFilter()}>
-              {(of) => (
-                <ColumnFilterPopover
-                  property={of().column}
-                  label={propertyLabel(of().column)}
-                  kind={columnKind(of().column)}
-                  withTime={resolveColumnType(of().column) === "datetime"}
-                  current={columnFilterGroup(of().column)}
-                  availableValues={d().columnValues?.[of().column] ?? []}
-                  anchor={of().anchor}
-                  onApply={(group) => handleColumnFilterApply(of().column, group)}
-                  onClose={() => setOpenColumnFilter(null)}
+              {/* Column picker dropdown */}
+              <Show when={showColumnPicker() && allKeys()}>
+                <ColumnPicker
+                  allKeys={allKeys()!}
+                  visibleColumns={d().columns}
+                  onToggle={toggleColumn}
+                  onClose={() => setShowColumnPicker(false)}
                 />
-              )}
-            </Show>
-          </>
-        )}
-      </Show>
+              </Show>
 
-      <Show when={data.loading}>
-        <p class="empty-state">{t("collection.table.loading")}</p>
-      </Show>
+              {/* Filter builder panel — keyed to active view so it remounts on view switch */}
+              <Show when={showFilterBuilder() && allKeys()}>
+                {(_) => (
+                  <FilterBuilder
+                    filters={currentFilters()}
+                    allKeys={allKeys()!}
+                    onSave={handleFilterSave}
+                    onClose={() => setShowFilterBuilder(false)}
+                  />
+                )}
+              </Show>
 
-      {/* View context menu */}
-      <Show when={contextMenu()}>
-        {(menu) => (
-          <div
-            class="context-menu"
-            style={{
-              left: `${menu().x}px`,
-              top: `${menu().y}px`,
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              class="context-menu__item"
-              onClick={() => startRenameView(menu().viewName)}
-            >
-              {t("common.rename")}
-            </button>
-            <button
-              class="context-menu__item context-menu__item--danger"
-              onClick={() => {
-                deleteView(menu().viewName);
-                setContextMenu(null);
+              {/* Agenda view — tasks & dated items instead of a table grid. */}
+              <Show when={activeViewType() === "agenda"}>
+                <div class="collection-table__agenda">
+                  <AgendaList
+                    items={agendaItems() ?? []}
+                    loading={agendaItems.loading}
+                    emptyMessage={t("agenda.emptyView")}
+                    onOpen={(it, opts) =>
+                      openTab(
+                        { type: "file", title: it.note_title, path: it.note_path },
+                        opts?.newTab ? { forceNewTab: true, newTabAction: true } : undefined,
+                      )
+                    }
+                  />
+                </div>
+              </Show>
+
+              {/* Table */}
+              <Show when={activeViewType() !== "agenda"}>
+              <div class="collection-table__scroll">
+                <table class="collection-table__table">
+                  <thead>
+                    <tr>
+                      {/* Gutter above the per-row "open in visual editor"
+                          buttons. Empty by design — the buttons carry their own
+                          labels, and a heading here would read as a sortable
+                          column. */}
+                      <th class="collection-table__gutter-th" />
+                      <For each={d().columns}>
+                        {(col) => (
+                          <th
+                            class="collection-table__th--sortable"
+                            classList={{
+                              "collection-table__th--dragging": draggingCol() === col,
+                              "collection-table__th--drop-before":
+                                dragOverCol() === col && colDropSide() === "before",
+                              "collection-table__th--drop-after":
+                                dragOverCol() === col && colDropSide() === "after",
+                            }}
+                            style={
+                              widthOf(col)
+                                ? {
+                                    width: `${widthOf(col)}px`,
+                                    "min-width": `${widthOf(col)}px`,
+                                    "max-width": `${widthOf(col)}px`,
+                                  }
+                                : undefined
+                            }
+                            draggable={true}
+                            onDragStart={(e) => handleColDragStart(e, col)}
+                            onDragEnd={handleColDragEnd}
+                            onDragOver={(e) => handleColDragOver(e, col)}
+                            onDrop={(e) => handleColDrop(e, col)}
+                            onDragLeave={() => {
+                              if (dragOverCol() === col) setDragOverCol(null);
+                            }}
+                            onClick={() => handleSort(col)}
+                            title={t("collection.table.sortByTitle", { label: propertyLabel(col) })}
+                          >
+                            {propertyLabel(col)}
+                            <span class="collection-table__sort-indicator">
+                              {sortIndicator(col, currentSortRules())}
+                            </span>
+                            <button
+                              class="collection-table__filter-btn"
+                              classList={{
+                                "collection-table__filter-btn--active":
+                                  columnFilterGroup(col) != null,
+                              }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const anchor = e.currentTarget;
+                                setOpenColumnFilter((cur) =>
+                                  cur?.column === col ? null : { column: col, anchor },
+                                );
+                              }}
+                              title={t("columnFilter.filterColumn", {
+                                label: propertyLabel(col),
+                              })}
+                              aria-label={t("columnFilter.filterColumn", {
+                                label: propertyLabel(col),
+                              })}
+                            >
+                              <Funnel size={13} />
+                            </button>
+                            <div
+                              class="collection-table__col-resize"
+                              onMouseDown={(e) => startColResize(e, col)}
+                              onClick={(e) => e.stopPropagation()}
+                              title={t("collection.table.resizeColumn")}
+                            />
+                          </th>
+                        )}
+                      </For>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <For each={d().rows}>
+                      {(row) => (
+                        <tr onContextMenu={(e) => handleRowContext(e, row.file_path, row.file_name)}>
+                          <td class="collection-table__gutter-td">
+                            <button
+                              class="collection-table__open-btn"
+                              onClick={(e) =>
+                                openRowNote(row.file_path, row.file_name, {
+                                  newTab: e.ctrlKey || e.metaKey,
+                                  editingMode: "live",
+                                })
+                              }
+                              onAuxClick={(e) => {
+                                if (e.button !== 1) return; // middle-click only
+                                e.preventDefault();
+                                openRowNote(row.file_path, row.file_name, {
+                                  newTab: true,
+                                  editingMode: "live",
+                                });
+                              }}
+                              title={t("collection.table.openInVisualEditor")}
+                              aria-label={t("collection.table.openInVisualEditor")}
+                            >
+                              <PenLine size={13} />
+                            </button>
+                          </td>
+                          <For each={d().columns}>
+                            {(col) => (
+                              <td
+                                style={
+                                  widthOf(col)
+                                    ? {
+                                        width: `${widthOf(col)}px`,
+                                        "min-width": `${widthOf(col)}px`,
+                                        "max-width": `${widthOf(col)}px`,
+                                      }
+                                    : undefined
+                                }
+                              >
+                                <InlineCell
+                                  value={row.cells[col]}
+                                  filePath={row.file_path}
+                                  column={col}
+                                  isFileName={col === "file.name"}
+                                  fileName={row.file_name}
+                                  onSaved={refresh}
+                                />
+                              </td>
+                            )}
+                          </For>
+                        </tr>
+                      )}
+                    </For>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="collection-table__footer">
+                {tPlural("common.file", d().rows.length)}
+              </div>
+              </Show>
+
+              {/* Column header quick-filter popover */}
+              <Show when={openColumnFilter()}>
+                {(of) => (
+                  <ColumnFilterPopover
+                    property={of().column}
+                    label={propertyLabel(of().column)}
+                    kind={columnKind(of().column)}
+                    withTime={resolveColumnType(of().column) === "datetime"}
+                    current={columnFilterGroup(of().column)}
+                    availableValues={d().columnValues?.[of().column] ?? []}
+                    anchor={of().anchor}
+                    onApply={(group) => handleColumnFilterApply(of().column, group)}
+                    onClose={() => setOpenColumnFilter(null)}
+                  />
+                )}
+              </Show>
+            </>
+          )}
+        </Show>
+
+        <Show when={data.loading}>
+          <p class="empty-state">{t("collection.table.loading")}</p>
+        </Show>
+
+        {/* View context menu */}
+        <Show when={contextMenu()}>
+          {(menu) => (
+            <div
+              class="context-menu"
+              style={{
+                left: `${menu().x}px`,
+                top: `${menu().y}px`,
               }}
+              onClick={(e) => e.stopPropagation()}
             >
-              {t("common.delete")}
+              <button
+                class="context-menu__item"
+                onClick={() => startRenameView(menu().viewName)}
+              >
+                {t("common.rename")}
+              </button>
+              <button
+                class="context-menu__item context-menu__item--danger"
+                onClick={() => {
+                  deleteView(menu().viewName);
+                  setContextMenu(null);
+                }}
+              >
+                {t("common.delete")}
+              </button>
+            </div>
+          )}
+        </Show>
+
+        {/* Row context menu */}
+        <Show when={rowContextMenu()}>
+          {(menu) => (
+            <div
+              class="context-menu"
+              style={{
+                left: `${menu().x}px`,
+                top: `${menu().y}px`,
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                class="context-menu__item"
+                onClick={() => {
+                  openTab({ type: "file", title: menu().fileName, path: menu().filePath });
+                  setRowContextMenu(null);
+                }}
+              >
+                {t("collection.table.openNote")}
+              </button>
+              <button
+                class="context-menu__item"
+                onClick={() => {
+                  openTab(
+                    { type: "file", title: menu().fileName, path: menu().filePath },
+                    { forceNewTab: true, newTabAction: true },
+                  );
+                  setRowContextMenu(null);
+                }}
+              >
+                {t("wikilink.menu.openNewTab")}
+              </button>
+              <div class="context-menu__separator" />
+              <button
+                class="context-menu__item"
+                onClick={() => {
+                  openExportDialog(menu().filePath);
+                  setRowContextMenu(null);
+                }}
+              >
+                {t("collection.table.exportNote")}
+              </button>
+            </div>
+          )}
+        </Show>
+
+        {/* Export status */}
+        <Show when={exportStatus()}>
+          <div class="collection-table__export-status">
+            {exportStatus()}
+          </div>
+        </Show>
+        <Show when={exportError()}>
+          <div class="collection-table__export-error" role="alert">
+            <pre class="collection-table__export-error-text">{exportError()}</pre>
+            <button
+              type="button"
+              class="collection-table__export-error-close"
+              aria-label={t("collection.table.dismissError")}
+              title={t("common.dismiss")}
+              onClick={() => setExportError(null)}
+            >
+              ✕
             </button>
           </div>
-        )}
-      </Show>
-
-      {/* Row context menu */}
-      <Show when={rowContextMenu()}>
-        {(menu) => (
-          <div
-            class="context-menu"
-            style={{
-              left: `${menu().x}px`,
-              top: `${menu().y}px`,
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              class="context-menu__item"
-              onClick={() => {
-                openTab({ type: "file", title: menu().fileName, path: menu().filePath });
-                setRowContextMenu(null);
-              }}
-            >
-              {t("collection.table.openNote")}
-            </button>
-            <button
-              class="context-menu__item"
-              onClick={() => {
-                openTab(
-                  { type: "file", title: menu().fileName, path: menu().filePath },
-                  { forceNewTab: true, newTabAction: true },
-                );
-                setRowContextMenu(null);
-              }}
-            >
-              {t("wikilink.menu.openNewTab")}
-            </button>
-            <div class="context-menu__separator" />
-            <button
-              class="context-menu__item"
-              onClick={() => {
-                openExportDialog(menu().filePath);
-                setRowContextMenu(null);
-              }}
-            >
-              {t("collection.table.exportNote")}
-            </button>
-          </div>
-        )}
-      </Show>
-
-      {/* Export status */}
-      <Show when={exportStatus()}>
-        <div class="collection-table__export-status">
-          {exportStatus()}
-        </div>
-      </Show>
-      <Show when={exportError()}>
-        <div class="collection-table__export-error" role="alert">
-          <pre class="collection-table__export-error-text">{exportError()}</pre>
-          <button
-            type="button"
-            class="collection-table__export-error-close"
-            aria-label={t("collection.table.dismissError")}
-            title={t("common.dismiss")}
-            onClick={() => setExportError(null)}
-          >
-            ✕
-          </button>
-        </div>
-      </Show>
+        </Show>
+      </div>
     </div>
   );
 };
