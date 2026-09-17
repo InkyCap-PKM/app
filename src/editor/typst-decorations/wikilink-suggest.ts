@@ -1,11 +1,11 @@
 import { EditorView, ViewPlugin, type ViewUpdate, keymap } from "@codemirror/view";
-import { type ChangeSpec, type Extension, Prec } from "@codemirror/state";
+import { MapMode, StateEffect, StateField, type ChangeSpec, type EditorState, type Extension, Prec } from "@codemirror/state";
 import { fileList } from "../../stores/filelist";
 import { aliases } from "../../stores/aliases";
 import { wikilinkScore } from "./wikilink-match";
 import { positionPopupAtAnchor } from "./popup-position";
 import { inVerbatimLineContext } from "./keymaps";
-import { inlineOnlyFacet, scopeRangeField } from "./cell-scope";
+import { scopeRangeField } from "./cell-scope";
 import { typstStringEscape } from "../../lib/typst";
 import { t } from "../../lib/i18n";
 import * as ipc from "../../lib/ipc";
@@ -462,9 +462,7 @@ async function acceptItem(view: EditorView, state: SuggestState, item: SuggestIt
     replaceTo = state.to;
   } else {
     const cursor = view.state.selection.main.from;
-    const afterCursor = view.state.doc.sliceString(cursor, Math.min(cursor + 2, view.state.doc.length));
-    const trailingBrackets = afterCursor.startsWith("]]") ? 2 : afterCursor.startsWith("]") ? 1 : 0;
-    replaceTo = cursor + trailingBrackets;
+    replaceTo = cursor + parkedCloserCount(view.state, cursor);
   }
 
   let insert: string;
@@ -508,18 +506,118 @@ function updateSelection(delta: number) {
   (items[selectedIndex] as HTMLElement)?.scrollIntoView({ block: "nearest" });
 }
 
-// High precedence so this beats `closeBrackets()` for the second `[`. Without
-// the wrapper, closeBrackets' default-precedence inputHandler (added in
-// baseExtensions, ahead of the visual-mode wikilinkSuggest) runs first and
-// turns `[[` into `[[]]`, leaving a stray auto-paired `]]` that the wikilink
-// flow never asked for. Winning here keeps the typed shorthand a clean `[[`
-// that the picker completes into a `#wikilink(...)` call.
+/** A `[` the user typed on the previous keystroke. `close` is where bracket
+ *  auto-pairing put its partner `]`, or null when nothing was paired (the
+ *  setting can be off, and CodeMirror also skips pairing in some spots). */
+interface TypedBracket {
+  open: number;
+  close: number | null;
+}
+
+/**
+ * Remembers the `[` from the keystroke just gone, so the `[[` shorthand below
+ * can tell one the user is typing right now from one that was already in the
+ * note. The two look identical in the text: with the caret between a block
+ * quote's own brackets, `#quote(block: true)[|]` has a `[` behind the caret
+ * and a `]` ahead of it, exactly like a half-typed `[[|]`. Reading the text
+ * alone, the shorthand adopted the block's bracket and its completion then ate
+ * the block's closing `]`, leaving the quote unterminated.
+ *
+ * Anything other than typing a `[` clears this, so the shorthand only ever
+ * forms from two consecutive keystrokes.
+ */
+const typedOpenBracket = StateField.define<TypedBracket | null>({
+  create: () => null,
+  update(value, tr) {
+    if (!tr.docChanged && !tr.selection) return value;
+    if (!tr.isUserEvent("input.type")) return null;
+    let open: number | null = null;
+    let close: number | null = null;
+    let onlyBrackets = true;
+    tr.changes.iterChanges((fromA, toA, fromB, _toB, inserted) => {
+      const typed = inserted.toString();
+      // A replacement is a paste or an overtype, not a keystroke adding a
+      // bracket. Insertions only.
+      if (fromA !== toA) { onlyBrackets = false; return; }
+      if (open === null && (typed === "[" || typed === "[]")) {
+        open = fromB;
+        // Auto-pairing inserts the closer in the same change as the opener.
+        if (typed === "[]") close = fromB + 1;
+      } else if (open !== null && close === null && typed === "]") {
+        // Wrapping a selection inserts the two halves as separate changes.
+        close = fromB;
+      } else {
+        onlyBrackets = false;
+      }
+    });
+    return onlyBrackets && open !== null ? { open, close } : null;
+  },
+});
+
+/** Records where the `[[` shorthand just parked its own closing brackets. */
+const setParkedClosers = StateEffect.define<{ from: number; to: number } | null>();
+
+/**
+ * The two `]` the `[[` shorthand parked after the caret.
+ *
+ * A `]` after the caret is just a `]` in the text, whether it closes this
+ * shorthand or the block quote the caret is sitting inside, so the shorthand
+ * records its own and the steps that finish a link consume nothing else. The
+ * range follows the note name being typed in front of it, and goes away if
+ * those brackets are deleted.
+ */
+const parkedClosers = StateField.define<{ from: number; to: number } | null>({
+  create: () => null,
+  update(value, tr) {
+    for (const effect of tr.effects) if (effect.is(setParkedClosers)) return effect.value;
+    if (!value || !tr.docChanged) return value;
+    const from = tr.changes.mapPos(value.from, 1, MapMode.TrackDel);
+    const to = tr.changes.mapPos(value.to, 1, MapMode.TrackDel);
+    return from === null || to === null || to <= from ? null : { from, to };
+  },
+});
+
+/**
+ * How many `]` sitting at `pos` the wikilink flow parked there itself, and may
+ * therefore fold into the `#wikilink(...)` call it writes. Zero for anything
+ * the note itself contains.
+ */
+function parkedCloserCount(state: EditorState, pos: number): number {
+  const parked = state.field(parkedClosers, false) ?? null;
+  if (!parked || pos < parked.from || pos >= parked.to) return 0;
+  const count = parked.to - pos;
+  return state.doc.sliceString(pos, pos + count) === "]".repeat(count) ? count : 0;
+}
+
+// The `[[` shorthand. Typing the second `[` makes `[[|]]`: the brackets the
+// note reads while the name is typed stay balanced, and the two closers are
+// recorded as the shorthand's own (see `parkedClosers`) so finishing the link
+// folds them into the `#wikilink(...)` call. Balance matters: with an open
+// `[[` and no closers, the parser pairs the block quote's or callout's own
+// `]` with the shorthand instead, and the block loses its frame until the
+// link is complete. A table cell has the same need, since an unbalanced cell
+// stops the table parsing.
+//
+// High precedence so this beats `closeBrackets()` for the second `[`; its
+// default-precedence inputHandler (added in baseExtensions, ahead of the
+// visual-mode wikilinkSuggest) would otherwise pair the bracket first and
+// leave a `]]` this flow never recorded.
 const wikilinkBracketHandler = Prec.high(EditorView.inputHandler.of((view, from, to, text) => {
   if (text !== "[") return false;
   if (from === 0 || view.state.doc.sliceString(from - 1, from) !== "[") return false;
   // In a cell editor the character before the cell is the cell's own `[`.
   const scope = view.state.field(scopeRangeField, false);
   if (scope && from - 1 < scope.from) return false;
+
+  // Only a `[` from the keystroke just gone starts the shorthand. One that was
+  // already in the note — a block quote's or callout's own content bracket,
+  // most often — belongs to the note, and adopting it made the finished link
+  // swallow that block's closing `]`.
+  const typed = view.state.field(typedOpenBracket, false) ?? null;
+  if (!typed || typed.open !== from - 1) return false;
+  // Whether the `]` at the caret is the one auto-pairing added for that `[`.
+  // If it isn't, it is the note's own and must be left alone.
+  const autoClosed = typed.close === from;
 
   // Selection-wrap case. On the first `[`, closeBrackets wrapped the selection
   // as `[sel]` and kept `sel` selected (so `from..to` still spans it, with the
@@ -538,37 +636,36 @@ const wikilinkBracketHandler = Prec.high(EditorView.inputHandler.of((view, from,
       // `to` shifts +1 from the inner `[` inserted before the selection, so the
       // caret lands immediately after `sel`, before the `]]`.
       selection: { anchor: to + 1 },
+      effects: setParkedClosers.of({ from: to + 1, to: to + 3 }),
     });
     return true;
   }
 
-  // No selection: collapse the auto-paired `]` so `[[` stays clean (the picker
-  // completes the closing brackets on accept).
-  const after = view.state.doc.sliceString(from, from + 1);
-
-  // Inside a table cell editor the cell's own brackets must stay balanced
-  // at every keystroke, or the table stops parsing; keep the auto-paired
-  // `]` and add its twin, giving `[[|]]`. The picker and the manual close
-  // both consume a trailing `]]`.
-  if (view.state.facet(inlineOnlyFacet)) {
-    const closer = after === "]" ? "]" : "]]";
-    view.dispatch({
-      changes: [
-        { from, to: from, insert: "[" },
-        { from: after === "]" ? from + 1 : from, insert: closer },
-      ],
-      selection: { anchor: from + 1 },
-    });
-    return true;
-  }
-
-  const deleteTo = after === "]" ? from + 1 : from;
+  // Keep the `]` auto-pairing added for the first `[` and add its twin, or
+  // add both when nothing was paired, giving `[[|]]` either way.
+  const closer = autoClosed ? "]" : "]]";
   view.dispatch({
-    changes: { from, to: deleteTo, insert: "[" },
+    changes: [
+      { from, to: from, insert: "[" },
+      { from: autoClosed ? from + 1 : from, insert: closer },
+    ],
     selection: { anchor: from + 1 },
+    effects: setParkedClosers.of({ from: from + 1, to: from + 3 }),
   });
   return true;
 }));
+
+/**
+ * A typed `]` that is not sealing a link steps over a closer the shorthand
+ * parked at the caret, the way bracket auto-pairing steps over its own.
+ * Auto-pairing only knows the one `]` it inserted itself; the twin the
+ * shorthand added would otherwise be typed in as a third bracket.
+ */
+function stepOverParkedCloser(view: EditorView, from: number): boolean {
+  if (parkedCloserCount(view.state, from) === 0) return false;
+  view.dispatch({ selection: { anchor: from + 1 } });
+  return true;
+}
 
 // Hand-typing the closing `]]` of a `[[Name]]` (or `[[Note::Heading]]`) should
 // seal it into a `#wikilink(...)` call — exactly as if the user had chosen the
@@ -587,24 +684,24 @@ const wikilinkCloseHandler = Prec.high(EditorView.inputHandler.of((view, from, t
   const before = view.state.doc.sliceString(line.from, from);
   // Only act on the second `]`: the first closing bracket must already sit
   // immediately before the cursor.
-  if (!before.endsWith("]")) return false;
+  if (!before.endsWith("]")) return stepOverParkedCloser(view, from);
 
   const inner = before.slice(0, -1);
   const openIdx = inner.lastIndexOf("[[");
-  if (openIdx < 0) return false;
+  if (openIdx < 0) return stepOverParkedCloser(view, from);
 
   const content = inner.slice(openIdx + 2);
   // A stray `[` or `]` inside means this isn't the clean `[[Name]]` shorthand;
   // an empty body is nothing to link. Leave those as literal text.
-  if (content.trim() === "" || content.includes("[") || content.includes("]")) return false;
+  if (content.trim() === "" || content.includes("[") || content.includes("]")) return stepOverParkedCloser(view, from);
   // A `[[` inside an inline raw span (`` `[[` ``) is literal documentation text,
   // not a link shortcut — mirror the guard in detectWikilinkContext.
-  if (inVerbatimLineContext(view.state, line.from + openIdx + 1)) return false;
+  if (inVerbatimLineContext(view.state, line.from + openIdx + 1)) return stepOverParkedCloser(view, from);
 
   const fromPos = line.from + openIdx;
-  // Consumes `[[content]` and the typed `]` is dropped. An auto-paired `]`
-  // still waiting after the caret (a cell editor keeps one) goes too.
-  const replaceTo = view.state.doc.sliceString(from, from + 1) === "]" ? from + 1 : from;
+  // Consumes `[[content]` and the typed `]` is dropped. Brackets the shorthand
+  // parked after the caret go with it; a `]` the note itself contains stays.
+  const replaceTo = from + parkedCloserCount(view.state, from);
 
   const sepIdx = content.indexOf("::");
   const headingText = sepIdx >= 0 ? content.slice(sepIdx + 2) : "";
@@ -704,11 +801,9 @@ const suggestKeyHandler = Prec.highest(keymap.of([
       if (currentSuggestState.mode === "heading" && currentSuggestState.to === undefined) {
         const state = currentSuggestState;
         const cursor = view.state.selection.main.from;
-        const afterCursor = view.state.doc.sliceString(cursor, Math.min(cursor + 2, view.state.doc.length));
-        const trailingBrackets = afterCursor.startsWith("]]") ? 2 : afterCursor.startsWith("]") ? 1 : 0;
         const insert = `#wikilink("${typstStringEscape(state.noteName)}")`;
         view.dispatch({
-          changes: { from: state.from, to: cursor + trailingBrackets, insert } as ChangeSpec,
+          changes: { from: state.from, to: cursor + parkedCloserCount(view.state, cursor), insert } as ChangeSpec,
           selection: { anchor: state.from + insert.length },
         });
       }
@@ -745,4 +840,4 @@ const suggestTracker = ViewPlugin.fromClass(
   },
 );
 
-export const wikilinkSuggest: Extension = [wikilinkBracketHandler, wikilinkCloseHandler, suggestKeyHandler, suggestTracker];
+export const wikilinkSuggest: Extension = [typedOpenBracket, parkedClosers, wikilinkBracketHandler, wikilinkCloseHandler, suggestKeyHandler, suggestTracker];

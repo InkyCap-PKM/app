@@ -4,13 +4,15 @@ import { EditorView } from "@codemirror/view";
 import { closeBrackets } from "@codemirror/autocomplete";
 import { wikilinkSuggest } from "./wikilink-suggest";
 import { inlineOnlyFacet, scopeRangeConfig, scopeRangeField } from "./cell-scope";
+import { typst } from "codemirror-lang-typst";
+import { buildDecorations } from "./visual-plugin";
 
 // Regression guard for the `[[` wikilink shortcut. `closeBrackets()` lives in
 // the editor's baseExtensions, ahead of the visual-mode wikilinkSuggest, so
 // its inputHandler outranks the wikilink one unless the latter is raised to a
-// higher precedence. When it loses, typing `[[` yields `[[]]` (a stray
-// auto-paired `]]`) instead of the clean `[[` the picker expects — which is
-// what broke the shortcut. This locks in that the wikilink handler wins.
+// higher precedence. When it loses, closeBrackets pairs the second `[` itself
+// and the shortcut never records the `]]` as its own, so finishing the link
+// leaves them behind. This locks in that the wikilink handler wins.
 function mk() {
   return new EditorView({
     state: EditorState.create({
@@ -34,15 +36,21 @@ function typeChar(view: EditorView, ch: string) {
   for (const h of handlers) {
     if (h(view, from, to, ch, insert)) return;
   }
-  view.dispatch(view.state.replaceSelection(ch));
+  // Tagged the way CodeMirror tags a real keystroke it applies itself, so the
+  // `[[` shorthand can tell a bracket the user just typed from one already in
+  // the note (see `typedOpenBracket` in wikilink-suggest.ts).
+  view.dispatch(view.state.replaceSelection(ch), { userEvent: "input.type" });
 }
 
 describe("[[ wikilink bracket input", () => {
-  it("typing [[ yields a clean [[ (no auto-paired ]])", () => {
+  it("typing [[ keeps the closing pair, with the caret in the middle", () => {
+    // Balanced at every keystroke: an open `[[` with no closers would make the
+    // parser pair the surrounding block's own `]` with the shorthand, and a
+    // block quote or callout would lose its frame while the name is typed.
     const v = mk();
     typeChar(v, "[");
     typeChar(v, "[");
-    expect(v.state.doc.toString()).toBe("[[");
+    expect(v.state.doc.toString()).toBe("[[]]");
     expect(v.state.selection.main.head).toBe(2);
     v.destroy();
   });
@@ -85,7 +93,33 @@ describe("[[ wikilink manual close (]])", () => {
   it("does not fire on the first ] (only the closing pair completes the link)", () => {
     const v = mk();
     typeAll(v, "[[Name]");
-    expect(v.state.doc.toString()).toBe("[[Name]");
+    // The first `]` steps over one of the parked closers; the text is still
+    // the plain brackets, not a call.
+    expect(v.state.doc.toString()).toBe("[[Name]]");
+    expect(v.state.selection.main.head).toBe(7);
+    v.destroy();
+  });
+
+  it("keeps a block quote's frame intact while the name is typed", () => {
+    const v = new EditorView({
+      state: EditorState.create({
+        doc: "#quote(block: true)[Hello ]",
+        selection: { anchor: "#quote(block: true)[Hello ".length },
+        extensions: [closeBrackets(), wikilinkSuggest],
+      }),
+      parent: document.body,
+    });
+    typeAll(v, "[[Na");
+    // The quote's own closing bracket is still the last one, so the block
+    // parses as a whole and the visual layer keeps drawing it.
+    expect(v.state.doc.toString()).toBe("#quote(block: true)[Hello [[Na]]]");
+    const drawn = EditorState.create({ doc: v.state.doc, selection: v.state.selection, extensions: [typst()] });
+    const classes: string[] = [];
+    const iter = buildDecorations(drawn).iter();
+    while (iter.value) { classes.push(iter.value.spec?.class ?? ""); iter.next(); }
+    expect(classes.join(" ")).toContain("cm-typst-blockquote-line");
+    typeAll(v, "]]");
+    expect(v.state.doc.toString()).toBe('#quote(block: true)[Hello #wikilink("Na")]');
     v.destroy();
   });
 
@@ -94,6 +128,51 @@ describe("[[ wikilink manual close (]])", () => {
     typeAll(v, "[[]]");
     expect(v.state.doc.toString()).toBe("[[]]");
     v.destroy();
+  });
+});
+
+// A block quote, callout or any other `#func[…]` call puts a `[` right behind
+// the caret and a `]` right ahead of it — the same shape as a half-typed `[[`.
+// The shorthand used to adopt that opening bracket, and finishing the link then
+// ate the block's closing one, leaving `#quote(block: true)[#wikilink("Name")`
+// with nothing to close it.
+describe("[[ wikilink inside a block's own brackets", () => {
+  /** `marked` is the note with `|` standing in for the caret. */
+  function typeInside(marked: string, typed: string): string {
+    const anchor = marked.indexOf("|");
+    const v = new EditorView({
+      state: EditorState.create({
+        doc: marked.replace("|", ""),
+        selection: { anchor },
+        extensions: [closeBrackets(), wikilinkSuggest],
+      }),
+      parent: document.body,
+    });
+    for (const ch of typed) typeChar(v, ch);
+    const out = v.state.doc.toString();
+    v.destroy();
+    return out;
+  }
+
+  it("leaves a block quote's closing bracket in place", () => {
+    expect(typeInside("#quote(block: true)[|]", "[[Name]]"))
+      .toBe('#quote(block: true)[#wikilink("Name")]');
+  });
+
+  it("leaves a callout's closing bracket in place", () => {
+    expect(typeInside('#callout("note")[|]', "[[Name]]"))
+      .toBe('#callout("note")[#wikilink("Name")]');
+  });
+
+  it("does not treat the block's own `[` as the first bracket of the pair", () => {
+    // One typed `[` is just a bracket: auto-pairing closes it, and the block
+    // keeps its own `]`.
+    expect(typeInside("#quote(block: true)[|]", "[")).toBe("#quote(block: true)[[]]");
+  });
+
+  it("still forms the link when the block is nested inside another", () => {
+    expect(typeInside("#quote(block: true)[#strong[|]]", "[[Name]]"))
+      .toBe('#quote(block: true)[#strong[#wikilink("Name")]]');
   });
 });
 
