@@ -1018,6 +1018,27 @@ export class TableWidget extends WidgetType {
     };
   }
 
+  /**
+   * Move the keyboard selection to the cell at (`row`, `col`). `extend` keeps
+   * the anchor and selects the block between it and the new head, as
+   * Shift+Arrow does; otherwise the cell becomes the whole selection. The
+   * new head is scrolled into view either way.
+   */
+  private selectCellFromKeyboard(st: TableDom, row: number, col: number, extend: boolean) {
+    const { wrap, nav } = st;
+    nav.headRow = row;
+    nav.headCol = col;
+    if (!extend) {
+      nav.anchorRow = row;
+      nav.anchorCol = col;
+    }
+    clearCellSelection(wrap);
+    const head = getCellAt(wrap, row, col);
+    const anchor = extend ? getCellAt(wrap, nav.anchorRow, nav.anchorCol) : head;
+    if (anchor && head) selectCellRange(wrap, anchor, head);
+    revealCell(st.view, head);
+  }
+
   /** Current rendered grid dimensions (logical rows × data columns). */
   private gridSize(wrap: HTMLElement): { rows: number; cols: number } {
     const allRows = Array.from(wrap.querySelectorAll<HTMLElement>("tr[data-logical-row]"));
@@ -1181,6 +1202,21 @@ export class TableWidget extends WidgetType {
       if (document.activeElement !== wrap) return;
       const view = st.view;
 
+      const selected = wrap.querySelector<HTMLElement>(".cm-typst-table-cell--selected");
+      const selectedAt = selected ? this.cellPosition(wrap, selected) : null;
+
+      // A selection made by Tab or by entering the table from the note body
+      // does not pass through this handler, so re-anchor the keyboard cursor
+      // on it before moving.
+      if (selected) {
+        const headCell = getCellAt(wrap, nav.headRow, nav.headCol);
+        if (!headCell?.classList.contains("cm-typst-table-cell--selected")) {
+          const { row, col } = this.cellPosition(wrap, selected);
+          nav.anchorRow = nav.headRow = row;
+          nav.anchorCol = nav.headCol = col;
+        }
+      }
+
       if ((e.ctrlKey || e.metaKey) && !e.altKey) {
         // The modifier's own keydown arrives before the letter; forwarding it
         // would move focus to the note body before the shortcut completes.
@@ -1195,25 +1231,34 @@ export class TableWidget extends WidgetType {
           );
           return;
         }
+        // Ctrl+Home / Ctrl+End: the table's first / last cell, as in a
+        // spreadsheet. Claimed here so the browser does not scroll the page.
+        if (e.key === "Home" || e.key === "End") {
+          e.preventDefault();
+          e.stopPropagation();
+          const { rows, cols } = this.gridSize(wrap);
+          if (rows === 0 || cols === 0) return;
+          const first = e.key === "Home";
+          this.selectCellFromKeyboard(st, first ? 0 : rows - 1, first ? 0 : cols - 1, e.shiftKey && !!selected);
+          return;
+        }
         e.preventDefault();
         e.stopPropagation();
         forwardToEditor(view, e);
         return;
       }
 
-      const selected = wrap.querySelector<HTMLElement>(".cm-typst-table-cell--selected");
-      const selectedAt = selected ? this.cellPosition(wrap, selected) : null;
-
-      // A selection made by Tab or by entering the table from the note body
-      // does not pass through this handler, so re-anchor the keyboard cursor
-      // on it before moving.
-      if (selected) {
-        const headCell = getCellAt(wrap, nav.headRow, nav.headCol);
-        if (!headCell?.classList.contains("cm-typst-table-cell--selected")) {
-          const { row, col } = this.cellPosition(wrap, selected);
-          nav.anchorRow = nav.headRow = row;
-          nav.anchorCol = nav.headCol = col;
-        }
+      // Home / End: the first / last cell of the current row, as in a
+      // spreadsheet. Left to the browser, these keys scroll the page and take
+      // focus off the table, so they are always claimed.
+      if (e.key === "Home" || e.key === "End") {
+        e.preventDefault();
+        e.stopPropagation();
+        const { rows, cols } = this.gridSize(wrap);
+        if (rows === 0 || cols === 0) return;
+        const row = selected ? nav.headRow : 0;
+        this.selectCellFromKeyboard(st, row, e.key === "Home" ? 0 : cols - 1, e.shiftKey && !!selected);
+        return;
       }
 
       if (e.key === "F2" || e.key === "Enter") {
@@ -1257,22 +1302,7 @@ export class TableWidget extends WidgetType {
         }
         if (newCol < 0 || newCol >= colCount) return;
 
-        nav.headRow = newRow;
-        nav.headCol = newCol;
-
-        if (e.shiftKey) {
-          clearCellSelection(wrap);
-          const a = getCellAt(wrap, nav.anchorRow, nav.anchorCol);
-          const h = getCellAt(wrap, nav.headRow, nav.headCol);
-          if (a && h) selectCellRange(wrap, a, h);
-        } else {
-          nav.anchorRow = nav.headRow;
-          nav.anchorCol = nav.headCol;
-          clearCellSelection(wrap);
-          const cell = getCellAt(wrap, nav.headRow, nav.headCol);
-          if (cell) cell.classList.add("cm-typst-table-cell--selected");
-          revealCell(view, cell);
-        }
+        this.selectCellFromKeyboard(st, newRow, newCol, e.shiftKey);
         return;
       }
 

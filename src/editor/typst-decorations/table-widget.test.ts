@@ -200,6 +200,70 @@ describe("TableWidget", () => {
     view.destroy();
   });
 
+  // Home and End move the cell selection along the row, and with Ctrl to the
+  // table's corners, the way a spreadsheet does. Left to the browser they
+  // scroll the page and take focus off the table, so they are always claimed.
+  describe("Home and End in navigation mode", () => {
+    function selectCell(view: EditorView, row: number, col: number): HTMLElement {
+      const wrap = view.dom.querySelector<HTMLElement>(".cm-typst-table-wrap")!;
+      cellDiv(view, row, col).dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+      wrap.focus();
+      return wrap;
+    }
+    function press(wrap: HTMLElement, key: string, init: KeyboardEventInit = {}): KeyboardEvent {
+      const e = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...init });
+      wrap.dispatchEvent(e);
+      return e;
+    }
+    function selectedCells(view: EditorView): string[] {
+      return Array.from(view.dom.querySelectorAll(".cm-typst-table-cell--selected")).map((c) => c.textContent ?? "");
+    }
+
+    it("Home selects the first cell of the row and claims the key", () => {
+      const view = mount(TABLE, true);
+      const wrap = selectCell(view, 1, 1);
+      const e = press(wrap, "Home");
+      expect(e.defaultPrevented).toBe(true);
+      expect(selectedCells(view)).toEqual(["d"]);
+      view.destroy();
+    });
+
+    it("End selects the last cell of the row", () => {
+      const view = mount(TABLE, true);
+      const wrap = selectCell(view, 1, 0);
+      press(wrap, "End");
+      expect(selectedCells(view)).toEqual(["f"]);
+      view.destroy();
+    });
+
+    it("Shift+End extends the selection to the end of the row", () => {
+      const view = mount(TABLE, true);
+      const wrap = selectCell(view, 0, 1);
+      press(wrap, "End", { shiftKey: true });
+      expect(selectedCells(view)).toEqual(["b", "c"]);
+      view.destroy();
+    });
+
+    it("Ctrl+Home and Ctrl+End go to the table's first and last cell", () => {
+      const view = mount(TABLE, true);
+      const wrap = selectCell(view, 1, 1);
+      press(wrap, "Home", { ctrlKey: true });
+      expect(selectedCells(view)).toEqual(["a"]);
+      press(wrap, "End", { ctrlKey: true });
+      expect(selectedCells(view)).toEqual(["f"]);
+      view.destroy();
+    });
+
+    it("Home with nothing selected starts on the first row", () => {
+      const view = mount(TABLE, true);
+      const wrap = view.dom.querySelector<HTMLElement>(".cm-typst-table-wrap")!;
+      wrap.focus();
+      press(wrap, "End");
+      expect(selectedCells(view)).toEqual(["c"]);
+      view.destroy();
+    });
+  });
+
   it("closes the cell editor when focus leaves the table, painting the new content", () => {
     const view = mount(TABLE, true);
     cellDiv(view, 0, 0).dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
