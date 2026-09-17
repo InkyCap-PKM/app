@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { EditorState } from "@codemirror/state";
+import { EditorState, Transaction } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { history, historyKeymap, undo } from "@codemirror/commands";
 import { codeFolding, foldEffect, foldedRanges } from "@codemirror/language";
@@ -91,6 +91,29 @@ describe("smart Home", () => {
     pressHome(v);
     pressHome(v);
     expect(v.state.selection.main.head).toBe(0);
+    v.destroy();
+  });
+
+  it("tags its transaction as a select gesture", () => {
+    // The selection format toolbar only appears for selections a user made
+    // deliberately, which it recognizes by CodeMirror's `select` user event.
+    // An untagged Shift-Home left the toolbar hidden.
+    const events: (string | undefined)[] = [];
+    const v = new EditorView({
+      state: EditorState.create({
+        doc: "some prose",
+        selection: { anchor: 10 },
+        extensions: [
+          keymap.of(typstKeymap),
+          EditorView.updateListener.of((u) => {
+            for (const tr of u.transactions) events.push(tr.annotation(Transaction.userEvent));
+          }),
+        ],
+      }),
+      parent: document.body,
+    });
+    pressHome(v, true);
+    expect(events).toContain("select");
     v.destroy();
   });
 

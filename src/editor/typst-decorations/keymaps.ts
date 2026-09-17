@@ -219,15 +219,18 @@ export function listContentStart(line: Line): number {
 /**
  * Smart Home. Moves the caret to the start of the line's content — for a list
  * item that means just after the bullet/number, so the writer can edit the text
- * immediately without stepping past the marker. Pressing Home again (caret
- * already at content start) jumps to the true line start, before the marker — so
- * a Home-then-Shift-End selection, or an empty-selection line copy, still
- * carries the marker and the item pastes back as a complete bullet.
+ * immediately without stepping past the marker. Inside a block element the same
+ * idea puts the caret after the hidden `#callout("note")[` opener, at the start
+ * of the text being written, rather than in front of the whole element.
  *
- * That second press only applies where the marker can be seen. In the visual
- * editor the marker is hidden behind a bullet widget and the position before
- * it is not one the caret can occupy (see line-start-caret.ts), so the caret
- * stays on the content start instead.
+ * Pressing Home again (caret already at content start) jumps to the true line
+ * start, before the marker — so a Home-then-Shift-End selection, or an
+ * empty-selection line copy, still carries the marker and the item pastes back
+ * as a complete bullet.
+ *
+ * That second press only applies where the markup can be seen. In the visual
+ * editor it is hidden behind a widget and the position before it is not one the
+ * caret should occupy, so the caret stays on the content start instead.
  *
  * `extend` mirrors the same toggle for Shift-Home, keeping the selection anchor
  * fixed. Operates on every cursor in a multi-selection.
@@ -237,10 +240,14 @@ function smartLineStart(view: EditorView, extend: boolean): boolean {
   const atomics = state.facet(EditorView.atomicRanges);
   const ranges = state.selection.ranges.map((range) => {
     const line = state.doc.lineAt(range.head);
-    const cs = listContentStart(line);
-    const markerHidden = atomics.some(
-      (get) => pastLineLeadingMarkup(get(view), state.doc, line.from) !== line.from,
+    // Where the line's own markup ends: past a list marker, past hidden
+    // element markup, whichever reaches further into the line.
+    const pastMarkup = atomics.reduce(
+      (furthest, get) => Math.max(furthest, pastLineLeadingMarkup(get(view), state.doc, line.from)),
+      line.from,
     );
+    const cs = Math.max(listContentStart(line), pastMarkup);
+    const markerHidden = pastMarkup !== line.from;
     const target = range.head === cs && !markerHidden ? line.from : cs;
     return extend
       ? EditorSelection.range(range.anchor, target)
@@ -248,6 +255,11 @@ function smartLineStart(view: EditorView, extend: boolean): boolean {
   });
   dispatchVisible(view, {
     selection: EditorSelection.create(ranges, state.selection.mainIndex),
+    // Tag it the way CodeMirror tags its own cursor/selection commands. Things
+    // that react to a deliberate selection gesture — the selection format
+    // toolbar above all — look for this, and an untagged dispatch reads as a
+    // programmatic jump (a search reveal, say) that should not summon them.
+    userEvent: "select",
   });
   return true;
 }
