@@ -94,6 +94,19 @@ describe("parseInlineBody", () => {
     ]);
   });
 
+  it("keeps a formatting call's arguments for the renderer to interpret", () => {
+    // The renderer turns a highlight's `fill:` into a colour; the parser only
+    // has to hand the arguments along unread.
+    expect(shapes('#highlight(fill: rgb("#ff9f97"))[key]')).toEqual([
+      {
+        kind: "format",
+        className: "cm-typst-highlight",
+        args: 'fill: rgb("#ff9f97")',
+        children: [{ kind: "text", text: "key" }],
+      },
+    ]);
+  });
+
   it("nests markup recursively", () => {
     expect(shapes("#highlight[a *b*]")).toEqual([
       {

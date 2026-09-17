@@ -47,7 +47,7 @@ import { isEmailLikeAt } from "./reference-form";
 import { scanDocumentLabels, type DocLabel } from "./document-labels";
 import { FuncPillWidget, FuncChipWidget, BulletWidget, ShorthandWidget, HrWidget, AngleBracketWarningWidget, ANGLE_BRACKET_TAGS, StylePreambleWidget, SetRuleWidget, SymWidget } from "./visual-widgets";
 import { symbolGlyph } from "./symbols";
-import { highlight, buildHighlightMark } from "./visual-colors";
+import { highlight, buildHighlightMark, widgetHighlightFor, type WidgetHighlight } from "./visual-colors";
 import { visualTheme } from "./visual-theme";
 import { computePreambleImportRanges, isLeadingLocaleDirective, commentHideRange, isCommentClosed, createProtectedRangesField, createProtectedCursorFilter, createProtectedChangeFilter, externalReload } from "./visual-protected";
 import { lineStartCaretFilter } from "./line-start-caret";
@@ -848,7 +848,7 @@ export function buildDecorations(
 
   const escapeRanges = new Set<string>();
   const escapeDecos: { from: number; backslashEnd: number; charEnd: number }[] = [];
-  const activeFormatting = { bold: false, italic: false, strike: false, highlight: false };
+  const activeFormatting: InlineFormatting = { bold: false, italic: false, strike: false, highlight: null };
   let consumedUntil = -1;
 
   // Document labels, computed once per pass on first `@reference` encountered.
@@ -1272,7 +1272,13 @@ export function buildDecorations(
               return false;
             }
             if (fn === "strike") activeFormatting.strike = true;
-            else if (fn === "highlight") activeFormatting.highlight = true;
+            else if (fn === "highlight") {
+              // Carry the call's fill/stroke/radius, not just a flag: a
+              // wikilink or link inside it renders as a replace widget, which
+              // falls outside the highlight's mark decoration and has to paint
+              // itself.
+              activeFormatting.highlight = widgetHighlightFor(state.doc.sliceString(funcFrom, funcTo));
+            }
             else if (fn === "strong") activeFormatting.bold = true;
             else if (fn === "emph") activeFormatting.italic = true;
             break;
@@ -1284,7 +1290,7 @@ export function buildDecorations(
       if (node.name === "Emph") activeFormatting.italic = false;
       if (node.name === "FuncCall") {
         activeFormatting.strike = false;
-        activeFormatting.highlight = false;
+        activeFormatting.highlight = null;
       }
     },
   });
@@ -1487,7 +1493,7 @@ export function handleFuncCall(
   cursors: Set<number>,
   autoExpand: boolean,
   expandedPos: number | null,
-  formatting: { bold: boolean; italic: boolean; strike: boolean; highlight: boolean } = { bold: false, italic: false, strike: false, highlight: false },
+  formatting: InlineFormatting = { bold: false, italic: false, strike: false, highlight: null },
 ): boolean {
   const text = state.doc.sliceString(from, to);
 

@@ -120,12 +120,19 @@ export function extractHighlightParams(text: string): { fill?: string; stroke?: 
   return params;
 }
 
-/** Build a `Decoration.mark` for a `#highlight(…)` call, applying inline
- *  styles for any custom fill/stroke/radius parameters. Falls back to the
- *  base `highlight` class mark when no parameters are present. */
-export function buildHighlightMark(text: string): Decoration {
+/**
+ * Inline CSS declarations that paint a `#highlight(…)` call's fill, stroke and
+ * radius. `text` may be the whole call or just its argument list. Returns null
+ * when the call carries none of them, so the caller can fall back to the plain
+ * `.cm-typst-highlight` class.
+ *
+ * `pinTextColor` forces near-black text for readability on the light pastel
+ * fills (see `.cm-typst-highlight` in visual-theme.ts). Callers that paint a
+ * link-like element pass false so the link keeps its own colour.
+ */
+export function highlightInlineStyle(text: string, pinTextColor: boolean): string | null {
   const params = extractHighlightParams(text);
-  if (!params.fill && !params.stroke && !params.radius) return highlight;
+  if (!params.fill && !params.stroke && !params.radius) return null;
 
   const parts: string[] = [];
   // No explicit fill (e.g. only a radius/stroke set) means the default
@@ -134,12 +141,47 @@ export function buildHighlightMark(text: string): Decoration {
   if (params.stroke) parts.push(`outline: 1px solid ${params.stroke}`);
   parts.push(`border-radius: ${params.radius ?? "2px"}`);
   parts.push("padding: 0 2px");
-  // Pin dark text for readability on the light pastel fills (see
-  // .cm-typst-highlight in the theme above). Custom user fills could
-  // theoretically be dark, in which case this reads against the user;
-  // the highlight palette itself is fixed-light so the trade-off is
-  // worth making for the dark-mode common case.
-  parts.push("color: #1a1a1a");
+  if (pinTextColor) {
+    // Custom user fills could theoretically be dark, in which case this reads
+    // against the user; the highlight palette itself is fixed-light, so the
+    // trade-off is worth making for the dark-mode common case.
+    parts.push("color: #1a1a1a");
+  }
 
-  return Decoration.mark({ attributes: { style: parts.join("; ") } });
+  return parts.join("; ");
+}
+
+/** Build a `Decoration.mark` for a `#highlight(…)` call, applying inline
+ *  styles for any custom fill/stroke/radius parameters. Falls back to the
+ *  base `highlight` class mark when no parameters are present. */
+export function buildHighlightMark(text: string): Decoration {
+  const style = highlightInlineStyle(text, true);
+  return style ? Decoration.mark({ attributes: { style } }) : highlight;
+}
+
+/**
+ * Highlight state carried into a replace widget (wikilink, link, …). CM6
+ * renders a replace widget outside any mark decoration that spans it, so a
+ * widget inside `#highlight(fill: …)[…]` gets no highlight of its own unless
+ * the surrounding call's styling is handed to it explicitly.
+ *
+ * `null` means "not inside a highlight". An empty string means the default
+ * yellow (class only); any other string is the inline CSS for a custom
+ * fill/stroke/radius, as produced by `highlightInlineStyle`.
+ */
+export type WidgetHighlight = string | null;
+
+/** Read the highlight state a widget inside this `#highlight(…)` call should
+ *  carry. Never null — the call itself is the highlight. */
+export function widgetHighlightFor(callText: string): WidgetHighlight {
+  return highlightInlineStyle(callText, false) ?? "";
+}
+
+/** Paint a widget's element as highlighted: the shared class first, so the
+ *  default colour and the `::selection` rules apply, then any custom
+ *  fill/stroke/radius on top. No-op when the widget isn't highlighted. */
+export function applyWidgetHighlight(el: HTMLElement, highlight: WidgetHighlight): void {
+  if (highlight === null) return;
+  el.classList.add("cm-typst-highlight");
+  if (highlight) el.style.cssText += `;${highlight}`;
 }

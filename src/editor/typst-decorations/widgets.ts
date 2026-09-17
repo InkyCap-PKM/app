@@ -10,10 +10,11 @@ import { getPillOptions } from "./pill-options";
 import { showWikilinkContextMenu } from "../../lib/wikilink-nav";
 import { anchorPanelMenu } from "../../lib/uiMenu";
 import { buildSuggestionCall } from "./annotation-insert";
-import { parseInlineBody, type BodySegment } from "./block-body-parse";
+import { parseInlineBody, HIGHLIGHT_FORMAT_CLASS, type BodySegment } from "./block-body-parse";
 import { findLabelDefinition } from "./label-nav";
 import { t } from "../../lib/i18n";
 import { calloutKindLabel } from "./callout-kinds";
+import { applyWidgetHighlight, highlightInlineStyle, type WidgetHighlight } from "./visual-colors";
 
 /** Convert a Typst length value (e.g. `40%`, `200pt`, `3cm`) to a CSS value.
  *  Typst percentages and common units map directly; unknown units pass through. */
@@ -386,6 +387,13 @@ function appendBodySegments(segs: BodySegment[], parent: HTMLElement, ctx?: Bloc
       case "format": {
         const span = document.createElement("span");
         span.className = seg.className;
+        // The class alone paints a highlight the default yellow. A call that
+        // names its own fill/stroke/radius gets those applied on top, so a
+        // highlight inside a callout looks the same as one in flowing text.
+        if (seg.className === HIGHLIGHT_FORMAT_CLASS && seg.args) {
+          const style = highlightInlineStyle(seg.args, true);
+          if (style) span.style.cssText += `;${style}`;
+        }
         appendBodySegments(seg.children, span, ctx);
         parent.appendChild(span);
         break;
@@ -1205,7 +1213,7 @@ export class WikilinkWidget extends WidgetType {
     readonly isBold: boolean = false,
     readonly isItalic: boolean = false,
     readonly isStrike: boolean = false,
-    readonly isHighlight: boolean = false,
+    readonly highlight: WidgetHighlight = null,
     readonly label: string = "",
     readonly exists: boolean = true,
   ) {
@@ -1215,7 +1223,7 @@ export class WikilinkWidget extends WidgetType {
   eq(other: WikilinkWidget) {
     return this.target === other.target && this.display === other.display
       && this.isBold === other.isBold && this.isItalic === other.isItalic
-      && this.isStrike === other.isStrike && this.isHighlight === other.isHighlight
+      && this.isStrike === other.isStrike && this.highlight === other.highlight
       && this.label === other.label
       && this.exists === other.exists;
   }
@@ -1227,7 +1235,7 @@ export class WikilinkWidget extends WidgetType {
     if (this.isBold) pill.classList.add("cm-typst-bold");
     if (this.isItalic) pill.classList.add("cm-typst-italic");
     if (this.isStrike) pill.classList.add("cm-typst-strike");
-    if (this.isHighlight) pill.classList.add("cm-typst-highlight");
+    applyWidgetHighlight(pill, this.highlight);
     // Note: when this wikilink sits inside a heading, the heading mark
     // already wraps this widget in a `cm-typst-h*` span, so it inherits
     // the heading's font-size and weight. Adding the heading class here
@@ -2391,7 +2399,7 @@ export class LinkWidget extends WidgetType {
     readonly isBold: boolean = false,
     readonly isItalic: boolean = false,
     readonly isStrike: boolean = false,
-    readonly isHighlight: boolean = false,
+    readonly highlight: WidgetHighlight = null,
   ) {
     super();
   }
@@ -2399,7 +2407,7 @@ export class LinkWidget extends WidgetType {
   eq(other: LinkWidget) {
     return this.url === other.url && this.display === other.display
       && this.isBold === other.isBold && this.isItalic === other.isItalic
-      && this.isStrike === other.isStrike && this.isHighlight === other.isHighlight;
+      && this.isStrike === other.isStrike && this.highlight === other.highlight;
   }
 
   toDOM() {
@@ -2411,7 +2419,7 @@ export class LinkWidget extends WidgetType {
     if (this.isBold) el.classList.add("cm-typst-bold");
     if (this.isItalic) el.classList.add("cm-typst-italic");
     if (this.isStrike) el.classList.add("cm-typst-strike");
-    if (this.isHighlight) el.classList.add("cm-typst-highlight");
+    applyWidgetHighlight(el, this.highlight);
     el.style.cursor = "pointer";
     el.title = this.url;
 
@@ -2459,7 +2467,7 @@ export class LabelLinkWidget extends WidgetType {
     readonly isBold: boolean = false,
     readonly isItalic: boolean = false,
     readonly isStrike: boolean = false,
-    readonly isHighlight: boolean = false,
+    readonly highlight: WidgetHighlight = null,
   ) {
     super();
   }
@@ -2467,7 +2475,7 @@ export class LabelLinkWidget extends WidgetType {
   eq(other: LabelLinkWidget) {
     return this.label === other.label && this.display === other.display
       && this.isBold === other.isBold && this.isItalic === other.isItalic
-      && this.isStrike === other.isStrike && this.isHighlight === other.isHighlight;
+      && this.isStrike === other.isStrike && this.highlight === other.highlight;
   }
 
   toDOM(view: EditorView) {
@@ -2478,7 +2486,7 @@ export class LabelLinkWidget extends WidgetType {
     if (this.isBold) el.classList.add("cm-typst-bold");
     if (this.isItalic) el.classList.add("cm-typst-italic");
     if (this.isStrike) el.classList.add("cm-typst-strike");
-    if (this.isHighlight) el.classList.add("cm-typst-highlight");
+    applyWidgetHighlight(el, this.highlight);
     el.style.cursor = "pointer";
     el.title = t("visual.link.jumpToLabel", { label: this.label });
 

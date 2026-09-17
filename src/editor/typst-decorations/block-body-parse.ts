@@ -19,7 +19,11 @@ export type BodySegment =
   // Inline formatting wrapper (`*bold*`, `_italic_`, `#highlight[…]`, …). `children`
   // are parsed recursively so nested markup renders; `className` is the CSS mark
   // class the widget applies, matching the live-editor inline decorations.
-  | { kind: "format"; start: number; className: string; children: BodySegment[] }
+  // `args` is the call's raw argument text (`fill: rgb("#ff9f97")`), present
+  // only when it had any. This parser deliberately does not interpret it —
+  // turning a fill into a colour is the renderer's job, which keeps the
+  // parser free of DOM and styling concerns.
+  | { kind: "format"; start: number; className: string; args?: string; children: BodySegment[] }
   // Raw/code span — rendered verbatim, never re-parsed. `block` is true for a
   // fenced block (``` ```lang … ``` ```), false for inline (`` `code` ``).
   | { kind: "raw"; start: number; text: string; block: boolean }
@@ -36,10 +40,14 @@ const RENDERABLE_INLINE_FUNCS = new Set(["wikilink", "task", "tag", "link"]);
 // widget paints their body with. These mirror the live-editor inline marks in
 // visual-plugin.ts so a `#highlight[…]` inside a callout looks identical to one
 // in flowing text. Their body is recursed into, so `#strong[a _b_]` nests.
+/** Mark class for `#highlight[…]`. Named because the renderer singles it out:
+ *  it is the one formatting func whose arguments change how it looks. */
+export const HIGHLIGHT_FORMAT_CLASS = "cm-typst-highlight";
+
 const FORMAT_FUNCS: Record<string, string> = {
   strong: "cm-typst-bold",
   emph: "cm-typst-italic",
-  highlight: "cm-typst-highlight",
+  highlight: HIGHLIGHT_FORMAT_CLASS,
   strike: "cm-typst-strike",
   underline: "cm-typst-underline-mark",
   overline: "cm-typst-overline-mark",
@@ -176,6 +184,7 @@ function tryParseFunc(
       kind: "format",
       start: hashAt,
       className,
+      ...(args ? { args } : {}),
       children: parseSegments(text, contentFrom, contentTo),
     });
     return cursor;

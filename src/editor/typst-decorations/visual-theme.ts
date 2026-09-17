@@ -688,11 +688,6 @@ export const visualTheme = EditorView.theme({
   ".cm-typst-wikilink.cm-typst-strike": {
     textDecoration: "underline line-through",
   },
-  ".cm-typst-wikilink.cm-typst-highlight": {
-    backgroundColor: "var(--bg-search-match)",
-    borderRadius: "2px",
-    padding: "0 2px",
-  },
   ".cm-typst-wikilink-sep": {
     color: "var(--fg-dim)",
     opacity: "0.6",
