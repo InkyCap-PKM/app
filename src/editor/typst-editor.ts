@@ -164,6 +164,7 @@ import {
   autoPairBracketsKeymap,
 } from "./typst-decorations/keymaps";
 import { drawnCaret } from "./typst-decorations/drawn-caret";
+import { domCaretResync } from "./typst-decorations/dom-caret-resync";
 import { wikilinkSuggest } from "./typst-decorations/wikilink-suggest";
 import { referenceSuggest } from "./typst-decorations/reference-suggest";
 import { dragDropHandler } from "./typst-decorations/drag-drop";
@@ -699,6 +700,7 @@ function tableCellEditorConfig(options: TypstEditorOptions): Extension {
         syntaxHighlighting(inkycapHighlight),
         inkycapTheme,
         drawnCaret,
+        domCaretResync,
         // The cell editor is a view of its own, so it needs its own copy of
         // the note's pairing setting. It is built fresh each time a cell is
         // opened, so reading the note's facet here keeps the two in step.
@@ -751,6 +753,7 @@ function baseExtensions(options: TypstEditorOptions): Extension[] {
     ]),
     typstLanguage(),
     drawnCaret,
+    domCaretResync,
     inkycapSearch,
     searchMatchHighlight,
     syntaxHighlighting(inkycapHighlight),

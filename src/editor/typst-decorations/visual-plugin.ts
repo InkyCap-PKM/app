@@ -60,8 +60,22 @@ import {
   tableScrollHandler,
   createTableEntryKeymap,
 } from "./visual-tables";
-import { pillBoundaryNav } from "./pill-boundary-nav";
+import { pillBoundaryNav, createBlockBodyCaretEntry } from "./pill-boundary-nav";
 import { leadingWhitespace } from "./list-scan";
+
+/**
+ * Inline formatting wrapping the node currently being decorated. Mark
+ * decorations cover the source text on their own, so this only matters for
+ * replace widgets (wikilink, link): CM6 renders those outside any mark that
+ * spans them, so they have to reproduce the surrounding formatting themselves.
+ */
+export interface InlineFormatting {
+  bold: boolean;
+  italic: boolean;
+  strike: boolean;
+  /** Null outside a `#highlight[…]`; see `WidgetHighlight`. */
+  highlight: WidgetHighlight;
+}
 
 const escapedChar = Decoration.mark({ class: "cm-typst-escaped" });
 const bold = Decoration.mark({ class: "cm-typst-bold" });
@@ -3005,12 +3019,47 @@ const markupAtomicRanges = EditorView.atomicRanges.of(
   (view) => atomicMarkupRanges(view.state.field(visualField, false)),
 );
 
-// The same replaced ranges, reused to close the one gap CodeMirror's atomic
-// handling leaves: the position *at* the start of markup that opens a line.
-// See line-start-caret.ts for why that position is unreachable by eye.
-const lineStartCaretGuard = lineStartCaretFilter(
-  (state) => atomicMarkupRanges(state.field(visualField, false)),
-);
+// Markup that hides a *line's prefix*, which is what the line-start caret rule
+// is about: the caret in front of it and the caret after it are drawn in the
+// same place, so a caret sent to the line start belongs after the markup.
+//
+// Two things are deliberately not in here. Markup that replaces the whole line
+// is the element itself — a rendered verse, a collapsed callout — and the
+// position in front of it is a real place on screen that the caret is
+// sometimes sent to on purpose; landing inside such an element is
+// `blockBodyCaretEntry`'s job instead. The exception is an empty list item,
+// whose bullet also runs to the end of the line but whose content is simply
+// not typed yet, so the position after it is where typing has to go.
+const lineLeadingMarkupCache = new WeakMap<DecorationSet, RangeSet<AtomicMarkupRange>>();
+
+function lineLeadingMarkupRanges(state: EditorState): RangeSet<AtomicMarkupRange> {
+  const decos = state.field(visualField, false);
+  if (!decos) return RangeSet.empty;
+  const cached = lineLeadingMarkupCache.get(decos);
+  if (cached) return cached;
+  const ranges: Range<AtomicMarkupRange>[] = [];
+  const iter = decos.iter();
+  while (iter.value) {
+    const replaced = iter.from < iter.to && (iter.value === hide || iter.value.spec?.widget != null);
+    if (replaced) {
+      const line = state.doc.lineAt(iter.from);
+      const coversLine = iter.to >= line.to;
+      const isBullet = iter.value.spec?.widget instanceof BulletWidget;
+      if (iter.from === line.from && (!coversLine || isBullet)) {
+        ranges.push(atomicMarkupMarker.range(iter.from, iter.to));
+      }
+    }
+    iter.next();
+  }
+  const set = RangeSet.of(ranges);
+  lineLeadingMarkupCache.set(decos, set);
+  return set;
+}
+
+// Caret landing inside a rendered block element (see pill-boundary-nav.ts).
+const blockBodyCaretEntry = createBlockBodyCaretEntry(visualField);
+
+const lineStartCaretGuard = lineStartCaretFilter(lineLeadingMarkupRanges);
 
 // Round the caret OUT of a rendered `#due(...)` pill to just past the call.
 //
@@ -3092,8 +3141,8 @@ export function typstVisualMode(options?: { inlineOnly?: boolean }) {
   // the note narrowed to one cell, so table/verse entry, the table clipboard
   // routing, and the post-undo rebuild (undo runs in the main editor) stay out.
   if (options?.inlineOnly) {
-    return [inlineOnlyFacet.of(true), expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, lineStartCaretGuard, visualField, softBreakRangesField, softBreakAtomicRanges, markupAtomicRanges, visualTheme, linkClickHandler, pillBoundaryNav];
+    return [inlineOnlyFacet.of(true), expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, lineStartCaretGuard, blockBodyCaretEntry, visualField, softBreakRangesField, softBreakAtomicRanges, markupAtomicRanges, visualTheme, linkClickHandler, pillBoundaryNav];
   }
-  return [expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, lineStartCaretGuard, dueCursorRoundOut, Prec.high(tableEntryKeymap), Prec.high(verseEntryKeymap), visualField, softBreakRangesField, softBreakAtomicRanges, markupAtomicRanges, postHistoryRebuild, visualTheme, caretLineErrorMute(), linkClickHandler, tableClipboardHandler, cellEditorSync, tableSearchSync, tableScrollHandler, pillBoundaryNav];
+  return [expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, lineStartCaretGuard, blockBodyCaretEntry, dueCursorRoundOut, Prec.high(tableEntryKeymap), Prec.high(verseEntryKeymap), visualField, softBreakRangesField, softBreakAtomicRanges, markupAtomicRanges, postHistoryRebuild, visualTheme, caretLineErrorMute(), linkClickHandler, tableClipboardHandler, cellEditorSync, tableSearchSync, tableScrollHandler, pillBoundaryNav];
 }
 

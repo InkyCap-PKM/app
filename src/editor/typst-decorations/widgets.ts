@@ -2059,6 +2059,23 @@ function upsertWeightArg(argsText: string, weight: VerseWeight): string {
   return `${argsText.replace(/\s+$/, "")}, weight: ${weight}`;
 }
 
+/**
+ * A widget that draws a whole-line element around a body the writer edits in
+ * place — a block quote, a callout, a margin comment.
+ *
+ * Extending this is what tells the caret rules that the element has a body to
+ * land in, so motion crossing into it from outside comes to rest in the text
+ * rather than on the hidden markup that draws the frame (see
+ * `createBlockBodyCaretEntry` in pill-boundary-nav.ts). A new block element
+ * gets that behaviour by extending this class; nothing has to list it by name.
+ *
+ * Elements that own their keyboard entry — a table's cells, a verse canvas —
+ * deliberately do not extend it, and neither does a margin comment, which
+ * stays a rendered widget until its pill is clicked: there is no body on
+ * screen for the caret to land in.
+ */
+export abstract class BlockBodyElementWidget extends WidgetType {}
+
 export class FootnoteWidget extends WidgetType {
   constructor(readonly content: string) {
     super();
@@ -2122,7 +2139,7 @@ export class BlockquoteWidget extends WidgetType {
  *  counterpart is `CalloutHeadRowWidget` plus per-line decorations; the two
  *  share the geometry variables in visual-theme.ts so switching between them
  *  never changes the block's height. */
-export class CalloutBlockWidget extends WidgetType {
+export class CalloutBlockWidget extends BlockBodyElementWidget {
   constructor(
     readonly kind: string,
     readonly title: string,
@@ -2251,7 +2268,7 @@ export class AnnotationBlockWidget extends WidgetType {
  *  edit-state counterpart is per-line decorations plus, when there is an
  *  attribution, `BlockquoteAttributionRowWidget`; both states share the
  *  geometry variables in visual-theme.ts so the quote never changes height. */
-export class BlockquoteBlockWidget extends WidgetType {
+export class BlockquoteBlockWidget extends BlockBodyElementWidget {
   constructor(
     readonly content: string,
     readonly attribution: string,
