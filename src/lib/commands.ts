@@ -39,6 +39,7 @@ import { insertAnnotationMarkup } from "../editor/typst-decorations/annotation-i
 import { expandFunc } from "../editor/typst-decorations/effects";
 import * as ipc from "./ipc";
 import { pickAndInsertAttachments } from "./attachment-insert";
+import { bibliographyInsert } from "./bibliography-insert";
 import { triggerCreationRule, activeRules } from "../stores/creation-rules";
 import { showToast } from "../stores/toasts";
 import {
@@ -849,7 +850,18 @@ function insertMarkup(template: string, cursorOffset: number, expand = false) {
 }
 
 function registerMarkupCommands() {
-  type MarkupItem = { id: string; title: string; category: "Format" | "Structure" | "Insert" | "Symbol" | "Style" | "InkyCap" | "References"; insert: string; cursorOffset: number; shortcut?: string; expand?: boolean };
+  type MarkupItem = {
+    id: string;
+    title: string;
+    category: "Format" | "Structure" | "Insert" | "Symbol" | "Style" | "InkyCap" | "References";
+    insert?: string;
+    cursorOffset?: number;
+    /** Builds the markup at run time for entries that depend on notebox
+     *  settings (the bibliography path). Takes precedence over `insert`. */
+    dynamic?: () => { insert: string; cursorOffset: number };
+    shortcut?: string;
+    expand?: boolean;
+  };
 
   const items: MarkupItem[] = [
     // ── Format ──
@@ -905,7 +917,7 @@ function registerMarkupCommands() {
     { id: "callout", title: "Callout", category: "Insert", insert: '#callout("note")[${sel}]', cursorOffset: 17, expand: true },
     { id: "label", title: "Label", category: "Insert", insert: "<>", cursorOffset: 1, shortcut: "<…>" },
     { id: "citation-at", title: "Citation (@key)", category: "References", insert: "@", cursorOffset: 1, shortcut: "@" },
-    { id: "bibliography", title: "Bibliography", category: "References", insert: '#bibliography("/.inkycap/zotero-export.bib")', cursorOffset: 16 },
+    { id: "bibliography", title: "Bibliography", category: "References", dynamic: bibliographyInsert },
 
     // ── Symbol shorthands ──
     { id: "em-dash", title: "Em dash (—)", category: "Symbol", insert: "---", cursorOffset: 3, shortcut: "---" },
@@ -937,9 +949,15 @@ function registerMarkupCommands() {
 
   const ATTACHMENT_IDS = new Set(["image", "video", "audio"]);
   for (const item of items) {
+    const dynamic = item.dynamic;
     const execute = ATTACHMENT_IDS.has(item.id)
       ? () => insertAttachmentViaPicker(item.id as "image" | "video" | "audio")
-      : () => insertMarkup(item.insert, item.cursorOffset, item.expand);
+      : dynamic
+        ? () => {
+            const built = dynamic();
+            insertMarkup(built.insert, built.cursorOffset, item.expand);
+          }
+        : () => insertMarkup(item.insert ?? "", item.cursorOffset ?? 0, item.expand);
 
     registerCommand({
       // `item.title` stays as the English source (mirrored in en.json under

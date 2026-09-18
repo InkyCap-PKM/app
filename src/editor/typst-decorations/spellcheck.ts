@@ -23,6 +23,7 @@
 // labels, refs, links, imports) are skipped outright.
 
 import { syntaxTree } from "@codemirror/language";
+import { t } from "../../lib/i18n";
 import type { SyntaxNode } from "@lezer/common";
 import {
   EditorSelection,
@@ -361,7 +362,7 @@ function showSpellMenu(
   if (suggestions.length === 0) {
     const none = document.createElement("span");
     none.className = "context-menu__hint";
-    none.textContent = "No suggestions";
+    none.textContent = t("spellcheck.noSuggestions");
     menu.appendChild(none);
   } else {
     for (const s of suggestions) {
@@ -381,7 +382,7 @@ function showSpellMenu(
   menu.appendChild(sep);
 
   menu.appendChild(
-    menuButton("Add to dictionary", () => {
+    menuButton(t("spellcheck.addToDictionary"), () => {
       void ipc
         .addUserDictionaryWord(word)
         .then(() => {

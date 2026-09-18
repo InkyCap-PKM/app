@@ -32,7 +32,6 @@ export const VISUAL_EDITOR_KEYS: VisualEditorKey[] = [
   { labelKey: "help.visual.strikethrough", keys: "Ctrl+Shift+X" },
   { labelKey: "help.visual.highlight", keys: "Ctrl+Shift+H" },
   { labelKey: "help.visual.inlineCode", keys: "Ctrl+E" },
-  { labelKey: "help.visual.inlineMath", keys: "Ctrl+Shift+M" },
   { labelKey: "help.visual.headingDecrease", keys: "Ctrl+Shift+Up" },
   { labelKey: "help.visual.headingIncrease", keys: "Ctrl+Shift+Down" },
   { labelKey: "help.visual.indent", keys: "Tab" },

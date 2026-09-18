@@ -291,10 +291,6 @@ function toggleInlineCode(state: EditorState) {
   return toggleWrap(state, "`", "`");
 }
 
-function toggleInlineMath(state: EditorState) {
-  return toggleWrap(state, "$", "$");
-}
-
 function adjustHeading(state: EditorState, delta: number): { changes: ChangeSpec; selection: { anchor: number } } | null {
   const { from } = state.selection.main;
   const line = state.doc.lineAt(from);
@@ -861,15 +857,6 @@ export const typstKeymap: KeyBinding[] = [
     key: "Mod-e",
     run(view) {
       const result = toggleInlineCode(view.state);
-      if (!result) return false;
-      dispatchVisible(view, { changes: result.changes, selection: result.selection });
-      return true;
-    },
-  },
-  {
-    key: "Mod-Shift-m",
-    run(view) {
-      const result = toggleInlineMath(view.state);
       if (!result) return false;
       dispatchVisible(view, { changes: result.changes, selection: result.selection });
       return true;

@@ -3,6 +3,7 @@ import { type ChangeSpec, type Extension } from "@codemirror/state";
 import { expandFunc } from "./effects";
 import { positionPopupAtAnchor } from "./popup-position";
 import { pickAndInsertAttachments } from "../../lib/attachment-insert";
+import { bibliographyInsert } from "../../lib/bibliography-insert";
 import { buildAnnotationInsert, type InsertKind } from "./annotation-insert";
 import { CURATED_SYMBOLS } from "./symbols";
 import { getRegisteredPaletteItems } from "./palette-registry";
@@ -137,7 +138,7 @@ const PALETTE_ITEMS: PaletteItem[] = [
 
   { label: "Table", labelKey: "slash.table", category: "Insert", insert: '#table(\n  columns: (auto, auto, auto),\n  [Header 1], [Header 2], [Header 3],\n  [], [], [],\n)', cursorOffset: 76 },
 
-  { label: "Bibliography", labelKey: "slash.bibliography", category: "Insert", insert: '#bibliography("/.inkycap/zotero-export.bib")', cursorOffset: 16 },
+  { label: "Bibliography", labelKey: "slash.bibliography", category: "Insert", dynamic: () => ({ ...bibliographyInsert(), expand: false }) },
   { label: "Page break", labelKey: "slash.pageBreak", category: "Insert", insert: '#pagebreak()', cursorOffset: 12 },
   { label: "Line break", labelKey: "slash.lineBreak", category: "Insert", insert: '#linebreak()', cursorOffset: 12 },
   { label: "Lorem ipsum", labelKey: "slash.loremIpsum", category: "Insert", insert: '#lorem(50)', cursorOffset: 7 },

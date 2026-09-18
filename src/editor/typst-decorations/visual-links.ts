@@ -3,6 +3,7 @@ import { type EditorState } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
 import { openLink } from "../../lib/open-link";
 import { modifierKey } from "../../lib/platform";
+import { t } from "../../lib/i18n";
 
 /** Extract the first quoted string argument from a Typst function call text. */
 function extractFirstStringArg(text: string): string | null {
@@ -64,7 +65,7 @@ export const linkClickHandler = EditorView.domEventHandlers({
     if (link) {
       view.contentDOM.classList.add("cm-link-hover");
       const el = event.target as HTMLElement;
-      el.title = `${modifierKey()}+Click to follow link`;
+      el.title = t("wikilink.followHint", { modifier: modifierKey() });
     } else {
       view.contentDOM.classList.remove("cm-link-hover");
     }

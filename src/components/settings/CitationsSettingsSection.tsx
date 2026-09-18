@@ -8,7 +8,7 @@ import { useI18n } from "../../lib/i18n";
 import { noteboxRootDefault } from "../../lib/dialog-defaults";
 import { normalizePath, pathStartsWith } from "../../lib/paths";
 import { open } from "@tauri-apps/plugin-dialog";
-import { SettingSelect, SettingLabel, CITATION_STYLES } from "./shared";
+import { SettingSelect, SettingLabel, citationStyleOptions } from "./shared";
 
 /// The Citation Style Language project, where users can download more `.csl`
 /// styles. Linked from the custom-CSL help text.
@@ -140,7 +140,7 @@ export function CitationsSettingsSection() {
         label={t("settings.citations.style.label")}
         description={t("settings.citations.style.description")}
         value={styleValue()}
-        options={CITATION_STYLES}
+        options={citationStyleOptions(t)}
         onChange={handleStyleChange}
       />
 

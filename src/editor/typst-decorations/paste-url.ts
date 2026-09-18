@@ -7,6 +7,7 @@
 
 import { EditorView } from "@codemirror/view";
 import { positionPopupAtAnchor } from "./popup-position";
+import { t } from "../../lib/i18n";
 
 const URL_RE = /^https?:\/\/\S+$/;
 
@@ -37,12 +38,12 @@ function showMenu(view: EditorView, url: string, selectedText: string) {
 
   const header = document.createElement("div");
   header.className = "paste-url-menu__header";
-  header.textContent = "Paste as";
+  header.textContent = t("pasteUrl.header");
   el.appendChild(header);
 
   const items: { label: string; action: () => void }[] = [
     {
-      label: "Link",
+      label: t("pasteUrl.link"),
       action: () => {
         hidePopup();
         const { from, to } = view.state.selection.main;
@@ -63,7 +64,7 @@ function showMenu(view: EditorView, url: string, selectedText: string) {
       },
     },
     {
-      label: "Plain text",
+      label: t("pasteUrl.plainText"),
       action: () => {
         hidePopup();
         const { from, to } = view.state.selection.main;

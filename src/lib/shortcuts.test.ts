@@ -98,7 +98,7 @@ describe("editorReservedCombos", () => {
   it("derives canonical combos from the editor keymap", () => {
     const combos = editorReservedCombos();
     expect(combos).toContain("Ctrl+B"); // Mod-b bold
-    expect(combos).toContain("Ctrl+Shift+M"); // Mod-Shift-m inline math
+    expect(combos).toContain("Ctrl+E"); // Mod-e inline code
     expect(combos).toContain("Ctrl+Shift+Up"); // heading level up
     // Bare keys (Home, Enter, Tab) never normalize to a bindable global combo.
     expect(combos).not.toContain("Home");

@@ -35,7 +35,7 @@ import type { CollectionPanelTab } from "../stores/layout";
 import LucideIconPicker from "./LucideIconPicker";
 import ContributorsEditor from "./ContributorsEditor";
 import { FontPicker } from "./FontPicker";
-import { CITATION_STYLES } from "./settings/shared";
+import { CITATION_STYLES, citationStyleOptions } from "./settings/shared";
 import { Dropdown } from "./Dropdown";
 import { LengthInput } from "./LengthInput";
 import { PresetSelect, type PresetOption } from "./PresetSelect";
@@ -1087,10 +1087,7 @@ const CollectionCharacteristicsEditor: Component<{
             value={bibStyleValue()}
             options={[
               { value: "", label: t("collection.char.bibStyleInherit") },
-              ...CITATION_STYLES.map((s) => ({
-                value: s.value,
-                label: s.label,
-              })),
+              ...citationStyleOptions(t),
             ]}
             onChange={handleBibStyleChange}
             ariaLabel={t("collection.char.bibStyle")}
