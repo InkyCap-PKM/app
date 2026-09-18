@@ -13,6 +13,75 @@ each tagged release, newest first, grouping entries under **Added**, **Changed**
 **Fixed**, **Removed**, **Security**, or **Deprecated** as needed.
 
 
+## [26.9.12] - 2026-09-18
+
+The window's title bar is more compact (Linux - Gnome), the user manual has been
+brought in line with the application's current state, and the font and style
+settings better reach exported documents.
+
+### Added
+
+- A command palette button on the left toolbar, above the theme toggle. The
+  palette was reachable only by Ctrl+P.
+- Callouts carry their own title and colour: the callout's pill menu gains a custom 
+  Title field and a colour picker, and the compiled note uses the colour the
+  editor draws. The kind still decides both until you override one, and "Match
+  the kind" puts the colour back.
+- "Search in collection" on a collection's right-click menu, which opens the
+  search panel scoped to that collection the way "Search in folder" does for a
+  folder.
+- Collections open in a tab of their own by Ctrl-clicking, middle-clicking, or
+  through the right-click menu, as files in the file tree already did.
+- The back and forward arrows stay above an open collection, so there is a way
+  back to the note you were reading.
+- The user manual has been revised to include new functionality in the current app, in English and
+  in French.
+
+### Changed
+
+- InkyCap's window title bar appearance is slightly improved on Gnome and matches the app's dark or light theme.
+- The Settings dialog fits small windows: it shrinks to stay inside the window,
+  its tab column becomes a strip across the top when the window is narrow, and
+  the settings list scrolls when the window is short. Its header is shorter and
+  its title centred.
+- Pressing Enter in the search box closes the syntax tips, so they no longer
+  cover the results.
+- Ctrl+Shift+M switches between source and visual mode (previous bug made this ambiguous).
+- Help text improved for the scaffold picker and for creation-rule templates.
+- The paste-as popup, the spellcheck menu, the link tooltip and the custom CSL
+  label can be translated, and several French strings are corrected.
+- Tables are redrawn more efficiently and read more clearly.
+
+### Fixed
+
+- The chosen font and size, and a collection's text, paragraph and heading
+  overrides, now reach PDF and SVG output. The package applied these rules
+  inside conditional blocks, where they stopped taking effect at the end of the
+  block.
+- Turning off auto-pairing of brackets and quotes works, in notes, table cells
+  and stand-alone Typst boxes, and takes effect immediately in an open note.
+  Backspace between an empty pair follows the same setting.
+- Tables: arrow keys stay inside the cell being edited, entering a table no
+  longer scrolls the note under the reader, list bullets sit inside the cell,
+  Find highlights its matches in cells and scrolls to the one it is on, and
+  Home and End work while navigating a table.
+- A property whose value is a link no longer shows the previous note's link
+  when moving between notes, which could make a date look as though it had
+  changed itself.
+- A long notebox path in Settings wraps beside the row's buttons instead of
+  running underneath them.
+- Highlighting keeps its fill across links and inside callout previews.
+- Home lands inside a block rather than before it, Shift+Home brings up the
+  selection toolbar, and the cursor lands in a block's text when entering one,
+  so the first character typed is no longer misplaced.
+- Typing `[[` keeps its brackets balanced and no longer consumes a closing
+  bracket belonging to the block around it.
+- A placeholder such as `<label>` inside a code sample is no longer read as a
+  label declaration when a book is exported.
+- Markdown export recognizes a callout whatever arguments it carries, and a
+  colour written by hand can be cleared without breaking the rest of the call.
+
+
 ## [26.9.10] - 2026-09-12
 
 ### Fixed
