@@ -6,6 +6,7 @@ import {
   Settings,
   LayoutTemplate,
   Search,
+  SquareTerminal,
   CircleQuestionMark,
 } from "lucide-solid";
 import { theme, toggleTheme } from "../stores/theme";
@@ -38,6 +39,8 @@ interface VerticalToolbarProps {
   mode: () => SidebarMode;
   setMode: (m: SidebarMode) => void;
   onOpenSettings?: () => void;
+  /** Open the command palette (the same action as its Ctrl+P shortcut). */
+  onOpenCommandPalette?: () => void;
   /** Toggle the Help panel: open it, or close it and restore the previous
    *  panel when it's already showing. Owned by App so it can remember the
    *  panel to return to. */
@@ -137,6 +140,14 @@ const VerticalToolbar: Component<VerticalToolbarProps> = (props) => {
           {/* Collaboration has no toolbar button: a collaborative notebox is
               reached from the status-bar chip (which also shows its state),
               the command palette, or Settings › Configure. */}
+          <button
+            class="vertical-toolbar__btn"
+            onClick={() => props.onOpenCommandPalette?.()}
+            title={t("verticalToolbar.commandPaletteTitle")}
+            aria-label={t("verticalToolbar.commandPalette")}
+          >
+            <SquareTerminal size={18} />
+          </button>
           <button
             class="vertical-toolbar__btn"
             onClick={toggleTheme}

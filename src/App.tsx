@@ -435,6 +435,7 @@ const App: Component = () => {
           mode={sidebarMode}
           setMode={selectSidebarMode}
           onOpenSettings={toggleSettings}
+          onOpenCommandPalette={toggleCommandPalette}
           onToggleHelp={toggleHelp}
         />
         <LeftSidebar mode={sidebarMode} setMode={selectSidebarMode} />

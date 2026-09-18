@@ -1876,6 +1876,8 @@
   "verticalToolbar.hideSidebar": "Hide left sidebar",
   "verticalToolbar.search": "Search",
   "verticalToolbar.searchTitle": "Search (Ctrl+Shift+F)",
+  "verticalToolbar.commandPalette": "Command Palette",
+  "verticalToolbar.commandPaletteTitle": "Command Palette (Ctrl+P)",
   "verticalToolbar.lightMode": "Switch to light mode",
   "verticalToolbar.darkMode": "Switch to dark mode",
   "verticalToolbar.toggleTheme": "Toggle theme",
