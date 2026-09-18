@@ -95,18 +95,23 @@
 }
 
 /* Registry rows (not the add/clone/import forms, which lack data-notebox-path)
-   float their action buttons top-right and out of flow, so the info column —
-   and the per-notebox collaboration line with its experimental notice — can use
-   the full row width before wrapping, instead of being boxed into the narrow
-   space left of the buttons. `top` matches the row's 10px padding. */
+   lay out as a two-column grid: name and path on the left, action buttons on
+   the right, with the per-notebox collaboration line spanning both columns
+   underneath so it and its experimental notice get the full row width. The
+   buttons claim their own column, so a long path wraps beside them instead of
+   running underneath. */
 .notebox-row[data-notebox-path] {
-  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  /* Columns keep the row's own gap; the collaboration line brings its own
+     top margin, so no extra gap between the grid rows. */
+  row-gap: 0;
 }
 
-.notebox-row[data-notebox-path] > .notebox-row__actions {
-  position: absolute;
-  top: 10px;
-  right: 0;
+/* Notebox paths have no spaces to break at, so allow a break anywhere rather
+   than letting one long path push the buttons out of the panel. */
+.notebox-row__path {
+  overflow-wrap: anywhere;
 }
 
 .notebox-row__name-line {

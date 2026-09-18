@@ -706,47 +706,7 @@ export function NoteboxManagementSection(props: { onClose: () => void }) {
                     </Show>
                   </Show>
                 </div>
-                <span class="settings__description">{entry.path}</span>
-                <div class="notebox-row__collab">
-                  <Handshake
-                    size={13}
-                    class="notebox-row__collab-icon"
-                    classList={{
-                      "notebox-row__collab-icon--active": collaborative(),
-                    }}
-                  />
-                  <span class="notebox-row__collab-label">
-                    {t("settings.notebox.collaboration")}
-                  </span>
-                  <label
-                    class="settings__toggle"
-                    title={t("git.settings.tooltip")}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={collaborative()}
-                      onChange={(e) =>
-                        toggleCollaboration(
-                          entry,
-                          collaborative(),
-                          e.currentTarget,
-                        )
-                      }
-                    />
-                    <span class="settings__toggle-slider" />
-                  </label>
-                  <Show when={collaborative()}>
-                    <button
-                      class="settings__detect-btn notebox-row__collab-configure"
-                      onClick={() => handleCollaboration(entry)}
-                    >
-                      {t("settings.notebox.configure")}
-                    </button>
-                    {/* Collaboration is the newest, least-exercised surface —
-                        flag it as experimental, only where it's switched on. */}
-                    <ExperimentalNotice class="experimental-notice--inline" />
-                  </Show>
-                </div>
+                <span class="settings__description notebox-row__path">{entry.path}</span>
               </div>
               <div class="notebox-row__actions">
                 <button
@@ -775,6 +735,46 @@ export function NoteboxManagementSection(props: { onClose: () => void }) {
                 >
                   {t("common.remove")}
                 </button>
+              </div>
+              <div class="notebox-row__collab">
+                <Handshake
+                  size={13}
+                  class="notebox-row__collab-icon"
+                  classList={{
+                    "notebox-row__collab-icon--active": collaborative(),
+                  }}
+                />
+                <span class="notebox-row__collab-label">
+                  {t("settings.notebox.collaboration")}
+                </span>
+                <label
+                  class="settings__toggle"
+                  title={t("git.settings.tooltip")}
+                >
+                  <input
+                    type="checkbox"
+                    checked={collaborative()}
+                    onChange={(e) =>
+                      toggleCollaboration(
+                        entry,
+                        collaborative(),
+                        e.currentTarget,
+                      )
+                    }
+                  />
+                  <span class="settings__toggle-slider" />
+                </label>
+                <Show when={collaborative()}>
+                  <button
+                    class="settings__detect-btn notebox-row__collab-configure"
+                    onClick={() => handleCollaboration(entry)}
+                  >
+                    {t("settings.notebox.configure")}
+                  </button>
+                  {/* Collaboration is the newest, least-exercised surface —
+                      flag it as experimental, only where it's switched on. */}
+                  <ExperimentalNotice class="experimental-notice--inline" />
+                </Show>
               </div>
             </div>
           );
