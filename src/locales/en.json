@@ -2045,6 +2045,7 @@
   "leftSidebar.menuNewNote": "New Note",
   "leftSidebar.menuNewFolder": "New Folder",
   "leftSidebar.searchInFolder": "Search in folder",
+  "leftSidebar.searchInCollection": "Search in collection",
   "leftSidebar.moveFile": "Move file to...",
   "leftSidebar.moveFolder": "Move folder to...",
   "leftSidebar.mergeTagsTitle": "Merge tags",

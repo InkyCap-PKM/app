@@ -2257,6 +2257,21 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
             <div class="context-menu__separator" />
             <button
               class="context-menu__item"
+              onClick={() => {
+                const col = menu().collection;
+                setContextMenu(null);
+                // `collection:` resolves the collection's members from its own
+                // filters, so the search stays in step with the collection as
+                // notes join or leave it. The name is quoted because collection
+                // names may contain spaces.
+                openSearchFor(`collection:"${col.name}" `);
+              }}
+            >
+              {t("leftSidebar.searchInCollection")}
+            </button>
+            <div class="context-menu__separator" />
+            <button
+              class="context-menu__item"
               onClick={async () => {
                 const col = menu().collection;
                 setContextMenu(null);
