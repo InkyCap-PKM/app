@@ -1,0 +1,45 @@
+icon: null
+typst_template: null
+bibliography_style: null
+bibliography_file: null
+style:
+  page:
+    paper: us-letter
+  text:
+    lang: en
+    region: CA
+  heading:
+    numbering: none
+book:
+  title: InkyCap User Manual
+  author: Joshua Chalifour
+  date: 2026-09-18
+  toc_depth: 2
+  inject_chapter_heading: never
+  wikilink_mode: internal
+  include_title_page: false
+  include_outline: true
+  page_numbering:
+    style: arabic
+  toc_placement:
+    kind: end
+  bibliography_mode: in_place
+  include_credit_statement: false
+filters:
+  and:
+  - file.name != this.file.name
+  - file.tags.contains("documentation")
+formulas: null
+summaries: null
+views:
+- type: table
+  name: Book order
+  filters: null
+  order:
+  - file.path
+  - title
+  sort:
+  - property: file.path
+    direction: ASC
+  columnSize: null
+  summaries: null

@@ -23,9 +23,9 @@ La façon la plus rapide de trouver n'importe quel raccourci est d'appuyer sur *
 
 == Obtenir de l'aide dans InkyCap
 
-Appuyez sur *`F1`* (ou cliquez sur le bouton *Info* dans la barre d'outils de l'éditeur) pour ouvrir le panneau d'Aide. Il offre trois vues entre lesquelles vous pouvez basculer :
+Appuyez sur *`F1`* (ou cliquez sur le bouton *Aide* de la barre d'outils verticale ; son infobulle se lit *Aide (F1)*) pour ouvrir le panneau d'Aide. Il offre trois vues entre lesquelles vous pouvez basculer :
 
-- *Raccourcis de l'interface*. Chaque raccourci global regroupé par catégorie.
+- *Raccourcis d'interface*. Chaque raccourci global regroupé par catégorie.
 - *Éditeur visuel*. Les touches de mise en forme et les raccourcis de saisie que vous utilisez en écrivant.
 - *Balisage Typst*. Un aide-mémoire du balisage Typst, utile en complément de #wikilink("3 - Mettre en forme votre texte").
 \
@@ -41,7 +41,7 @@ Utilisez-les pour sauter entre les notes, les onglets et les différentes partie
   [`Ctrl+Tab`], [Onglet suivant],
   [`Ctrl+Shift+Tab`], [Onglet précédent],
   [`Ctrl+1` … `Ctrl+9`], [Passer directement à l'onglet 1 à 9],
-  [`Ctrl+Shift+F`], [Rechercher dans la boîte de notes],
+  [`Ctrl+Shift+F`], [Rechercher dans toute la boîte de notes],
   [`F6`], [Cibler la région suivante (barre latérale, éditeur, panneau…)],
   [`Shift+F6`], [Cibler la région précédente],
   [`Ctrl+Shift+0`], [Sauter directement à l'éditeur actif],
@@ -54,7 +54,9 @@ Utilisez-les pour sauter entre les notes, les onglets et les différentes partie
 
 Quand un panneau est ciblé, vous pouvez parcourir ses propres onglets internes avec *Ctrl+PageDown* et *Ctrl+PageUp*. (Ceux-ci n'agissent qu'une fois que vous avez ciblé le panneau avec *F6* d'abord.)
 
-À l'intérieur de l'arborescence de fichiers et d'autres listes, les touches fléchées déplacent la sélection, *Entrée* ou *Espace* ouvre ou active l'élément en surbrillance, et *Début* / *Fin* sautent aux extrémités. Dans l'arborescence de fichiers en particulier, *→* déploie un dossier (ou y entre) et *←* le replie (ou en ressort vers le parent).
+À l'intérieur de l'arborescence des fichiers et d'autres listes, les touches fléchées déplacent la sélection, *Entrée* ou *Espace* ouvre ou active l'élément en surbrillance, et *Début* / *Fin* sautent aux extrémités. Dans l'arborescence des fichiers en particulier, *→* développe un dossier (ou y entre) et *←* le réduit (ou en ressort vers le parent).
+
+Les menus fonctionnent de la même façon. Une fois qu'un menu est ouvert, y compris un menu contextuel, les touches fléchées parcourent ses éléments, *Début* / *Fin* sautent au premier et au dernier, *Entrée* ou *Espace* choisit, et *Esc* le ferme. *→* ou *Entrée* ouvre un sous-menu et *←* en ressort.
 
 == Édition
 
@@ -63,21 +65,22 @@ Ceux-ci agissent sur la note que vous écrivez. Voyez #wikilink("2 - Modifier de
   columns: (auto, auto),
   table.header([Raccourci], [Action]),
   [`Ctrl+N`], [Nouvelle note],
-  [`Ctrl+D`], [Note quotidienne (note du jour)],
+  [`Ctrl+D`], [Note du jour (note d'aujourd'hui)],
   [`Ctrl+T`], [Nouvel onglet vide],
   [`Ctrl+W`], [Fermer l'onglet],
   [`Ctrl+Shift+T`], [Rouvrir le dernier onglet fermé],
   [`Ctrl+M`], [Déplacer le fichier vers…],
   [`Ctrl+Shift+D`], [Supprimer le fichier],
   [`F2`], [Renommer le fichier courant],
-  [`Ctrl+H`], [Rechercher et remplacer (dans la note courante)],
+  [`Ctrl+F`], [Rechercher dans la note courante],
+  [`Ctrl+H`], [Rechercher et remplacer dans la note courante],
   [`Ctrl+=` / `Ctrl++`], [Zoomer],
   [`Ctrl+-`], [Dézoomer],
   [`Ctrl+0`], [Réinitialiser le zoom],
 )
 
 #callout("note")[
-*Ctrl+N* et *Ctrl+D* proviennent des règles de création de notes intégrées d'InkyCap, et contrairement à la plupart des raccourcis, _ces deux-là, vous pouvez les changer vous-même_. Chaque règle de création a un raccourci modifiable. Voyez #wikilink("3 - Scaffolds, Templates et Packages") pour savoir comment fonctionnent les règles de création.
+*Ctrl+N* et *Ctrl+D* proviennent des règles de création de notes intégrées d'InkyCap, alors ils se modifient à un endroit différent des autres : chaque règle de création a son propre raccourci modifiable dans *Règles de création* dans #wikilink("2 - Paramètres"). Voyez #wikilink("3 - Scaffolds, Templates et Packages") pour savoir comment fonctionnent les règles de création. Tous les autres raccourcis de cette page peuvent être changés depuis le panneau d'Aide, comme décrit à la fin de cette page.
 ]
 
 === Touches de mise en forme (en écrivant)
@@ -92,7 +95,6 @@ Celles-ci agissent à l'intérieur du contenu d'une note. Ce sont des bascules ;
   [`Ctrl+E`], [Code en ligne], [`` `…` ``],
   [`Ctrl+Shift+X`], [Barré], [`#strike[…]`],
   [`Ctrl+Shift+H`], [Surlignage], [`#highlight[…]`],
-  [`Ctrl+Shift+M`], [Math en ligne], [`$…$`],
   [`Tab`], [Indenter l'élément de liste], [],
   [`Shift+Tab`], [Désindenter l'élément de liste], [],
   [`Shift+Alt+Up`], [Déplacer la ligne / l'élément vers le haut], [],
@@ -116,10 +118,10 @@ Affichez, masquez et basculez entre les panneaux et les modes d'édition d'InkyC
   [`Ctrl+\`], [Afficher/masquer le panneau de droite],
   [`Ctrl+,`], [Ouvrir les Paramètres],
   [`Ctrl+Shift+N`], [Nouvelle fenêtre],
-  [`Ctrl+Shift+L`], [Basculer le thème foncé / clair],
+  [`Ctrl+Shift+L`], [Basculer le thème sombre / clair],
   [`Ctrl+Shift+M`], [Basculer le mode Source / Aperçu en direct],
   [`Ctrl+Shift+R`], [Basculer le Mode lecture],
-  [`Ctrl+Shift+1`], [Basculer le mode Sans distraction],
+  [`Ctrl+Shift+1`], [Basculer le Mode sans distraction],
   [`Ctrl+Shift+]`], [Diviser l'éditeur vers la droite],
   [`Ctrl+Shift+[`], [Diviser l'éditeur vers le bas],
   [`Ctrl+Shift+W`], [Fermer le panneau d'éditeur courant],
@@ -129,8 +131,10 @@ Affichez, masquez et basculez entre les panneaux et les modes d'édition d'InkyC
 
 Les modes d'édition et les vues ci-dessus ont leurs propres pages : #wikilink("1 - Vues et navigation"), #wikilink("5 - Vue mycélienne") et #wikilink("4 - Rouleau de journal").
 
+Une troisième sorte de division, *Diviser avec un aperçu synchronisé* (un mode lecture en direct de la même note à côté de l'éditeur), n'a pas de raccourci propre ; lancez-la depuis la Palette de commandes ou le menu *Options de l'onglet*. Voyez #wikilink("1 - L'interface InkyCap").
+
 #callout("important")[
-En mode Sans distraction, appuyez sur *Esc* pour revenir à la disposition normale.
+En Mode sans distraction, appuyez sur *Esc* pour revenir à la disposition normale.
 ]
 
 === Références et collaboration
@@ -153,9 +157,23 @@ Pour savoir ce qu'ils font, voyez #wikilink("1 - Collaboration",
 Toutes les commandes n'ont pas de raccourci. Tout ce qui n'en a pas est facilement accessible dans la Palette de commandes (*Ctrl+P*). Commencez à taper le nom pour voir une liste de possibilités.
 ]
 
-== Puis-je changer les raccourcis ?
+== Changer les raccourcis
 
-Vous pouvez personnaliser les raccourcis des *règles de création de notes* (comme Nouvelle note, Note quotidienne, ou d'autres règles que vous créez) depuis l'éditeur de Règles de création (voyez #wikilink("2 - Paramètres")). Réassigner les autres raccourcis intégrés (par exemple, remapper *Ctrl+P*) n'est pas possible pour le moment.
+Oui, les raccourcis de la vue *Raccourcis d'interface* du panneau d'Aide peuvent être réassignés, et le changement prend effet immédiatement :
+
++ Appuyez sur *F1* pour ouvrir le panneau d'Aide et assurez-vous que *Raccourcis d'interface* est sélectionné. (Tapez dans le champ de filtre pour trouver rapidement la commande.)
++ Cliquez sur la combinaison de touches affichée à côté de la commande. Elle devient *Appuyez sur les touches…*.
++ Appuyez sur la nouvelle combinaison que vous voulez. C'est tout : les nouvelles touches sont enregistrées et apparaissent dans la liste, dans la Palette de commandes et dans les infobulles.
+
+Pendant que le panneau attend vos touches :
+
+- Appuyez sur *Retour arrière* (ou *Suppr*) pour retirer complètement le raccourci. La commande se lit alors *Non assigné* et reste dans la liste pour que vous puissiez lui donner une nouvelle combinaison plus tard.
+- Appuyez sur *Esc* pour annuler et garder le raccourci tel qu'il était.
+- Si la combinaison sur laquelle vous appuyez est déjà utilisée par une autre commande, InkyCap la refuse et affiche un message nommant la commande qui la possède. Les combinaisons réservées par l'éditeur (comme *Ctrl+B* pour le gras ou *Ctrl+I* pour l'italique) et par votre système d'exploitation sont refusées de la même façon.
+
+Un raccourci que vous avez changé affiche une petite flèche de réinitialisation à côté de lui ; cliquez dessus pour rétablir la valeur par défaut de cette seule commande. Dès qu'un raccourci a été personnalisé, un bouton *Réinitialiser tous les raccourcis* apparaît en haut de la vue ; il demande une confirmation, puis rétablit chaque raccourci à sa valeur par défaut.
+
+La seule exception est les raccourcis des *règles de création de notes* (comme Nouvelle note, Note du jour, ou les règles que vous créez vous-même). Ils apparaissent dans le panneau d'Aide à titre de référence, mais vous les changez dans l'éditeur des Règles de création (voyez #wikilink("2 - Paramètres")), pour que chaque règle conserve une seule source de vérité.
 
 
 == Pages connexes

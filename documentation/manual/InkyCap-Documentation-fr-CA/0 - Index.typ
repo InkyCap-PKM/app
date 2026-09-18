@@ -39,4 +39,6 @@ Lisez #wikilink("4 - Démarrage rapide") si vous voulez explorer par vous-même.
 === #wikilink("1 - Importation et extensions", display: "Importation et extensions")
 - Importez depuis Markdown et Obsidian, configurez des scaffolds et des templates, et ajoutez des extensions.
 \
-#callout("tip")[ Chaque mot coloré est un #wikilink("4 - Liens et rétroliens", display: "lien wiki"). Cliquez dessus pour sauter à cette page ; chaque page indique aussi ce qui pointe vers elle, de sorte que vous pouvez vous promener dans le manuel exactement comme vous vous promènerez dans votre propre boîte de notes. ]
+#callout("tip")[Chaque mot coloré est un #wikilink("4 - Liens et rétroliens", display: "lien wiki"). Cliquez dessus pour sauter à cette page ; chaque page indique aussi ce qui pointe vers elle, de sorte que vous pouvez vous promener dans le manuel exactement comme vous vous promènerez dans votre propre boîte de notes.]
+
+#text(size: 0.9em)[InkyCap™ et le manuel de l'utilisateur © 2026 Joshua Chalifour. Pour en savoir plus, visitez #link("https://inkycap.org")[inkycap.org].]

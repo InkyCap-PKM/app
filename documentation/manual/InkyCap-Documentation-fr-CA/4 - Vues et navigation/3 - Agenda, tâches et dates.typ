@@ -20,7 +20,7 @@ Vous les écrivez naturellement au fil de la frappe, et le panneau *Agenda* les 
 
 == Créer une tâche
 
-Une tâche est une case que vous pouvez cocher comme terminée. Il y a trois façons faciles d'en créer une. Choisissez celle qui vous convient.
+Une tâche est une case que vous pouvez cocher comme terminée. Il y a trois façons d'en créer une.
 
 === Le raccourci rapide : taper une case à cocher
 
@@ -42,11 +42,11 @@ Cela fonctionne aussi bien dans la vue d'écriture courante que dans le mode sou
 
 === Une fois que vous avez une tâche
 
-Une tâche apparaît comme une case à cocher avec le texte à côté. Vous pouvez aussi lui donner une date d'échéance et des étiquettes. Pour modifier l'un de ces éléments dans la vue d'écriture, cliquez sur la petite pastille `#` cerclée qui apparaît à côté de la tâche lorsque votre curseur est sur sa ligne. Un menu apparaît avec :
+Une tâche apparaît comme une case à cocher avec le texte à côté. Vous pouvez aussi lui donner une date d'échéance et des étiquettes. Pour modifier l'un de ces éléments dans la vue d'écriture, faites un clic droit sur la petite pastille `#` cerclée qui apparaît à côté de la tâche lorsque votre curseur est sur sa ligne. Un menu apparaît avec :
 
 - un champ *Tâche* (texte indicatif : « Qu'y a-t-il à faire ? ») pour le texte de la tâche,
 - un champ *Échéance* (texte indicatif : « AAAA-MM-JJ ») pour la date limite,
-- et un bouton à bascule *Marquer comme faite* / *Marquer comme non faite*.
+- et un bouton à bascule *Marquer comme terminée* / *Marquer comme non terminée*.
 
 #callout("tip")[
   Pour cocher une tâche comme terminée, cliquez sur sa case. Le texte est barré, pour que vous voyiez d'un coup d'œil qu'elle est finie. Cliquez de nouveau pour la décocher.
@@ -85,7 +85,7 @@ La note apparaîtra alors dans l'Agenda comme un seul élément, en utilisant so
 Un rappel daté peut se répéter selon un horaire. Servez-vous-en pour tout ce qui revient : une réunion hebdomadaire, un rapport mensuel, un renouvellement annuel. InkyCap appelle cela la *récurrence*.
 
 #callout("note")[
-  La récurrence s'applique aux *dates*, pas aux tâches à cocher. Une tâche se termine une seule fois, elle n'a donc pas d'horaire de répétition. Si vous voulez une échéance récurrente, donnez à une note une date *due* et configurez sa récurrence (ci-dessous) plutôt que de la marquer comme tâche.
+  La récurrence s'applique aux *dates*, pas aux tâches à cocher. Si vous voulez une échéance récurrente, donnez à une note une date *due* et configurez sa récurrence (ci-dessous) plutôt que de la marquer comme tâche.
 ]
 
 Vous configurez la récurrence au *niveau de la note*, sur la propre date *due* de la note. Ouvrez l'éditeur de *Propriétés* du panneau de droite de la note (voir #wikilink("6 - Propriétés des notes")) et donnez à la note une date *due*. Un contrôle *Répéter* apparaît alors juste sous cette date. (Il ne s'affiche que lorsque la note a une date d'échéance et n'est pas une tâche à cocher.)
@@ -139,10 +139,17 @@ Le panneau se tient à jour automatiquement à mesure que vous ajoutez, modifiez
 
 Au-dessus de la liste, vous trouverez quelques contrôles :
 
-+ *Liste de tâches* restreint ce qui est affiché : *Tout* (par défaut), *À faire*, *Fait*, ou *Dates seulement* (juste les rappels autonomes, sans cases à cocher).
++ *Liste de tâches* restreint ce qui est affiché selon le genre : *À faire (tâche)*, *Terminé (tâche)* ou *Dates (rappel)* (juste les rappels autonomes, sans cases à cocher). Vous pouvez cocher plus d'un genre à la fois. Le bouton indique *Toutes* lorsque rien n'est sélectionné (l'option par défaut), et autrement il énumère les genres que vous avez choisis.
 + *Étiquettes* n'affiche que les éléments portant les étiquettes que vous sélectionnez. C'est une sélection multiple qui correspond à n'importe laquelle des étiquettes que vous choisissez, et qui ne liste que les étiquettes réellement utilisées en ce moment. (Voir #wikilink("5 - Étiquettes").)
-+ *Tri* offre un petit bouton de tri qui vous permet d'ordonner par *Échéance (plus tôt – plus tard)* (par défaut), *Échéance (plus tard – plus tôt)*, date de création, ZID ou nom, dans un sens ou dans l'autre. Les éléments sans valeur pour le critère de tri choisi tombent au bas de la liste.
++ *Date* restreint la liste selon la date de l'élément. Choisissez une comparaison (*Est*, *Est après*, *Est avant*, *Est le ou après*, *Est le ou avant*, *Est dans la plage*, *Est vide* ou *N'est pas vide*), puis une date ; *Est dans la plage* prend deux dates. Avec *Est*, la case *Échéance aujourd'hui* est le moyen rapide de ne voir que les éléments du jour. Une date peut être une date fixe du calendrier ou un nombre de *jours à partir d'aujourd'hui* (le petit bouton de calendrier passe d'une forme à l'autre, et les nombres négatifs remontent dans le passé). Une date relative est recalculée chaque fois que vous regardez, donc un filtre construit avec des valeurs en jours à partir d'aujourd'hui continue de pointer vers la semaine à venir (ou toute autre période choisie) au lieu de rester figé au jour où vous l'avez configuré. *Effacer le filtre de date* le retire.
++ *Trier* offre un petit bouton de tri qui vous permet d'ordonner par *Échéance (Plus tôt – Plus tard)* (par défaut), *Échéance (Plus tard – Plus tôt)*, date de création, ZID ou nom, dans un sens ou dans l'autre. Les éléments sans valeur pour le critère de tri choisi tombent au bas de la liste.
 + Une boîte de recherche (*« Filtrer les éléments de l'agenda… »*) qui correspond au texte de l'élément, au titre de sa note ou à ses étiquettes.
+
+L'Agenda de la barre latérale se souvient de vos filtres pour chaque boîte de notes sur cet ordinateur, de sorte qu'il s'ouvre tel que vous l'avez laissé. Dès qu'un filtre restreint la liste, un bouton *Réinitialiser les filtres* apparaît à côté des contrôles pour les effacer tous d'un coup.
+
+=== Enregistrer un ensemble de filtres comme signet
+
+Si vous revenez sans cesse à la même combinaison de filtres (disons, les tâches en retard portant l'étiquette `thèse`), appuyez sur le bouton *Ajouter la vue actuelle aux signets* à côté des contrôles, tapez un nom et appuyez sur `Entrée`. La vue est enregistrée dans votre #wikilink("1 - L'interface InkyCap", display: "panneau Signets"), aux côtés de vos notes, collections et recherches mises en signet. Cliquer dessus plus tard fait passer la barre latérale à l'Agenda et applique ces filtres. C'est une fonction de l'Agenda de la barre latérale seulement ; la vue agenda d'une collection (ci-dessous) n'a pas de bouton de signet.
 
 === Lire la liste
 
@@ -164,12 +171,12 @@ Les dates suivent le format que vous avez choisi dans #wikilink("2 - Paramètres
 
 == Les tâches dans les callouts et les citations
 
-Vous n'êtes pas limité à écrire des tâches dans le fil principal d'une note. Une tâche placée à l'intérieur d'un callout, d'une citation en bloc ou d'une annotation apparaît toujours comme une case à cocher fonctionnelle, et vous pouvez la cocher directement là sans l'ouvrir pour la modifier.
+Une tâche placée à l'intérieur d'un callout, d'une citation en bloc ou d'une annotation apparaît toujours comme une case à cocher fonctionnelle, et vous pouvez la cocher directement là sans l'ouvrir pour la modifier.
 
 == Le balisage littéral
 
 #callout("tip", title: "Pour les utilisateurs de Typst")[
-  Les tâches et les rappels datés sont de véritables appels de fonctions Typst du package `inkycap-notebox` intégré, importé automatiquement dans chaque note. Tout ce qui précède est une interface conviviale par-dessus celles-ci :
+  Les tâches et les rappels datés sont des appels de fonctions Typst du package `inkycap-notebox` intégré, importé automatiquement dans chaque note. Tout ce qui précède est une interface conviviale par-dessus celles-ci :
 
   ```typ
   #task("Draft abstract")                              // open task
@@ -191,7 +198,7 @@ Vous n'êtes pas limité à écrire des tâches dans le fil principal d'une note
 
 Si vous organisez des notes dans une #wikilink("2 - Collections", display: "collection"), cette collection peut afficher ses membres sous forme d'*Agenda* plutôt que de tableau. C'est pratique, par exemple, pour un cours ou un projet précis : chaque tâche et chaque échéance appartenant à cette collection apparaîtra dans une vue ciblée.
 
-Pour en configurer un, ouvrez le tableau de la collection, utilisez *Ajouter une vue* (le bouton *+*) et choisissez *Vue Agenda*. Le résultat utilise la même fonctionnalité de liste d'Agenda que vous connaissez déjà, mais limitée aux seuls membres de cette collection. (L'appartenance suit le filtre de la collection ; une note apparaît parce qu'elle correspond à ce filtre, et non à cause d'un marqueur manuel.)
+Pour en configurer un, ouvrez le tableau de la collection, utilisez *Ajouter une vue* (le bouton *+*) et choisissez *Vue agenda*. Le résultat utilise la même fonctionnalité de liste d'Agenda que vous connaissez déjà, mais limitée aux seuls membres de cette collection. (L'appartenance suit le filtre de la collection ; une note apparaît parce qu'elle correspond à ce filtre, et non à cause d'un marqueur manuel.)
 
 == Pages connexes
 

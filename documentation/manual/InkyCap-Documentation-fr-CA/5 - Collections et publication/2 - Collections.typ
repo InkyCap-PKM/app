@@ -23,7 +23,7 @@ Une collection n'est _pas_ un dossier. *Elle ne déplace, ne copie ni ne contien
 
 == Comment les notes rejoignent une collection
 
-L'appartenance est décidée entièrement par des *filtres*. Il n'y a pas de liste « ajouter à la collection » distincte à entretenir. Une note apparaît lorsqu'elle correspond aux règles de la collection. Il existe deux façons complémentaires d'écrire ces règles, et vous pouvez les combiner librement.
+L'appartenance est décidée entièrement par des *filtres*. Il n'y a pas de liste « ajouter à la collection » distincte à entretenir. Une note apparaît comme membre de la collection lorsqu'elle correspond aux règles de la collection. Il existe deux façons complémentaires d'écrire ces règles, et vous pouvez les combiner librement.
 
 === La façon simple : la propriété « collection »
 
@@ -41,9 +41,9 @@ Vous la définissez depuis l'éditeur de *Propriétés* du panneau de droite de 
 
 === La façon puissante : des filtres sur n'importe quelle propriété
 
-Vous n'avez pas du tout besoin de toucher à une note pour l'inclure. Une collection peut rassembler des notes selon _n'importe quel_ critère (le dossier où elles se trouvent, leurs #wikilink("5 - Étiquettes"), une date, une case à cocher, ou toute propriété que vous avez définie) à l'aide de filtres imbriqués *Tous / N'importe / Aucun*. Cela vous permet de bâtir une collection du genre « inclure tout ce qui est dans mon dossier Recherche _ou_ étiqueté `my-paper`, mais _pas_ le fichier de collection lui-même » sans modifier une seule note.
+Vous n'avez pas du tout besoin de toucher à une note pour l'inclure. Une collection peut rassembler des notes selon _n'importe quel_ critère (le dossier où elles se trouvent, leurs #wikilink("5 - Étiquettes"), une date, une case à cocher, ou toute propriété que vous avez définie) à l'aide de filtres imbriqués *Tous / N'importe lequel / Aucun*. Cela vous permet de bâtir une collection du genre « inclure tout ce qui est dans mon dossier Recherche _ou_ étiqueté `my-paper` » sans ajouter le nom de la collection à une seule note.
 
-Les deux approches coexistent par conception : la règle par défaut qui correspond au nom de votre collection se trouve à l'intérieur d'un groupe *« N'importe »* précisément pour que vous puissiez ajouter des solutions de rechange (un dossier, une étiquette, un test de propriété) juste à côté.
+Les deux approches coexistent par conception : la règle par défaut qui correspond au nom de votre collection se trouve à l'intérieur d'un groupe *« N'importe lequel »* précisément pour que vous puissiez ajouter des solutions de rechange (un dossier, une étiquette, un test de propriété) juste à côté.
 
 == Construire des filtres
 
@@ -52,17 +52,18 @@ Ouvrez l'éditeur de filtres de la collection avec le bouton *Filtre* de la barr
 Chaque groupe possède un combinateur, affiché sous forme d'étiquette en langage clair :
 
 - *Tous* : Chaque règle du groupe doit être vraie.
-- *N'importe* : Au moins une règle doit être vraie.
+- *N'importe lequel* : Au moins une règle doit être vraie.
 - *Aucun* : Aucune des règles ne doit être vraie.
 
-La légende du groupe vous est relue, par exemple « Tous les énoncés suivants sont vrais ». À l'intérieur d'un groupe, vous ajoutez :
+La légende du groupe vous est relue, par exemple « Tous des conditions suivantes sont vraies ». À l'intérieur d'un groupe, vous ajoutez :
 
 + *« + Ajouter un filtre »* ajoute une règle unique (une feuille).
 + *« + Ajouter un groupe de filtres »* ajoute un sous-groupe imbriqué, pour combiner des idées. Les groupes peuvent s'imbriquer jusqu'à trois niveaux de profondeur.
 
 Une règle unique est une *propriété*, un *opérateur* et une *valeur*. Les opérateurs sont :
 
-- *égale* / *n'égale pas*
+- *est égal à* / *n'est pas égal à*
+- *inférieur à* / *au plus* / *supérieur à* / *au moins* (ceux-ci comparent des nombres, ou des dates écrites sous la forme `YYYY-MM-DD`, dans l'ordre)
 - *contient* / *ne contient pas*
 - *est vide* / *n'est pas vide* (aucune valeur requise)
 
@@ -82,19 +83,17 @@ Choisissez la propriété dans un menu déroulant regroupé en *Propriétés* (c
 
 == Les vues : tables et agendas
 
-Une collection peut afficher plus d'une *vue*, chacune avec ses propres filtres, colonnes et tris. Les vues apparaissent sous forme d'onglets en haut de la collection. Le bouton *« + »* ajoute une vue et demande si vous voulez une *vue table* ou une *vue agenda*.
+Une collection peut afficher plus d'une *vue*, chacune avec ses propres filtres, colonnes et tris. Les vues apparaissent sous forme d'onglets en haut de la collection. Le bouton *« + »* ajoute une vue et demande si vous voulez une *Vue tableau* ou une *Vue agenda*.
 
 - Renommez une vue en double-cliquant sur son onglet.
 - Réorganisez les vues en faisant glisser leurs onglets.
 - Supprimez une vue avec son *×* (la première vue reste toujours, donc vous ne vous retrouvez jamais avec une collection vide).
 
-Lorsque les onglets débordent, des boutons apparaissent pour vous permettre de faire défiler. InkyCap se souvient de la dernière vue que vous regardiez pour chaque collection.
-
 == La vue table
 
 La table est le cœur d'une collection : une ligne par note correspondante, une colonne par propriété que vous choisissez d'afficher. Elle se comporte comme un tableur familier.
 
-*Ouvrir des notes.* La cellule du nom de fichier est un lien. Cliquez dessus pour ouvrir la note, ou faites Ctrl/Cmd-clic (ou clic du milieu) pour l'ouvrir dans un nouvel onglet. Faites un clic droit sur n'importe quelle ligne pour *Ouvrir la note*, *Ouvrir dans un nouvel onglet* ou *Exporter la note…*.
+*Ouvrir des notes.* La cellule du nom de fichier est un lien. Cliquez dessus pour ouvrir la note, ou faites Ctrl/Cmd-clic (ou clic du milieu) pour l'ouvrir dans un nouvel onglet. Chaque ligne porte aussi une petite icône de crayon qui ouvre la note directement dans l'éditeur visuel (faites Ctrl/Cmd-clic dessus pour un nouvel onglet). Faites un clic droit sur n'importe quelle ligne pour *Ouvrir la note*, *Ouvrir dans un nouvel onglet* ou *Exporter la note...*.
 
 *Modifier sur place.* Cliquez sur la plupart des cellules pour les modifier directement : tapez une valeur et appuyez sur Entrée pour enregistrer (Échap annule). Les cases à cocher se basculent d'un seul clic. _Tout ce que vous tapez est réécrit directement dans les propriétés de la note_, de sorte que la table est une véritable surface d'édition, pas seulement un rapport.
 
@@ -102,19 +101,19 @@ La table est le cœur d'une collection : une ligne par note correspondante, une 
   Les colonnes tirées des détails de fichier (le dossier, le chemin, les dates, la taille) sont en *lecture seule*, puisqu'elles proviennent du système de fichiers lui-même. Tout ce que vous avez rédigé comme propriété est modifiable.
 ]
 
-*Choisir les colonnes.* Le bouton *Colonnes* ouvre une liste à cocher de chaque propriété disponible ; cochez celles que vous voulez voir apparaître comme colonnes. Faites glisser les en-têtes de colonne pour les réorganiser. La colonne du nom de fichier est toujours présente.
+*Choisir les colonnes.* Le bouton *Colonnes* ouvre une liste à cocher de chaque propriété disponible ; cochez celles que vous voulez voir apparaître comme colonnes. Faites glisser les en-têtes de colonne pour les réorganiser, et faites glisser le bord droit d'un en-tête pour élargir ou rétrécir une colonne (les largeurs sont enregistrées avec la vue). La colonne du nom de fichier est toujours présente.
 
 *Trier.* Cliquez sur un en-tête de colonne pour trier selon celle-ci, en passant par croissant (▲), décroissant (▼), puis de retour à aucun. L'en-tête selon lequel vous triez affiche la flèche pour que vous connaissiez toujours l'ordre actuel.
 
 #callout("tip")[
-  Des étiquettes conviviales gardent les en-têtes lisibles. Les détails de fichier s'affichent comme « Nom du dossier », « Date de modification », « Extension de fichier », et ainsi de suite, même si InkyCap stocke leurs clés techniques précises en coulisses.
+  Des étiquettes conviviales gardent les en-têtes lisibles. Les détails de fichier s'affichent comme « Nom du dossier », « Date de modification », « Extension du fichier », et ainsi de suite, même si InkyCap stocke leurs clés techniques précises en coulisses.
 ]
 
 *Filtrer une colonne.* Chaque en-tête de colonne porte une petite icône d'entonnoir. Cliquez dessus pour filtrer la table selon cette seule colonne, sans ouvrir l'éditeur de filtre complet. Les contrôles s'adaptent au type de la colonne :
 
 - Les colonnes *texte* offrent une boîte « contient ».
 - Les colonnes *nombre* offrent des opérateurs comme égal à, au moins, au plus ou entre.
-- Les colonnes *date* offrent est, avant, après, le ou avant, le ou après, dans une plage, et vide / non vide.
+- Les colonnes *date* offrent est, est avant, est après, est le ou avant, est le ou après, est dans la plage, ainsi que est vide / n'est pas vide.
 - Les colonnes *liste* (comme `tags` ou `collection`) offrent une liste à cocher des valeurs réellement présentes, de sorte que vous cochez celles que vous voulez.
 - Les colonnes *case à cocher* offrent tous / coché / non coché.
 
@@ -126,21 +125,33 @@ Appuyez sur *Appliquer* pour poser le filtre, ou sur *Effacer* pour le retirer d
 
 == La vue agenda
 
-Une vue *agenda* troque la grille pour une #highlight[liste ciblée de tâches et d'éléments datés tirés des notes membres de la collection (un tableau d'échéances limité exactement à cet ensemble de notes)]. Elle utilise les mêmes règles d'appartenance que la table, de sorte que les deux ne se contredisent jamais, et elle ne nécessite aucune activation particulière : l'appartenance par filtres suffit.
+Une vue *agenda* troque la grille pour une #highlight[liste ciblée de tâches et d'éléments datés *tirés des notes membres de la collection* (un tableau d'échéances limité exactement à cet ensemble de notes)]. Elle utilise les mêmes règles d'appartenance que la table, de sorte que les deux ne se contredisent jamais, et elle ne nécessite aucune activation particulière : l'appartenance par filtres suffit.
 
-Cliquer sur un élément ouvre sa note (Ctrl/Cmd ou clic du milieu pour un nouvel onglet). Si une collection n'a aucune tâche ni élément daté, la vue le dit clairement. Pour le portrait complet du fonctionnement des tâches et des dates d'échéance dans votre boîte de notes, voir #wikilink("3 - Agenda, tâches et dates").
+Cliquer sur un élément ouvre sa note (Ctrl/Cmd ou clic du milieu pour un nouvel onglet). Si une collection n'a aucune tâche ni élément daté, la vue le dit clairement.
+
+La vue offre les mêmes filtres *Liste de tâches* et *Date* que l'Agenda de la barre latérale, y compris le raccourci *Échéance aujourd'hui* et les dates définies comme un nombre de jours à partir d'aujourd'hui. Deux différences : les filtres que vous posez ici ne sont pas mémorisés d'une visite à l'autre, et il n'y a pas de bouton *Ajouter la vue actuelle aux signets*, parce que les vues enregistrées de la collection jouent déjà ce rôle. Pour le portrait complet du fonctionnement des tâches, des dates d'échéance et des filtres, voir #wikilink("3 - Agenda, tâches et dates").
+
+== Les paramètres de la collection
+
+Lorsqu'une collection est ouverte, le panneau de droite affiche trois onglets propres à la collection :
+
+- *Caractéristiques* contient l'icône de la collection, son template Typst, ainsi que son style et son fichier de bibliographie.
+- *Substitutions de style* contient les choix de mise en page pour tout ce que vous exportez depuis la collection (taille du papier, marges, polices, espacement, numérotation des pages et des titres) et une rangée *Typst personnalisé* pour tout ce que les contrôles ne couvrent pas.
+- *Métadonnées et structure du livre* contient tout ce qui concerne le livre fusionné : page de titre, contributeurs, table des matières, bibliographie et numérotation des pages.
+
+Ces trois onglets importent surtout au moment de publier ; ils sont donc décrits dans #wikilink("3 - Exportation et publication").
 
 == Exporter vers un tableur
 
 Lorsque vous voulez les données de votre collection hors d'InkyCap (dans un tableur comme LibreOffice Calc, Excel, Numbers, Google Sheets, ou un outil de statistiques), utilisez le bouton *Exporter* et choisissez :
 
-- *Table en CSV* écrit des valeurs séparées par des virgules, le format de tableur universel.
-- *Table en TSV* écrit des valeurs séparées par des tabulations, pratique lorsque votre texte contient des virgules.
+- *Tableau en CSV* écrit des valeurs séparées par des virgules, le format de tableur universel.
+- *Tableau en TSV* écrit des valeurs séparées par des tabulations, pratique lorsque votre texte contient des virgules.
 
-L'exportation reflète exactement ce que vous voyez : les colonnes, les filtres et l'ordre de tri de la vue active. Les valeurs sont correctement entre guillemets et échappées, les listes sont jointes en une seule cellule, et les cellules vides restent vides. Vous obtiendrez une confirmation une fois le fichier enregistré.
+L'exportation reflète exactement ce que vous voyez : les colonnes, les filtres et l'ordre de tri de la vue active. Les valeurs sont mises entre guillemets et échappées pour être préservées durant l'exportation, les listes sont jointes en une seule cellule, et les cellules vides restent vides. Vous obtiendrez une confirmation une fois le fichier enregistré.
 
 #callout("note")[
-  CSV et TSV sont les exportations _de tableur_ ; elles capturent les propriétés de votre collection sous forme de données. Le même menu *Exporter* rend aussi les notes elles-mêmes en PDF, en livre fusionné, en site HTML ou en fichiers Markdown. Ces flux de travail de publication, y compris les options de métadonnées et de structure du livre, sont couverts dans #wikilink("3 - Exportation et publication").
+  CSV et TSV sont les exportations _de tableur_ ; elles capturent les valeurs des propriétés de votre collection sous forme de données. Le même menu *Exporter* rend aussi les notes elles-mêmes en PDF, en livre fusionné, en site HTML ou en fichiers Markdown. Ces flux de travail de publication, y compris les options de métadonnées et de structure du livre, sont couverts dans #wikilink("3 - Exportation et publication").
 ]
 
 == Pages connexes

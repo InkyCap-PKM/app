@@ -25,10 +25,28 @@ matching manual.
 
 ## Editing the manual
 
-Edit the `.typ` notes here directly (any editor), then rebuild. To preview live
-inside InkyCap, point an external editor at the config-dir working copy — the
-file watcher reloads changes; just remember those edits are ephemeral and the
-committed source here is canonical.
+Open the manual folder here (for example `documentation/manual/InkyCap-Documentation/`)
+in InkyCap as an ordinary notebox (Settings → Overview → Manage noteboxes → Add).
+Because it is outside the config dir it is a normal, writable notebox, so edits
+save to these files directly and the app's book export works from it. The
+`.inkycap/` working folder the app creates there is ignored by git and skipped
+when the manual is embedded (see `docs_manual::extract_manual`); only the
+`.inkycap/collections/*.collection` files are kept, since they hold the
+"Export as book" settings used to produce the PDF manuals.
+
+The copy the Help window opens (under the config dir) is read-only: edits made
+there are never saved, so do not edit the manual through Help → InkyCap
+Documentation.
+
+Any external editor works too; the committed source here is canonical.
+
+## Producing the PDF manuals
+
+Each manual folder carries a collection in `.inkycap/collections/` whose
+"Export as book" settings produce the single-file PDF published on
+inkycap.org. Open the manual folder as a notebox, open that collection, and
+choose Export → Export as book. The book is ordered by file path, keeps the
+Index page as its opening page, and places the table of contents right after it.
 
 Adding a locale: add the notebox folder here, then a match arm in
 `docs_manual::embedded_manual` and the locale → folder mapping in

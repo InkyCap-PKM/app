@@ -8,11 +8,11 @@
 
 = Scaffolds, Templates, and Packages
 
-InkyCap gives you three kinds of reusable starting points (_scaffolds_, _document templates_, and _packages_) plus _creation rules_ that apply them automatically. If you've ever wished a new note could arrive half-filled-in, or wanted the polished look of a published article without fiddling with layout, this is where you set that up.
+InkyCap gives you three kinds of reusable starting points (_scaffolds_, _document templates_, and _packages_) plus _creation rules_ that apply them automatically. If you like a new note to include some pre-filled content or formatting, wanted the polished look of a published article without adjusting layout, this is where you set that up.
 
-The three ideas are related but distinct, so it helps to keep them straight:
+The three ideas are related but distinct:
 
-- *Scaffold*. A snippet of note content (with fill-in-the-blank placeholders) that you drop _into_ a note. Think "daily journal starter". A scaffold can also include a template or packages.
+- *Scaffold*. A snippet of note content (with fill-in-the-blank placeholders) that you drop _into_ a note. Think "daily journal starter". A scaffold can also include a template or packages. Scaffolds are InkyCap-specific.
 - *Template*. A whole-document wrapper that controls page layout, fonts, and styling, the way a journal's submission style does.
 - *Package*. A reusable Typst library that adds capabilities (diagrams, fancy code blocks, and so on).
 
@@ -20,7 +20,7 @@ All three live together in one place: the *Scaffolds, Templates, & Packages* pan
 
 == Opening the panel
 
-On the vertical toolbar down the side of the window, click the button with the layout-template icon (its tooltip reads *"Scaffolds, Templates, & Packages"*). This opens a pane in the left sidebar (not a pop-up window) with three small tabs across the top: *Scaffolds*, *Document Templates*, and *Packages*. It opens on the Scaffolds tab.
+On the vertical toolbar down the side of the window, click the button with the layout-template icon (its tooltip reads *"Scaffolds, Templates, & Packages"*). This opens a pane in the left sidebar with three buttons across the top that switch between *Scaffolds*, *Typst Templates*, and *Typst Packages* (hover over a button to see its name). 
 
 Two header controls exist:
 
@@ -31,27 +31,27 @@ Two header controls exist:
 
 A scaffold is just note content that you reuse. InkyCap comes with two, and you can add your own.
 
-The two built-in scaffolds are *new-note* (the standard starter behind every new note) and *daily-note* (a dated starter ideal for journalling; see #wikilink("4 - Journal Scroll")). These are seeded into your notebox the first time you open it and then left alone but you can customize them.
+    The two built-in scaffolds are *new-note* (the standard starter behind every new note) and *daily-note* (a dated starter ideal for journalling; see #wikilink("4 - Journal Scroll")). These are seeded into your notebox the first time you open it and then left alone but you can customize them. They cannot be deleted, since the built-in creation rules depend on them. 
 
 === Inserting a scaffold into a note
 
-With a note open, press `Ctrl+\` to bring up the *Insert scaffold* picker. Start typing to filter your choices (if you've created many scaffolds), use the up and down arrows to choose, press Enter to insert, and Esc to cancel. (You can also run *Insert Scaffold* from the command palette.) If no note is open yet, InkyCap reminds you to "Open a note first".
+With a note open, press `Ctrl+Shift+\` shortcut to bring up the *Insert scaffold* picker. Start typing to filter your choices (if you've created many scaffolds), use the up and down arrows to choose, press Enter to insert, and Esc to cancel. (You can also run *Insert Scaffold* from the command palette.) If you open the picker on an empty tab instead of a note, choosing a scaffold creates a brand-new note whose body is that scaffold, using the *New Note* creation rule for the folder and file name.
 
 When you insert, the scaffold's content is appended to the end of your note, with any placeholders filled in fresh at that moment (e.g. a variable for the title will add whatever title you've given the note). If the current note was blank, the scaffold fills it. 
 
-If the scaffold begins with note properties, those are merged into your note's existing properties; your existing values are kept, and any new keys are simply added. Nothing you'd already written is disturbed.
+If the scaffold begins with note properties, those are merged into your note's existing properties; your existing values are kept, and any new keys are added.
 
 === Creating your own scaffold
 
 + In the Scaffolds tab, click *New*.
 + Give it a filename (for example, `meeting-notes`). You can leave off the `.typ`; InkyCap adds it.
-+ The new scaffold opens in a tab, pre-filled with a starter you can edit freely.
++ The new scaffold opens in a tab, pre-filled with a starter you can edit freely. The starter begins with the same import line every note carries, so your scaffold compiles like any other note.
 
-To revisit any scaffold later, click its row in the list to open it.
+To revisit any scaffold later, click its row in the list to open it. To remove one you no longer need, click the trash icon on its row. InkyCap asks you to confirm, and if any creation rules still point at that scaffold it lists them: those rules keep working but will create notes without the scaffold's body until you point them at another one. The scaffold is moved to the trash rather than deleted outright.
 
 === Fill-in-the-blank placeholders
 
-Scaffolds (and several creation-rule fields) understand `{{...}}` placeholders that get filled in when the scaffold is used. The most useful ones:
+Scaffolds (and several creation-rule fields) understand `{{...}}` placeholders that get filled in when the scaffold is used. 
 
 - `{{title}}` is the note's title.
 - `{{filename}}` is the note's file name on disk.
@@ -70,7 +70,7 @@ The format inside `{{date:...}}` uses familiar tokens: `YYYY` (year), `MM` (mont
 
 A creation rule is a preset for making a new note. Instead of creating a blank file and setting it up by hand each time, a rule can pick the folder, name the file, fill it from a scaffold, apply a template, and bind a keyboard shortcut (all at once). This is what makes "press a key, get today's dated journal entry in the right folder" possible.
 
-You manage rules in #wikilink("2 - Settings"), on the *Creation Rules* tab. As the panel puts it, creation rules "simplify repetitive note creation processes."
+You manage rules in #wikilink("2 - Settings"), on the *Creation Rules* tab. As the panel puts it, creation rules "simplify repetitive note creation processes." Rules belong to the notebox (they are stored in its `.inkycap` folder), so they travel with it.
 
 === The two built-in rules
 
@@ -85,7 +85,7 @@ Click *+ New Rule* and fill in the fields that matter to you:
 - *Icon* lets you pick a small icon, or type your own one- or two-character label or emoji.
 - *Filename pattern* sets how new files are named. Use placeholders like `{{title}}` or `{{date:YYYY-MM-DD}}`, or leave it blank to be asked each time.
 - *Target folder* is where notes land, relative to your notebox root. Leave it empty to fall back to your default "New note location" (set under Files & Links; see #wikilink("3 - Setting Up Your Notebox")). It accepts date and title placeholders too.
-- *Scaffold file* is which scaffold (if any) fills the new note.
+- *Scaffold file* is which scaffold (if any) fills the new note. Two buttons beside the field let you create a new scaffold or edit the selected one in a small editor window without leaving Settings.
 - *Typst template* is an optional whole-document template (covered below).
 - *Creation mode* is "Create and open" (the default) or "Create only".
 - *Hotkey*: click to record a key combination; InkyCap refuses combinations already bound to something else.
@@ -96,7 +96,7 @@ Save when you're done. The *Restore Defaults* button re-seeds a built-in rule's 
 
 #callout("tip")[ Every active rule also shows up in the command palette under the *Creation Rules* category, so you can run it without memorizing its shortcut. ]
 
-#callout("warning")[ When choosing a Typst template for a rule, the on-screen description still mentions a "templates folder" and paths like `/templates/ieee.typ`. That wording is out of date. What actually happens: a value starting with `@` or `/` is used exactly as typed (for example `@preview/charged-ieee:0.1.0`), and a plain name like `letter-layout` is treated as `@local/letter-layout:0.1.0`. There is no separate templates folder. ]
+#callout("note")[When choosing a Typst template for a rule, a value starting with `@` or `/` is used exactly as typed (for example `@preview/charged-ieee:0.1.0`, or a path inside the notebox), and a plain name like `letter-layout` is treated as the installed local package `@local/letter-layout:0.1.0`. ]
 
 == Templates and packages <templates-and-packages>
 
@@ -113,21 +113,21 @@ Both are managed from their respective tabs in the panel, and both are stored to
 + Click *Install* and enter a spec, such as `@preview/cetz:0.2.0`. The `@preview/` part means "from the Typst Universe".
 + InkyCap fetches it and reports how many files it installed.
 
-Each installed item appears as a row with its name, version, and an origin badge (Typst Universe items read "Typst Universe"; ones you made yourself read "Your package" or "Your template"). The *Copy* action puts the exact import line on your clipboard so you can paste it into a note, and the trash icon uninstalls it.
+Each installed item appears as a row with its name, version, and an origin badge (Typst Universe items read "Typst Universe"; ones you made yourself read "Your package" or "Your template"). The *Copy* action puts the exact import line on your clipboard so you can paste it into a note, and the trash icon uninstalls it. Before uninstalling, InkyCap lists the creation rules that use the package and the notes that import it, since those notes will not compile until it is reinstalled.
 
 You can also install a template or package from a local `.tar.gz` archive with *From file*, or create your own starter with *New*. This is handy if you want to build a house style for your own writing.
 
 === How packages work
 
-You rarely need to think about where packages are stored. InkyCap looks for them in your notebox first, then in the shared Typst cache on your computer (the same cache the standard Typst tools use), so your documents compile the same way everywhere. And if a note imports a Universe package you haven't installed, InkyCap downloads it on the spot (along with anything it depends on) and carries on compiling---_this is a case in which InkyCap would need to access the Internet_. Applying a Universe document template needs nothing special; it's the same automatic machinery.
+InkyCap looks for packages in your notebox first, then in the shared Typst cache on your computer (the same cache the standard Typst tools use), so your documents compile the same way everywhere. If a note imports a Universe package you haven't installed, InkyCap downloads it (along with anything it depends on) and carries on compiling---_this is a case in which InkyCap would need to access the Internet_. Applying a Universe document template works similarly.
 
-#callout("tip", title: "For Typst users")[ Templates and packages live under `.inkycap/packages/<namespace>/<name>/<version>/`, exactly where the Typst compiler expects them, and that folder is _not_ git-ignored. Import a Universe library with the usual line:
+#callout("tip", title: "For Typst users")[Templates and packages live under `.inkycap/packages/<namespace>/<name>/<version>/`, where the Typst compiler expects them, and that folder is _not_ git-ignored. Import a Universe library with the usual line:
 
 ```typ
 #import "@preview/cetz:0.2.0": *
 ```
 
-A package is treated as a _document template_ precisely when its `typst.toml` declares a `[template]` section; otherwise it's a library. The `@preview` namespace is the public registry; `@local/<name>:0.1.0` is for packages you author yourself (these are never auto-downloaded; there's no registry to fetch them from). Auto-download only resolves `@preview` specs, pulling them and their transitive dependencies into the shared Typst cache shared with `typst-cli` and Tinymist. ]
+A package is treated as a _document template_ when its `typst.toml` declares a `[template]` section; otherwise it's a library. The `@preview` namespace is the public registry; `@local/<name>:0.1.0` is for packages you author yourself (these are never auto-downloaded; there's no registry to fetch them from). Auto-download only resolves `@preview` specs, pulling them and their transitive dependencies into the shared Typst cache shared with `typst-cli` and Tinymist.]
 
 === Bundling packages when you share
 

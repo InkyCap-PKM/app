@@ -19,7 +19,7 @@ You write these naturally as you type and the *Agenda* panel collects all of the
 
 == Creating a task
 
-A task is a checkbox you can mark as complete. There are three easy ways to make one. Pick whichever suits your need.
+A task is a checkbox you can mark as complete. There are three ways to make one.
 
 === The quick shortcut: type a checkbox
 
@@ -41,17 +41,15 @@ This works in both the everyday writing view and the source view. If you're not 
 
 === Once you have a task
 
-A task shows up as a checkbox and the text beside it. You can give it a due date and tags too. To edit any of these in the writing view, click the small circled `#` pill that appears beside the task when your cursor is on its line. A menu appears with:
+A task shows up as a checkbox and the text beside it. You can give it a due date and tags too. To edit any of these in the writing view, right-click the small circled `#` pill that appears beside the task when your cursor is on its line. A menu appears with:
 
 - a *Task* field (placeholder: "What needs doing?") for the task text,
 - a *Due* field (placeholder: "YYYY-MM-DD") for the deadline,
 - and a *Mark as done* / *Mark as not done* toggle.
 
-#callout("tip")[
-  To tick a task as completed, click its checkbox. The text gets a strikethrough so you can see at a glance it's finished. Click again to un-tick it.
-]
+#callout("tip")[To tick a task as completed, click its checkbox. The text gets a strikethrough so you can see at a glance it's finished. Click again to un-tick it.]
 
-== Creating a standalone dated reminder
+== Creating a stand-alone dated reminder
 
 Sometimes you don't have a to-do. You just have a date to remember, like a conference or a submission window. That's a *date* (a dated reminder). Insert one with the *Due date* slash command, or fill in an empty one's pill.
 
@@ -60,9 +58,7 @@ A dated reminder shows as a small date badge in your note. Click its `#` pill to
 - a *Date* (required; a reminder must have a valid date),
 - and an optional *Description* (placeholder: "Optional caption") to give the short text that the Agenda will show for it.
 
-#callout("important")[
-  If you don't give a dated reminder a description, the Agenda has nothing to label it with, so it falls back to showing the note's title. If several reminders live in the same note, give each one a description so you can tell them apart in the list.
-]
+#callout("important")[If you don't give a dated reminder a description, the Agenda has nothing to label it with, so it falls back to showing the note's title. If several reminders live in the same note, give each one a description so you can tell them apart in the list.]
 
 == A whole note as one agenda item
 
@@ -75,17 +71,13 @@ In the inline property panel, add:
 
 The note will then appear in the Agenda as a single item, using its title as the text.
 
-#callout("note")[
-  A plain *date* property does _not_ put a note on the Agenda. Many notes carry a `date` as their creation or authoring date, and including those would flood your list. Only a *due* date property or a *task* property makes a note an agenda item.
-]
+#callout("note")[A plain *date* property does _not_ put a note on the Agenda. Many notes carry a `date` as their creation or authoring date, and including those would flood your list. Only a *due* date property or a *task* property makes a note an agenda item.]
 
 == Repeating a date
 
 A dated reminder can repeat on a schedule. Use this for anything that comes back: a weekly meeting, a monthly report, a yearly renewal. InkyCap calls this *recurrence*.
 
-#callout("note")[
-  Recurrence works on *dates*, not on checkbox tasks. A task is something you finish once, so it has no repeat schedule. If you want a recurring deadline, give a note a *due* date and set its recurrence (below) rather than marking it a task.
-]
+#callout("note")[Recurrence works on *dates*, not on checkbox tasks. If you want a recurring deadline, give a note a *due* date and set its recurrence (below) rather than marking it a task.]
 
 You set recurrence at the *note level*, on the note's own *due* date. Open the note's right-panel *Properties* editor (see #wikilink("6 - Note Properties")) and give the note a *due* date. A *Repeat* control then appears just under that date. (It shows only when the note has a due date and is not a checkbox task.)
 
@@ -99,9 +91,7 @@ Turn on *Repeat* and choose how often the date comes back:
 
 A plain-language summary reads the rule back to you as you build it, for example "Every 2 weeks on Mon, Wed until Dec 7, 2026".
 
-#callout("note")[
-  Your note keeps a single date plus the repeat rule. InkyCap never rewrites your note with a long list of dates; it works out the upcoming occurrences for you each time you look. Your original date and your history stay intact, and you can change or remove the rule at any time.
-]
+#callout("note")[Your note keeps a single date plus the repeat rule. InkyCap never rewrites your note with a long list of dates; it works out the upcoming occurrences for you each time you look. Your original date and your history stay intact, and you can change or remove the rule at any time.]
 
 === Seeing the occurrences
 
@@ -132,16 +122,23 @@ The same applies inside a #wikilink("2 - Collections", display: "collection")'s 
 
 The Agenda gathers every task and dated reminder across your whole notebox to display in one list. Open it from the left-sidebar buttons. Look for the calendar-with-a-check icon (*Agenda*), which sits just after Collections.
 
-The panel keeps itself up to date automatically as you add, edit, finish, rename, or delete things.
+The panel keeps itself up-to-date automatically as you add, edit, finish, rename, or delete things.
 
 === Sorting, filtering, and searching
 
 Above the list you'll find a few controls:
 
-+ *Task List* narrows what's shown: *All* (the default), *To do*, *Done*, or *Dates only* (just the standalone reminders, no checkboxes).
++ *Task List* narrows what's shown by kind: *To do (task)*, *Done (task)*, or *Date (reminder)* (just the standalone reminders, no checkboxes). You can tick more than one kind at once. The button reads *All* when nothing is selected (the default), and otherwise lists the kinds you chose.
 + *Tags* shows only items carrying the tags you select. It's a multi-select that matches any of the tags you pick, and only lists tags actually in use right now. (See #wikilink("5 - Tags").)
++ *Date* narrows the list by the item's date. Pick a comparison (*Is*, *Is after*, *Is before*, *Is on or after*, *Is on or before*, *Is within*, *Is empty*, or *Is not empty*) and then a date; *Is within* takes two dates. With *Is*, the *Due today* checkbox is the quick way to see just today's items. A date can be a fixed calendar date or a number of *days from today* (the small calendar button switches between the two forms, and negative numbers reach into the past). A relative date is worked out afresh each time you look, so a filter built from days-from-today values keeps pointing at the coming week (or whatever span you chose) instead of freezing to the day you set it up. *Clear date filter* removes it.
 + *Sort* offers a small sort button that lets you order by *Due (Sooner – Later)* (the default), *Due (Later – Sooner)*, creation date, ZID, or name, in either direction. Items with no value for whatever you're sorting by, sink to the bottom of the list.
 + A search box (*"Filter agenda items…"*) that matches text in the item, its note's title, or its tags.
+
+The sidebar Agenda remembers your filters per notebox on this computer, so it opens the way you left it. Whenever a filter is narrowing the list, a *Reset filters* button appears beside the controls to clear them all at once.
+
+=== Saving a set of filters as a bookmark
+
+If you keep coming back to the same combination of filters (say, overdue tasks tagged `thesis`), press the *Bookmark current view* button beside the controls, type a name, and press `Enter`. The view is saved in your #wikilink("1 - The InkyCap Interface", display: "Bookmarks panel") alongside your bookmarked notes, collections, and searches. Clicking it later switches the sidebar to the Agenda and applies those filters. This is a feature of the sidebar Agenda only; a collection's agenda view (below) has no bookmark button.
 
 === Reading the list
 
@@ -155,20 +152,17 @@ Dates follow whatever format you've chosen in #wikilink("2 - Settings") under Ap
 
 === Opening and finishing items
 
-- *Click a row* to jump straight to the note that contains it. *Ctrl/Cmd-click* or *middle-click* opens it in a new tab instead, and *right-click* gives you *Open* and *Open in New Tab*.
+- *Click a row* to jump straight to the note that contains it. *Ctrl/Cmd-click* or *middle-click* opens it in a new tab instead, and *right-click* gives you *Open* and *Open in new tab*.
 
-#callout("warning")[
-  The checkbox shown in the Agenda list is a status indicator, not a button. Clicking a row opens the note rather than ticking the task off. To actually mark something done, do it in the note itself: click the task's checkbox in the writing view, use its pill menu, or toggle the *task* property for a whole-note item.
-]
+#callout("warning")[The checkbox shown in the Agenda list is a status indicator, not a button. Clicking a row opens the note rather than ticking the task off. To actually mark something done, do it in the note itself: click the task's checkbox in the writing view, use its pill menu, or toggle the *task* property for a whole-note item.]
 
 == Tasks inside callouts and quotes
 
-You're not limited to writing tasks in the main flow of a note. A task placed inside a callout, a block quote, or an annotation still shows up as a working checkbox, and you can tick it off right there without opening it for editing.
+A task placed inside a callout, a block quote, or an annotation still shows up as a working checkbox, and you can tick it off right there without opening it for editing.
 
 == The literal markup
 
-#callout("tip", title: "For Typst users")[
-  Tasks and dated reminders are real Typst function calls from the bundled `inkycap-notebox` package, auto-imported into every note. Everything above is a friendly front-end over these:
+#callout("tip", title: "For Typst users")[Tasks and dated reminders are Typst function calls from the bundled `inkycap-notebox` package, auto-imported into every note. Everything above is a convenient front-end over these:
 
   ```typ
   #task("Draft abstract")                              // open task

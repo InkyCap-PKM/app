@@ -34,15 +34,15 @@ Choose *Bibliography file (.bib, .yml, .json)*. This is the default, and it cove
 
 In the *Bibliography file* field you give a notebox-relative path, such as `references.bib`. If you leave it empty, InkyCap auto-detects a file for you, looking for `references.bib`, then `references.yml`, then `references.json`, and using the first one it finds. You can also click *Browse* to pick a file; if it lives inside your notebox, InkyCap stores the path relative to your notebox root so it stays portable.
 
-#callout("tip")[ The simplest setup is to drop a file named `references.bib` at the top of your notebox and leave the path field blank. InkyCap will find it on its own. ]
+#callout("tip")[The simplest setup is to drop a file named `references.bib` at the root of your notebox and leave the path field blank. InkyCap will find it on its own.]
 
 === Option 2: your Zotero database
 
-If you keep your references in #link("https://zotero.org")[Zotero], choose *Zotero database*. InkyCap then reads directly from your Zotero library.
+If you keep your references in #link("https://zotero.org")[Zotero], choose *Zotero database*. InkyCap then reads directly from your Zotero library stored on your local computer.
 
 In the *Zotero database path* field you point InkyCap at your `zotero.sqlite` file. The easiest way is to click *Detect*, which searches the usual locations on your computer automatically (it shows *Detecting…* while it works). Because this is the location of your Zotero install, it is a *global* setting. Once set, it applies to all your noteboxes.
 
-#callout("note")[ When you select Zotero as your reference source, InkyCap generates its own bibliography file from your Zotero library (at `.inkycap/zotero-export.bib`), which enables the rest of the application's citation machinery to read this information. This is created automatically and kept up-to-date; you do not need to manage it. However if you make some changes to a reference in Zotero while using InkyCap, you can force a quick refresh in InkyCap by clicking the `Refresh Bibliography` button in the upper right of the References panel.  ]
+#callout("note")[When you select Zotero as your reference source, InkyCap generates its own bibliography file from your Zotero library (at `.inkycap/zotero-export.bib`), which enables the rest of the application's citation machinery to read this information. This is created automatically and kept up-to-date; you do not need to manage it. However if you make some changes to a reference in Zotero while using InkyCap, you can force a quick refresh in InkyCap by clicking the *Refresh bibliography* button in the upper right of the References panel.]
 
 == Choosing a citation style
 
@@ -59,7 +59,7 @@ If your discipline or publisher needs a style not in the list, choose *Custom CS
 
 #callout("important")[ The citation style you choose here is a *default*. As the setting itself notes, it "can be overridden in rendered output per file or by collection." So one notebox can default to Chicago while a particular #wikilink("2 - Collections", display: "Collection") is set to use its own style and publishes output using MLA. ]
 
-#callout("tip", title: "For Typst users")[ InkyCap does not invent its own citation format. It uses Typst's native citations end to end. Style names map to hayagriva's archived CSL styles, and all formatting flows through hayagriva (the same engine behind Typst's `#bibliography`). The resolution order is: a per-notebox custom `.csl` file, then the global named style, then a fallback to `chicago-author-date`. Source selection, the bibliography path, and the custom CSL path are per-notebox; the named-style default and the Zotero database path are global. ]
+#callout("tip", title: "For Typst users")[InkyCap does not invent its own citation format. It uses Typst's native citations end to end. Style names map to hayagriva's archived CSL styles, and all formatting flows through hayagriva (the same engine behind Typst's `#bibliography`). The resolution order is: a per-notebox custom `.csl` file, then the global named style, then a fallback to `chicago-author-date`. Source selection, the bibliography path, and the custom CSL path are per-notebox; the named-style default and the Zotero database path are global.]
 
 == The References sidebar
 
@@ -75,7 +75,7 @@ Click *Browse references* to expand the list of every work in your bibliography.
 
 A small badge tells you how many entries you have and whether they come from *Zotero* or a *File*. If some entries could not be read, you will see a "skipped" note explaining that a few entries had formatting errors in the source.
 
-*To insert a citation, just click a row.* InkyCap drops `@key` at your cursor. If a reference came from Zotero, the row also offers an *Open in Zotero* link.
+*To insert a citation, just click a row.* InkyCap drops `@key` wherever your cursor is placed within the current note. If a reference came from Zotero, the row also offers an *Open in Zotero* link.
 
 #callout("note")[ If you see "No bibliography configured. Check Settings › Citations.", it means InkyCap has not found a source yet. Return to the *Citations* tab and set one. ]
 
@@ -95,7 +95,7 @@ Type `@` anywhere in your text and a search popup opens over your whole bibliogr
 - *Enter* or *Tab* to accept (this inserts `@key` and closes the popup),
 - *Escape* to dismiss.
 
-A citation key starts with a letter, so typing `@sm` narrows to works whose key begins that way. Here is what a finished citation looks like in your source:
+You don't need to know the citation key. The search matches words anywhere in the key, title, authors, and year, so `@smith`, `@2020`, and `@gravitational` can all find the same paper. Separate several words with spaces (`@smith 2020`) and only the works matching all of them stay in the list. If you keep typing and nothing matches any more, the popup quietly closes and your `@` stays as ordinary text. Here is what a finished citation looks like in your source:
 
 ```typ
 @otlet1934
@@ -107,11 +107,20 @@ Typst-style citations also accept a page or other supplement:
 @otlet1934[p. 64]
 ```
 
-If you ever need a literal at-sign (for example, in an e-mail address) escape it with a backslash `\` so InkyCap never mistakes it for a citation:
+If you ever need to write the at-sign (`@`) at the start of a word, escape it with a backslash `\` first so that InkyCap does not mistake it for a citation. InkyCap will detect e-mail addresses. When the `@` is glued to the end of a word, as in `user@domain.com`, InkyCap reads it as part of an address: the popup stays closed while you type it, the visual editor shows it as plain text, and the note still compiles. 
 
 ```typ
 \@notacitation
 ```
+
+=== Pointing at figures, tables, and equations
+
+The same `@` popup does more than cite. Below the *Bibliography* group it lists the labelled spots in the note you are writing, grouped as *Headings*, *Figures*, *Equations*, *Tables*, and *Labels*. Choose one and InkyCap writes the cross-reference for you, in whichever form will actually work:
+
+- A target that carries a number (a figure, a table, a numbered equation, or a heading in a note that numbers its headings) is inserted as `@label`, which renders as that number (for example, "Figure 2").
+- A target that has no number (a heading in a note without heading numbering, or a label on ordinary prose) is inserted as a text link, `#link(<label>)[...]`, with the wording selected so you can type your own straight away. The grey text at the right of each row tells you which form it will write before you pick it.
+
+The popup only sees the note you are in. To point at a heading or label in _another_ note, use a wikilink with `::` instead (see #wikilink("4 - Links and Backlinks")).
 
 === Search references and cite
 
@@ -121,49 +130,56 @@ Press `Ctrl+Shift+C` to open the *Search references & cite* picker, a focused ov
 
 Type `/` for the command palette and choose *Citation* to start a citation at your cursor, or *Bibliography* to insert an explicit reference-list call. These are the same actions available through InkyCap's command palette. See #wikilink("2 - Editing Notes") for more on the slash menu.
 
-#callout("tip")[ In the visual editor, each citation shows as a tidy pill displaying `@key`. Right-click a pill and choose *Convert to advanced citation* if you want the function form instead. ]
+#callout("tip")[In the visual editor, each citation shows as a pill displaying `@key`. Right-click a pill and choose *Convert to advanced citation* if you want the function form, `#cite(<key>)`, which accepts extra options. A function-form citation carries a circled `#` pill; right-click that pill for a *Form* group where you choose how the citation reads: *normal*, *prose*, *full*, *author*, or *year*. ]
 
 == How your bibliography appears
 
-Here is the part that makes citing painless: *you usually do not have to add a reference list yourself.*
+*Usually you will not need to add a reference list yourself.*
 
-When you switch to reading mode or generate a preview, InkyCap checks whether your note cites anything real and, if so, automatically adds a formatted reference list at the end (in your chosen style) so your citations resolve and the bibliography appears. Your note file on disk is never changed; this happens only in the rendered view.
+When you switch to reading mode or generate a preview, InkyCap checks whether your note cites anything real and, if so, automatically adds a formatted reference list at the end (in your chosen style) so your citations resolve and the bibliography appears. This does not alter your note file on disk; it happens only in the rendered view.
 
-InkyCap is careful here: it only treats `@something` as a citation when that key actually matches an entry in your bibliography. So an e-mail address like `user@domain.com` in your prose will not accidentally become a citation.
+InkyCap only treats `@something` as a citation when that key actually matches an entry in your bibliography. So an e-mail address like `user@domain.com` in your prose will not accidentally become a citation.
 
-If you would rather control exactly where the reference list sits, you can write the bibliography call yourself. The slash menu's *Bibliography* entry inserts one for you, and it looks like this:
+If you would rather control exactly where the reference list sits, you can write the bibliography call yourself. The slash menu's *Bibliography* entry inserts one for you, pointing at whichever source you chose in Settings: the file InkyCap generates from Zotero, or your own bibliography file. With Zotero it looks like this:
 
 ```typ
-#bibliography("/references.bib")
+#bibliography("/.inkycap/zotero-export.bib")
 ```
 
-You can add a style to that call too:
+If no bibliography file has been chosen yet, the quotes are left empty for you to fill in. You can add a style to the call too:
 
 ```typ
 #bibliography("/references.bib", style: "apa")
 ```
 
-#callout("note")[ The path begins with `/`, which InkyCap treats as your notebox root, so the reference works no matter where the note lives or how it is later exported. In Typst, the position of this call only decides *where the list renders* (conventionally the end); your citations resolve across the whole document regardless. ]
+#callout("note")[The path begins with `/`, which InkyCap treats as your notebox root, so the reference works no matter where the note lives or how it is later exported. In Typst, the position of this call only decides *where the list renders* (conventionally the end); your citations resolve across the whole document regardless.]
 
-#callout("tip", title: "For Typst users")[ The auto-injection is conservative. If your note already has an explicit `#bibliography(...)`, InkyCap leaves it in place but adds your preferred `style:` if you did not specify one (otherwise Typst would fall back to its IEEE default). Otherwise it appends `#bibliography("<path>", style: "<style>")` only when at least one extracted key really exists in your bibliography, or when the note uses `attribution: <...>`. Unmatched keys are escaped to `\@` so they render literally. ]
+#callout("tip", title: "For Typst users")[If your note already has an explicit `#bibliography(...)`, InkyCap leaves it in place but adds your preferred `style:` if you did not specify one (otherwise Typst would fall back to its IEEE default). Otherwise it appends `#bibliography("<path>", style: "<style>")` only when at least one extracted key really exists in your bibliography, or when the note uses `attribution: <...>`. Unmatched keys are escaped to `\@` so they render literally. ]
 
-== Copying a finished bibliography
+== Copying a bibliography on its own
 
 Sometimes you want a static, formatted reference list you can paste anywhere (into an e-mail, a handout, or a note that should not depend on a live bibliography call). When the current note cites at least one work, the *Citations* section shows a *Copy formatted bibliography* button. Click it and InkyCap renders your cited references, in your notebox's citation style, as a frozen snapshot on your clipboard. Paste it into any note and it renders identically, with no `#bibliography(...)` needed.
 
 You will see "Formatted bibliography copied to clipboard" when it succeeds, or "No references to copy" if there was nothing to copy.
 
-#callout("warning")[ This static-copy feature works with *BibTeX* (`.bib`) and *Hayagriva YAML* (`.yml`) sources. *CSL JSON* (`.json`) bibliographies can be browsed and cited, but cannot yet be rendered to a frozen reference list. ]
+#callout("warning")[This static-copy feature works with *BibTeX* (`.bib`) and *Hayagriva YAML* (`.yml`) sources. *CSL JSON* (`.json`) bibliographies can be browsed and cited, but cannot yet be rendered to a frozen reference list. ]
 
 == When a citation looks like an error
 
 If you write in *source mode*, you may notice the language server flag a citation with a message like "label does not exist in the document." This is expected and harmless: when InkyCap checks a single note on its own, no bibliography is in scope yet, so the citation has nothing to point at.
 
-To reassure you, InkyCap adds a note to that warning whenever the key is a genuine bibliography entry:
+InkyCap adds a note to that warning whenever the key is a genuine bibliography entry:
 
 - *"this citation resolves automatically in the preview, where the bibliography is added for you."*
 
 In other words, your citation is fine. It will resolve as soon as you preview or read the note. A warning that does *not* get this friendly hint usually means a real typo (for example, a cross-reference to a label that does not exist), which is worth checking.
+
+=== Fixing a cross-reference that has no number
+
+An `@` reference to a heading, figure, or equation renders as that item's number, so it only works when there is a number to show. If you write `@my-heading` in a note that doesn't number its headings, or point at an equation that isn't numbered, Typst reports that it "cannot reference heading without numbering" (or the same for an equation). A label on ordinary prose gives "cannot reference text". Hover the underlined reference and you'll find one-click fixes:
+
+- *Enable heading numbering* or *Enable equation numbering* adds the matching `#set` rule near the top of your note, after the property block, so the reference gains a number to show.
+- *Use a text link instead* rewrites the reference as `#link(<label>)[...]`, using the heading's own words as the link text (left selected, so you can change them). This works whether or not anything is numbered, and it is the only fix offered for a label on prose.
 
 == Importing notes from Zotero or BibTeX
 
@@ -171,7 +187,7 @@ If your Zotero items or BibTeX entries carry attached #highlight(fill: rgb("#ffd
 
 == When you export
 
-The Export dialogue includes an *Include bibliography in output* checkbox. When it is on, "The bibliography will appear at the end of the document." When it is off, "Citations resolve normally, but the rendered bibliography is omitted from the output." This is useful when a publisher supplies the reference list separately. See #wikilink("3 - Exporting and Publishing") for the full export workflow, and #wikilink("2 - Collections") for how a whole collection or book handles its bibliography.
+The Export dialogue features an *Include bibliography in output* checkbox. When it is on, "The bibliography will appear at the end of the document." When it is off, "Citations resolve normally, but the rendered bibliography is omitted from the output." This is useful when a publisher supplies the reference list separately. See #wikilink("3 - Exporting and Publishing") for the full export workflow, and #wikilink("2 - Collections") for how a whole collection or book handles its bibliography.
 
 == Related pages
 

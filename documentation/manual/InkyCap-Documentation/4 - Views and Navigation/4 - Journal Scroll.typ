@@ -10,11 +10,11 @@
 
 Journal Scroll lets you read your notes as a single, continuous timeline. It is a flowing feed where one note follows the next in chronological order. It is ideal for daily notes, research logs, and journalling.
 
-You pick a starting note (the _anchor_) and the feed shows the notes that come after it in time, each one rendered the way it looks in the HTML reading view, stacked one below the other. Scrolling carries you forward (or backward) through your notes in time.
+The note that you're currently working with in the editor is your starting note (the _anchor_) and the feed shows the notes that come after it in time, each one rendered the way it looks in the HTML reading view, stacked one below the other. Scrolling carries you forward (or backward) through your notes in time.
 
 Think of it as a newspaper of your own writing: a daily journal you can scroll through, a research log you can skim end-to-end, or a way to revisit a string of related notes without opening each in its own tab.
 
-#callout("note")[ Journal Scroll is a reading and review surface inside the app, not a print preview. Its body text uses the editor's own reading font rather than your document's font, as a gentle reminder that you are looking at an app view. It never changes your notes; switching it on or off only affects what you see. ]
+#callout("note")[Journal Scroll is a reading and review surface inside the app, not a print preview. Its body text uses the editor's own reading font rather than your document's font. It cannot change your notes; switching it on or off only affects what you see. ]
 
 == Opening and closing the scroll
 
@@ -24,13 +24,13 @@ Journal Scroll is a per-tab view: turning it on, replaces the editor in the *cur
 + *The command palette.* Run the command *Toggle Journal Scroll* (found under the Tools category).
 + *The keyboard.* Press `Ctrl+Shift+J`.
 
-All three do the same thing: they anchor the feed on whatever note is active in the current tab. The view only works when you have a note (file) tab open.
+All three do the same thing: they anchor the feed on whatever note is active in the current tab. The editor-header button is only there when a note (file) tab is open. If you run the command or press the shortcut with no note in front of you (an empty tab, a collection, or a freshly opened window), InkyCap opens your most recently modified note in a new tab and starts the scroll from there.
 
 When you turn the scroll off, the feed and its saved scroll position for that tab are discarded, and your ordinary editor returns untouched.
 
 == How the feed flows
 
-The anchor note is always the very top of the feed. From there, the scroll unfolds *downward* only. It never loads notes above the anchor. To see notes on the other side of the anchor in time, you flip the date direction (below) or re-anchor on a different note.
+The anchor note is always the very top of the feed. From there, the scroll unfolds *downward*. To see notes on the other side of the anchor in time, you flip the date direction (see below for details) or re-anchor on a different note.
 
 The feed loads in small batches as you scroll, so even a large notebox stays responsive: you get the anchor plus a first handful of notes, and more appear automatically as you reach the bottom. When you reach the end and there are no more notes to show, the feed stops being scrollable.
 
@@ -43,13 +43,13 @@ Because Journal Scroll is a _timeline_, it needs to know which date property to 
 - *File creation date* orders notes by when each file was created. This is the default.
 - *File modification date* orders by when each note was last changed.
 - *Note's zid property* orders by the note's Zettelkasten ID, a long numeric identifier either set as an explicit property or read from the filename.
-- *Note's date property* orders by the `date` you record in a note's #wikilink("6 - Note Properties"), which is perfect for hand-dated journal entries.
+- *Note's date property* orders by the `date` you record in a note's #wikilink("6 - Note Properties"), which is useful for hand-dated journal entries.
 
 This setting is saved per notebox, so each notebox can have its own timeline.
 
-#callout("important")[ A note that is missing the date you chose is never dropped. It is placed in a second tier at the very end of the feed, ordered by file creation date. So nothing disappears; it just sorts last. ]
+#callout("important")[A note that is missing the date you chose gets placed in a second tier at the very end of the feed, ordered by file creation date. So nothing disappears; it just sorts last. ]
 
-#callout("warning")[ If you imported your notes from another tool, their file creation and modification dates may all have been reset to the same day. In that case, sorting by *Note's date property* (which you author yourself) or the `zid` if you imported an equivalent, usually gives a truer timeline than the file dates. See #wikilink("2 - Importing Existing Notes"). ]
+#callout("warning")[If you imported your notes from another tool, their file creation and modification dates may all have been reset to the same day. In that case, sorting by *Note's date property* (which you author yourself) or the `zid` if you imported an equivalent, usually gives a truer timeline than the file dates. See #wikilink("2 - Importing Existing Notes"). ]
 
 == Pointing the feed forward or backward in time
 
@@ -59,7 +59,7 @@ While the scroll is on, the editor header shows a short status line telling you 
 
 == Confining the feed: "Anchor scope"
 
-By default the feed may draw from your *entire* notebox. If you would rather keep it to one part of your notebox (say, only your journal entries) use the *Anchor scope* setting, also in *Settings → Behaviour → Journal Scroll*. It sets "the largest set of notes the feed may show." Your options:
+By default the feed may draw from your *entire* notebox. If you would rather keep it to one part of your notebox (for example, a folder with only your journal entries) use the *Anchor scope* setting, which is in *Settings → Behaviour → Journal Scroll*. It sets "the largest set of notes the feed may show." Your options:
 
 - *All notes* (the whole notebox). This is the default.
 - *Daily Notes folder* confines the feed to the folder you selected to store notes that the *Daily Note* creation rule writes into (and its subfolders).
@@ -67,11 +67,11 @@ By default the feed may draw from your *entire* notebox. If you would rather kee
 
 All folder scopes are recursive: the chosen folder _and_ its subfolders are included. Like *Sort by*, anchor scope is saved per notebox.
 
-#callout("note")[ If you choose *Daily Notes folder* but your Daily Note rule has no fixed target folder set (its destination is entirely dynamic), there is no folder to scope to, and the feed quietly falls back to all notes. To fix this, give the Daily Note rule a fixed target folder under your creation rules. See #wikilink("3 - Setting Up Your Notebox"). ]
+#callout("note")[If you choose *Daily Notes folder* but your Daily Note rule has no fixed target folder set (its destination is entirely dynamic), there is no folder to scope to, and the feed will fall back to all notes. To fix this, give the Daily Note rule a fixed target folder under your creation rules. See #wikilink("3 - Setting Up Your Notebox"). ]
 
 == Pairing with daily notes
 
-Journal Scroll has no hard requirement for daily notes; it reads any notes. But the two were made for each other. Set *Sort by* to *Note's date property* (or *File creation date*) and *Anchor scope* to *Daily Notes folder*, and the feed becomes a clean, chronological journal you can scroll through day-by-day.
+Journal Scroll has no hard requirement for daily notes; it reads any notes. But the two complement each other. Set *Sort by* to *Note's date property* (or *File creation date*) and *Anchor scope* to *Daily Notes folder*, and the feed becomes a clean, chronological journal you can scroll through day-by-day.
 
 The notes that fill that folder come from the built-in *Daily Note* scaffold, reachable with `Ctrl+D`, which creates a dated note in your Daily folder. To learn how scaffolds and creation rules work, see #wikilink("3 - Scaffolds, Templates, and Packages").
 

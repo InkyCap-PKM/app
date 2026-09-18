@@ -67,3 +67,11 @@ release-artifacts/
 /latest.json
 flatpak/.repo/
 flatpak/inkycap.deb
+
+# The bundled user manual can be opened in InkyCap as an ordinary notebox for
+# editing and book export; the app then writes its .inkycap/ working folder
+# there. Only the book-export collection files are kept.
+documentation/manual/*/.inkycap/*
+!documentation/manual/*/.inkycap/collections/
+documentation/manual/*/.inkycap/collections/*
+!documentation/manual/*/.inkycap/collections/*.collection

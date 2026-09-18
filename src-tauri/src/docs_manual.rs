@@ -78,7 +78,7 @@ pub fn seed_if_stale(dir_name: &str, dest_root: &Path) -> std::io::Result<bool> 
     // copy is ephemeral — in-app edits never persist.
     clear_except_inkycap(dest_root)?;
     std::fs::create_dir_all(dest_root)?;
-    manual.extract(dest_root)?;
+    extract_manual(manual, dest_root)?;
 
     std::fs::create_dir_all(dest_root.join(".inkycap"))?;
     std::fs::write(&marker_path, fingerprint)?;
@@ -126,12 +126,46 @@ fn manual_fingerprint(dir: &Dir<'static>) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-/// Collect every file in `dir`, recursing into subdirectories.
+/// Name of the per-notebox working folder that the app creates when the manual
+/// source folder is opened as an ordinary notebox (for editing or book export).
+/// It holds caches and per-machine state, so it is never part of the manual:
+/// the fingerprint ignores it and it is never copied to the working copy.
+const WORKING_DIR_NAME: &str = ".inkycap";
+
+/// Whether an embedded directory is a working folder to leave out.
+fn is_working_dir(dir: &Dir<'_>) -> bool {
+    dir.path().file_name().and_then(|n| n.to_str()) == Some(WORKING_DIR_NAME)
+}
+
+/// Write every embedded file under `dest_root`, skipping any `.inkycap/`
+/// folder captured from the source tree.
+fn extract_manual(dir: &Dir<'static>, dest_root: &Path) -> std::io::Result<()> {
+    for file in dir.files() {
+        let target = dest_root.join(file.path());
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(target, file.contents())?;
+    }
+    for sub in dir.dirs() {
+        if is_working_dir(sub) {
+            continue;
+        }
+        extract_manual(sub, dest_root)?;
+    }
+    Ok(())
+}
+
+/// Collect every file in `dir`, recursing into subdirectories but skipping
+/// any `.inkycap/` working folder.
 fn collect_files<'a>(dir: &'a Dir<'a>, out: &mut Vec<&'a File<'a>>) {
     for file in dir.files() {
         out.push(file);
     }
     for sub in dir.dirs() {
+        if is_working_dir(sub) {
+            continue;
+        }
         collect_files(sub, out);
     }
 }
@@ -170,6 +204,22 @@ mod tests {
         // Second open with unchanged content: no-op.
         let seeded_again = seed_if_stale("InkyCap-Documentation", &root).unwrap();
         assert!(!seeded_again);
+    }
+
+    #[test]
+    fn embedded_working_folder_is_never_seeded() {
+        // The source tree may carry a `.inkycap/` folder from being opened as a
+        // notebox; neither the fingerprint nor the seeded copy may include it.
+        let mut files = Vec::new();
+        collect_files(&MANUAL_EN, &mut files);
+        assert!(files
+            .iter()
+            .all(|f| !f.path().starts_with(WORKING_DIR_NAME)));
+
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("InkyCap-Documentation");
+        seed_if_stale("InkyCap-Documentation", &root).unwrap();
+        assert!(!root.join(WORKING_DIR_NAME).join("notebox.typ").exists());
     }
 
     #[test]

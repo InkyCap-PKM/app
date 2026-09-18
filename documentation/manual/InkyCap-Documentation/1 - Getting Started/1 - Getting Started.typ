@@ -19,7 +19,5 @@ InkyCap is a personal-knowledge management application based on #link("https://t
 - #wikilink("3 - Setting Up Your Notebox") explains how a notebox works (a portable folder of your .typ notes plus a hidden .inkycap configuration), the three ways to start one, and how to organize, open, and switch noteboxes.
 - #wikilink("4 - Quick Start") gives you the fastest path from installing InkyCap to creating a notebox, writing your first note, and linking notes together with wikilinks.
 
-#callout("tip", title: "For developers or advanced users")[
-  InkyCap is built with Tauri (a Rust backend with a web-technology front end) and bundles the Tinymist language server, so you get Typst code autocomplete out of the box. No separate Typst or Tinymist install is required. Source code and release archives are hosted on CodeFloe at `codefloe.com/InkyCap/app`.
-]
+#callout("tip", title: "For developers or advanced users")[InkyCap is built with Tauri (a Rust backend with a web-technology front end) and bundles the Tinymist language server, so you get Typst code autocomplete out of the box. No separate Typst or Tinymist install is required. Source code and release archives are hosted on CodeFloe at `codefloe.com/InkyCap/app`.]
 

@@ -18,7 +18,7 @@ The #wikilink("3 - Formatting Your Writing") page covers the marks that style _i
 
 A set rule changes how your note is *typeset*. Its effect appears in the *Reading View* and in your *exports* (PDF, book, web page), where the document is actually laid out into pages and paragraphs. It does *not* change the appearance of the source or visual editor, where you are working with the markup itself.
 
-This is by design and not a limitation: the visual editor is a writing surface, not a page preview. Asking it to repaginate, swap the body font, or recolumn your text on every keystroke would fight the writing. So instead of silently doing nothing visible, a set rule you drop into a note shows up in the visual editor as a small *pill* (a marker you can see, click, and edit) and does its real work when the note is rendered.
+Remember that the visual editor is only a mode for making writing with Typst easier and more convenient for personal knowledge management workflows, it is not a page preview. Asking it to re-paginate, swap the body font, or re-column your text on every keystroke would interfere with writing. Thus, a set rule that you drop into a note shows up in the visual editor as a small *pill* (a marker you can see, click, and edit) and has an affect once the note is rendered (e.g. preview or PDF export).
 
 #callout("tip")[
   To check the effect of a Style setting, switch to the *Reading View* (or export). That is where page size, margins, columns, fonts, and spacing become visible.
@@ -52,16 +52,18 @@ A few notes on the values:
 - *Page size* takes a named paper such as `"a4"`, `"us-letter"`, or `"a5"`.
 - *Page numbering* and *Heading numbering* take a pattern string: `"1"` for plain numbers, `"i"` for roman numerals, `"1.1"` for `1`, `1.1`, `1.1.1` nested headings, and so on.
 - *Text font* starts empty, type a font name between the quotes (the same names you'll find in #wikilink("2 - Settings")). Leave it blank and nothing changes.
+- *Text language* tells Typst which language's rules to use for hyphenation, spacing, and quotation marks. If *Use corresponding language typesetting* is on under *Language* in #wikilink("2 - Settings") and InkyCap's interface language is not English, every new note already starts with a `#set text(lang: …, region: …)` line matching that language, hidden in the visual editor along with the import; existing notes are left as they are.
+- *Heading numbering* also decides how cross-references to headings are written. Typst's `@label` reference shows the heading's _number_, so it only compiles while headings are numbered. Without numbering, the `@` popup writes a text link (`#link(<label>)[…]`) instead, and if a note already contains an `@` reference to an unnumbered heading, the problem margin offers *Enable heading numbering* and *Use a text link instead* as quick fixes.
 - Lengths use Typst units: `pt`, `cm`, `mm`, `in`, or `em` (a multiple of the current font size). `0.65em` line spacing is relative to the type size; `2cm` margins are absolute.
 
 == Where a set rule takes effect
 
-A set rule applies *from where it sits to the end of the note*. Put it near the *top of the note* (just under the properties) and it governs the whole document, which is what you almost always want for page size, font, or margins.
+A set rule applies *from where it sits to the end of the note*. Put it near the *top of the note* (just under the properties) and it will apply to the whole document.
 
-Placing one partway down is occasionally useful, for example, to switch to two columns for the second half of a note. If you want the setting to apply everywhere, keep it at the top.
+Placing one partway down is occasionally useful, for example, to switch to two columns for the second half of a note.
 
 #callout("note")[
-  These rules live in *one note*. They do not reach across your notebox. To style many notes at once—a whole #wikilink("2 - Collections", display: "collection") or a book—use the collection's *Style Overrides*, which apply the same kinds of settings to every note in the collection at export time. See #wikilink("2 - Collections") and #wikilink("3 - Exporting and Publishing").
+These rules live in *one note*. They do not reach across your notebox. To style many notes at once, group them into a #wikilink("2 - Collections", display: "collection") (e.g. for creating a book) and then use the collection's *Style Overrides*, which apply the same kinds of settings to every note in the collection at export time. See #wikilink("2 - Collections") and #wikilink("3 - Exporting and Publishing").
 ]
 
 == Editing a Style setting in the visual editor
@@ -72,7 +74,7 @@ In the visual editor a set rule appears as a labelled pill that names what it co
 - *Right-click the pill* for a menu: *Edit source*, *Open in source editor*, and *Copy / Duplicate / Remove style / Delete*. *Delete* removes the setting entirely.
 
 #callout("tip")[
-  A leading run of set rules at the very top of a note is treated as the note's *setup* and tucked together above your text, out of the way. A set rule you add later, in the body, gets its own pill where it sits. Either way the markup is never lost, it is only folded for tidiness.
+A leading run of set rules at the very top of a note is treated as the note's setup and tucked together above your text, out of the way, in a pill labelled *Document setup*. The pill also gathers any `#show` rules and `#let` definitions in that leading run. A set rule you add later, in the body, gets its own pill where it sits. Either way the markup is never lost, it is only folded for tidiness.
 ]
 
 == Editing it in source mode
@@ -90,7 +92,7 @@ Each `#set` call accepts several arguments at once, so the three lines above con
 == For Typst users
 
 #callout("tip", title: "For Typst users")[
-  The Style menu is just a friendly front end to Typst's `set` rules for the `page`, `text`, `par`, and `heading` elements; it's not InkyCap-specific. Anything you can write in a set rule works: `#set heading(numbering: "1.a")`, `#set page(header: …)`, a `#show` rule, your own functions, an imported package. They render in the Reading View and exports and appear as a pill in the visual editor; switch to source mode to see and edit the full Typst directly. For the complete reference, see the #link("https://typst.app/docs/reference/")[Typst documentation].
+The Style menu is just a friendly front end to Typst's `set` rules for the `page`, `text`, `par`, and `heading` elements; it's not InkyCap-specific. Anything you can write in a set rule works: `#set heading(numbering: "1.a")`, `#set page(header: …)`, a `#show` rule, your own functions, an imported package. For the complete reference, see the #link("https://typst.app/docs/reference/")[Typst documentation].
 ]
 
 == Related pages

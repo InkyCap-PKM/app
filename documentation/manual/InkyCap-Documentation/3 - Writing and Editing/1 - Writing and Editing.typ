@@ -9,7 +9,7 @@
 
 = Writing and Editing
 
-The heart of InkyCap: writing notes, formatting them, linking them, and make them easily findable with properties.
+The heart of InkyCap: writing notes, formatting them, linking them, and making them easily findable with properties.
 
 InkyCap keeps your text as plain Typst; the visual editor is a convenient layer over the Typst source not a separate format. These pages cover how to write comfortably and how to build the web of links that makes a notebox more than a folder of files.
 

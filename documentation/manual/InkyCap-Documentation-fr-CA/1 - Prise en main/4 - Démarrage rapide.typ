@@ -17,13 +17,10 @@ Une *_boîte de notes_* est le dossier où vivent toutes vos notes, et InkyCap t
 
 #callout("note")[ Une boîte de notes n'est qu'un dossier ordinaire sur votre ordinateur. InkyCap y ajoute une petite zone cachée `.inkycap/` pour les templates, les paramètres et les outils de rédaction. Vos notes y restent de simples fichiers texte portables. ]
 
-== Avant de commencer
-
-Si InkyCap n'est pas encore installé, suivez d'abord #wikilink("2 - Installer InkyCap"), puis revenez ici. Une fois l'application lancée, vous êtes prêt à ouvrir ou créer une boîte de notes.
 
 == Étape 1 — Ouvrir ou créer une boîte de notes
 
-Comme InkyCap ne peut rien faire d'utile sans une #highlight[boîte de notes] active, la toute première chose que vous verrez sur une installation neuve est un écran intitulé *« Ouvrez une boîte de notes pour continuer. »*
+Après le lancement d'InkyCap, la première chose que vous verrez est un écran intitulé *« Ouvrez une boîte de notes pour continuer »*. InkyCap a besoin d'une #highlight[boîte de notes] active pour faire quoi que ce soit.
 
 Pour démarrer une boîte de notes toute neuve :
 
@@ -31,9 +28,16 @@ Pour démarrer une boîte de notes toute neuve :
 + Le sélecteur de dossiers normal de votre ordinateur s'ouvre (intitulé « Sélectionner le dossier de la boîte de notes »), à partir de votre dossier personnel. Choisissez un dossier vide, ou créez-en un nouveau, où vous voulez.
 + Confirmez votre choix. InkyCap transforme ce dossier en boîte de notes en y mettant discrètement en place son espace de travail `.inkycap/`.
 
-Le dossier est maintenant votre boîte de notes, et l'éditeur principal apparaît.
+Le dossier est maintenant votre boîte de notes. Tant que vous n'ouvrez ni ne créez de note, la zone de l'éditeur affiche un onglet vide avec quatre indications cliquables, qui servent aussi de rappel des raccourcis les plus utiles :
 
-#callout("note")[ Si vous possédez déjà au moins une autre boîte de notes, InkyCap demande *« Copier depuis une boîte de notes existante ? »* avant d'ouvrir. Choisissez *« Utiliser les valeurs par défaut »* pour repartir à neuf (c'est la valeur par défaut sûre ; appuyer sur Entrée ou Échap la choisit aussi), ou *« Copier et ouvrir »* pour reprendre les paramètres, les templates et les types de propriétés d'une autre boîte de notes. ]
+- *Ouvrir un fichier par son nom : Ctrl + O*
+- *Créer une note : Ctrl + N*
+- *Accéder rapidement aux commandes : Ctrl + P*
+- *Comment rédiger un balisage Typst de base : F1*, qui ouvre le panneau d'aide sur son aide-mémoire du balisage Typst.
+
+Cliquez sur une indication pour faire cette action tout de suite, ou appuyez sur les touches indiquées.
+
+#callout("note")[ Si vous possédez déjà au moins une autre boîte de notes, InkyCap demande *« Copier à partir d'une boîte de notes existante? »* avant d'ouvrir. Choisissez *« Utiliser les valeurs par défaut »* pour repartir à neuf (c'est la valeur par défaut sûre ; appuyer sur Entrée ou Échap la choisit aussi), ou *« Copier et ouvrir »* pour reprendre les paramètres, les templates et les types de propriétés d'une autre boîte de notes. ]
 
 #callout("tip", title: "Pour les utilisatrices et utilisateurs de Typst")[ Le dossier de la boîte de notes devient la racine du projet Typst. Chaque note importe automatiquement la bibliothèque embarquée par un chemin stable et sans numéro de version :
 ```typ
@@ -43,30 +47,30 @@ C'est cette seule ligne qui rend disponibles `#note(...)`, `#wikilink(...)`, `#t
 
 === Les deux autres façons de démarrer
 
-Créer une boîte de notes neuve est le chemin courant, mais il y en a deux autres, tous deux destinés à rejoindre une boîte de notes que quelqu'un d'autre a partagée pour collaborer avec vous :
+Créer une boîte de notes neuve est le chemin courant, mais vous pouvez aussi rejoindre une boîte de notes que quelqu'un d'autre a partagée pour collaborer avec vous :
 
-- *Cloner depuis un dépôt distant* vous permet de rejoindre une boîte de notes collaborative par son adresse git. Vous n'avez besoin d'aucune connaissance de la ligne de commande.
-- *Importer un package* vous permet de rejoindre une boîte de notes qu'une collaboratrice ou un collaborateur vous a remise hors ligne sous forme d'un seul fichier package.
+- *Cloner depuis un dépôt distant* vous permet de rejoindre une boîte de notes collaborative par son adresse git.
+- *Importer un package* vous permet de rejoindre une boîte de notes qu'une collaboratrice ou un collaborateur vous a remise (par exemple, hors ligne sur une clé USB ou en pièce jointe d'un courriel) sous forme d'un seul fichier package.
 
-Vous trouverez les trois options réunies plus loin dans #wikilink("2 - Paramètres"), sous l'onglet Aperçu. Pour l'histoire complète du travail avec d'autres personnes, voyez #wikilink("1 - Collaboration"). Si vous avez plutôt des notes existantes que vous aimeriez apporter, #wikilink("2 - Importer des notes existantes") vous guide pas à pas.
+Vous trouverez les trois options réunies plus loin dans #wikilink("2 - Paramètres"), sous l'onglet Vue d'ensemble. Pour l'histoire complète du travail avec d'autres personnes, voyez #wikilink("1 - Collaboration"). Si vous avez plutôt des notes existantes que vous aimeriez apporter, #wikilink("2 - Importer des notes existantes") vous guide pas à pas.
 
 Pour une visite guidée de l'aménagement de votre nouvelle boîte de notes, voyez #wikilink("3 - Configurer votre boîte de notes").
 
 == Étape 2 — Écrire votre première note
 
-Appuyez sur *Ctrl+N* pour créer une nouvelle note. (Vous pouvez aussi utiliser le bouton *Nouvelle note* dans l'arborescence de fichiers à gauche, ou faire un clic droit sur un dossier et choisir *Nouvelle note*.)
+Appuyez sur *Ctrl+N* pour créer une nouvelle note. (Vous pouvez aussi utiliser le bouton *Nouvelle note* dans l'arborescence de fichiers à gauche, ou y faire un clic droit sur un dossier et choisir *Nouvelle note*.)
 
-Une nouvelle note s'ouvre à partir d'un template, contenant déjà quelques champs utiles et un titre, prête à recevoir votre texte. Commencez à écrire sous le titre. Il n'y a rien à configurer au préalable.
+Une nouvelle note s'ouvre à partir d'un scaffold et d'un template, contenant déjà quelques champs utiles et un titre, prête à recevoir votre texte.
 
-#callout("tip")[ Il n'y a pas de bouton ni de raccourci pour enregistrer, et vous n'en avez pas besoin. InkyCap enregistre votre travail automatiquement pendant que vous tapez, et écrit chaque fichier en toute sécurité pour que vous ne vous retrouviez jamais avec une note à moitié enregistrée. ]
+#callout("tip")[ Il n'y a pas de bouton ni de raccourci pour enregistrer. InkyCap enregistre votre travail automatiquement pendant que vous tapez, et écrit chaque fichier de façon à ce que vous ne vous retrouviez jamais avec une note à moitié enregistrée. ]
 
 Vous écrivez avec le balisage léger de Typst (par exemple `*gras*`, `_italique_`, `= Titre`, et `- ` pour une liste à puces). #wikilink("3 - Mettre en forme votre texte") couvre l'ensemble complet, et #wikilink("2 - Modifier des notes") explique les gestes quotidiens de l'éditeur.
 
-#callout("important")[ InkyCap lit le balisage Typst, pas le Markdown. Utilisez `*gras*` (une seule astérisque) et `= Titre` (un signe égal). Les habitudes Markdown comme `**gras**` ou `# Titre` ne seront pas mises en forme. Elles apparaîtront littéralement. ]
+#callout("important")[InkyCap lit le balisage Typst. Si vous connaissez bien le Markdown, vous devrez apporter de petits changements à des habitudes comme `**gras**` ou `# Titre`, parce qu'elles ne seront pas mises en forme correctement.]
 
 == Étape 3 — Relier les notes entre elles
 
-La mise en relation est au cœur de votre navigation dans InkyCap. Pour relier une note à une autre, tapez deux crochets :
+La mise en relation est au cœur de la façon dont vous connectez vos idées dans InkyCap. Pour relier une note à une autre, tapez deux crochets et continuez à taper les mots de la note vers laquelle vous voulez pointer :
 
 ```typ
 [[
@@ -74,13 +78,13 @@ La mise en relation est au cœur de votre navigation dans InkyCap. Pour relier u
 
 Un sélecteur apparaît et suggère les noms de vos notes existantes. Choisissez-en une, et InkyCap y insère un lien. (En coulisses, cela devient un appel `#wikilink(...)`, mais vous verrez et taperez habituellement simplement la forme `[[Nom]]`.) Si vous tapez le nom d'une note qui n'existe pas encore, votre lien wiki apparaîtra, prêt à servir. Cliquez dessus et la nouvelle note sera créée avec le nom de votre page pour que vous puissiez commencer à y écrire.
 
-Chaque lien que vous faites est automatiquement bidirectionnel. Quand vous reliez la note A à la note B, la note B gagne un _rétrolien_ qui pointe vers A. Avec le temps, cette toile de connexions devient une carte de votre pensée et fait en sorte que toute l'information liée au sujet d'une note s'organise automatiquement. Voyez #wikilink("4 - Liens et rétroliens") pour aller plus loin.
+Chaque lien que vous faites est automatiquement bidirectionnel. Quand vous reliez la note A à la note B, la note B gagne un _rétrolien_ qui pointe vers A. Avec le temps, ces connexions dessinent la carte de votre pensée et font en sorte que toute l'information liée au sujet d'une note s'organise automatiquement. Voyez #wikilink("4 - Liens et rétroliens") pour aller plus loin.
 
 #callout("example")[ Pendant que vous rédigez une note de lecture, tapez `[[`, puis commencez à taper le titre de votre note de méthodes. Choisissez-la dans la liste. Votre note de lecture renvoie maintenant à la note de méthodes, et la note de méthodes affiche automatiquement votre note de lecture dans ses rétroliens. ]
 
 == Étape 4 — Activer les sauvegardes automatiques
 
-InkyCap peut conserver des sauvegardes compressées de toute votre boîte de notes pendant que vous travaillez. Les sauvegardes sont activées par défaut, mais elles ne commencent à s'exécuter qu'une fois que vous indiquez à InkyCap _où_ les déposer.
+InkyCap peut faire des sauvegardes de toute votre boîte de notes pendant que vous travaillez. Les sauvegardes sont activées par défaut, mais elles ne commencent à s'exécuter qu'une fois que vous indiquez à InkyCap _où_ les déposer.
 
 + Ouvrez #wikilink("2 - Paramètres") (*Ctrl+,*).
 + Allez à l'onglet *Importation/Exportation et sauvegarde* et trouvez *Sauvegarde de la boîte de notes*.

@@ -45,21 +45,17 @@
 
 = Formatting Examples
 
-#highlight[To see these examples properly, view this page using the *Reading View (SVG)*.]
+#highlight(fill: rgb("#ff9f97"))[To see these examples properly, view this page using the *Reading View (SVG)*.]
 
 Each element below shows the markup you *type* on the left and the result you *see* on the right. 
 
 #callout("important")[
-  InkyCap uses #link("https://typst.app/docs/reference/syntax/")[Typst]'s own syntax, *not* Markdown. Typing `**bold**` shows the literal characters `**bold**`, and `# heading` shows a literal `#`. The marks you actually use are below. Press `F1` in InkyCap for a compact cheatsheet at any time.
-]
-
-#callout("tip")[
-  You rarely have to type these by hand. Type `/` for the insert menu, or select text to raise the formatting toolbar. The syntax is here so you can recognize it, type it quickly when you prefer, and read your own source.
+  InkyCap uses #link("https://typst.app/docs/reference/syntax/")[Typst]'s own syntax, *not* Markdown. 
 ]
 
 == Text styles
 
-Common inline marks. Type the mark, your text, then the mark again. Typst requires a space or punctuation after the closing mark so it cannot appear mid-word.
+Common inline marks. Type the mark, your text, then the mark again. Typst reads `*` and `_` as marks only at the edges of a word; inside a word, use *Ctrl/Cmd+B* or *Ctrl/Cmd+I* (or the toolbar) and InkyCap writes `#strong[…]` or `#emph[…]` for you.
 
 #demo(
   [```typ
@@ -101,7 +97,7 @@ Euler's $e^(i pi) + 1 = 0$ identity.
 )
 
 #callout("tip")[
-  Most of these toggle from the keyboard: *Ctrl/Cmd+B* (bold), *Ctrl/Cmd+I* (italic). Select text and press the same shortcut again to remove the mark. Strikethrough, highlight, underline, overline, sub- and super-script are one click away on the selection toolbar.
+  Most of these toggle from the keyboard: *Ctrl/Cmd+B* (bold), *Ctrl/Cmd+I* (italic), *Ctrl/Cmd+Shift+X* (strikethrough), *Ctrl/Cmd+Shift+H* (highlight), *Ctrl/Cmd+E* (inline code), and *Ctrl/Cmd+K* (link). Select text and press the same shortcut again to remove the mark. Strikethrough, highlight, underline, overline, sub- and super-script are one click away on the selection toolbar.
 ]
 
 == Headings
@@ -114,6 +110,8 @@ Start a line with one to six `=` signs and a space. The trailing space matters �
 == Heading level 2
 === Heading level 3
 ==== Heading level 4
+===== Heading level 5
+====== Heading level 6
 ```],
   [
     #text(1.5em, weight: "bold")[Heading level 1] \
@@ -127,7 +125,7 @@ In visual mode, *Ctrl+Shift+Up / Down* raises or lowers the current heading's le
 
 == Lists
 
-Begin each line with a marker and a space. Press *Enter* to start the next item, *Enter* on an empty item to end the list, and *Tab* / *Shift+Tab* to indent or outdent.
+Begin each line with a marker and a space. Press *Enter* to start the next item, *Enter* on an empty item to end the list, and *Tab* / *Shift+Tab* to indent or outdent. An item with nested items can be folded away: hover to its left and click the chevron that appears.
 
 #demo(
   [```typ
@@ -169,12 +167,12 @@ Begin each line with a marker and a space. Press *Enter* to start the next item,
 )
 
 #callout("note")[
-  Numbered lists with `+` are renumbered for you, so you can reorder items freely (*Shift+Alt+Up / Down* moves an item and keeps the numbering tidy). Use `1.` form only when you need the number to stay fixed.
+  Numbered lists with `+` are renumbered for you, so you can reorder items freely (*Shift+Alt+Up / Down* moves an item, with its nested items, and keeps the numbering tidy). Use the `1.` form when you want to see the numbers in your source. InkyCap rewrites those only when the list's shape changes (an item indented, outdented, or moved), and the first item keeps whatever number you typed, so a list that starts at `5.` runs 5, 6, 7.
 ]
 
 == Quotes
 
-An inline quote sits inside your sentence; a blockquote sets a whole passage apart. Type `> ` at the start of a line for a blockquote.
+An inline quote sits inside your sentence; a blockquote sets a whole passage apart. Type `> ` at the start of a line for a blockquote. You can designate your own Typst styling for these.
 
 #demo-block(
   [```typ
@@ -196,7 +194,7 @@ As #quote[essence does not involve existence] reminds us, we should take a deep 
 
 == Callouts
 
-Callouts are the tinted, bordered boxes used throughout this manual — ideal for tips, warnings, and worked examples. Insert one from the `/` menu (*Callout*) or the toolbar, then choose the kind by right-clicking its pill. The same menu holds a Title field for your own heading words and a Colour field for your own colour. The literal form is `#callout("kind")[ ... ]`, with an optional `title:` and `color:`.
+Callouts are the tinted, bordered boxes used throughout this manual, which are ideal for tips, warnings, and worked examples. Insert one from the `/` menu (*Callout*) or the toolbar, then choose the kind by right-clicking its pill. The same menu holds a Title field to substitute your own heading and a Colour field for your own colour. The literal form is `#callout("kind")[ ... ]`, with an optional `title:` and `color:`.
 
 #demo-block(
   [```typ
@@ -227,7 +225,7 @@ Callouts are the tinted, bordered boxes used throughout this manual — ideal fo
     ]],
 )
 
-InkyCap offers fifteen kinds, each with its own colour and default heading:
+InkyCap provides fifteen kinds: *note*, *tip*, *info*, *abstract*, *quote*, *warning*, *caution*, *important*, *danger*, *failure*, *bug*, *example*, *question*, *todo*, *success*.
 
 #demo-block(
   [```typ
@@ -247,11 +245,10 @@ InkyCap offers fifteen kinds, each with its own colour and default heading:
   ],
 )
 
-The complete set: *note*, *tip*, *info*, *abstract*, *quote*, *warning*, *caution*, *important*, *danger*, *failure*, *bug*, *example*, *question*, *todo*, *success*.
 
 == Horizontal rules and breaks
 
-A horizontal rule draws a full-width divider between sections. Type `+++` or pick *Horizontal Rule* from the `/` menu.
+A horizontal rule draws a full-width divider between sections. Type the InkyCap shortcut `+++` or pick *Horizontal Rule* from the `/` menu.
 
 #demo-block(
   [```typ
@@ -270,12 +267,23 @@ Text below the divider.
 
 For other breaks:
 
-- `#linebreak()` forces a new line without starting a new paragraph (or just press *Shift+Enter*).
+- A `\` at the end of a line forces a new line without starting a new paragraph (`#linebreak()` does the same). In the visual editor, turn on *Enter key inserts a line break* under *Editor* in #wikilink("2 - Settings") and a single *Enter* adds that `\` for you; two Enters still make a new paragraph.
 - `#pagebreak()` starts a new page — visible in the reading view, PDF, and book exports.
+
+#demo-block(
+  [```typ
+Roses are red, \
+violets are blue.
+```],
+  [
+    Roses are red, \
+    violets are blue.
+  ],
+)
 
 == Math
 
-Wrap an expression in dollar signs. With no spaces inside, it sits *inline* in your sentence; add a space just inside each `$` and it becomes a centred *display* block on its own line. Math typesets in the reading view and in exports.
+Wrap an expression in dollar signs. With no spaces inside, it sits *inline* in your sentence; add a space just inside each `$` and it becomes a centred *display* block on its own line. Math typesets in the reading view and in exports (not in the Visual or Source editing modes).
 
 #demo(
   [```typ
@@ -293,7 +301,7 @@ $ sum_(k=1)^n k = (n (n + 1)) / 2 $
 
 == Tables
 
-Choose *Table* from the `/` menu to drop in a starter grid; in the visual editor it becomes an interactive table (click a cell to edit, drag a column edge to set its width, paste a grid from a spreadsheet). The underlying markup is `#table(...)`:
+Choose *Table* from the `/` menu to drop in a starter grid; in the visual editor it becomes an interactive table. Click a cell to edit it with everything the note body offers, drag a column edge to set its width (double-click it to fit), drag a row or column handle to reorder, and right-click a handle for insert, delete, duplicate, move, sort, and alignment options; the corner handle's menu covers the whole table (copy, header row, reset widths, edit source, delete). Paste a grid from a spreadsheet straight in. The underlying markup is `#table(...)`:
 
 #demo-block(
   [```typ
@@ -327,9 +335,9 @@ Video and audio work the same way — `#video("/Assets/clip.mp4")` and `#audio("
 
 == Verse
 
-For poetry, lyrics, or any text where exact spacing and indentation must survive, use *verse*. Unlike ordinary paragraphs (where extra spaces collapse), verse preserves every space you type and unlike the pre-formatted code block other tools fall back on, it keeps your normal font and lets inline marks work line by line. 
+For poetry, lyrics, or any text where exact spacing and indentation must survive, use *verse*. Unlike ordinary paragraphs (where extra spaces collapse), verse preserves every space you type and unlike the pre-formatted code block other tools fall back on. Verse elements can retain your normal font used throughout or you can set a distinct font in the #wikilink("2 - Settings", label: "appearance").  
 
-_Note that our example here shows the markup in a monospace font and it switches in the rendering to a  proportional (variable-width) font, which makes the spacing appear different. The purpose is to show that idiosyncratic spacing can be preserved but you can choose your own font._
+_Note that our example here shows the markup in a monospace font and it switches in the rendering to a proportional (variable-width) font, which makes the spacing appear different. You can have your own distinct font choices in different modes but the purpose is to show that idiosyncratic spacing will be preserved._
 
 #demo-block(
   [```typ
@@ -419,9 +427,9 @@ The result was conclusive.#footnote[Otlet et al., 2024, p. 42.]
 
 == InkyCap elements
 
-These are InkyCap's own elements — the queryable pieces that power the Agenda, panels, and collaboration. Each is documented in depth on its own page; here is the markup at a glance.
+These are InkyCap's own elements. They are queryable pieces that power the Agenda, panels, and collaboration. Each is documented in depth on its own page; here is the markup at a glance.
 
-*Tasks* are inline checkboxes that also gather in the Agenda. Type `- [ ]` or use *Task* in the `/` menu:
+*Tasks* are inline checkboxes that also gather in the Agenda. Type `- [ ]` at the start of a line (the list marker stays, so you get a list item holding a task) or use *Task* in the `/` menu:
 
 #demo(
   [```typ
@@ -442,7 +450,7 @@ These are InkyCap's own elements — the queryable pieces that power the Agenda,
 #annotation([Double-check this figure before submitting.], by: "JC", on: datetime(year: 2026, month: 6, day: 7))
 ```
 
-*Suggested edits* are tracked-change marks — the "suggesting mode" primitive. In the visual editor they show the familiar green-insert / red-delete face; a compiled document shows the change as if accepted. See #wikilink("1 - Collaboration").
+*Suggested edits* are tracked-change marks — the "suggesting mode" primitive. In the visual editor they show the familiar green-insert / red-delete; a compiled document shows the change as if accepted. See #wikilink("1 - Collaboration").
 
 ```typ
 This draft is #suggestion([clear and], kind: "insert") well argued.
@@ -451,7 +459,7 @@ This draft is #suggestion([clear and], kind: "insert") well argued.
 == For Typst users
 
 #callout("tip", title: "For Typst users")[
-  Nothing here is a closed box. Everything is plain Typst markup, so you can always drop into raw Typst for anything the menus don't surface: set rules, show rules, custom functions, packages. A function call you write appears behind a small circled `#` pill in the visual editor — click it to edit the source inline, or switch to source mode to see the full Typst directly. The two-column boxes on *this* page are built with an ordinary Typst `#table` and a tiny local helper, nothing more.
+  verything is plain Typst markup, so you can always drop into raw Typst for anything the menus don't surface: set rules, show rules, custom functions, packages. A function call you write appears behind a small circled `#` pill in the visual editor — click it to edit the source inline, or switch to source mode to see the full Typst directly. The two-column boxes on *this* page are built with an ordinary Typst `#table` and a tiny local helper, nothing more.
 ]
 
 == Related pages

@@ -16,7 +16,7 @@ When you open a note it appears in the central *editor pane*, with a header bar 
 == The three editor modes
 
 Every note can be viewed in one of three modes. You switch between them with the *mode toggle* (the three small buttons at the right end of the note's header bar). 
-#align(center)[#image("/Assets/editor-mode-buttons.png", width: 25%)]
+#align(center)[#image("/Assets/editor-mode-buttons.png", width: 16%, alt: "The three editor mode buttons: Source, Visual, and Reading")]
 + *Source* (the `Code` icon, tooltip *"Source edit"*) shows the raw Typst source exactly as it's stored: line numbers, syntax highlighting, code folding, bracket matching, and a margin that flags problems. This is the most direct, "show me everything" view.
 + *Visual* (the `PenLine` icon, tooltip *"Visual edit"*) is a friendly, distraction-light writing surface, useful within the InkyCap PKM paradigm. Your *bold* shows as bold, your headings look like headings, and bits of Typst markup are hidden until you need them. The visual editor's approach is similar to what is frequently referred to as a WYSIWYM (what you see is what you mean) editor. 
 + *Reading* (the `Eye` icon, tooltip *"Reading view"*) shows your note fully rendered and read-only, the way the finished page will actually look.
@@ -36,7 +36,7 @@ Visual mode decorates on top of the Typst markup, so that the InkyCap display lo
 
 Visual mode recognizes Typst's *own* writing #link("https://typst.app/docs/reference/syntax/")[syntax] directly. Type `*like this*` for bold, `_like this_` for italic, `= ` to start a heading, `- ` for a bullet, `+ ` for a numbered item, and `$...$` for math. Or using functions like `#link()`.
 
-#callout("important")[ InkyCap is Typst-native, so Markdown habits do not carry over. Writing `**bold**` or starting a heading with `#` will appear *literally* in your output. Those aren't shortcuts here. When in doubt, the slash command (below) inserts the correct markup for you. ]
+#callout("important")[Remember InkyCap is Typst-native. It can import and export Markdown but it does not work as a Markdown editor, so Markdown habits do not carry over. Writing `**bold**` or starting a heading with `#` will appear *incorrectly* in your output. When in doubt, the slash command (below) inserts the correct markup for you. ]
 
 So that you're not staring at code, anything more involved than plain formatting (a callout, an image, a quote with an attribution) collapses into a small *circled-`#` pill* showing the feature's name. The pill is your handle on that element:
 
@@ -45,7 +45,7 @@ So that you're not staring at code, anything more involved than plain formatting
 
 A few elements are always shown as their finished selves rather than as pills, because that's friendlier: wikilinks, tags, links, and tasks render inline and stay interactive (you can even tick a `#task` checkbox right inside a callout). Callout and quote bodies are real, editable text; you type into them as you would anywhere else.
 
-#callout("tip", title: "For developeers or advanced users")[ Visual mode is a CodeMirror 6 decoration layer ("Tier 1 / Live Preview"), never a ProseMirror parse-and-serialize round-trip. The buffer is Typst at all times, so there's no lossy model conversion to worry about. The pill system is `FuncPillWidget` + the single `expandFunc` effect. "Simple" calls (one line, ≤120 chars, ≤1 nested `#` call) expand inline on click; complex ones open the super-menu. Leading `#import` lines are hidden and locked, and your leading `#set`/`#show` rules gather into a *Document style* preamble chip. Code-completion suggestions are suppressed in Visual mode and kept in Source. If you'd rather have markup reveal itself automatically as your cursor enters a pill, turn on #wikilink("2 - Settings") → *"Auto-expand markup"* (off by default). ]
+#callout("tip", title: "For developers or advanced users")[ Visual mode is a CodeMirror 6 decoration layer ("Tier 1 / Live Preview"). Typst comments (`//` and `/* */`) are hidden and locked in visual mode; switch to source mode to read or edit them. Code-completion suggestions are suppressed in Visual mode and kept in Source. If you'd rather have markup reveal itself automatically as your cursor enters a pill, turn on #wikilink("2 - Settings") → *"Auto-expand markup"* (off by default). ]
 
 === Reading mode: see the finished page
 
@@ -56,21 +56,21 @@ Reading mode offers *two render formats*, chosen with a second toggle (labelled 
 - *SVG* (the `BookA` icon, *"Render as SVG (paginated)"*) shows your note paginated, just like the eventual PDF, with page frames, margins, and the works. This is the best preview of a printed or exported document.
 - *HTML* (the `FileCode` icon, *"Render as HTML (copyable)"*) shows a flowing web-style layout whose text you can *select and copy*, and where embedded video and audio play. Reach for this when you want to grab text or check how the note reads as a web page.
 
-The reading format is remembered per tab, falling back to your default (SVG unless you change *"default reading format"* in #wikilink("2 - Settings")).
+The reading format is remembered per tab, falling back to your default (SVG unless you change *"Reading view format preference"* under *Appearance* in #wikilink("2 - Settings")).
 
-#callout("note")[ If a note has an error that prevents part of it from compiling, Reading view shows a diagnostic and, where it can, still renders the rest with the note: *"Showing a partial render. The errored content below was skipped so the rest of the document stays visible."* You're never left with a blank page over one stray mistake. ]
+#callout("note")[ If a note has an error that prevents part of it from compiling, Reading view shows a diagnostic and, where it can, still renders the rest with the note: *"Showing a partial render — the errored content below was skipped so the rest of the document stays visible."* You're never left with a blank page over one stray mistake. ]
 
 == Inserting things with the slash command
 
 In Visual mode, type `/` at the start of a word to open the *slash command palette*, a quick menu for inserting almost anything without remembering its markup. It's grouped into categories: *Format, Structure, Insert, Symbol, InkyCap, Style*, and *Tools*.
 
-- Move with the *up/down* arrows, *expand a group* with the right arrow, and *accept* with Enter or Tab (a click works too). Esc dismisses it.
+- Move with the *up/down* arrows (*PageUp* and *PageDown* jump several rows at a time), *expand a group* with the right arrow, and *accept* with Enter or Tab (a click works too). Esc dismisses it.
 - Each row shows its typing shortcut at the right edge, so the palette doubles as a cheat sheet.
-- If you have text selected when you trigger an item, your selection is wrapped. Select a phrase, choose *Bold*, and it's emboldened in place.
+- If you have text selected when you trigger an item, your selection is wrapped. Select a phrase, choose *Bold*, and it will change appearance accordingly.
 
 From here you can drop in headings, lists, links, images, video and audio (each opens a file picker), tables, footnotes, citations, page breaks, callouts, wikilinks, tasks and due dates, page-and-font style rules, and much more.
 
-#callout("tip")[ The slash palette is the friendliest way to discover what InkyCap can insert. Browse the categories even when you don't need anything specific; it's a tour of the editor. You can turn it off under #wikilink("2 - Settings") → *"Slash / command shortcut"*, but most people leave it on. ]
+#callout("tip")[ The slash palette is the friendliest way to discover what InkyCap can insert. Browse the categories for a tour of the editor. You can turn it off under #wikilink("2 - Settings") → *"Slash / command shortcut"*, but most people leave it on. ]
 
 There are also a few *typing shortcuts* that expand as you write in the Visual editor mode, for example:
 ```typ
@@ -80,14 +80,18 @@ There are also a few *typing shortcuts* that expand as you write in the Visual e
 - [x] done →  a completed task
 ```
 
+The task shortcuts keep the list marker, so `- [ ]` becomes a list item holding a task (`- #task("")`) and you can nest it or move it like any other item.
+
 == Other conveniences while you write
 
-InkyCap tries to stay out of your way and keep your work safe:
-
 - *Quick formatting keys* are there when you want them, for instance Ctrl/Cmd+B for bold, Ctrl/Cmd+I for italic, and Ctrl/Cmd+F to open the in-note find-and-replace panel. See #wikilink("3 - Keyboard Shortcuts") for the full set.
-- *Auto-pairing* can close your brackets, quotes, and formatting marks for you, and wrap a selection when you type a `*` or `_` around it.
+- *Auto-pairing* comes as two settings under *Editor* in #wikilink("2 - Settings"). *Auto-pair brackets* closes brackets and quotes for you. *Auto-pair Typst markup* wraps selected text when you type `*`, `_`, a backtick, or `$` around it, and closes a backtick into a pair.
 - *Auto-save* writes your changes to disk on its own shortly after you stop typing; there's no Save button to remember.
-- *Spellcheck*, *focus mode*, *typewriter scrolling*, and a *popup toolbar on selected text* are all available; you can turn each on or off in #wikilink("2 - Settings").
+- *Spellcheck* underlines misspelled words as you type, using bundled Hunspell dictionaries. Under *Language* in #wikilink("2 - Settings") you can turn on several dictionaries at once (handy for bilingual notes), and the status bar's *Spellcheck language* control switches between them. Right-click an underlined word for suggestions or to add it to the notebox's *Personal dictionary*, which travels with the notebox.
+- *Enter key inserts a line break* (under *Editor*) makes a single Enter start a new line in the rendered output, by adding a hidden `\` at the end of the line; two Enters still start a new paragraph. Leave it off and a single Enter behaves as Typst normally does: the next line joins the same paragraph.
+- *Intuitive list indentation* (under *Editor*) makes Tab and Shift+Tab move a list item's nested children along with it.
+- *Folding* tucks a section or a list item's sub-items out of sight. Hover just to the left of a heading, or of a list item that has nested items, and a small chevron appears; click it to collapse, and again to reopen. Folding works in both Source and Visual mode and stays put when you switch between them.
+- *Focus mode* (under *Editor*) can be *Off*, *Line*, or *Section*, and *Dim unfocused text* is a separate switch that fades everything outside the part you're working in; it works on its own, keeping your current paragraph clear even with Focus mode off. *Typewriter mode* and the *Popup toolbar on selected text* live in the same place.
 
 == The right sidebar supports the open note
 
@@ -101,9 +105,9 @@ While you write, the *right sidebar* keeps useful information about the current 
 
 == Other perspectives
 
-The header bar also gives you doorways to two other ways of seeing your work, each of which opens in its own space rather than editing the note in place:
+The header bar also gives you doorways to two other ways of seeing your work, each of which opens in its own space:
 
-- The *Journal Scroll* button turns a tab into a continuous, chronological feed of your notes, wonderful for diaries, lab logs, and daily writing. See #wikilink("4 - Journal Scroll").
+- The *Journal Scroll* button turns a tab into a continuous, chronological feed of your notes, useful for diaries, lab logs, daily writing, or to review notes you made near a certain point in time. See #wikilink("4 - Journal Scroll").
 - The *Mycelial View* button (the `BrainCircuit` icon) opens a new tab proposing how you might grow your notes through their shared ideas, and anchored from the note you're currently reading. See #wikilink("5 - Mycelial View").
 
 == Related pages

@@ -22,7 +22,7 @@ The fastest way to find any shortcut is to press *F1* to open the Help panel, th
 
 == Getting help within InkyCap
 
-Press *`F1`* (or click the *Info* button in the editor toolbar) to open the Help panel. It offers three views you can switch between:
+Press *`F1`* (or click the *Help* button on the vertical toolbar; its tooltip reads *Help (F1)*) to open the Help panel. It offers three views you can switch between:
 
 - *UI shortcuts*. Every global shortcut grouped by category.
 - *Visual editor*. The formatting keys and typing shortcuts you use while writing.
@@ -40,7 +40,7 @@ Use these to jump between notes, tabs, and the different parts of the window. Th
   [`Ctrl+Tab`], [Next tab],
   [`Ctrl+Shift+Tab`], [Previous tab],
   [`Ctrl+1` … `Ctrl+9`], [Switch directly to tab 1–9],
-  [`Ctrl+Shift+F`], [Search in notebox],
+  [`Ctrl+Shift+F`], [Search throughout the notebox],
   [`F6`], [Focus the next region (sidebar, editor, panel…)],
   [`Shift+F6`], [Focus the previous region],
   [`Ctrl+Shift+0`], [Jump straight to the active editor],
@@ -54,6 +54,8 @@ Use these to jump between notes, tabs, and the different parts of the window. Th
 When a panel is focused, you can flip through its own internal tabs with *Ctrl+PageDown* and *Ctrl+PageUp*. (These only act once you have focused the panel with *F6* first.)
 
 Inside the file tree and other lists, the arrow keys move the selection, *Enter* or *Space* opens or activates the highlighted item, and *Home* / *End* jump to the ends. In the file tree specifically, *→* expands a folder (or steps into it) and *←* collapses it (or steps out to the parent).
+
+Menus work the same way. Once any menu is open, including a right-click menu, the arrow keys move through its items, *Home* / *End* jump to the first and last, *Enter* or *Space* chooses, and *Esc* closes it. *→* or *Enter* opens a submenu and *←* steps back out of it.
 
 == Editing
 
@@ -69,14 +71,15 @@ These act on the note you are writing. See #wikilink("2 - Editing Notes") for th
   [`Ctrl+M`], [Move file to…],
   [`Ctrl+Shift+D`], [Delete file],
   [`F2`], [Rename the current file],
-  [`Ctrl+H`], [Find and replace (within the current note)],
+  [`Ctrl+F`], [Find within the current note],
+  [`Ctrl+H`], [Find and replace within the current note],
   [`Ctrl+=` / `Ctrl++`], [Zoom in],
   [`Ctrl+-`], [Zoom out],
   [`Ctrl+0`], [Reset zoom],
 )
 
 #callout("note")[
-*Ctrl+N* and *Ctrl+D* come from InkyCap's built-in note-creation rules, and unlike most shortcuts, _these two you can change yourself_. Each creation rule has an editable hotkey. See #wikilink("3 - Scaffolds, Templates, and Packages") for how creation rules work.
+*Ctrl+N* and *Ctrl+D* come from InkyCap's built-in note-creation rules, so they are changed in a different place from the rest: each creation rule has its own editable hotkey in *Creation Rules* in #wikilink("2 - Settings"). See #wikilink("3 - Scaffolds, Templates, and Packages") for how creation rules work. Every other shortcut on this page can be changed from the Help panel, as described at the end of this page.
 ]
 
 === Formatting keys (while writing)
@@ -91,7 +94,6 @@ These act inside note content. They are toggles; press the same combo again to r
   [`Ctrl+E`], [Inline code], [`` `…` ``],
   [`Ctrl+Shift+X`], [Strikethrough], [`#strike[…]`],
   [`Ctrl+Shift+H`], [Highlight], [`#highlight[…]`],
-  [`Ctrl+Shift+M`], [Inline math], [`$…$`],
   [`Tab`], [Indent list item], [],
   [`Shift+Tab`], [Outdent list item], [],
   [`Shift+Alt+Up`], [Move line / item up], [],
@@ -128,6 +130,8 @@ Show, hide, and switch between InkyCap's panels and editing modes.
 
 The editing modes and views above have their own pages: #wikilink("1 - Views and Navigation"), #wikilink("5 - Mycelial View"), and #wikilink("4 - Journal Scroll").
 
+A third kind of split, *Split with synced preview* (a live reading view of the same note beside the editor), has no shortcut of its own; run it from the Command Palette or the *Tab options* menu. See #wikilink("1 - The InkyCap Interface").
+
 #callout("important")[
 In Distraction-Free mode, press *Esc* to return to the normal layout.
 ]
@@ -149,12 +153,26 @@ For what these do, see #wikilink("1 - Collaboration",
 ) and #wikilink("7 - Citations and Bibliography")
 
 #callout("tip")[
-Not every command has a shortcut. Anything without one easily accessed in the Command Palette (*Ctrl+P*). Start typing the name to see a list of possibilities.
+Not every command has a shortcut. Anything without one, can be easily accessed in the Command Palette (*Ctrl+P*). Start typing the name to see a list of possibilities.
 ]
 
-== Can I change the shortcuts?
+== Changing the shortcuts
 
-You can customize the hotkeys for *note-creation rules* (such as New Note, Daily Note, or other rules you make) from the Creation Rules editor (see #wikilink("2 - Settings")). Reassigning the other built-in shortcuts (for example, remapping *Ctrl+P*) is not currently possible.
+Yes, shortcuts in the *UI shortcuts* view of the Help panel can be reassigned, and the change takes effect immediately:
+
++ Press *F1* to open the Help panel and make sure *UI shortcuts* is selected. (Type in the filter box to find the command quickly.)
++ Click the key combination shown beside the command. It changes to *Press keys…*.
++ Press the new combination you want. That's it: the new keys are saved and appear in the list, in the Command Palette, and in tooltips.
+
+While the panel is waiting for your keys:
+
+- Press *Backspace* (or *Delete*) to remove the shortcut altogether. The command then reads *Unassigned* and stays in the list so you can give it a new combination later.
+- Press *Esc* to cancel and keep the shortcut as it was.
+- If the combination you press is already used by another command, InkyCap refuses it and shows a message naming the command that has it. Combinations reserved by the editor (such as *Ctrl+B* for bold or *Ctrl+I* for italic) and by your operating system are refused in the same way.
+
+A shortcut you have changed shows a small reset arrow beside it; click it to restore that one command's default. When any shortcut has been customized, a *Reset all shortcuts* button appears at the top of the view; it asks for confirmation, then restores every shortcut to its default.
+
+The one exception is the hotkeys of *note-creation rules* (such as New Note, Daily Note, or rules you make yourself). They appear in the Help panel for reference, but you change them in the Creation Rules editor (see #wikilink("2 - Settings")), so that each rule keeps a single source of truth.
 
 
 == Related pages

@@ -8,34 +8,41 @@
 
 = Installing InkyCap
 
-InkyCap is a desktop application, installed on your own computer, not a website you log into. Everything you write stays on your machine by default (unless you explicitly share it outside).
+InkyCap is a desktop application that you install on your own computer. Everything you write stays on your machine by default (unless you explicitly share it outside).
 
 == Installing on your platform
 
-InkyCap aims to run on Linux, MacOS, and Windows. The file you download depends on your system. 
+InkyCap aims to run on Linux, macOS, and Windows. The file you download depends on your system.
+
+=== Where to download
+
+The download page at #link("https://inkycap.org/download")[inkycap.org/download] offers the current release for each platform. Releases are also listed on the project's releases page at #link("https://codefloe.com/InkyCap/app/releases")[codefloe.com/InkyCap/app/releases].
+
+#callout("note")[The project moved from Codeberg to CodeFloe in September 2026. The old Codeberg repository is archived and read-only; it still holds every release up to version 26.9.4, but newer releases appear only on CodeFloe. ]
 
 === Linux
 
 On Linux you'll have a choice of package formats:
 
 - A *.deb* package, for Debian- and Ubuntu-based systems, installed through your usual package tools.
-- A *.rpm* package, for Fedora- and openSUSE-based systems.
+- An *.rpm* package, for Fedora- and openSUSE-based systems.
 - A *Flatpak* bundle, which runs on most distributions. You install the downloaded `.flatpak` file directly (it isn't on Flathub); it then appears in your application menu.
 
-All three work through your system's package tools and follow your desktop's native appearance. Updates to them are handled by hand: InkyCap tells you when a newer version is available, but the install itself goes through your package manager or by downloading the new file, so the app never replaces itself behind your back.
+All three work through your system's package tools and follow your desktop's native appearance. InkyCap can tell you when a new version is available but you must download and install it yourself.
 
+#callout("note", title: "For Typst users")[The `.deb` package installs InkyCap's bundled language server under the name `inkycap-tinymist`, so it never collides with a Tinymist you may have installed separately. The Flatpak is built on the GNOME 50 runtime. ]
 
-=== MacOS
+=== macOS
 
-On MacOS you'll download the app bundle and drag it into your Applications folder, as you would with most Mac software.
+On macOS you'll download a `.dmg` disk image, open it, and drag InkyCap into your Applications folder, as you would with most Mac software. There are separate builds for Apple silicon Macs and Intel Macs, so pick the one that matches your computer.
 
 #callout("important")[
-  Early macOS builds are not yet signed or notarized by Apple. The first time you open InkyCap, macOS may warn that it comes from an "unidentified developer." This is expected for now. You can still open the app by following your system's prompts to allow it (typically through the Privacy & Security settings), but only do this for software you trust and downloaded from inkycap.org.
+InkyCap's macOS builds are not signed or notarized by Apple. The first time you open InkyCap, macOS will warn that it comes from an "unidentified developer." This is expected. To open it anyway, right-click (or Control-click) the app in your Applications folder and choose *Open*; you only need to do this once. Only do this for software you trust and downloaded from inkycap.org.
 ]
 
 === Windows
 
-On Windows you'll run a standard setup installer and follow the on-screen steps. Once installed, InkyCap behaves like other Windows applications and can update itself upon request.
+On Windows you can choose between a `-setup.exe` installer, which walks you through the on-screen steps, and an `.msi` package, which suits organizations that install software centrally. Either way, once installed, InkyCap behaves like other Windows applications. It does not update itself; see below for how updates work.
 
 == Opening InkyCap for the first time
 
@@ -45,7 +52,7 @@ For a guided walk-through of that first session (creating a notebox, writing you
 
 == How updates work
 
-InkyCap can tell you when a newer version is available, and on supported platforms it can install the update for you. It is built to respect your privacy: *InkyCap never contacts the network unless you ask it to*.
+InkyCap can tell you when a new version is available but it does not install anything itself. You must download and install new versions yourself. InkyCap is built to respect your privacy: *InkyCap does not contact the network unless you ask it to*.
 
 You'll find everything related to updates in #wikilink("2 - Settings"), under the *Overview* and *Behaviour* areas.
 
@@ -55,15 +62,18 @@ You'll find everything related to updates in #wikilink("2 - Settings"), under th
 2. Find the *Software updates* section and click *Check for updates*.
 3. InkyCap reaches out once to see whether a newer version exists, then reports back.
 
-If you're current, you'll see "You're running the latest version." If a new version is available, the next step depends on how you installed InkyCap.
+If you're current, you'll see "You're running the latest version."
 
-=== Automatic versus manual installs
+=== When a new version is available
 
-- On *Windows* and *macOS*, InkyCap can download and install a stable update in place. You'll see a *Download & install* button, a progress indicator while it downloads, and then "Update installed. Restart to finish." with a *Restart now* button.
-- On *Linux* (`.deb`, `.rpm`, and Flatpak alike), InkyCap only *tells* you that a newer version exists and offers a *View releases* button to open the downloads page. Updating itself is left to your system's package manager. The app never replaces itself behind your back.
+If something newer exists, InkyCap reports "Version X is available to download." and offers three buttons:
+
+- *Download* opens the download page at inkycap.org in your browser.
+- *View releases* opens the releases page on CodeFloe, where you can read what changed.
+- *Check again* repeats the check.
 
 #callout("note")[
-  Development (beta) releases are always installed by hand, even on platforms that otherwise update automatically. If you opt into betas, InkyCap will point you to the releases page rather than installing one for you.
+The check reads a file from inkycap.org that lists the latest version number. It does not send any information about you, your computer, or your notebox.
 ]
 
 === Checking automatically at startup
@@ -75,17 +85,15 @@ If you'd like InkyCap to look for updates on its own, you can turn that on:
 
 This option is *off by default*. With it on, InkyCap checks once shortly after launch and shows a small message if something newer is available. There's also an *Include development (beta) releases* option (also off by default) if you want to hear about pre-release builds.
 
-#callout("important")[
-  No update check ever happens silently. A check runs only when you click the button or when you've explicitly opted in to checking at startup. There is no telemetry and no background phoning-home.
-]
-
 == Knowing which version you're running
 
-To see your current version, open #wikilink("2 - Settings") and look at the *Overview* area, where the version number is displayed. InkyCap's version numbers follow a `year-month.release.patch` pattern. If you happen to be running a development build, you'll see a small *Development build* badge beside the version so you always know whether you're on a stable or pre-release copy.
+To see your current version, open #wikilink("2 - Settings") and look at the *Overview* area, where the version number is displayed. InkyCap's version numbers have three parts, `year.month.release` (for example 26.9.10 is the tenth release of September 2026). The last number tells you what kind of build you have: even numbers are stable releases and odd numbers are development builds. If you happen to be running a development build, you'll also see a small *Development build* badge beside the version so you always know whether you're on a stable or pre-release copy.
 
 == Getting help
 
 The *Overview* area of #wikilink("2 - Settings") also includes a *Help* section with a link to InkyCap's documentation. That's a good place to return to whenever you want to learn more about a feature.
+
+You can reach the same manual from anywhere in the app: press *F1* (or click the *Help* button on the vertical toolbar) to open the Help panel, which has an *InkyCap Documentation* button and a *Typst Documentation* button at the top. The panel itself lists every keyboard shortcut and a cheat-sheet of Typst markup; see #wikilink("1 - The InkyCap Interface") for a tour of it.
 
 == Related pages
 

@@ -15,7 +15,7 @@ Cette page présente chacun d'eux, les opérateurs de recherche que vous pouvez 
 
 == Chercher dans toute la boîte de notes
 
-Ouvrez le panneau *Recherche* depuis la barre latérale gauche, ou appuyez sur `Ctrl+Shift+F` (la commande « Rechercher dans la boîte de notes »). Tapez dans la case du haut et les résultats apparaissent dès que vous faites une pause; appuyez sur `Entrée` pour chercher immédiatement sans attendre.
+Ouvrez le panneau *Recherche* depuis la barre latérale gauche, ou appuyez sur `Ctrl+Shift+F` (la commande « Rechercher dans la boîte de notes »). Tapez votre expression de recherche dans la case du haut et les résultats apparaissent dès que vous faites une pause; appuyez sur `Entrée` pour chercher immédiatement sans attendre.
 
 #callout("note")[
 *InkyCap recherche des mots entiers par défaut.* Taper `ink` trouve le mot _ink_, mais ne correspond *pas* à _inkycap_ ni à _inking_. Cela garde les résultats précis. Pour correspondre à des mots partiels, utilisez l'opérateur de troncature décrit ci-dessous.
@@ -31,9 +31,11 @@ Comme la correspondance par mot entier est l'option par défaut, vous utilisez l
 
 Voyez `*` comme « n'importe quelle suite de caractères ici ». Sans lui, vous obtenez le mot exact et rien de plus.
 
+Les noms de fichiers suivent la même règle que le corps du texte. Un terme seul correspond à un mot entier dans le nom d'une note, donc `ink` trouve une note nommée « Ink and Switch », mais pas une note nommée « Linked thinking », et `ink*` élargit la correspondance de la même façon. La seule exception est le filtre explicite `file:` décrit ci-dessous, qui correspond toujours à n'importe quelle partie d'un nom.
+
 === Opérateurs
 
-Vous pouvez combiner les termes au moyen d'un petit langage de requête. Le panneau Recherche propose une fiche *Conseils de recherche* (le bouton point d'interrogation/conseils) qui les énumère sur place, mais les voici au complet :
+Vous pouvez combiner les termes au moyen d'un petit langage de requête. Le panneau Recherche propose une fiche *Conseils de recherche* (le bouton point d'interrogation/conseils) qui les énumère sur place, avec un court exemple pour chaque filtre et un rappel sur les guillemets, mais les voici au complet :
 
 #table(
   columns: 2,
@@ -59,36 +61,47 @@ Les opérateurs booléens (`AND`, `OR`, `NOT`) doivent être écrits en *majuscu
 Préfixez un terme par l'un de ces filtres pour restreindre la recherche à un type de correspondance précis plutôt qu'au corps de la note :
 
 #table(
-  columns: 2,
+  columns: (163.5pt, auto),
   stroke: 0.5pt + luma(200),
   inset: 7pt,
   table.header([Filtre], [Ce à quoi il correspond]),
   [`tag:recherche`], [Les notes portant une #wikilink("5 - Étiquettes", display: "étiquette") donnée.],
-  [`property:statut=brouillon`], [Les notes dont la #wikilink("6 - Propriétés des notes", display: "propriété") a une valeur. `property:statut` seul correspond à toute note qui possède cette propriété.],
+  [`property:statut=brouillon`], [Les notes dont la #wikilink("6 - Propriétés des notes", display: "propriété") a une valeur. `property:statut` seul correspond à toute note qui possède cette propriété, peu importe sa valeur. Dans cet exemple, la propriété s'appelle « `statut` » et elle a la valeur « `brouillon` ».],
   [`section:méthodes`], [Les notes qui contiennent un titre correspondant au mot-clé.],
-  [`file:2026`], [Correspondance par nom de fichier.],
-  [`path:journal`], [Correspondance par le chemin du fichier dans la boîte de notes.],
+  [`file:2026`], [Correspondance par nom de fichier. Contrairement à un terme de recherche seul, ce filtre correspond à n'importe quelle partie d'un nom, donc `file:2026` trouve « 2026-03-01 Réunion ».],
+  [`path:journal`], [Correspondance par le chemin du fichier dans la boîte de notes. Un nom de dossier contenant des espaces doit être entre guillemets, et une barre oblique finale limite la correspondance à ce dossier : `path:"Notes de lecture/"`.],
   [`annotation:fixme`], [Correspondance au texte à l'intérieur d'une `#annotation[…]` ou d'une `#suggestion[…]`. `annotation:` seul trouve toute note qui comporte des annotations.],
   [`collection:Lectures`], [Limite les résultats aux notes appartenant à une #wikilink("2 - Collections", display: "collection") précise.],
 )
 
-Les filtres se combinent librement avec les opérateurs ci-dessus, donc `tag:recherche méthodes -brouillon` est une requête tout à fait valable.
+Les filtres se combinent librement avec les opérateurs ci-dessus, donc une expression de recherche comme `tag:recherche méthodes -brouillon` est une requête tout à fait valable.
+
+Une valeur de filtre contenant des espaces doit être entre guillemets, comme dans `property:author="Jeanne Tremblay"`; autrement, seul son premier mot est utilisé.
+
+=== Choisir les valeurs de filtre dans une liste
+
+Vous n'avez pas à vous rappeler les noms exacts qui se trouvent dans votre boîte de notes. Dès que vous tapez `tag:`, `property:` ou `path:`, une liste apparaît sous la case de recherche pour montrer ce que la boîte de notes contient réellement : *Étiquettes de cette boîte à notes*, *Propriétés de cette boîte à notes* ou *Dossiers de cette boîte à notes*. Continuez à taper pour restreindre la liste, utilisez les flèches vers le haut et vers le bas pour choisir une rangée, puis appuyez sur `Tab` pour l'accepter (ou cliquez dessus). `Entrée` lance la requête exactement comme vous l'avez tapée, sauf si vous avez choisi une rangée avec les flèches, auquel cas c'est cette rangée qui est acceptée. `Échap` ferme la liste.
+
+- Accepter une clé de propriété écrit le `=` pour vous, et la liste passe aux valeurs de cette clé (*Valeurs de statut*, par exemple).
+- Accepter un dossier écrit la barre oblique finale pour vous, et ajoute les guillemets lorsque le nom contient des espaces.
+
+Vous pouvez aussi lancer une recherche dans un dossier à partir de l'arborescence des fichiers : faites un clic droit sur un dossier et choisissez *Rechercher dans le dossier*. Le panneau Recherche s'ouvre avec `path:"<dossier>/"` déjà rempli, prêt à recevoir les mots que vous cherchez.
 
 === Options de recherche
 
 Trois bascules à côté de la case de recherche changent le mode de correspondance :
 
 - *Sensible à la casse* fait respecter à la recherche les majuscules et minuscules exactes que vous avez tapées. Désactivé par défaut.
-- *Utiliser une expression régulière* traite toute la requête comme une expression régulière, pour les cas où les opérateurs ci-dessus ne suffisent pas. La syntaxe d'expression, de booléens et de filtres ne s'applique pas dans ce mode — c'est de l'expression régulière brute.
+- *Utiliser une expression régulière* traite toute la requête comme une expression régulière, pour les cas où les opérateurs ci-dessus ne suffisent pas. La syntaxe d'expression, de booléens et de filtres ne s'applique pas dans ce mode : c'est de l'expression régulière brute.
 - *Portée des annotations* est un sélecteur à trois positions : *Tout le texte* (l'option par défaut), *Annotations seulement* (chercher uniquement à l'intérieur des annotations et des suggestions. Une requête vide dans ce mode liste _toutes_ les annotations de la boîte de notes), ou *Exclure les annotations* (chercher seulement la prose et ignorer le texte des annotations).
 
 === Lire et organiser les résultats
 
-Les résultats sont regroupés par fichier, avec un décompte de correspondances à côté de chaque nom de fichier. Cliquez sur une ligne pour ouvrir cette note à la correspondance; quand une note s'ouvre ainsi, *toutes* ses correspondances sont surlignées pour que vous puissiez les parcourir.
+Les résultats sont regroupés par fichier, avec un décompte de correspondances à côté de chaque nom de fichier. Cliquez sur une ligne pour ouvrir cette note à la correspondance; quand une note s'ouvre ainsi, *toutes* ses correspondances sont surlignées pour que vous puissiez les parcourir. Une note dont le _nom_ correspond à votre requête est listée elle aussi, même si les mots n'apparaissent nulle part dans son corps, avec la partie correspondante du nom surlignée.
 
-- *Développer / Réduire les résultats* affiche ou masque les lignes correspondantes sous chaque fichier. Vous pouvez aussi inverser ce réglage un fichier à la fois grâce au chevron sur sa rangée.
+- *Développer les résultats* / *Réduire les résultats* affiche ou masque les lignes correspondantes sous chaque fichier. Vous pouvez aussi inverser ce réglage un fichier à la fois grâce au chevron sur sa rangée.
 - *Afficher plus de contexte* élargit chaque résultat pour inclure quelques lignes au-dessus et en dessous de la correspondance, afin que vous puissiez lire le texte environnant sans quitter le panneau. (La ligne `#import` du début de la note est toujours masquée des résultats.)
-- *Ordre de tri* propose Pertinence (l'option par défaut), Nom de fichier A–Z ou Z–A, et Date de modification ou de création, du plus récent au plus ancien ou l'inverse. Un fichier dont le nom correspond exactement à votre requête saute en tête.
+- *Ordre de tri* propose Pertinence (l'option par défaut), Nom de fichier (A – Z) ou (Z – A), Date de modification ou Date de création (du récent à l'ancien ou l'inverse), et ZID (croissant) ou ZID (décroissant). Un fichier dont le nom correspond exactement à votre requête saute en tête.
 - Les longs ensembles de résultats sont *paginés* par pages de 500, avec des boutons Précédent / Suivant et un compteur `{from}–{to} sur {total} résultats`.
 
 == Enregistrer une recherche comme signet
@@ -97,7 +110,7 @@ Une requête que vous lancez souvent peut être enregistrée pour ne jamais avoi
 
 == Ouverture rapide : sauter directement à un fichier
 
-Quand vous savez déjà à peu près _quelle_ note vous voulez, vous n'avez pas besoin d'une recherche complète. Appuyez sur `Ctrl+O` pour l'*Ouverture rapide*, un sélecteur de fichiers rapide. Commencez à taper une partie du nom d'un fichier et InkyCap le trouve par correspondance floue, classant les meilleures correspondances en premier et départageant les égalités par la note modifiée le plus récemment. Une case vide liste vos fichiers du plus récent au plus ancien. Servez-vous des flèches (ou `Page préc.` / `Page suiv.`, `Début` / `Fin`) pour déplacer la sélection et d'`Entrée` pour l'ouvrir. Si un fichier se trouve dans un dossier, le dossier est affiché à côté de son nom.
+Quand vous savez déjà à peu près _quelle_ note vous voulez, vous n'avez pas besoin d'une recherche complète. Appuyez sur `Ctrl+O` pour l'*Ouverture rapide*, un sélecteur de fichiers rapide. Commencez à taper une partie du nom d'un fichier et InkyCap le trouve par correspondance souple : une note dont le nom est exactement ce que vous avez tapé vient en premier, puis les noms qui contiennent vos lettres en une seule suite ininterrompue, puis les noms où ces lettres sont éparpillées plus loin les unes des autres. Les égalités sont départagées par la note modifiée le plus récemment. Une case vide liste vos fichiers du plus récent au plus ancien. Servez-vous des flèches (ou `Page préc.` / `Page suiv.`, `Début` / `Fin`) pour déplacer la sélection et d'`Entrée` pour l'ouvrir. Si un fichier se trouve dans un dossier, le dossier est affiché à côté de son nom.
 
 Voyez l'Ouverture rapide comme « aller au fichier » et le panneau Recherche comme « trouver ce texte ».
 
@@ -112,24 +125,24 @@ Pour remplacer dans la note, appuyez sur `Ctrl+H` (« Rechercher et remplacer (d
 InkyCap peut aussi remplacer du texte dans *tous* les fichiers d'un coup. Cette commande n'a aucun raccourci clavier. Vous l'atteignez par la *palette de commandes* (`Ctrl+P`) en lançant *Rechercher et remplacer (toute la boîte de notes)*. Elle ouvre le panneau Recherche avec un champ de remplacement; saisissez une requête et un remplacement, puis utilisez *Tout remplacer* pour l'appliquer à toute la boîte de notes, ou *Remplacer dans ce fichier* sur un seul groupe de fichier pour en limiter la portée. Elle respecte les bascules *Sensible à la casse* et *Utiliser une expression régulière* (les remplacements par expression régulière peuvent utiliser des groupes de capture comme `$1`).
 
 #callout("warning", title: "Le remplacement sur toute la boîte de notes n'est pas annulable d'un seul coup")[
-Un remplacement sur toute la boîte de notes modifie plusieurs fichiers en même temps et il n'existe pas d'unique « annuler » qui les renverse tous. Avant d'en lancer un :
+Un remplacement sur toute la boîte de notes modifie plusieurs fichiers en même temps et il n'existe pas d'unique « annuler » qui les renverse tous. *À utiliser avec prudence, cela peut être dangereux!* Avant d'en lancer un :
 
 - *Prévisualisez d'abord.* Lancez la même requête comme une recherche ordinaire et lisez les résultats, pour savoir exactement ce qui va changer et où.
 - *Soyez précis.* Un terme court ou courant correspondra à bien plus que ce que vous attendez. Appuyez-vous sur la correspondance par mot entier, sur les expressions ou sur les filtres pour resserrer la requête.
-- *Gardez un filet de sécurité.* Si votre boîte de notes est sous #wikilink("1 - Collaboration", display: "synchronisation git") ou si vous conservez des sauvegardes, assurez-vous de pouvoir revenir en arrière. Utilisez la palette de commandes (`Ctrl+P`) et sélectionnez l'option « Sauvegarder la boîte de notes maintenant ». L'absence de raccourci pour cette commande est elle-même un garde-fou — traitez-la avec le même soin.
+- *Gardez un filet de sécurité.* Si votre boîte de notes est sous #wikilink("1 - Collaboration", display: "synchronisation git") ou si vous conservez des sauvegardes, assurez-vous de pouvoir revenir en arrière. Utilisez la palette de commandes (`Ctrl+P`) et sélectionnez l'option « Sauvegarder la boîte de notes maintenant ». L'absence de raccourci pour cette commande est elle-même un garde-fou : traitez-la avec le même soin.
 ]
 
 == Autres façons de retrouver vos notes
 
 La Recherche et l'Ouverture rapide sont les outils directs, mais plusieurs autres fonctions d'InkyCap relèvent en réalité aussi de la récupération :
 
-- *Filtres de collection.* Une #wikilink("2 - Collections", display: "collection") rassemble les notes qui correspondent à un filtre enregistré (par exemple `statut == "brouillon"` ou `tags.contains("recherche")`). C'est une requête permanente et réutilisable que vous construisez une fois et que vous revisitez, plutôt qu'une recherche ponctuelle — et vous pouvez intégrer une collection à une recherche avec le filtre `collection:` ci-dessus.
-- *Liens et rétroliens.* Suivre les #wikilink("4 - Liens et rétroliens", display: "hyperliens wiki et rétroliens") est une navigation par connexion délibérée.
+- *Filtres de collection.* Une #wikilink("2 - Collections", display: "collection") rassemble les notes qui correspondent à un filtre enregistré (par exemple `statut == "brouillon"` ou `tags.contains("recherche")`). C'est une requête permanente et réutilisable que vous construisez une fois et que vous revisitez, plutôt qu'une recherche ponctuelle; et vous pouvez intégrer une collection à une recherche avec le filtre `collection:` ci-dessus.
+- *Liens et rétroliens.* Suivre les #wikilink("4 - Liens et rétroliens", display: "liens wiki et rétroliens") est une navigation par connexion délibérée.
 - *Étiquettes.* Le navigateur d'#wikilink("5 - Étiquettes", display: "étiquettes") regroupe les notes selon les libellés que vous leur avez donnés.
 - *Vue mycélienne.* La #wikilink("5 - Vue mycélienne") fait remonter les connexions que vous n'avez _pas encore_ faites, plutôt que celles que vous cherchez.
 
 #callout("note")[
-Une recherche enregistrée est l'un des trois types de *signets* que conserve InkyCap (avec les notes et les collections). Pour le fonctionnement des signets et toutes les façons de les créer, voyez #wikilink("1 - L'interface InkyCap").
+Une recherche enregistrée est l'un des quatre types de *signets* que conserve InkyCap (avec les notes, les collections et les vues Agenda enregistrées; voir #wikilink("3 - Agenda, tâches et dates")). Pour le fonctionnement des signets et toutes les façons de les créer, voyez #wikilink("1 - L'interface InkyCap").
 ]
 
 == Pages connexes

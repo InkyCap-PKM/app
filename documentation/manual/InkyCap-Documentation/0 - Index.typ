@@ -39,3 +39,5 @@ Read #wikilink("4 - Quick Start") if you want to explore on your own. It takes y
 - Import from Markdown and Obsidian, set up scaffolds and templates, and add extensions.
 \
 #callout("tip")[ Every coloured word is a #wikilink("4 - Links and Backlinks", display: "wikilink"). Click one to jump to that page; each page also lists what links to it, so you can wander the manual the same way you'll wander your own notebox. ]
+
+#text(size: 0.9em)[InkyCap™ and the user manual © 2026 Joshua Chalifour. For more information visit #link("https://inkycap.org")[inkycap.org].]

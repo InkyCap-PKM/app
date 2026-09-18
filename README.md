@@ -63,8 +63,8 @@ Pre-built packages are published on the
 [download page](https://inkycap.org/download). Pick the artifact for your platform:
 
 - **Linux:** `.deb` / `.rpm` / Flatpak (download and install from the Flatpak file, not currently available on FlatHub).
-- **Windows:** the `*-setup.exe` installer.
-- **macOS:** the `.app` bundle. (macOS builds would be nice to include but I don't have access to a Mac so need help from someone else. Feel free to build from the source yourself). 
+- **Windows:** the `*-setup.exe` installer or the `.msi` package.
+- **macOS:** the `.dmg` disk image (separate builds for Apple silicon and Intel Macs). These builds are not code-signed or notarized yet, so the first launch shows an "unidentified developer" warning: right-click the app and choose **Open** once, and macOS remembers the choice.
 
 InkyCap has an in-app update-checker (Settings, Overview) that lets you request whether there is a new version available but you must download and install updates yourself (they are not automatic). See
 [documentation/developer/releasing.md](documentation/developer/releasing.md) for

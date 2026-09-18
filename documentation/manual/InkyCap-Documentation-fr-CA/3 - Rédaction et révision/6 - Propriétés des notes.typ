@@ -15,72 +15,74 @@ Chaque note dans InkyCap peut porter un petit bout d'information structurée sur
 
 Une façon facile de travailler avec elles est l'onglet *Propriétés* dans le panneau de droite. Vous remplissez des champs, cochez des cases et choisissez des dates sans jamais toucher au code. En coulisses, InkyCap garde tout synchronisé avec la source de la note.
 
-Les propriétés rendent vos notes _trouvables_ et _organisables_. Une fois qu'une note connaît sa propre date, ses étiquettes et sa collection, InkyCap peut la rassembler dans la bonne #wikilink("2 - Collections"), la faire surgir dans les recherches et laisser d'autres outils la lire, le tout à partir du même petit ensemble de champs.
+Les propriétés rendent vos notes _trouvables_ et _organisables_. Une fois qu'une note connaît sa propre date, ses étiquettes et sa collection, InkyCap peut la rassembler dans la bonne #wikilink("2 - Collections"), la retrouver dans les recherches et laisser d'autres outils la lire aussi.
 
 == Ouvrir le panneau Propriétés
 
 + Ouvrez n'importe quelle note dans un onglet.
 + Regardez le *panneau de droite* et choisissez l'onglet *Propriétés*.
-+ Vous verrez une rangée par propriété déjà définie sur la note. Si aucune note n'est ouverte, le panneau affichera « No file selected ».
++ Vous verrez une rangée par propriété déjà définie sur la note. Si aucune note n'est ouverte, le panneau affichera « Aucun fichier sélectionné ».
 
-Les rangées apparaissent dans le même ordre où elles sont écrites dans la note, de sorte que ce que vous voyez dans le panneau correspond toujours à la note elle-même.
+Les rangées apparaissent dans le même ordre où elles sont écrites dans la note.
+
+Quand vous ouvrez une grande boîte de notes, InkyCap l'indexe en arrière-plan. Si InkyCap a déjà vu la note et qu'elle n'a pas changé depuis, ses propriétés apparaissent immédiatement depuis le cache. Une note nouvelle ou modifiée verra ses propriétés se remplir dès que l'indexation est terminée.
 
 === Anatomie d'une rangée de propriété
 
 Chaque rangée comporte, de gauche à droite :
 
 - Une *icône de type* qui fait aussi office de *poignée de glissement*. L'icône vous indique la forme de la valeur (texte, nombre, case à cocher, date, liste, et ainsi de suite). Faites-la glisser vers le haut ou le bas pour *réordonner* vos propriétés.
-- Le *nom de la propriété*, affiché exactement tel qu'écrit.
+- Le *nom de la propriété*, affiché tel qu'écrit.
 - L'*éditeur de valeur*, qui change selon le type de la propriété.
-- Un *bouton kebab* (`⋮`), intitulé « Property options », qui ouvre un petit menu pour cette rangée.
+- Un *bouton kebab* (`⋮`), intitulé « Options de propriété », qui ouvre un petit menu pour cette rangée.
 
 == Propriétés intégrées courantes
 
 InkyCap comprend une poignée de propriétés d'emblée. Leurs types sont fixes, largement au service de différentes fonctionnalités du système :
 
-- *title* est un nom convivial pour la note (texte).
-- *description* est un résumé d'une ligne (texte). C'est aussi ce qui apparaît dans les tables des matières et les aperçus.
+- *title* est un nom pour la note (texte), qui peut différer du nom de fichier.
+- *description* sert de résumé (texte). C'est aussi ce qui apparaît dans les tables des matières et les aperçus.
 - *tags* est une liste de mots-clés. Voir #wikilink("5 - Étiquettes") pour savoir comment les étiquettes alimentent le parcours et le filtrage.
 - *aliases* liste d'autres noms sous lesquels cette note peut être trouvée, saisis comme une liste séparée par des virgules (par exemple `titre de travail, nom provisoire`).
-- *date* et *due* sont des dates de calendrier, choisies avec un sélecteur de date.
-- *task* est une case à cocher, pratique pour transformer une note en quelque chose d'actionnable.
+- *date* et *due* sont des dates de calendrier, choisies avec un sélecteur de date et utiles pour des choses comme la vue Agenda.
+- *task* est une case à cocher pour transformer une note en quelque chose d'actionnable (et l'inclure dans la vue Agenda).
 - *source* fournit un champ pour inclure un URI associé.
-- *collection* adresse n'importe quelle #wikilink("2 - Collections") que vous assignez explicitement à cette note.
+- *collection* indique les #wikilink("2 - Collections") auxquelles vous voulez assigner explicitement cette note.
 
-#callout("tip")[ Vous n'avez pas à remplir chaque champ, ni même aucun champ. Une note avec juste un _titre_ et quelques _étiquettes_ est parfaitement correcte. Ajoutez-en davantage quand une propriété vous semble utile. ]
+#callout("tip")[ Rien ne vous oblige à remplir chaque champ, ni même aucun champ. Ajoutez de l'information quand une propriété vous est utile. ]
 
 == Modifier des valeurs
 
-L'éditeur de chaque rangée correspond à son type, de sorte que vous obtenez toujours les bons contrôles :
+L'éditeur de chaque rangée correspond à son type :
 
 - Les champs *Texte* sont de simples boîtes cliquer-pour-modifier. Si vous tapez un lien wiki comme `[[Une note]]`, il devient un lien cliquable à même la valeur.
-- Les champs *Nombre* n'acceptent que des chiffres et vous avertissent doucement avec « Not a valid number » si vous dérapez.
-- Les champs *Case à cocher* sont une seule case ; le nom de la propriété en porte le sens, alors il n'y a pas d'étiquette vrai/faux distincte.
+- Les champs *Nombre* n'acceptent que des chiffres et vous avertissent doucement avec « Nombre invalide » si vous dérapez.
+- Les champs *Case à cocher* sont une seule case ; le nom de la propriété en porte le sens.
 - Les champs *Date* et *Date et heure* ouvrent un sélecteur de calendrier.
-- Les champs *Liste* affichent vos valeurs comme de petites pastilles. Cliquez pour ouvrir un menu déroulant de valeurs déjà utilisées ailleurs dans votre boîte de notes, filtrez pour le restreindre, ou ajoutez-en une toute nouvelle avec l'option `+ Add "..."`. Vous
-- Le champ *collection* a son propre sélecteur : cliquez dessus pour cocher les collections auxquelles la note appartient. Si vous n'en avez encore créé aucune, il affichera « No collections defined ».
+- Les champs *Liste* affichent vos valeurs comme des pastilles à sélection multiple. Cliquez sur la rangée, ou appuyez sur *Entrée* pendant qu'elle a le focus, pour ouvrir une liste des valeurs déjà utilisées pour cette propriété ailleurs dans votre boîte de notes. Tapez dans la boîte *Filtrer ou ajouter…* pour restreindre la liste ; les touches fléchées (ainsi que *Début* et *Fin*) déplacent le surlignage, et *Entrée* ajoute ou retire la valeur surlignée, de sorte que quelques lettres et *Entrée* suffisent habituellement. Si ce que vous avez tapé n'est pas encore dans la liste, une rangée `+ Ajouter « ... »` apparaît ; choisissez-la pour créer la valeur. *Échap* ferme la liste et vous ramène aux pastilles, et *Retour arrière* dans une boîte de filtre vide retire la dernière pastille.
+- Le champ *collection* a son propre sélecteur : cliquez dessus pour inclure explicitement la note dans des collections particulières que vous avez créées. Si vous n'en avez encore créé aucune, il affichera « Aucune collection définie ».
 
-Une propriété vide affiche simplement « Empty » jusqu'à ce que vous cliquiez dedans et commenciez à taper.
+Une propriété vide affiche simplement « Vide » jusqu'à ce que vous cliquiez dedans et commenciez à taper.
 
 == Ajouter une propriété
 
-+ Au bas du panneau Propriétés, cliquez sur *+ Add property*.
-+ Commencez à taper dans la boîte (« Create new or select existing property... »).
-+ Un menu déroulant suggère des noms de propriété connus et déjà utilisés. Ceux intégrés à InkyCap portent une petite pastille *system*. Cliquez sur une suggestion pour l'ajouter aussitôt.
-+ Si vous inventez un champ *tout neuf*, un court menu de type apparaît pour que vous choisissiez quel genre de valeur il contient : Checkbox, Date, Date & time, List, Comma list, Number ou Text.
++ Au bas du panneau Propriétés, cliquez sur *+ Ajouter une propriété*.
++ Commencez à taper dans la boîte (« Créer une nouvelle propriété ou en sélectionner une existante... »).
++ Un menu déroulant suggère des noms de propriété connus et déjà utilisés. Ceux intégrés à InkyCap portent un petit badge *système*. Cliquez sur une suggestion pour l'ajouter aussitôt.
++ Si vous créez un champ *tout neuf*, un court menu de type apparaît pour que vous choisissiez quel genre de valeur il contient : Case à cocher, Date, Date et heure, Liste, Liste séparée par virgules, Nombre ou Texte.
 
 Les champs personnalisés sont une excellente façon de suivre ce qui compte pour votre travail : un `statut`, une note de lecture, un code de cours, un objectif de mots pour un manuscrit, n'importe quoi. InkyCap se souviendra du type que vous avez choisi et offrira ce champ comme suggestion sur d'autres notes aussi.
 
 
-#callout("caution")[Une propriété de type liste diffère d'une liste de virgules parce qu'elle vous fournit une interface pour choisir parmi toutes les options que vous avez créées. Une liste de virgules est un champ de texte dans lequel chaque élément est séparé par une virgule. Une liste de virgules est probablement la plus utile dans le cas où vous ne voulez pas utiliser une grande interface de liste mais voulez tout de même intégrer quelques valeurs préexistantes.]
+#callout("caution")[Une propriété de type liste diffère d'une liste séparée par virgules parce qu'elle vous fournit une interface pour choisir parmi toutes les options que vous avez créées. Une liste séparée par virgules est un champ de texte dans lequel chaque élément est séparé par une virgule. Une liste séparée par virgules est probablement la plus utile dans le cas où vous ne voulez pas utiliser une grande interface de liste mais voulez tout de même intégrer plusieurs valeurs préexistantes.]
 
 
 == Changer ou retirer une propriété
 
 Ouvrez le menu kebab d'une rangée (`⋮`) pour deux choix :
 
-- *Property type*, pour vos propres champs personnalisés, vous laisse changer le type du champ. Changer un type met à jour ce champ dans _chaque_ note qui l'utilise, en convertissant les valeurs existantes pour qu'elles conviennent. (Les champs intégrés ont des types fixes, donc cette option est masquée pour eux.)
-- *Remove* retire la propriété de *cette note seulement*, laissant les autres notes intactes.
+- *Type de propriété*, pour vos propres champs personnalisés, vous laisse changer le type du champ. Changer un type met à jour ce champ dans _chaque_ note qui l'utilise, en convertissant les valeurs existantes pour qu'elles conviennent. (Les champs intégrés ont des types fixes, donc cette option est masquée pour eux.)
+- *Retirer* retire la propriété de *cette note seulement*, laissant les autres notes intactes.
 
 #callout("note")[ Retirer la toute dernière propriété d'une note fait un ménage complet. InkyCap supprime le bloc de métadonnées entier plutôt que d'en laisser un vide derrière. ]
 
@@ -107,7 +109,7 @@ Quand vous modifiez un champ dans le panneau, InkyCap réécrit _seulement_ cet 
 
 == Typé et portable, ça compte
 
-Parce que les propriétés sont de véritables métadonnées Typst interrogeables sous une étiquette stable, InkyCap peut les indexer efficacement et s'en servir pour offrir des fonctionnalités que vous rencontrerez ailleurs :
+Parce que les propriétés sont des métadonnées Typst interrogeables sous une étiquette stable, InkyCap peut les indexer et s'en servir pour offrir des fonctionnalités que vous rencontrerez ailleurs :
 
 - *Les collections* rassemblent les notes automatiquement en interrogeant des propriétés comme `collection` ou `tags`, alors bien régler vos propriétés est ce qui fait que les #wikilink("2 - Collections") se remplissent d'elles-mêmes.
 - *Les listes et sélecteurs* proposent les valeurs que vous avez déjà utilisées dans la boîte de notes, gardant votre vocabulaire cohérent.
