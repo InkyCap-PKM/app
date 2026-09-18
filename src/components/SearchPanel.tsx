@@ -368,6 +368,9 @@ const SearchPanel: Component = () => {
     }
     if (e.key === "Enter") {
       if (searchTimeout) clearTimeout(searchTimeout);
+      // Running a search means the user is done consulting the syntax tips —
+      // get the overlay out of the way of the results.
+      setShowTips(false);
       executeSearch();
     } else if (e.key === "Escape") {
       setShowTips(false);
