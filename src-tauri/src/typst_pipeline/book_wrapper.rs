@@ -241,87 +241,32 @@ pub fn prepare_note_for_include(content: &str) -> String {
 
 // ── Label collision detection ───────────────────────────────────────────────
 
-/// Find Typst label declarations of the form `<name>` in a note. Skips
-/// occurrences inside string literals and line comments. The match is
-/// deliberately permissive — Typst itself is the source of truth at compile
-/// time — but it catches the load-bearing cases that would otherwise fail
+/// Find Typst label declarations of the form `<name>` in a note, using
+/// Typst's own parser so that only real labels count: a `<name>` inside a
+/// string, a comment, inline code, or a fenced code block is text, not a
+/// label, and is left alone. Typst remains the source of truth at compile
+/// time; this scan only catches the collisions that would otherwise fail
 /// inside the merged document.
 pub fn extract_label_decls(content: &str, note_stem: &str) -> Vec<LabelDecl> {
-    let mut out = Vec::new();
-    let bytes = content.as_bytes();
-    let mut in_string = false;
-    let mut escape = false;
-    let mut in_line_comment = false;
-    let mut i = 0;
+    use typst::syntax::{ast, parse, SyntaxKind, SyntaxNode};
 
-    while i < bytes.len() {
-        let c = bytes[i];
-        if in_line_comment {
-            if c == b'\n' {
-                in_line_comment = false;
+    fn walk(node: &SyntaxNode, note_stem: &str, out: &mut Vec<LabelDecl>) {
+        if node.kind() == SyntaxKind::Label {
+            if let Some(label) = node.cast::<ast::Label>() {
+                out.push(LabelDecl {
+                    name: label.get().to_string(),
+                    note_stem: note_stem.to_string(),
+                });
             }
-            i += 1;
-            continue;
+            return;
         }
-        if escape {
-            escape = false;
-            i += 1;
-            continue;
+        for child in node.children() {
+            walk(child, note_stem, out);
         }
-        if in_string {
-            match c {
-                b'\\' => escape = true,
-                b'"' => in_string = false,
-                _ => {}
-            }
-            i += 1;
-            continue;
-        }
-        if c == b'"' {
-            in_string = true;
-            i += 1;
-            continue;
-        }
-        if c == b'/' && bytes.get(i + 1) == Some(&b'/') {
-            in_line_comment = true;
-            i += 2;
-            continue;
-        }
-        if c == b'<' {
-            // Try to match <ident>
-            let start = i + 1;
-            let mut j = start;
-            while j < bytes.len()
-                && (bytes[j].is_ascii_alphanumeric()
-                    || bytes[j] == b'-'
-                    || bytes[j] == b'_'
-                    || bytes[j] == b':'
-                    || bytes[j] == b'.')
-            {
-                j += 1;
-            }
-            if j > start && bytes.get(j) == Some(&b'>') {
-                let name = &content[start..j];
-                // Reject if `<` was likely part of `<=`, `<-`, `<<`, etc., by
-                // requiring no immediate alphanumeric before `<` (a label
-                // sits in markup context, not code expression).
-                let prev = if i == 0 { None } else { Some(bytes[i - 1]) };
-                let prev_is_ident = matches!(
-                    prev,
-                    Some(b) if b.is_ascii_alphanumeric() || b == b'_'
-                );
-                if !prev_is_ident {
-                    out.push(LabelDecl {
-                        name: name.to_string(),
-                        note_stem: note_stem.to_string(),
-                    });
-                    i = j + 1;
-                    continue;
-                }
-            }
-        }
-        i += 1;
     }
+
+    let mut out = Vec::new();
+    walk(&parse(content), note_stem, &mut out);
     out
 }
 
@@ -1330,8 +1275,21 @@ After
 
     #[test]
     fn extract_labels_skips_string_contents() {
-        let labels = extract_label_decls("\"<not-a-label>\"\n", "a");
+        let labels = extract_label_decls("#text(\"<not-a-label>\")\n", "a");
         assert!(labels.is_empty());
+    }
+
+    #[test]
+    fn extract_labels_skips_code_samples_and_comments() {
+        // Placeholders such as `<label>` in a manual's inline code or fenced
+        // code blocks describe syntax; they must not count as declarations.
+        let src = "Write `#link(<label>)[text]` to link.\n\
+                   ```typ\n= Heading <label>\n```\n\
+                   // a comment mentioning <label>\n\
+                   = Real <real>\n";
+        let labels = extract_label_decls(src, "a");
+        let names: Vec<&str> = labels.iter().map(|l| l.name.as_str()).collect();
+        assert_eq!(names, vec!["real"]);
     }
 
     #[test]
