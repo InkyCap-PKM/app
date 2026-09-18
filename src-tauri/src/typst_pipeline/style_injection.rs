@@ -108,9 +108,8 @@ fn format_font_value(families: &[String]) -> Option<String> {
 ///
 /// Text/font/monospace settings are emitted as a single
 /// `#show: apply-notebox-defaults.with(...)` call (lib.typ handles the
-/// actual `set` rules). Page geometry is emitted as a direct
-/// `#set page(...)` because `set page` inside a show-rule wrapper is a
-/// no-op for document-level layout in Typst.
+/// actual `set` rules). Page geometry is also emitted as a direct
+/// `#set page(...)` so the paper size is fixed before any wrapper runs.
 pub fn build_defaults_show_call(
     doc: &DocumentDefaults,
     text_font: Option<&str>,

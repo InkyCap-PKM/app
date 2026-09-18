@@ -58,9 +58,24 @@
 // closure) so that `apply-notebox-defaults.with(...)` returns a function that
 // still accepts the document body positionally.
 //
-// NOTE: `set page(...)` inside a show-rule wrapper is a no-op for
-// document-level layout. The Rust side emits `#set page(...)` as a
-// separate direct rule; `page-paper` here is kept for direct-call use.
+// A `set` rule only lasts until the end of the block it sits in, so it must
+// never be written inside an `if` block here: it would end with that block and
+// leave `body` untouched. The helpers below turn absent (`none`) settings into
+// an empty argument list instead, and each `set` rule sits directly in the
+// function body, where it covers `body`.
+
+// Named arguments whose value is not `none`, as a dictionary ready to spread.
+#let _present(..args) = {
+  let out = (:)
+  for (key, value) in args.named() {
+    if value != none { out.insert(key, value) }
+  }
+  out
+}
+
+// A section dictionary, or an empty one when the section is absent.
+#let _or-empty(section) = if section == none { (:) } else { section }
+
 #let apply-notebox-defaults(
   text-font: none,
   text-size: none,
@@ -68,19 +83,14 @@
   monospace-font: none,
   body,
 ) = {
-  if text-font != none { set text(font: text-font) }
-  if text-size != none { set text(size: text-size) }
-  if page-paper != none { set page(paper: page-paper) }
+  set text(.._present(font: text-font, size: text-size))
+  set page(.._present(paper: page-paper))
   // Keep the same bullet at every nesting depth. Typst's default
   // `list.marker` is the cycling tuple `([•], [‣], [–])`, so deeper items
   // switch glyph each level; a single-content marker applies `•` uniformly.
   set list(marker: [•])
-  if monospace-font != none {
-    show raw: set text(font: monospace-font)
-    body
-  } else {
-    body
-  }
+  show raw: set text(.._present(font: monospace-font))
+  body
 }
 
 // Collection-level style overrides. Each section is an optional dict whose
@@ -101,18 +111,10 @@
   heading-args: none,
   body,
 ) = {
-  if page-args != none and page-args.len() > 0 {
-    set page(..page-args)
-  }
-  if text-args != none and text-args.len() > 0 {
-    set text(..text-args)
-  }
-  if par-args != none and par-args.len() > 0 {
-    set par(..par-args)
-  }
-  if heading-args != none and heading-args.len() > 0 {
-    set heading(..heading-args)
-  }
+  set page(.._or-empty(page-args))
+  set text(.._or-empty(text-args))
+  set par(.._or-empty(par-args))
+  set heading(.._or-empty(heading-args))
   body
 }
 
