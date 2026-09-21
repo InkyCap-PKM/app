@@ -55,7 +55,7 @@ reported back to the user.
 Every referenced image is **funnelled** into
 `settings.files.attachment_folder` and emitted as a notebox-root-absolute path
 (`#image("/<folder>/<file>")`), matching how drag-drop and paste behave. This is
-the portability rule from `CLAUDE.md`: InkyCap-emitted paths always start with
+the portability rule from `AGENTS.md`: InkyCap-emitted paths always start with
 `/` so they survive note moves and merged-collection export. External/absolute
 URLs pass through untouched; a referenced file that is missing is reported as an
 error, not silently rewritten.
@@ -118,7 +118,7 @@ note, and a bibliography. The options surface includes:
   numbering, and the PDF standard.
 
 Each note is inlined through `path_rebase::rebase_relative_paths` (the single
-AST-based rewriter, see `CLAUDE.md`) so any hand-authored relative image path
+AST-based rewriter, see `AGENTS.md`) so any hand-authored relative image path
 resolves against the synthetic merged root rather than the note's own folder.
 TOC rendering uses an `inkycap-notebox` helper (`#outline-with-bare-page-numbers`)
 so the package stays the Typst-native home for that logic.

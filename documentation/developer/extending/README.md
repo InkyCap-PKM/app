@@ -34,7 +34,7 @@ declarative manifests.
   custom formatter without InkyCap shipping any of them.
 - **Want new document-level behaviour** (a new callout, a metadata schema, a
   layout helper)? That's Typst's job — extend `inkycap-notebox/lib.typ` or import
-  a Universe package. See [CLAUDE.md](../../../CLAUDE.md)'s Typst-first principle.
+  a Universe package. See [AGENTS.md](../../../AGENTS.md)'s Typst-first principle.
 
 ## Principles
 

@@ -2,7 +2,7 @@
 
 Thank you for your interest in improving InkyCap. This guide covers the dev
 environment, the conventions that matter, and the workflow. The short version:
-read [`CLAUDE.md`](CLAUDE.md) and prefer the choice that
+read [`AGENTS.md`](AGENTS.md) and prefer the choice that
 is correct for the long term over the one that looks finished sooner.
 
 ## Ground rules
@@ -16,14 +16,15 @@ its history. Two principles govern almost every decision:
   reimplements parsing, metadata extraction, citation formatting, or layout
   drifts. The strict order of preference (built-in Typst, then the
   `inkycap-notebox` package, then thin Rust glue, then custom code as a last
-  resort) is in [`CLAUDE.md`](CLAUDE.md). If you reach for the last resort,
+  resort) is in [`AGENTS.md`](AGENTS.md). If you reach for the last resort,
   leave a comment naming what you considered and why it did not work.
 - **No stopgaps.** Prefer the design that minimizes total rework, even if
   the current task looks less complete on its own.
 
-[`CLAUDE.md`](CLAUDE.md) is the normative reference for engineering standards. It
-overrides convenience when the two conflict. This file is the practical
-on-ramp; that file is the law.
+[`AGENTS.md`](AGENTS.md) is the normative reference for engineering standards.
+It overrides convenience when the two conflict. This file is the practical
+on-ramp; that file is the law. (`CLAUDE.md` is a stub that imports it, so
+Claude Code picks the same rules up automatically.)
 
 ## Development environment
 
@@ -67,7 +68,7 @@ These conventions are enforced by tests or CI.
 - **No all-caps UI text.** Never `text-transform: uppercase` or `small-caps`.
   Distinguish labels with weight, spacing, and colour.
 - **CM6 editable widgets** follow a specific recipe (atomic wrap, focus routing,
-  dispatch on blur). Read the CM6 widget section of `CLAUDE.md` and use
+  dispatch on blur). Read the CM6 widget section of `AGENTS.md` and use
   `VerseWidget` as the reference, or you will reintroduce the reverse-typing bug.
 - **Canadian English** default spellings in user-facing text and docs.
 

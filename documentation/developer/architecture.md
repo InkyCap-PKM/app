@@ -6,9 +6,9 @@
 This document is the map. It explains how the pieces fit together so you can
 find the right module quickly and understand *why* a given responsibility lives
 where it does. For the rules you must follow while editing, read
-[`CLAUDE.md`](../../CLAUDE.md) at the repo root, the normative source for
+[`AGENTS.md`](../../AGENTS.md) at the repo root, the normative source for
 the Typst-first principle, UTF-8/path-safety invariants, i18n, and the UI token
-system. This file describes the structure; `CLAUDE.md` governs the conduct.
+system. This file describes the structure; `AGENTS.md` governs the conduct.
 
 ---
 
@@ -75,7 +75,7 @@ extraction stays correct as Typst evolves because Typst does the parsing.
 **Why this matters for a contributor:** before writing a parser, a metadata
 extractor, a TOC builder, a citation formatter, or any Typst-syntax string
 builder in Rust or TypeScript, stop. Typst almost certainly does it already.
-See `CLAUDE.md`'s Typst-first section for the order of preference.
+See `AGENTS.md`'s Typst-first section for the order of preference.
 
 ---
 
@@ -117,7 +117,7 @@ fixed order to avoid deadlocks: follow the ordering documented in `state.rs`.
 
 ### 3.3 The architectural seams
 
-These are the stable interfaces named in `CLAUDE.md`. New backends and features
+These are the stable interfaces named in `AGENTS.md`. New backends and features
 attach here rather than threading through callers:
 
 | Seam | Where | What it hides |
@@ -138,7 +138,7 @@ other sources. The integration test `src-tauri/tests/path_safety.rs` greps for
 path comparisons run through `normalizePath` / `pathEquals` / `pathStartsWith`
 in [`src/lib/paths.ts`](../../src/lib/paths.ts). The same kind of grep-gate
 (`src-tauri/tests/utf8_safety.rs`) forbids `as char` byte-casting that would
-shred multi-byte text. Read the Rust coding-standards section of `CLAUDE.md`
+shred multi-byte text. Read the Rust coding-standards section of `AGENTS.md`
 before touching string or path transforms.
 
 ### 3.5 Module tour
@@ -181,7 +181,7 @@ notebox root, so a malicious `#read(...)` cannot escape the notebox.
 
 Performance is a first-class concern here: incremental compilation, debounced
 edits, and cached query results are the *default*, not an optimization. See the
-Performance directives in `CLAUDE.md`.
+Performance directives in `AGENTS.md`.
 
 ---
 
@@ -225,7 +225,7 @@ step, and a hybrid is explicitly out of scope. The three modes (source / visual
 Round-trip identity (source ↔ visual) and `#note(...)` property preservation are
 **load-bearing invariants** with unit tests. Embedded-editable widgets (verse,
 tables) follow a specific CM6 recipe; read the CM6 widget section of
-`CLAUDE.md` before building one, or you will reintroduce the reverse-typing bug.
+`AGENTS.md` before building one, or you will reintroduce the reverse-typing bug.
 
 ### 4.4 i18n
 
@@ -274,7 +274,7 @@ merge churn. See [`subsystems/collaboration-git.md`](subsystems/collaboration-gi
 
 ## 6. Where to read next
 
-- **Conventions you must follow:** [`CLAUDE.md`](../../CLAUDE.md) and
+- **Conventions you must follow:** [`AGENTS.md`](../../AGENTS.md) and
   [`../../CONTRIBUTING.md`](../../CONTRIBUTING.md).
 - **Subsystem deep-dives:**
   [Mycelial View](subsystems/mycelial-view.md) ·

@@ -7,7 +7,7 @@
 
 In InkyCap's visual editor, the **pill** (a small chip prefixed with a circled `#`) is the universal affordance for surfacing Typst function calls that aren't in the simple direct-formatting set (bold `*…*`, italic `_…_`, headings, lists). Every other Typst call — `#callout[…]`, `#image(…)`, `#verse[…]`, `#strike[…]`, etc. — is rendered with its visual representation plus a pill that lets the user inspect, edit, or remove the call without dropping into raw source.
 
-The pill exists because the visual editor is a CodeMirror 6 decoration layer over live Typst source (Tier 1 — see [CLAUDE.md](../../../CLAUDE.md#tier-1-visual-editor-codemirror-live-preview)). The source is always Typst; the pill makes that source manageable for users who don't want to edit function calls by hand. Less-Typst-savvy users get a graphical control; power users get a quick path to raw source. Both paths route through the same chip.
+The pill exists because the visual editor is a CodeMirror 6 decoration layer over live Typst source (Tier 1 — see [AGENTS.md](../../../AGENTS.md#tier-1-visual-editor-codemirror-live-preview)). The source is always Typst; the pill makes that source manageable for users who don't want to edit function calls by hand. Less-Typst-savvy users get a graphical control; power users get a quick path to raw source. Both paths route through the same chip.
 
 ## Pill kinds
 
@@ -52,7 +52,7 @@ This table is the audit reference. Use it to verify any change preserves the int
 
 ## Consistency rules (R1–R12)
 
-These are normative. Every pill — current and future — must satisfy them. Deviations require an explicit, documented exception (and a comment at the call site explaining why, per CLAUDE.md's Typst-first reasoning convention).
+These are normative. Every pill — current and future — must satisfy them. Deviations require an explicit, documented exception (and a comment at the call site explaining why, per AGENTS.md's Typst-first reasoning convention).
 
 ### R1 — Single visual identity, single size
 
@@ -171,7 +171,7 @@ So **adding a pill with curated options** = add a `*Options(view, callFrom, call
 
 ### R11 — Source round-trip is preserved
 
-Per [CLAUDE.md](../../../CLAUDE.md), source ↔ visual identity is a load-bearing invariant. Every option mutation (alt text, color, alignment, kind, etc.) edits only the targeted argument, preserving surrounding whitespace and untouched arguments byte-for-byte. Tests cover round-trip for each option type.
+Per [AGENTS.md](../../../AGENTS.md), source ↔ visual identity is a load-bearing invariant. Every option mutation (alt text, color, alignment, kind, etc.) edits only the targeted argument, preserving surrounding whitespace and untouched arguments byte-for-byte. Tests cover round-trip for each option type.
 
 ### R12 — Inline content-bracket pills keep their body directly editable
 

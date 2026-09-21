@@ -14,7 +14,7 @@ the component rules that consume them live in per-feature files under
 [`src/styles/layout.css`](../../src/styles/layout.css) (see §7 below — the
 order is load-bearing). The popup/modal/z-index surface rules are also
 documented inline in `themes.css` and in
-[CLAUDE.md → Coding Standards → UI surfaces](../../CLAUDE.md).
+[AGENTS.md → Coding Standards → UI surfaces](../../AGENTS.md).
 
 ---
 

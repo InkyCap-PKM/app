@@ -124,7 +124,7 @@ const REPO = `
 You are researching the InkyCap codebase to produce an ACCURATE fact sheet for
 one manual page. Repo root is the cwd. High-value sources:
 - MEMORY.md at /home/jchalif/.claude/projects/-home-jchalif-Code-Projects-InkyCap/memory/MEMORY.md and the topic files beside it — a dense, current log of every feature decision. READ THE RELEVANT ENTRIES FIRST.
-- CLAUDE.md (project principles, notebox primitives summary).
+- AGENTS.md (project principles, notebox primitives summary).
 - inkycap-notebox/lib.typ AND the live shim at /home/jchalif/.config/inkycap/InkyCap-Documentation/.inkycap/notebox.typ (note primitives: note, tag, task, due, wikilink, callout, verse, annotation, suggestion, video, audio, highlight, set-notebox).
 - Frontend: src/components/*.tsx, src/editor/typst-decorations/*.ts, src/lib/*.ts.
 - Backend: src-tauri/src/commands/*.rs.
@@ -237,7 +237,7 @@ const TOPICS = [
   },
   {
     file: 'Extensions',
-    research: `Area: EXTENSIONS (experimental). Find: the Extensions settings tab (ExtensionsSettingsSection.tsx), the plugin system (plugins.rs, src/lib/plugins.tsx, ExperimentalNotice.tsx), what extensions can currently do, the visual-plugin per-node guard, that this is experimental/early. The extension-point enum / event bus architecture (CLAUDE.md: extension points defined as enum before runtime loading). Be honest about how experimental/limited it is.`,
+    research: `Area: EXTENSIONS (experimental). Find: the Extensions settings tab (ExtensionsSettingsSection.tsx), the plugin system (plugins.rs, src/lib/plugins.tsx, ExperimentalNotice.tsx), what extensions can currently do, the visual-plugin per-node guard, that this is experimental/early. The extension-point enum / event bus architecture (AGENTS.md: extension points defined as enum before runtime loading). Be honest about how experimental/limited it is.`,
     brief: `Write the EXTENSIONS page: clearly marked as experimental. Explain that InkyCap is being built to support extensions/plugins, where you find them (the Extensions settings tab), what they can do today, and that the feature is early and may change. Keep expectations realistic and the tone forward-looking. Use a #callout("warning")[ ... ] noting the experimental status up top. Cross-link #wikilink("Settings").`,
   },
   {

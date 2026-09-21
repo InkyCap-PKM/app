@@ -119,7 +119,7 @@ inkycap/
 ├── inkycap-notebox/      The Typst package bundled into every notebox (lib.typ)
 ├── scripts/              Build/setup scripts (Tinymist, icons, versioning, i18n)
 ├── documentation/        Developer and user documentation
-├── CLAUDE.md             Engineering principles and normative coding standards
+├── AGENTS.md             Engineering principles and normative coding standards
 └── .forgejo/workflows/   CI and release pipelines (CodeFloe/Forgejo Actions)
 ```
 
@@ -139,9 +139,10 @@ inkycap/
 - **[The visual editor pill system](documentation/developer/visual-editor/pill-system.md)**,
   **[UI styling tokens](documentation/developer/ui-styling.md)**, and
   **[extending InkyCap without forking](documentation/developer/extending/README.md)**.
-- **[CLAUDE.md](CLAUDE.md)** holds the project's governing engineering
+- **[AGENTS.md](AGENTS.md)** holds the project's governing engineering
   principles (the Typst-first rule, UTF-8/path-safety invariants, i18n, the UI
-  token system). Read it before contributing code.
+  token system). Read it before contributing code. Coding agents pick it up
+  automatically; `CLAUDE.md` is a stub that imports it for Claude Code.
 - **User documentation:** is available within the application. F1, then click the InkyCap icon at the top. Depending your app language setting (English / Français) the documentation will appear in that language. It is also visible on the [InkyCap website](https://inkycap.org/documentation/user-manual) (although it might not be as up-to-date on the site).
 
 ## Contributing
