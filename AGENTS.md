@@ -1,8 +1,8 @@
-# InkyCap — Claude Code Guidelines
+# InkyCap — Agent Guidelines
 
-> **Note:** [`AGENTS.md`](AGENTS.md) mirrors this file for agents that read
-> `AGENTS.md` rather than `CLAUDE.md`. This file is canonical; keep the two in
-> sync when you change one.
+> **Note:** This file mirrors [`CLAUDE.md`](CLAUDE.md), which is the canonical
+> version of these guidelines. If the two ever diverge, `CLAUDE.md` wins; keep
+> both in sync when you change one.
 
 ## Project Overview
 
@@ -166,7 +166,8 @@ InkyCap is built to be picked up and extended by future human contributors who h
 
 ```
 /                              Project root
-├── CLAUDE.md                  This file
+├── AGENTS.md                  This file (mirrors CLAUDE.md)
+├── CLAUDE.md                  Canonical guidelines (also read by Claude Code)
 ├── inkycap-notebox/             Typst package bundled into noteboxes
 ├── scripts/                   Build/setup scripts (e.g. Tinymist downloader)
 ├── src-tauri/                 Rust backend
