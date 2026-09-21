@@ -193,6 +193,14 @@
   margin-top: var(--space-3);
 }
 
+/* The collaboration line is the registry row's third grid child, so without
+   this it would be auto-placed into the left column only and its experimental
+   notice would wrap into a narrow strip. Span both columns so the line gets
+   the full row width beneath the name, path, and buttons. */
+.notebox-row[data-notebox-path] > .notebox-row__collab {
+  grid-column: 1 / -1;
+}
+
 .notebox-row__collab-icon {
   color: var(--fg-dim);
   flex-shrink: 0;
