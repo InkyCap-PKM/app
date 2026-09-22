@@ -3,7 +3,7 @@
 
 #note(
   title: "Liens et rétroliens",
-  description: "Comment relier les notes avec des liens wiki, pointer vers un titre, utiliser des alias, suivre des liens externes et lire les rétroliens automatiques que chaque note accumule.",
+  description: "Comment relier les notes avec des liens wiki, pointer vers un titre, renvoyer à un endroit dans la note que vous écrivez, utiliser des alias, suivre des liens externes et lire les rétroliens automatiques que chaque note accumule.",
   tags: ("documentation",),
 )
 
@@ -95,6 +95,52 @@ Les indications du pied de page dans le sélecteur vous guident à travers cela 
 
 #callout("tip", title: "Pour les utilisateurs de Typst")[ Un lien wiki est une fonction Typst : `#wikilink(name, display: none, label: none)`. Le `name` positionnel est le radical du fichier ; `display:` remplace le texte rendu ; `label:` ancre vers un titre. Chaque appel émet aussi des métadonnées `<inkycap-link>` interrogeables (`(target, from: "body")`) qui sont la source à partir de laquelle les rétroliens sont déterminés. Quand vous ciblez un titre, InkyCap réutilise l'étiquette existante du titre s'il en a une, sinon il transforme le texte du titre en radical (slug) et insère un `<label>` dans la note cible pour que l'ancre soit stable. C'est pourquoi, dans la forme à crochets de l'éditeur visuel, vous voyez le *slug* de l'étiquette (`Ma note::la-section`) plutôt que le texte humain du titre ; le slug est la source `label:` modifiable. ]
 
+== Lier à l'intérieur d'une même note <liens-internes>
+
+Un lien wiki pointe vers une autre note. Pour pointer vers un endroit de la note que vous êtes *déjà en train d'écrire* (une section précédente, une figure, un tableau), vous utilisez plutôt un _renvoi_. Cela se fait en deux temps : marquer l'endroit, puis pointer vers lui.
+
+=== Étape 1 : marquer l'endroit avec une étiquette
+
+Une _étiquette_ (au sens de Typst) est un nom court entre chevrons qui marque ce qui le précède sur la même ligne. Placez-en une après le texte d'un titre :
+
+```typ
+== Méthodes <methodes>
+```
+
+Les étiquettes ne servent pas qu'aux titres. Marquez un paragraphe, une figure, un tableau ou une équation de la même façon, en écrivant l'étiquette à la fin de la ligne qui le porte.
+
+La façon la plus rapide d'en écrire une est le menu `/` : choisissez *Étiquette* (sous « Insérer »), et InkyCap insère les chevrons avec votre curseur déjà entre les deux, prêt pour le nom. Gardez des noms courts, en minuscules et avec des traits d'union (`methodes`, `fig-pluie`) ; c'est ce nom que vous chercherez à l'étape suivante, et il n'apparaît jamais dans le document fini.
+
+#callout("note")[ À l'intérieur d'une note, les seuls endroits vers lesquels vous pouvez pointer sont ceux que vous avez étiquetés vous-même. C'est différent du sélecteur de titres `::` décrit plus haut : quand vous liez *vers une autre* note, InkyCap ajoute l'étiquette dans cette autre note pour vous. Ici, il n'en invente pas. Une étiquette que vous écrivez reste visible dans l'éditeur visuel, en atténué, pour que vous voyiez d'un coup d'œil quels endroits sont ancrés. ]
+
+=== Étape 2 : pointer vers lui en tapant @
+
+Tapez `@` n'importe où dans la même note. Le menu surgissant s'ouvre sur votre bibliographie, et sous celle-ci il liste les endroits étiquetés de cette note, regroupés en *Titres*, *Figures*, *Équations*, *Tableaux* et *Étiquettes*. Taper restreint la liste ; *Flèche haut* et *Flèche bas* la parcourent, *Entrée* ou *Tab* accepte, et *Échap* ferme.
+
+Chaque rangée montre un texte lisible à gauche (les mots mêmes du titre, sinon le nom de l'étiquette) et, en gris atténué à droite, le balisage que cette rangée écrira. Il y a deux formes, et InkyCap choisit celle qui compilera réellement :
+
+```typ
+@methodes
+#link(<methodes>)[la section sur les méthodes]
+```
+
+- `@methodes` rend le *numéro* de la cible ; cette forme convient donc à une figure, un tableau, une équation numérotée ou un titre dans une note qui numérote ses titres. C'est la même arobase que pour les citations : en Typst, `@` pointe vers n'importe quelle étiquette, et une citation n'est qu'un type de cible parmi d'autres.
+- `#link(<methodes>)[…]` rend la formulation de votre choix et fonctionne que quelque chose soit numéroté ou non. InkyCap l'insère avec le texte affiché déjà sélectionné, de sorte que vous pouvez taper vos propres mots tout de suite.
+
+=== Quand un titre ne peut pas utiliser @
+
+Parce que `@` affiche un numéro, un titre ne devient admissible qu'une fois que la note numérote ses titres. C'est pourquoi le même titre peut offrir `@methodes` dans une note et `#link(<methodes>)[…]` dans une autre.
+
+Pour activer la numérotation, ouvrez la catégorie *Style* du menu `/` et réglez *Numérotation des titres* (voir #wikilink("3.2 - Mise en forme avancée")). Si vous avez déjà écrit un renvoi `@` vers un titre non numéroté, la marge des problèmes propose des corrections rapides : *Activer la numérotation des titres*, ou *Utiliser plutôt un lien textuel*. Elles sont décrites dans #wikilink("7 - Citations et bibliographie").
+
+=== Suivre un renvoi
+
+Cliquez sur un `#link(<…>)` dans l'éditeur et votre curseur saute à la ligne que l'étiquette marque, amenée à l'écran, un peu comme un lien wiki vous amène vers une autre note.
+
+Le menu surgissant `@` ne voit jamais que la note où vous êtes. Pour atterrir sur un titre ou une étiquette dans une _autre_ note, utilisez un lien wiki avec `::`, décrit plus haut.
+
+#callout("tip", title: "Pour les utilisateurs de Typst")[ Les étiquettes et les renvois sont du Typst d'origine, pas un ajout d'InkyCap : `<name>` définit une étiquette, `@name` est l'abrégé de `#ref(<name>)`, et `ref` rend le numéro de l'élément référencé, ce qui explique qu'une cible non numérotée échoue avec « cannot reference heading without numbering » ou « cannot reference text ». `#link(<name>)[…]` ne porte pas cette restriction. Comme les deux formes sont du Typst ordinaire, elles continuent de fonctionner dans n'importe quelle chaîne d'outils Typst et survivent à l'exportation sans changement. Ce ne sont *pas* des liens wiki : elles n'émettent aucune métadonnée `<inkycap-link>` et ne créent aucun rétrolien ; un renvoi reste à l'intérieur de sa propre note, par conception. ]
+
 == Suivre les liens en lisant et en écrivant
 
 Les liens wiki sont cliquables partout où ils apparaissent :
@@ -175,3 +221,5 @@ Vous pouvez renommer ou réorganiser librement sans briser les connexions de vos
 - #wikilink("5 - Vue mycélienne"). Voir vos liens comme une carte visuelle des connexions.
 - #wikilink("5 - Étiquettes"). Une autre façon de regrouper et retrouver des notes apparentées.
 - #wikilink("4 - Rouleau de journal"). Une surface de lecture continue où les liens restent vivants.
+- #wikilink("7 - Citations et bibliographie"). Le même menu surgissant `@`, vu du côté des citations.
+- #wikilink("3.2 - Mise en forme avancée"). Là où la numérotation des titres s'active.

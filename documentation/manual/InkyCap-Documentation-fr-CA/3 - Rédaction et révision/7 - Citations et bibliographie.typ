@@ -114,7 +114,7 @@ Si jamais vous devez écrire l'arobase (`@`) au début d'un mot, échappez-la d'
 \@notacitation
 ```
 
-=== Pointer vers des figures, des tableaux et des équations
+=== Pointer vers les titres, figures, tableaux et équations
 
 Le même menu surgissant `@` fait plus que citer. Sous le groupe *Bibliographie*, il liste les endroits étiquetés de la note que vous écrivez, regroupés en *Titres*, *Figures*, *Équations*, *Tableaux* et *Étiquettes*. Choisissez-en un et InkyCap écrit le renvoi pour vous, sous la forme qui fonctionnera vraiment :
 
@@ -122,6 +122,8 @@ Le même menu surgissant `@` fait plus que citer. Sous le groupe *Bibliographie*
 - Une cible sans numéro (un titre dans une note sans numérotation des titres, ou une étiquette sur de la prose ordinaire) est insérée comme lien textuel, `#link(<label>)[...]`, avec le libellé sélectionné pour que vous puissiez taper le vôtre tout de suite. Le texte gris à droite de chaque rangée vous indique quelle forme il écrira avant que vous choisissiez.
 
 Le menu surgissant ne voit que la note dans laquelle vous êtes. Pour pointer vers un titre ou une étiquette dans une _autre_ note, utilisez plutôt un lien wiki avec `::` (voir #wikilink("4 - Liens et rétroliens")).
+
+Pour le flux complet vu de ce côté, y compris comment écrire l'étiquette qui rend un endroit référençable au départ, voir #wikilink("4 - Liens et rétroliens", label: "liens-internes", display: "Lier à l'intérieur d'une même note").
 
 === Chercher des références et citer
 

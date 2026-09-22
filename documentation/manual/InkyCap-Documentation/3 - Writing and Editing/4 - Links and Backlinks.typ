@@ -2,7 +2,7 @@
 
 #note(
   title: "Links and Backlinks",
-  description: "How to connect notes with wikilinks, link to headings, use aliases, follow external links, and read the automatic backlinks every note collects.",
+  description: "How to connect notes with wikilinks, link to headings, cross-reference a spot inside the note you are writing, use aliases, follow external links, and read the automatic backlinks every note collects.",
   tags: ("documentation",),
 )
 
@@ -94,6 +94,52 @@ The footer hints inside the picker walk you through this:
 
 #callout("tip", title: "For Typst users")[A wikilink is a Typst function: `#wikilink(name, display: none, label: none)`. The positional `name` is the file stem; `display:` overrides the rendered text; `label:` anchors to a heading. Every call also emits queryable `<inkycap-link>` metadata (`(target, from: "body")`) which is the source that backlinks are determined from. When you target a heading, InkyCap reuses the heading's existing label if it has one, otherwise it slugifies the heading text and inserts a `<label>` into the target note so the anchor is stable. That is why, in the visual editor's bracket form, you see the label *slug* (`My Note::the-section`) rather than the human heading text; the slug is the editable `label:` source. ]
 
+== Linking within the same note <in-note-links>
+
+A wikilink points at another note. To point at a spot in the note you are *already writing* (an earlier section, a figure, a table), you use a _cross-reference_ instead. It takes two steps: mark the spot, then point at it.
+
+=== Step 1: mark the spot with a label
+
+A _label_ is a short name in angle brackets that tags whatever comes before it on the same line. Put one after a heading's text:
+
+```typ
+== Methods <methods>
+```
+
+Labels are not only for headings. Tag a paragraph, a figure, a table, or an equation the same way, by writing the label at the end of the line that holds it.
+
+The quickest way to write one is the `/` menu: choose *Label* under *Insert*, and InkyCap inserts the angle brackets with your cursor already between them, ready for the name. Keep names short, lowercase, and hyphenated (`methods`, `fig-rainfall`); the name is what you search for in the next step, and it never appears in the finished document.
+
+#callout("note")[ Inside one note, the only spots you can point at are the ones you have labelled yourself. This is different from the `::` heading picker described above: when you link *across* notes, InkyCap adds a label to the other note for you. Here it does not invent one. A label you write stays visible in the visual editor, dimmed, so you can see at a glance which spots are anchored. ]
+
+=== Step 2: point at it by typing @
+
+Type `@` anywhere in the same note. The popup opens on your bibliography, and below that it lists this note's labelled spots, grouped as *Headings*, *Figures*, *Equations*, *Tables*, and *Labels*. Typing narrows the list; *ArrowUp* and *ArrowDown* move through it, *Enter* or *Tab* accepts, and *Escape* closes.
+
+Each row shows readable text on the left (a heading's own words, or else the label name) and, in muted grey on the right, the markup that row will write. There are two forms, and InkyCap chooses the one that will actually compile:
+
+```typ
+@methods
+#link(<methods>)[the methods section]
+```
+
+- `@methods` renders the target's *number*, so it suits a figure, a table, a numbered equation, or a heading in a note that numbers its headings. It is the same `@` you use for citations: in Typst, `@` points at any label, and a citation is simply one kind of target.
+- `#link(<methods>)[…]` renders wording of your choosing and works whether or not anything is numbered. InkyCap inserts it with the display text already selected, so you can type your own words straight away.
+
+=== When a heading cannot use @
+
+Because `@` shows a number, a heading only qualifies once the note numbers its headings. That is why the same heading can offer `@methods` in one note and `#link(<methods>)[…]` in another.
+
+To turn numbering on, open the `/` menu's *Style* category and set *Heading numbering* (see #wikilink("3.2 - Advanced Formatting")). If you have already written an `@` reference to an unnumbered heading, the note reports "cannot reference heading without numbering" and the problem margin offers one-click fixes: *Enable heading numbering*, or *Use a text link instead*. Those are described in #wikilink("7 - Citations and Bibliography").
+
+=== Following a cross-reference
+
+Click a `#link(<…>)` in the editor and your cursor jumps to the line the label tags, scrolled into view, much as a wikilink takes you to another note.
+
+The `@` popup only ever sees the note you are in. To land on a heading or label in a _different_ note, use a wikilink with `::`, described above.
+
+#callout("tip", title: "For Typst users")[ Labels and cross-references are stock Typst rather than an InkyCap addition: `<name>` defines a label, `@name` is shorthand for `#ref(<name>)`, and `ref` renders the referenced element's number, which is why an unnumbered target fails with "cannot reference heading without numbering" or "cannot reference text". `#link(<name>)[…]` carries no such restriction. Because both forms are plain Typst, they keep working in any Typst toolchain and survive export unchanged. They are *not* wikilinks, so they emit no `<inkycap-link>` metadata and create no backlink; a cross-reference stays inside its own note by design. ]
+
 == Following links as you read and write
 
 Wikilinks are clickable wherever they appear:
@@ -174,3 +220,5 @@ You can rename or reorganize freely without breaking your links' connections. Th
 - #wikilink("5 - Mycelial View"). See your links as a visual map of connections.
 - #wikilink("5 - Tags"). Another way to group and find related notes.
 - #wikilink("4 - Journal Scroll"). A continuous reading surface where links stay live.
+- #wikilink("7 - Citations and Bibliography"). The same `@` popup, from the citation side.
+- #wikilink("3.2 - Advanced Formatting"). Where heading numbering is switched on.

@@ -113,7 +113,7 @@ If you ever need to write the at-sign (`@`) at the start of a word, escape it wi
 \@notacitation
 ```
 
-=== Pointing at figures, tables, and equations
+=== Pointing at headings, figures, tables, and equations
 
 The same `@` popup does more than cite. Below the *Bibliography* group it lists the labelled spots in the note you are writing, grouped as *Headings*, *Figures*, *Equations*, *Tables*, and *Labels*. Choose one and InkyCap writes the cross-reference for you, in whichever form will actually work:
 
@@ -121,6 +121,8 @@ The same `@` popup does more than cite. Below the *Bibliography* group it lists 
 - A target that has no number (a heading in a note without heading numbering, or a label on ordinary prose) is inserted as a text link, `#link(<label>)[...]`, with the wording selected so you can type your own straight away. The grey text at the right of each row tells you which form it will write before you pick it.
 
 The popup only sees the note you are in. To point at a heading or label in _another_ note, use a wikilink with `::` instead (see #wikilink("4 - Links and Backlinks")).
+
+For the whole workflow from this side, including how to write the `<label>` that makes a spot referenceable in the first place, see #wikilink("4 - Links and Backlinks", label: "in-note-links", display: "Linking within the same note").
 
 === Search references and cite
 
