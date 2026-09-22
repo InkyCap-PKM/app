@@ -16,6 +16,7 @@ InkyCap is a Tauri-based, personal knowledge management-style **Typst editor** o
 5. Self-contained noteboxes that compile in any Typst environment and support collaboration
 6. Academic publishing and research-specific workflows
 7. First-class free-form writing options with a verse mode that respects idiosyncratic spacing.
+8. Specialized modes for reviewing work in a timeline and exploring concepts that have not yet been created (ideation based on existing work).
 
 ## Critical Principles
 
@@ -52,24 +53,19 @@ The order of preference, strictly:
    just the workaround. Existing exceptions are tagged with the phrase
    "Per CLAUDE.md's Typst-first principle" so they're greppable.
 
-If you find yourself writing a parser, a value serializer, a heading
-counter, a TOC builder, a metadata extractor, a citation formatter, a
-page-number formatter, or any kind of Typst-syntax string-builder *in
-Rust or TypeScript*, stop and check: Typst almost certainly does that
-already, and using it will be simpler, more correct, and more durable
-than what you were about to write.
+Before building new things *in Rust or TypeScript*, stop and check because it is likely that Typst can already provide it.
 
 ### Typst-native syntax, not Markdown-translated
 
-The visual editor recognizes Typst's own syntax (`*bold*`, `_italic_`, `= heading`, `- bullet`, `+ ordered`, `$math$`) without translation. Markdown shortcuts like `**bold**` or `# heading` would compile literally — they are NOT supported as aliases. The only "translations" are explicit InkyCap shortcuts into function calls: `[[Name]]` → `#wikilink("Name")` and the `/` command palette.
+The visual editor recognizes Typst's own syntax (`*bold*`, `_italic_`, `= heading`, `- bullet`, `+ ordered`, `$math$`) without translation. Markdown shortcuts like `**bold**` or `# heading` are NOT supported. The only "translations" are a few explicit InkyCap shortcuts into function calls: `[[Name]]` → `#wikilink("Name")` and the `/` command palette.
 
 ### Visual editor as a user-friendliness tool
 
-The visual editor exists to make flowing writing with Typst markup easier, especially for users who are not well-versed in Typst. It is a tool *for the user*, not a faithful rendering engine and functionally more similar to a WYSISYM tool. Decorations, pills, widgets, and layout choices should be judged by whether they reduce friction for the writer — not by whether they mirror the compiled output. The source editor and reading view serve different purposes; the visual editor's job is to make authoring feel natural.
+The visual editor exists to make the flow of writing with Typst markup easier, especially for users who are not well-versed in Typst. It is a tool *for the user*, not a faithful rendering engine and functionally more similar to a WYSIWYM tool. Decorations, pills, widgets, and layout choices should be judged by whether they reduce friction for the writer, not by whether they mirror the compiled output. 
 
 ### Tier 1 visual editor (CodeMirror Live Preview)
 
-The visual mode is a CodeMirror 6 decoration layer over Typst source — not a ProseMirror parse/serialize round-trip. The source remains Typst at all times. A ProseMirror-style hybrid is explicitly out of scope.
+The visual mode is a CodeMirror 6 decoration layer over Typst source. The source remains Typst at all times. A ProseMirror-style hybrid is explicitly out of scope.
 
 ### Visual editor pill system
 
@@ -92,14 +88,13 @@ Document properties are the typed arguments to a `#note(...)` call at the top of
 Any InkyCap code path that emits an `image`, `read`, `embed`, or
 `bibliography` call into a note's source writes a path that starts with
 `/` (the Typst "project root", which we configure to the notebox root).
-Relative paths are tolerated when a user hand-authors them, but never
-emitted by InkyCap itself — they are fragile under note moves and break
+Relative paths are tolerated when a user hand-authors them, but not emitted by InkyCap itself because they are fragile under note moves and break
 under merged collection export. Drag-and-drop, paste-image, the `/`
 command palette's image/embed entries, and markdown notebox import all
 funnel attachments into `settings.files.attachment_folder` and emit
 `#image("/<folder>/<file>")`-shaped calls. When inlining a note's
-content into a synthetic document (merged export today, more later), or
-when moving a note (Phase B), any remaining relative path is rebased
+content into a synthetic document or
+when moving a note, any remaining relative path is rebased
 via `src-tauri/src/typst_pipeline/path_rebase.rs` — the single
 AST-based rewriter that all such call sites share.
 
@@ -112,17 +107,15 @@ AST-based rewriter that all such call sites share.
 
 ### No stopgaps; plan for long-term correctness
 
-InkyCap has no active users until the first version ships. There is no urgency to deliver partial work, nor fill functional voids with stopgaps, nor land usability features ahead of schedule at the expense of cleaner long-term design. When sequencing a piece of work, the question is *"when is the right time to make this decision?"*, not *"how do we patch the gap until then?"*
+There is no urgency to deliver partial work nor fill functional voids with stopgaps, nor land usability features at the expense of cleaner long-term design. When sequencing a piece of work, the question is *"when is the right time to make this decision?"*, not *"how do we patch the gap until then?"*
 
-In practice:
-- Don't introduce code, scaffolding, or feature shims purely to make the in-progress build *feel* finished. Work-in-progress that obviously says "this isn't built yet" is fine.
-- Prefer the choice that minimizes total rework, even if that means a current task looks less complete on its own.
+Don't introduce code, scaffolding, or feature shims purely to make the in-progress build *feel* finished. Prefer the choice that minimizes total rework even if that means a current task looks less complete on its own.
 
-This principle overrides "ship something visible." It does *not* override the engineering directives below — long-term correctness still means correct, secure, maintainable code, not "perfect later."
+This principle does *not* override the engineering directives below. Long-term correctness includes correct, secure, maintainable code.
 
 ## Engineering Directives
 
-InkyCap is built to be picked up and extended by future human contributors who haven't seen this conversation. The following principles apply to every change, and override speed of delivery when in tension. Code that ships but later proves unmaintainable, insecure, or unable to grow with the project is a net loss.
+InkyCap is built to be picked up and extended by future human contributors who haven't seen previous AI-assisted work or "conversations". The following principles apply to every change, and override speed of delivery when in tension. Code must not ship if it later proves unmaintainable, insecure, or unable to grow with the project.
 
 ### Maintainability & clarity
 - Optimize for the next reader. Names, module boundaries, and control flow should be legible without tribal knowledge or chat-log archaeology.
@@ -139,21 +132,21 @@ InkyCap is built to be picked up and extended by future human contributors who h
 - Architectural seams (`NoteboxStorage`, event bus, `LinkIndex`, extension enums) must hide their implementations behind stable interfaces. Swapping a sync backend or compile path should not ripple into callers.
 - New features land as composable units (CodeMirror extensions, notebox commands, event-bus subscribers), not as edits scattered through unrelated modules.
 - Define extension shapes (traits, event types, enum variants) early even if no runtime loader exists yet — future plugins should slot in additively, not via breaking changes.
-- Cross-cutting concerns (logging, error reporting, i18n) flow through dedicated layers; never inline them ad hoc.
+- Cross-cutting concerns (logging, error reporting, i18n) flow through dedicated layers.
 
 ### Performance & efficiency
-- The Typst compile loop is the hot path. Incremental compilation, debounced edits, and cached `typst query` results are the default — not the optimization.
+- The Typst compile loop is the hot path. Incremental compilation, debounced edits, and cached `typst query` results are the default.
 - Noteboxes of thousands of notes must remain responsive. Iterate, stream, and index — don't load whole noteboxes into memory when an iterator suffices.
 - Instrument key paths (compile time, query time, indexer time) from the outset so regressions surface before users notice.
 - Frontend: keep Solid.js signals granular and CodeMirror decoration updates incremental. Avoid full re-renders on every keystroke.
 
 ### Security & privacy
 - InkyCap is local-first. No telemetry, analytics, or remote logging by default. Notebox contents never leave the user's device unless they explicitly opt into a sync backend.
-- Treat note contents and filesystem paths as sensitive. They do not appear in any outbound request, including crash reports or error telemetry, should those ever exist.
+- Treat note contents and filesystem paths as sensitive. They may not appear in any outbound request (e.g. crash reports or error telemetry, should those ever exist).
 - Tauri capabilities use the narrowest allowlist that works. Filesystem access stays scoped to the active notebox root; commands exposed to the frontend follow the principle of least privilege.
 - Validate untrusted input at every boundary — notebox content can come from other tools, imported packages, or shared noteboxes. Never `eval` user content; never shell-out with unsanitized paths; sanitize anything that flows into a renderer.
 - Vet dependencies before adding them. Prefer narrow, well-maintained crates and npm packages over kitchen-sink frameworks. Supply chain is a security surface; review transitive dependencies on additions.
-- When sync arrives, end-to-end encryption is the design baseline, not a v2 ask. Architect interfaces (`NoteboxStorage`, sync transport) so an encryption layer can be inserted without redesign.
+- When considering and working on sync functionality, end-to-end encryption is the design baseline. Architect interfaces (`NoteboxStorage`, sync transport) so an encryption layer can be inserted without redesign.
 
 ## Technology Stack
 
@@ -252,7 +245,7 @@ InkyCap is built to be picked up and extended by future human contributors who h
   hierarchically with `contentEditable="true"` and accepts input
   normally.
 
-  **2. Focus routing on insertion (THE recurring sharp edge).** The
+  **2. Focus routing on insertion (a recurring problem).** The
   `contentEditable="false"` wrap is necessary but not sufficient on
   its own — when a user inserts the widget via a command palette,
   paste, or any path that leaves the CM cursor inside the widget's
