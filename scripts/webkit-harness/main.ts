@@ -1,6 +1,6 @@
 // Harness page: a real WebKitGTK window for caret behaviour that jsdom cannot
 // model. Driven from harness/drive.py through `window.h`.
-import { EditorState } from "@codemirror/state";
+import { EditorState, Transaction } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { defaultKeymap, history, cursorLineUp, cursorCharLeft, cursorLineDown, cursorCharRight } from "@codemirror/commands";
 import { typst } from "codemirror-lang-typst";
@@ -14,6 +14,8 @@ import { cellEditorConfig } from "../../src/editor/typst-decorations/table-cell-
 
 let view: EditorView | null = null;
 const log: string[] = [];
+/** Transaction log for app-editor scenarios (see appReset). */
+const trLog: Record<string, unknown>[] = [];
 const t0 = performance.now();
 
 function describe(node: Node | null): string {
@@ -32,6 +34,7 @@ function snap(label: string) {
   const s = {
     t: Math.round(performance.now() - t0),
     label,
+    doc: v.state.doc.toString(),
     head: v.state.selection.main.head,
     domPos,
     anchor: describe(node),
@@ -188,4 +191,74 @@ async function tableNavKey(key: string, outerCaret = 0, real = false) {
   return { before, after: snapshot(), keys: keydownLog.slice() };
 }
 
-(window as any).h = { tableNavKey, tableKey, reset, snap, scenario, get view() { return view; }, cursorLineUp, cursorCharLeft, cursorLineDown, cursorCharRight, log, pillBoundaryNav };
+/** Build the real app editor (full extension stack from typst-editor.ts) so
+ *  repros exercise exactly what ships: WASM parse timing, markdown shortcuts,
+ *  spellcheck, all visual decorations. Returns the view. */
+async function appReset(doc: string, anchor: number) {
+  const { createTypstEditor } = await import("../../src/editor/typst-editor");
+  view?.destroy();
+  log.length = 0;
+  const host = document.getElementById("ed")!;
+  host.innerHTML = "";
+  const handle = createTypstEditor({ parent: host, doc, visualMode: true });
+  view = handle.view;
+  // Log every transaction so a caret jump can be traced to the change that made it.
+  trLog.length = 0;
+  const origDispatchTrs = view.dispatchTransactions.bind(view);
+  view.dispatchTransactions = (trs) => {
+    for (const tr of trs) {
+      trLog.push({
+        t: Math.round(performance.now() - t0),
+        userEvent: tr.annotation(Transaction.userEvent) ?? null,
+        docChanged: tr.docChanged,
+        changes: tr.docChanged ? JSON.stringify(tr.changes.toJSON()) : null,
+        selBefore: tr.startState.selection.main.head,
+        selAfter: tr.state.selection.main.head,
+        explicitSel: !!(tr as any).selection,
+      });
+    }
+    origDispatchTrs(trs);
+  };
+  view.dispatch({ selection: { anchor } });
+  view.contentDOM.focus();
+  (window as any).__appHandle = handle;
+  return view;
+}
+
+/** Drive a paste → backspace → type sequence against the app editor, the way
+ *  the user does it: a real paste event through the clipboard handler, real
+ *  execCommand deletes and inserts. Snapshots each step. */
+async function pasteBackspaceType(opts: {
+  doc: string; anchor: number; paste: string; deletes: number; type: string;
+  settleMs?: number; realBackspace?: boolean;
+} = { doc: "``", anchor: 1, paste: "abcdef", deletes: 2, type: "X" }) {
+  const settle = opts.settleMs ?? 250;
+  const v = await appReset(opts.doc, opts.anchor);
+  await sleep(settle);
+  snap("start");
+  // A real paste event with clipboard data, as Ctrl+V delivers it.
+  const dt = new DataTransfer();
+  dt.setData("text/plain", opts.paste);
+  const ev = new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true });
+  v.contentDOM.dispatchEvent(ev);
+  await sleep(settle);
+  snap("after-paste");
+  for (let i = 0; i < opts.deletes; i++) {
+    if (opts.realBackspace) await realKey("BackSpace");
+    else document.execCommand("delete");
+    await sleep(120);
+  }
+  snap("after-deletes");
+  await sleep(settle); // let any delayed parse / debounced redraw land
+  snap("before-type");
+  for (const ch of opts.type) {
+    document.execCommand("insertText", false, ch);
+    await sleep(120);
+  }
+  snap("after-type");
+  await sleep(settle);
+  snap("settled");
+  return { doc: v.state.doc.toString(), head: v.state.selection.main.head, log: log.slice(), trs: trLog.slice() };
+}
+
+(window as any).h = { tableNavKey, tableKey, reset, snap, scenario, appReset, pasteBackspaceType, get view() { return view; }, cursorLineUp, cursorCharLeft, cursorLineDown, cursorCharRight, log, pillBoundaryNav };

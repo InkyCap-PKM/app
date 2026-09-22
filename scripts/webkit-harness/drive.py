@@ -20,7 +20,7 @@ wv = WebKit2.WebView()
 wv.get_settings().set_enable_write_console_messages_to_stdout(True)
 win.add(wv); win.set_default_size(900, 600); win.show_all(); wv.grab_focus()
 
-KEYVALS = {"Home": Gdk.KEY_Home, "End": Gdk.KEY_End, "ArrowLeft": Gdk.KEY_Left, "ArrowUp": Gdk.KEY_Up, "x": Gdk.KEY_x}
+KEYVALS = {"Home": Gdk.KEY_Home, "End": Gdk.KEY_End, "ArrowLeft": Gdk.KEY_Left, "ArrowUp": Gdk.KEY_Up, "x": Gdk.KEY_x, "BackSpace": Gdk.KEY_BackSpace, "Delete": Gdk.KEY_Delete}
 
 def send_real_key(name):
     """Deliver a real key press and release to the web view, as the keyboard

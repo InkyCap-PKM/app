@@ -25,4 +25,17 @@ and returns the resulting document with a log of where CodeMirror's caret and
 the browser's selection were at each step. `opts.withResync: false` leaves out
 the caret guard in `dom-caret-resync.ts`, which is how its effect was shown.
 
+`h.pasteBackspaceType({ doc, anchor, paste, deletes, type, realBackspace })`
+builds the *real* app editor (`createTypstEditor`, full extension stack, with a
+transaction log) and drives the paste-between-delimiters repro: a real
+ClipboardEvent paste, `deletes` backspaces (real key presses with
+`realBackspace: true`), then `type` inserted character by character. This is
+the scenario that showed WebKitGTK typing at a stale editing position behind a
+correct-looking selection range — the case `dom-caret-resync.ts` re-asserts the
+caret unconditionally for. Example:
+
+```sh
+scripts/webkit-harness/run.sh "h.pasteBackspaceType({ doc: '\`\`', anchor: 1, paste: 'abcdef', deletes: 2, type: 'XY', realBackspace: true })"
+```
+
 Rebuild the page after changing editor code; the built page is ignored by git.
