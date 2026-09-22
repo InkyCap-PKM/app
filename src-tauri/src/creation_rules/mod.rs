@@ -204,8 +204,8 @@ pub fn sanitize_filename(name: &str) -> Option<String> {
 }
 
 /// Execute a creation rule: expand filename and target folder, returning
-/// the target path (no content/cursor yet — that's the scaffold's job in
-/// the command layer).
+/// the target path (content comes from the scaffold, applied by the command
+/// layer).
 ///
 /// `title_override` is the user-supplied filename when the rule's pattern
 /// is empty (the UI prompts for one in that case). When the pattern is
@@ -222,7 +222,7 @@ pub fn execute_rule(
     fallback_folder: &str,
     zid_pattern: &str,
     locale: Locale,
-) -> Result<(PathBuf, String, Option<usize>)> {
+) -> Result<PathBuf> {
     let pattern_empty = rule.filename_pattern.trim().is_empty();
     let expanded_name = if pattern_empty {
         match title_override.and_then(sanitize_filename) {
@@ -253,7 +253,7 @@ pub fn execute_rule(
     let filename = format!("{}.typ", expanded_name);
     let file_path = target_dir.join(&filename);
 
-    Ok((file_path, String::new(), None))
+    Ok(file_path)
 }
 
 #[cfg(test)]
@@ -288,7 +288,7 @@ mod tests {
             other => panic!("expected FilenameRequired, got {other:?}"),
         }
 
-        let (path, content, cursor) = execute_rule(
+        let path = execute_rule(
             &rules[0],
             Path::new("/notebox"),
             Some("Hello"),
@@ -299,14 +299,12 @@ mod tests {
         .expect("new-note executes with override");
         let filename = path.file_name().unwrap().to_string_lossy();
         assert_eq!(filename, "Hello.typ");
-        assert!(content.is_empty());
-        assert!(cursor.is_none());
     }
 
     #[test]
     fn test_execute_daily_note_rule() {
         let rules = default_rules();
-        let (path, _content, _cursor) = execute_rule(
+        let path = execute_rule(
             &rules[1],
             Path::new("/notebox"),
             None,
@@ -325,7 +323,7 @@ mod tests {
     #[test]
     fn test_daily_note_target_uses_year_subfolder() {
         let rules = default_rules();
-        let (path, _, _) = execute_rule(
+        let path = execute_rule(
             &rules[1],
             Path::new("/notebox"),
             None,
@@ -373,7 +371,7 @@ mod tests {
     fn test_execute_empty_pattern_with_override() {
         let mut rule = default_rules()[0].clone();
         rule.filename_pattern = String::new();
-        let (path, _, _) = execute_rule(
+        let path = execute_rule(
             &rule,
             Path::new("/notebox"),
             Some("My Note"),
@@ -391,7 +389,7 @@ mod tests {
         // Rule has no target_folder of its own → uses the fallback.
         let mut rule = default_rules()[0].clone();
         rule.target_folder = String::new();
-        let (path, _, _) = execute_rule(
+        let path = execute_rule(
             &rule,
             Path::new("/notebox"),
             Some("note"),

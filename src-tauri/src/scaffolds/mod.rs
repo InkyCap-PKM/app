@@ -17,12 +17,19 @@
 //   {{time}}         — current time as HH:MM
 //   {{time:FORMAT}}  — current time in a Moment.js-style format
 //   {{zid}}          — Zettelkasten ID from the user's configured pattern
-//   {{cursor}}       — removed from output; its position is returned as cursor_offset
+//
+// Inside a scaffold file, text in a Typst comment is left exactly as written.
+// Scaffolds ship with help text listing the variables, and substituting into
+// it would make that help destroy itself the first time the scaffold is used.
+// Short patterns (a rule's folder or filename) are not Typst source, so they
+// are expanded in full.
 
+use std::ops::Range;
 use std::path::Path;
 
-use chrono::{Local, Locale};
+use chrono::{DateTime, Local, Locale};
 use regex::Regex;
+use typst::syntax::{parse, LinkedNode, SyntaxKind};
 
 use crate::errors::Result;
 
@@ -42,11 +49,10 @@ pub fn chrono_locale(ui_locale: &str) -> Locale {
 use crate::storage::traits::NoteboxStorage;
 use crate::typst_pipeline::note_rewriter;
 
-/// Result of expanding a scaffold: the final content and an optional cursor offset.
+/// Result of expanding a scaffold: the final content.
 #[derive(Debug, Clone)]
 pub struct ExpandedScaffold {
     pub content: String,
-    pub cursor_offset: Option<usize>,
 }
 
 /// Read a scaffold file from the notebox's scaffold folder and expand variables.
@@ -57,7 +63,7 @@ pub async fn expand_scaffold(
     locale: Locale,
 ) -> Result<ExpandedScaffold> {
     let raw = storage.read_file(scaffold_path).await?;
-    Ok(expand_variables(&raw, title, locale))
+    Ok(expand_scaffold_content(&raw, title, "", locale))
 }
 
 /// Read a scaffold file and expand variables including `{{zid}}`.
@@ -69,7 +75,7 @@ pub async fn expand_scaffold_with_zid(
     locale: Locale,
 ) -> Result<ExpandedScaffold> {
     let raw = storage.read_file(scaffold_path).await?;
-    Ok(expand_variables_with_zid(&raw, title, zid_pattern, locale))
+    Ok(expand_scaffold_content(&raw, title, zid_pattern, locale))
 }
 
 /// Generate a Zettelkasten ID from a moment-style format pattern.
@@ -87,10 +93,15 @@ pub fn expand_variables(input: &str, title: &str, locale: Locale) -> ExpandedSca
     expand_variables_with_zid(input, title, "", locale)
 }
 
-/// Expand scaffold variables in a string, including optional `{{zid}}`.
+/// Expand variables in a short pattern string (a creation rule's folder or
+/// filename), including optional `{{zid}}`.
+///
+/// Every `{{var}}` is expanded, with no notion of comments: a pattern like
+/// `daily/{{date:YYYY}}` is a path fragment, not Typst source. Use
+/// [`expand_scaffold_content`] for the contents of a scaffold file.
 ///
 /// Title resolution: `{{title}}` and `{{slug}}` expand to the note's
-/// resolved title. If the scaffold contains a `#note(title: "...")` after
+/// resolved title. If the input contains a `#note(title: "...")` after
 /// pass-1 expansion, that string literal wins; otherwise we fall back to
 /// the caller-supplied `title` (typically the filename without extension).
 /// This lets a Daily Note scaffold author `title: "{{date:D MMMM YYYY}}"`
@@ -101,64 +112,152 @@ pub fn expand_variables_with_zid(
     zid_pattern: &str,
     locale: Locale,
 ) -> ExpandedScaffold {
-    let now = Local::now();
-
-    // Pass 1: expand everything except {{title}} / {{slug}} (those depend on
-    // a title that may be set by a #note(title: ...) property).
-    let mut result = input.to_string();
-    // {{filename}} is the explicit "use the filename" escape hatch — must
-    // be expanded in pass 1 so a scaffold can write `title: "{{filename}}"`
-    // without setting up a {{title}} cycle.
-    result = result.replace("{{filename}}", title);
-    result = result.replace("{{date}}", &now.format("%Y-%m-%d").to_string());
-    result = result.replace("{{time}}", &now.format("%H:%M").to_string());
-
-    if !zid_pattern.is_empty() {
-        let zid = generate_zid(zid_pattern);
-        result = result.replace("{{zid}}", &zid);
-    }
-
-    let date_re = Regex::new(r"\{\{date:([^}]+)\}\}").unwrap();
-    result = date_re
-        .replace_all(&result, |caps: &regex::Captures| {
-            let fmt = &caps[1];
-            let chrono_fmt = moment_to_chrono_format(fmt);
-            // `format_localized` renders `%B`/`%A` (month/weekday names) in
-            // `locale`; purely numeric formats are unaffected.
-            now.format_localized(&chrono_fmt, locale).to_string()
-        })
-        .to_string();
-
-    let time_re = Regex::new(r"\{\{time:([^}]+)\}\}").unwrap();
-    result = time_re
-        .replace_all(&result, |caps: &regex::Captures| {
-            let fmt = &caps[1];
-            let chrono_fmt = moment_to_chrono_format(fmt);
-            now.format_localized(&chrono_fmt, locale).to_string()
-        })
-        .to_string();
-
-    // Pass 2: resolve the title to use for {{title}} / {{slug}}. Prefer the
-    // expanded #note(title: ...) property when present. A property whose
-    // value is exactly "{{title}}" is treated as no title property at all
-    // (self-reference); use {{filename}} in the scaffold to break that
-    // cycle deliberately.
-    let resolved_title = note_title_from_source(&result)
-        .filter(|t| t.trim() != "{{title}}")
-        .unwrap_or_else(|| title.to_string());
-    result = result.replace("{{title}}", &resolved_title);
-    result = result.replace("{{slug}}", &slugify(&resolved_title));
-
-    // {{cursor}} — find position, then remove the placeholder
-    let cursor_offset = result.find("{{cursor}}");
-    if cursor_offset.is_some() {
-        result = result.replacen("{{cursor}}", "", 1);
-    }
-
+    let pass1 = Pass1::new(title, zid_pattern, locale);
+    let result = pass1.apply(input);
+    let resolved_title = resolve_title(&result, title);
     ExpandedScaffold {
-        content: result,
-        cursor_offset,
+        content: expand_title_and_slug(&result, &resolved_title),
     }
+}
+
+/// Expand variables in the contents of a scaffold file, leaving anything
+/// inside a Typst comment exactly as the author wrote it.
+///
+/// Same variables and same title resolution as [`expand_variables_with_zid`];
+/// the only difference is that comments are copied through untouched. A
+/// scaffold can therefore carry `// Variables: {{title}} {{date}}` help text
+/// that survives being used, and an author can describe a variable in a
+/// comment without it being substituted away.
+pub fn expand_scaffold_content(
+    input: &str,
+    title: &str,
+    zid_pattern: &str,
+    locale: Locale,
+) -> ExpandedScaffold {
+    let pass1 = Pass1::new(title, zid_pattern, locale);
+    let result = outside_comments(input, |text| pass1.apply(text));
+    // The title comes from the note's real `#note(...)` call. That lookup is
+    // already AST-based, so a commented-out `#note(...)` can't supply it.
+    let resolved_title = resolve_title(&result, title);
+    let content = outside_comments(&result, |text| expand_title_and_slug(text, &resolved_title));
+    ExpandedScaffold { content }
+}
+
+/// Byte ranges of every Typst comment in `source`, in document order.
+///
+/// Asks Typst's parser rather than scanning for `//`, so a `//` inside a
+/// string literal (`url: "https://example.org"`) is correctly not a comment.
+fn comment_ranges(source: &str) -> Vec<Range<usize>> {
+    fn walk(node: &LinkedNode<'_>, out: &mut Vec<Range<usize>>) {
+        if matches!(
+            node.kind(),
+            SyntaxKind::LineComment | SyntaxKind::BlockComment
+        ) {
+            out.push(node.range());
+            return;
+        }
+        for child in node.children() {
+            walk(&child, out);
+        }
+    }
+    let root = parse(source);
+    let mut out = Vec::new();
+    walk(&LinkedNode::new(&root), &mut out);
+    out
+}
+
+/// Run `substitute` over every stretch of `source` that sits outside a Typst
+/// comment, copying the comments through byte for byte.
+fn outside_comments(source: &str, substitute: impl Fn(&str) -> String) -> String {
+    let ranges = comment_ranges(source);
+    if ranges.is_empty() {
+        return substitute(source);
+    }
+    let mut out = String::with_capacity(source.len());
+    let mut pos = 0;
+    for range in ranges {
+        // Comments are leaves walked in document order, so ranges arrive
+        // sorted and disjoint. Skip anything that isn't rather than slicing
+        // backwards and panicking on unexpected input.
+        if range.start < pos {
+            continue;
+        }
+        out.push_str(&substitute(&source[pos..range.start]));
+        out.push_str(&source[range.start..range.end]);
+        pos = range.end;
+    }
+    out.push_str(&substitute(&source[pos..]));
+    out
+}
+
+/// Pass-1 substitutions: every variable that doesn't depend on the resolved
+/// title. Built once per expansion so that a scaffold split across several
+/// comments still sees a single `now` and a single generated `{{zid}}`.
+struct Pass1 {
+    filename: String,
+    zid: Option<String>,
+    now: DateTime<Local>,
+    locale: Locale,
+    date_re: Regex,
+    time_re: Regex,
+}
+
+impl Pass1 {
+    fn new(filename: &str, zid_pattern: &str, locale: Locale) -> Self {
+        Self {
+            filename: filename.to_string(),
+            zid: (!zid_pattern.is_empty()).then(|| generate_zid(zid_pattern)),
+            now: Local::now(),
+            locale,
+            date_re: Regex::new(r"\{\{date:([^}]+)\}\}").unwrap(),
+            time_re: Regex::new(r"\{\{time:([^}]+)\}\}").unwrap(),
+        }
+    }
+
+    fn apply(&self, text: &str) -> String {
+        // {{filename}} is the explicit "use the filename" escape hatch — must
+        // be expanded in pass 1 so a scaffold can write `title: "{{filename}}"`
+        // without setting up a {{title}} cycle.
+        let mut result = text.replace("{{filename}}", &self.filename);
+        result = result.replace("{{date}}", &self.now.format("%Y-%m-%d").to_string());
+        result = result.replace("{{time}}", &self.now.format("%H:%M").to_string());
+        if let Some(zid) = &self.zid {
+            result = result.replace("{{zid}}", zid);
+        }
+        result = self.format_all(&self.date_re, &result);
+        result = self.format_all(&self.time_re, &result);
+        result
+    }
+
+    /// Replace every `{{date:FMT}}` / `{{time:FMT}}` match with `now` rendered
+    /// in that format. `format_localized` renders `%B`/`%A` (month and weekday
+    /// names) in `locale`; purely numeric formats are unaffected.
+    fn format_all(&self, re: &Regex, text: &str) -> String {
+        re.replace_all(text, |caps: &regex::Captures| {
+            let chrono_fmt = moment_to_chrono_format(&caps[1]);
+            self.now
+                .format_localized(&chrono_fmt, self.locale)
+                .to_string()
+        })
+        .to_string()
+    }
+}
+
+/// Pass 2: the variables that depend on the resolved title.
+fn expand_title_and_slug(text: &str, resolved_title: &str) -> String {
+    text.replace("{{title}}", resolved_title)
+        .replace("{{slug}}", &slugify(resolved_title))
+}
+
+/// The title to use for `{{title}}` / `{{slug}}`. Prefers the expanded
+/// `#note(title: ...)` property when present. A property whose value is
+/// exactly `{{title}}` is treated as no title property at all (a
+/// self-reference); use `{{filename}}` in the scaffold to break that cycle
+/// deliberately.
+fn resolve_title(expanded: &str, fallback: &str) -> String {
+    note_title_from_source(expanded)
+        .filter(|t| t.trim() != "{{title}}")
+        .unwrap_or_else(|| fallback.to_string())
 }
 
 /// If `content` contains a `#note(title: "<string literal>")` call, return
@@ -316,6 +415,59 @@ mod tests {
     }
 
     #[test]
+    fn comments_in_a_scaffold_are_left_alone() {
+        // The help text InkyCap prefills into a new scaffold. It has to
+        // survive being used, otherwise the scaffold destroys its own
+        // documentation the first time someone makes a note from it.
+        let scaffold = "// Variables: {{title}} {{slug}} {{date}} {{zid}}\n= {{title}}\n";
+        let expanded = expand_scaffold_content(scaffold, "My Note", "YYYYMMDD", Locale::en_US);
+        assert_eq!(
+            expanded.content,
+            "// Variables: {{title}} {{slug}} {{date}} {{zid}}\n= My Note\n"
+        );
+    }
+
+    #[test]
+    fn block_comments_are_left_alone_too() {
+        let scaffold = "/* keep {{date}} as written */\n= {{title}}\n";
+        let expanded = expand_scaffold_content(scaffold, "Note", "", Locale::en_US);
+        assert!(expanded
+            .content
+            .starts_with("/* keep {{date}} as written */"));
+        assert!(expanded.content.ends_with("= Note\n"));
+    }
+
+    #[test]
+    fn a_double_slash_inside_a_string_is_not_a_comment() {
+        // Typst's parser knows `//` inside a string literal is ordinary text,
+        // which a hand-rolled `//` scan would get wrong and skip.
+        let scaffold = "#note(\n  url: \"https://example.org/{{slug}}\",\n)\n= {{title}}\n";
+        let expanded = expand_scaffold_content(scaffold, "My Note", "", Locale::en_US);
+        assert!(expanded.content.contains("https://example.org/my-note"));
+        assert!(!expanded.content.contains("{{slug}}"));
+    }
+
+    #[test]
+    fn a_commented_note_call_does_not_supply_the_title() {
+        // Title resolution reads the real `#note(...)`, not one in a comment.
+        let scaffold = "// #note(title: \"Commented Out\")\n#note(title: \"Real\")\n= {{title}}\n";
+        let expanded = expand_scaffold_content(scaffold, "Filename", "", Locale::en_US);
+        assert!(expanded.content.contains("= Real"));
+        assert!(expanded
+            .content
+            .contains("// #note(title: \"Commented Out\")"));
+    }
+
+    #[test]
+    fn patterns_expand_everywhere_including_after_a_double_slash() {
+        // A rule's folder pattern is a path fragment, not Typst source, so it
+        // has no comments to respect even when it contains `//`.
+        let expanded = expand_variables("notes//{{date:YYYY}}", "test", Locale::en_US);
+        assert!(!expanded.content.contains("{{date"));
+        assert!(expanded.content.starts_with("notes//"));
+    }
+
+    #[test]
     fn test_moment_to_chrono() {
         assert_eq!(moment_to_chrono_format("YYYYMMDDHHmmss"), "%Y%m%d%H%M%S");
         assert_eq!(moment_to_chrono_format("YYYY-MM-DD"), "%Y-%m-%d");
@@ -403,7 +555,6 @@ mod tests {
     fn test_no_variables() {
         let expanded = expand_variables("Just plain text.", "title", Locale::en_US);
         assert_eq!(expanded.content, "Just plain text.");
-        assert!(expanded.cursor_offset.is_none());
     }
 
     #[test]
@@ -419,20 +570,6 @@ mod tests {
     fn test_slug_variable() {
         let expanded = expand_variables("file: {{slug}}.typ", "My Research Note", Locale::en_US);
         assert_eq!(expanded.content, "file: my-research-note.typ");
-    }
-
-    #[test]
-    fn test_cursor_position() {
-        let expanded = expand_variables("= Title\n\n{{cursor}}\n", "test", Locale::en_US);
-        assert_eq!(expanded.content, "= Title\n\n\n");
-        assert_eq!(expanded.cursor_offset, Some(9));
-    }
-
-    #[test]
-    fn test_cursor_with_other_variables() {
-        let expanded = expand_variables("= {{title}}\n\n{{cursor}}", "Hello", Locale::en_US);
-        assert_eq!(expanded.content, "= Hello\n\n");
-        assert_eq!(expanded.cursor_offset, Some(9));
     }
 
     #[test]

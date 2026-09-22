@@ -60,11 +60,8 @@ Scaffolds (and several creation-rule fields) understand `{{...}}` placeholders t
 - `{{date:FORMAT}}` is today's date in a format you choose (see below).
 - `{{time}}` and `{{time:FORMAT}}` give the current time.
 - `{{zid}}` is a Zettelkasten ID, if you've set up that pattern.
-- `{{cursor}}` marks where your cursor should land when opening the note.
 
 The format inside `{{date:...}}` uses familiar tokens: `YYYY` (year), `MM` (month number), `MMMM` (full month name), `DD` (day), `dddd` (weekday name), `HH` and `mm` (hours and minutes), and so on. Anything that isn't a token passes through as-is, so `{{date:D MMMM YYYY}}` gives you something like "5 June 2026". Month and weekday _names_ follow your interface language, so a French interface would render "vendredi".
-
-#callout("note")[ When a note is created by a _creation rule_ (the next section), your cursor is placed on a fresh blank line at the very end of the note, regardless of where `{{cursor}}` sits. ]
 
 == Creation rules
 

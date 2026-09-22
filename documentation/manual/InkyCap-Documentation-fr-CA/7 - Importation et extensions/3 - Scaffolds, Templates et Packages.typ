@@ -61,11 +61,8 @@ Les scaffolds (et plusieurs champs des règles de création) comprennent les esp
 - `{{date:FORMAT}}` est la date d'aujourd'hui dans un format que vous choisissez (voir ci-dessous).
 - `{{time}}` et `{{time:FORMAT}}` donnent l'heure actuelle.
 - `{{zid}}` est un identifiant Zettelkasten, si vous avez configuré ce motif.
-- `{{cursor}}` marque l'endroit où votre curseur devrait atterrir à l'ouverture de la note.
 
 Le format à l'intérieur de `{{date:...}}` utilise des jetons familiers : `YYYY` (année), `MM` (numéro du mois), `MMMM` (nom complet du mois), `DD` (jour), `dddd` (nom du jour de la semaine), `HH` et `mm` (heures et minutes), et ainsi de suite. Tout ce qui n'est pas un jeton passe tel quel, donc `{{date:D MMMM YYYY}}` vous donne quelque chose comme « 5 juin 2026 ». Les _noms_ des mois et des jours de la semaine suivent la langue de votre interface, donc une interface française afficherait « vendredi ».
-
-#callout("note")[ Quand une note est créée par une _règle de création_ (la section suivante), votre curseur est placé sur une nouvelle ligne vide tout à la fin de la note, peu importe où se trouve `{{cursor}}`. ]
 
 == Règles de création
 

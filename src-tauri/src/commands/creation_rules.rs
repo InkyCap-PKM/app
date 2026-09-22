@@ -189,7 +189,7 @@ pub async fn execute_creation_rule(
         None => rule,
     };
 
-    let (file_path, mut content, mut cursor_offset) = creation_rules::execute_rule(
+    let file_path = creation_rules::execute_rule(
         rule_for_exec,
         root,
         title_override.as_deref(),
@@ -197,6 +197,7 @@ pub async fn execute_creation_rule(
         &zid_pattern,
         locale,
     )?;
+    let mut content = String::new();
 
     // Pick the scaffold to expand: an explicit override (the scaffold picker's
     // "new note from this scaffold" path) wins over the rule's own scaffold.
@@ -231,7 +232,6 @@ pub async fn execute_creation_rule(
             )
             .await?;
             content = expanded.content;
-            cursor_offset = expanded.cursor_offset;
         }
     }
 
@@ -268,15 +268,7 @@ pub async fn execute_creation_rule(
         } else {
             format!("{import_line}\n#note()\n\n")
         };
-        let prefix_len = prefix.len();
         content = format!("{prefix}{content}");
-        // Adjust cursor offset for the prepended lines
-        if let Some(ref mut offset) = cursor_offset {
-            *offset += prefix_len;
-        }
-        if cursor_offset.is_none() {
-            cursor_offset = Some(prefix_len);
-        }
     }
 
     // Inject the document-language directive (`#set text(lang/region)`) right
@@ -289,11 +281,6 @@ pub async fn execute_creation_rule(
             let insert_pos = pos + 1;
             let line = format!("{directive}\n");
             content.insert_str(insert_pos, &line);
-            if let Some(ref mut offset) = cursor_offset {
-                if *offset >= insert_pos {
-                    *offset += line.len();
-                }
-            }
         }
     }
 
@@ -307,11 +294,6 @@ pub async fn execute_creation_rule(
         if let Some(pos) = content.find('\n') {
             let insert_pos = pos + 1;
             content.insert_str(insert_pos, &template_import);
-            if let Some(ref mut offset) = cursor_offset {
-                if *offset >= insert_pos {
-                    *offset += template_import.len();
-                }
-            }
         }
     }
 
@@ -333,22 +315,18 @@ pub async fn execute_creation_rule(
                 &PropertyValue::String(zid_value),
             );
         }
-        if let Some(ref mut offset) = cursor_offset {
-            // Recalculate — the property insertion shifted content
-            *offset = content.len().min(*offset);
-        }
     }
 
     // Drop the caret on a fresh line at the very end of the note so the user
-    // can start typing immediately below the scaffold's content. This
-    // supersedes any earlier {{cursor}}-based offset (that marker is no longer
-    // used for positioning) and matches the Ctrl+\ insert behaviour. Normalize
-    // to exactly one trailing newline so the caret sits on the first blank line
-    // below the content rather than several lines down.
+    // can start typing immediately below the scaffold's content. Normalize to
+    // exactly one trailing newline so the caret sits on the first blank line
+    // below the content rather than several lines down. The offset crosses the
+    // IPC boundary into CodeMirror, which counts UTF-16 code units — so report
+    // the UTF-16 length, not the UTF-8 byte length.
     let trimmed_len = content.trim_end_matches('\n').len();
     content.truncate(trimmed_len);
     content.push('\n');
-    cursor_offset = Some(content.len());
+    let cursor_offset = Some(utf16_len(&content));
 
     storage.write_file(&file_path, &content).await?;
 
@@ -464,9 +442,9 @@ pub struct ScaffoldInsertResult {
 ///    Reuses `note_rewriter::update_note_property`, which preserves
 ///    whitespace and untouched fields byte-for-byte (the same invariant the
 ///    property panel relies on).
-/// 3. Insert the remaining (post-`#note`, post-imports) scaffold body at
-///    the cursor — replacing the selection if `selection_from`/`selection_to`
-///    are provided.
+/// 3. Append the remaining (post-`#note`, post-imports) scaffold body to
+///    the end of the note. The caret then lands on a fresh line below it,
+///    so the caller's cursor and selection play no part in the insert.
 ///
 /// The frontend replaces the editor's whole document with `new_source` and
 /// moves the cursor to `new_cursor_offset`. Whole-doc replace is a single
@@ -477,9 +455,6 @@ pub async fn prepare_scaffold_insert(
     scaffold_name: String,
     current_source: String,
     title: String,
-    cursor_offset: usize,
-    selection_from: Option<usize>,
-    selection_to: Option<usize>,
     window: tauri::WebviewWindow,
 ) -> Result<ScaffoldInsertResult, InkyCapError> {
     let session = state.session(window.label()).await;
@@ -509,11 +484,6 @@ pub async fn prepare_scaffold_insert(
         ));
     }
 
-    // The cursor/selection are no longer used to position the insert — a
-    // scaffold appends to the end of the note (see assemble_scaffold_insert).
-    // Kept in the signature for IPC compatibility with the frontend caller.
-    let _ = (cursor_offset, selection_from, selection_to);
-
     let expanded = scaffolds::expand_scaffold_with_zid(
         storage.as_ref(),
         &scaffold_path,
@@ -540,9 +510,7 @@ pub async fn prepare_scaffold_insert(
 ///   one with content, it reads as "append" — matching the user's mental model
 ///   and, crucially, never overwriting existing prose.
 /// - **Cursor**: lands on a fresh line at the very end of the inserted content
-///   so the user can start typing immediately. The scaffold's `{{cursor}}`
-///   marker (if any) is stripped by the expander but its offset is not used —
-///   a trailing fresh line is simpler and is what authoring actually wants.
+///   so the user can start typing immediately.
 fn assemble_scaffold_insert(current_source: &str, expanded_content: &str) -> ScaffoldInsertResult {
     let (scaffold_note_args, body_start) = split_scaffold_note_and_body(expanded_content);
 
@@ -591,13 +559,13 @@ fn assemble_scaffold_insert(current_source: &str, expanded_content: &str) -> Sca
 
 /// Length of `s` in UTF-16 code units.
 ///
-/// `new_cursor_offset` crosses the IPC boundary into CodeMirror, whose
-/// document offsets are UTF-16 code units (JavaScript string offsets) — not
-/// UTF-8 bytes. Returning a byte length here lands the caret past the end of
-/// the document the moment the note contains any multi-byte character (smart
+/// Cursor offsets cross the IPC boundary into CodeMirror, whose document
+/// offsets are UTF-16 code units (JavaScript string offsets) — not UTF-8
+/// bytes. Returning a byte length lands the caret past the end of the
+/// document the moment the note contains any multi-byte character (smart
 /// quotes, accented Latin, em-dashes, CJK …); CodeMirror then rejects the
-/// out-of-range selection and the whole scaffold insert aborts. Counting
-/// UTF-16 code units keeps the offset in the editor's coordinate space.
+/// out-of-range selection. Counting UTF-16 code units keeps the offset in the
+/// editor's coordinate space.
 fn utf16_len(s: &str) -> usize {
     s.encode_utf16().count()
 }
@@ -669,13 +637,12 @@ fn sanitize_template_name(name: &str) -> Result<String, InkyCapError> {
 const STARTER_SCAFFOLD: &str = "#import \"/.inkycap/notebox.typ\": *\n\n\
     // Scaffold: see https://typst.app/docs for Typst syntax.\n\
     // Variables: {{title}} {{slug}} {{date}} {{date:YYYY-MM-DD}}\n\
-    //            {{time}} {{zid}} {{cursor}}\n\
+    //            {{time}} {{zid}}\n\
     #note(\n  \
         // Properties go here. Any user-defined key is preserved.\n  \
         // tags: (\"draft\",),\n\
     )\n\n\
-    = {{title}}\n\n\
-    {{cursor}}\n";
+    = {{title}}\n";
 
 /// Create a new scaffold file. Returns the absolute path.
 ///
@@ -887,8 +854,7 @@ mod scaffold_insert_tests {
     #[test]
     fn cursor_lands_on_fresh_line_at_end() {
         let current = format!("{IMPORT}#note(\n  title: \"X\",\n)\n\nprose\n");
-        // The scaffold's {{cursor}} marker (stripped by the expander before
-        // this fn) is irrelevant — the caret goes to a fresh line at the end.
+        // The caret goes to a fresh line at the end of the inserted content.
         let scaffold = format!("{IMPORT}#note(\n)\n\n= Meeting\n");
         let r = assemble_scaffold_insert(&current, &scaffold);
         // Offset is in UTF-16 code units (CodeMirror's coordinate space).

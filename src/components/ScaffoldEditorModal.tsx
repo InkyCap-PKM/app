@@ -161,7 +161,7 @@ export default function ScaffoldEditorModal(props: ScaffoldEditorModalProps) {
           </Show>
           <p class="app-modal__hint">
             {t("scaffoldEditor.hint", {
-              vars: "{{title}}, {{slug}}, {{date}}, {{cursor}}, {{zid}}",
+              vars: "{{title}}, {{slug}}, {{date}}, {{zid}}",
             })}
           </p>
           <div ref={editorParent} class="custom-typst-modal__editor" />

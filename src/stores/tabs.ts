@@ -53,7 +53,9 @@ export interface Tab {
    *  this is not load-bearing for the refresh. A group with only one member
    *  left open (partner closed) reads as un-synced, so the indicator self-heals. */
   syncGroupId?: string;
-  /** One-shot cursor offset from scaffold {{cursor}}. Consumed by the editor on load. */
+  /** One-shot cursor offset (in UTF-16 code units) to place the caret at after
+   *  the file loads — e.g. the end of a freshly created note. Consumed by the
+   *  editor on load. */
   pendingCursorOffset?: number;
   /** One-shot heading label to scroll to after the file loads. */
   pendingHeadingLabel?: string;
@@ -239,7 +241,7 @@ export interface OpenTabOptions {
    * takes focus, so creations, header buttons and quick-open keep switching.
    */
   newTabAction?: boolean;
-  /** Byte offset to place the cursor at after the file loads (from scaffold {{cursor}}). */
+  /** UTF-16 code-unit offset to place the cursor at after the file loads. */
   cursorOffset?: number;
   /** Heading label to scroll to after the file loads. */
   headingLabel?: string;

@@ -1,7 +1,7 @@
 // Ctrl+\ scaffold picker.
 //
-// Lists scaffolds and inserts the chosen one into the active editor at the
-// cursor (or replacing the selection). If the scaffold begins with a
+// Lists scaffolds and appends the chosen one to the end of the active note,
+// leaving the caret on a fresh line below it. If the scaffold begins with a
 // `#note(...)` call, its kwargs are merged into the target note's existing
 // `#note(...)` — existing values win on conflict; new keys are appended.
 //
@@ -89,7 +89,6 @@ const ScaffoldPicker: Component<ScaffoldPickerProps> = (props) => {
       return;
     }
     const view = handle.view;
-    const sel = view.state.selection.main;
     const currentSource = view.state.doc.toString();
 
     // Title for {{title}} expansion: derive from the active tab's filename.
@@ -103,9 +102,6 @@ const ScaffoldPicker: Component<ScaffoldPickerProps> = (props) => {
         scaffoldName: entry.name,
         currentSource,
         title,
-        cursorOffset: sel.head,
-        selectionFrom: sel.empty ? undefined : sel.from,
-        selectionTo: sel.empty ? undefined : sel.to,
       });
 
       view.dispatch({

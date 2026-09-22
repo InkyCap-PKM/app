@@ -388,7 +388,7 @@ const CreationRuleEditor: Component = () => {
                 <label class="settings__label">{t("creationRules.scaffold")}</label>
                 <span class="settings__description">
                   {t("creationRules.scaffoldDescription", {
-                    vars: "{{title}}, {{slug}}, {{date}}, {{cursor}}, {{zid}}",
+                    vars: "{{title}}, {{slug}}, {{date}}, {{zid}}",
                   })}
                 </span>
               </div>

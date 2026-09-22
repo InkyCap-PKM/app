@@ -438,8 +438,8 @@ const TemplatesPanel: Component = () => {
           <Show when={tab() === "scaffolds"}>
             <p>
               {t("templates.help.scaffoldsBefore")} <code>{`{{title}}`}</code>,{" "}
-              <code>{`{{date}}`}</code>, <code>{`{{zid}}`}</code>,{" "}
-              <code>{`{{cursor}}`}</code>{t("templates.help.scaffoldsAfter")}
+              <code>{`{{date}}`}</code>, <code>{`{{zid}}`}</code>
+              {t("templates.help.scaffoldsAfter")}
             </p>
           </Show>
           <Show when={tab() === "templates"}>

@@ -1422,17 +1422,11 @@ export async function prepareScaffoldInsert(args: {
   scaffoldName: string;
   currentSource: string;
   title: string;
-  cursorOffset: number;
-  selectionFrom?: number;
-  selectionTo?: number;
 }): Promise<ScaffoldInsertResult> {
   return invoke<ScaffoldInsertResult>("prepare_scaffold_insert", {
     scaffoldName: args.scaffoldName,
     currentSource: args.currentSource,
     title: args.title,
-    cursorOffset: args.cursorOffset,
-    selectionFrom: args.selectionFrom ?? null,
-    selectionTo: args.selectionTo ?? null,
   });
 }
 
