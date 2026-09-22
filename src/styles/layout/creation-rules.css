@@ -92,6 +92,21 @@
   flex-shrink: 0;
 }
 
+/* Move-up/move-down control for reordering rules. Uses the shared
+   .ui-icon-btn utility; this wrapper only fixes its horizontal rhythm. */
+.creation-rules__reorder {
+  display: flex;
+  gap: var(--space-1);
+  flex-shrink: 0;
+}
+
+/* Rules that aren't toolbar buttons have nothing to reorder. Hiding the
+   chevrons instead of removing them keeps the space they occupy, so the
+   controls in every row line up. */
+.creation-rules__reorder--empty {
+  visibility: hidden;
+}
+
 .creation-rules__edit-btn,
 .creation-rules__delete-btn,
 .creation-rules__disable-btn {

@@ -100,6 +100,26 @@ pub async fn delete_creation_rule(
     Ok(())
 }
 
+/// Reorder creation rules and persist the new order. `ordered_ids` is the
+/// full list of rule ids in the desired order (the settings list sends every
+/// rule after a move-up/move-down). See [`creation_rules::reorder_rules`] for
+/// the defensive handling of ids that are missing or no longer exist.
+#[tauri::command]
+pub async fn reorder_creation_rules(
+    ordered_ids: Vec<String>,
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<(), InkyCapError> {
+    let session = state.session(window.label()).await;
+    let notebox_root = session.notebox_root.read().await;
+    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
+
+    let mut rules = creation_rules::load_rules(root);
+    creation_rules::reorder_rules(&mut rules, &ordered_ids);
+    creation_rules::save_rules(root, &rules)?;
+    Ok(())
+}
+
 /// Execute a creation rule: create the file and return its path + cursor offset.
 /// If the file already exists (e.g. daily note), returns existing path.
 ///

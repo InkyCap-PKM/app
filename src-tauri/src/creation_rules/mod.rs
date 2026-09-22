@@ -149,6 +149,24 @@ pub fn load_rules(notebox_root: &Path) -> Vec<CreationRule> {
     user_rules
 }
 
+/// Reorder rules so those named in `ordered_ids` appear first, in that
+/// order, with any rule not mentioned keeping its relative order after them.
+/// Ids in `ordered_ids` that match no rule are ignored. The frontend sends
+/// the full list of rule ids after a move, so in practice every rule is
+/// named and the order is fully determined; the "unmentioned keep relative
+/// order" behaviour is defensive against a stale or partial list.
+pub fn reorder_rules(rules: &mut Vec<CreationRule>, ordered_ids: &[String]) {
+    let mut rest: Vec<CreationRule> = rules.drain(..).collect();
+    let mut ordered: Vec<CreationRule> = Vec::with_capacity(rest.len());
+    for id in ordered_ids {
+        if let Some(pos) = rest.iter().position(|r| r.id == *id) {
+            ordered.push(rest.remove(pos));
+        }
+    }
+    ordered.append(&mut rest);
+    *rules = ordered;
+}
+
 /// Save creation rules to the notebox.
 pub fn save_rules(notebox_root: &Path, rules: &[CreationRule]) -> Result<()> {
     let path = rules_path(notebox_root);
@@ -434,6 +452,39 @@ mod tests {
         assert!(rules.len() >= 2);
         assert!(rules.iter().any(|r| r.id == "new-note"));
         assert!(rules.iter().any(|r| r.id == "daily-note"));
+    }
+
+    #[test]
+    fn test_reorder_rules_full_list() {
+        let mut rules = default_rules();
+        let ids: Vec<String> = vec!["daily-note".into(), "new-note".into()];
+        reorder_rules(&mut rules, &ids);
+        assert_eq!(rules[0].id, "daily-note");
+        assert_eq!(rules[1].id, "new-note");
+    }
+
+    #[test]
+    fn test_reorder_rules_keeps_unmentioned_at_end() {
+        let mut rules = default_rules();
+        rules.push(CreationRule {
+            id: "custom".into(),
+            ..default_rules()[0].clone()
+        });
+        let ids: Vec<String> = vec!["custom".into()];
+        reorder_rules(&mut rules, &ids);
+        assert_eq!(rules[0].id, "custom");
+        // The two built-ins keep their canonical relative order after it.
+        assert_eq!(rules[1].id, "new-note");
+        assert_eq!(rules[2].id, "daily-note");
+    }
+
+    #[test]
+    fn test_reorder_rules_ignores_unknown_ids() {
+        let mut rules = default_rules();
+        let ids: Vec<String> = vec!["nonsense".into(), "daily-note".into()];
+        reorder_rules(&mut rules, &ids);
+        assert_eq!(rules[0].id, "daily-note");
+        assert_eq!(rules[1].id, "new-note");
     }
 
     #[test]

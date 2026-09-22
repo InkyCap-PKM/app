@@ -370,6 +370,7 @@ pub fn run() {
             commands::creation_rules::get_default_creation_rule,
             commands::creation_rules::save_creation_rule,
             commands::creation_rules::delete_creation_rule,
+            commands::creation_rules::reorder_creation_rules,
             commands::creation_rules::execute_creation_rule,
             commands::creation_rules::list_scaffolds,
             commands::creation_rules::list_scaffold_entries,

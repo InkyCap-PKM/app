@@ -76,3 +76,6 @@ documentation/manual/*/.inkycap/*
 !documentation/manual/*/.inkycap/collections/
 documentation/manual/*/.inkycap/collections/*
 !documentation/manual/*/.inkycap/collections/*.collection
+
+# Temporary workspace for planning documents that may or may not get used.
+plantemp/

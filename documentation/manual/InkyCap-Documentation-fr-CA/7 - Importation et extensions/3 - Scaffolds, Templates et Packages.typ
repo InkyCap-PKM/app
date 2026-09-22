@@ -87,7 +87,7 @@ Cliquez sur *+ Nouvelle règle* et remplissez les champs qui comptent pour vous 
 - *Template Typst* est un template optionnel de document complet (couvert ci-dessous).
 - *Mode de création* est « Créer et ouvrir » (le choix par défaut) ou « Créer seulement ».
 - *Raccourci clavier* : cliquez pour enregistrer une combinaison de touches ; InkyCap refuse les combinaisons déjà liées à autre chose.
-- *Afficher le bouton dans la barre d'outils* ajoute un bouton à un clic à la barre d'outils verticale.
+- *Afficher le bouton dans la barre d'outils* ajoute un bouton à un clic à la barre d'outils verticale. Les règles qui affichent un bouton obtiennent une paire de flèches (vers le haut et vers le bas) dans la liste des règles ; elles servent à établir l'ordre d'apparition des boutons le long de la barre d'outils. Les règles sans bouton n'ont rien à ordonner, alors leurs flèches restent estompées.
 - *Description* est une note optionnelle pour votre futur vous.
 
 Enregistrez quand vous avez terminé. Le bouton *Restaurer les valeurs par défaut* re-sème les réglages d'origine d'une règle intégrée, ou ramène une règle personnalisée à un état vierge.

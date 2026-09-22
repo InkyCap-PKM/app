@@ -1251,6 +1251,14 @@ export async function deleteCreationRule(ruleId: string): Promise<void> {
   return invoke<void>("delete_creation_rule", { ruleId });
 }
 
+/** Persist a new creation-rule order. `orderedIds` is the full list of rule
+ *  ids in the desired order (every rule, not just toolbar-visible ones). */
+export async function reorderCreationRules(
+  orderedIds: string[],
+): Promise<void> {
+  return invoke<void>("reorder_creation_rules", { orderedIds });
+}
+
 /**
  * Execute a creation rule.
  *

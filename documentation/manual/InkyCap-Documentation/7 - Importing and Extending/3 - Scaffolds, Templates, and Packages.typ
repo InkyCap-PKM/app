@@ -86,7 +86,7 @@ Click *+ New Rule* and fill in the fields that matter to you:
 - *Typst template* is an optional whole-document template (covered below).
 - *Creation mode* is "Create and open" (the default) or "Create only".
 - *Hotkey*: click to record a key combination; InkyCap refuses combinations already bound to something else.
-- *Show button in toolbar* adds a one-click button to the vertical toolbar.
+- *Show button in toolbar* adds a one-click button to the vertical toolbar. Rules that show a button get a pair of up and down arrows in the rules list; use them to set the order the buttons appear in along the toolbar. Rules without a button have nothing to order, so their arrows stay greyed out.
 - *Description* is an optional note to your future self.
 
 Save when you're done. The *Restore Defaults* button re-seeds a built-in rule's original settings, or clears a custom rule back to blank.

@@ -10,6 +10,7 @@ import { settings } from "./settings";
 import { t } from "../lib/i18n";
 import { errorCode, errorDetail } from "../lib/errors";
 import { resolveNoteNameConflict } from "../lib/note-name-conflict";
+import { isToolbarRule } from "../lib/creation-rule-order";
 
 const [creationRules, setCreationRules] = createSignal<CreationRule[]>([]);
 
@@ -24,7 +25,16 @@ export async function loadCreationRules(): Promise<void> {
 
 /** Rules eligible to render as toolbar buttons. */
 export function toolbarRules(): CreationRule[] {
-  return creationRules().filter((r) => r.show_in_toolbar && !r.disabled);
+  return creationRules().filter(isToolbarRule);
+}
+
+/** Swap in a rule list the caller already holds, without a round trip to
+ *  disk. Used when the app itself produced the new list (reordering in
+ *  Settings), so the toolbar updates in the same tick the settings list
+ *  does. Callers that change rules on disk without knowing the resulting
+ *  list should call `loadCreationRules` instead. */
+export function replaceCreationRules(rules: CreationRule[]): void {
+  setCreationRules(rules);
 }
 
 /** Rules eligible to register hotkeys and command-palette entries. */

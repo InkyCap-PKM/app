@@ -14,9 +14,13 @@ import type { CreationRule } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { fileList } from "../stores/filelist";
 import { findCommandByKeybinding } from "../lib/command-registry";
-import { loadCreationRules } from "../stores/creation-rules";
+import { loadCreationRules, replaceCreationRules } from "../stores/creation-rules";
+import {
+  isToolbarRule,
+  swapRules,
+  toolbarNeighbourId,
+} from "../lib/creation-rule-order";
 import { promptConfirm } from "../stores/prompt";
-import { noteboxSettings } from "../stores/settings";
 import HotkeyRecorder from "./HotkeyRecorder";
 import LucideIconPicker from "./LucideIconPicker";
 import HelpButton from "./HelpButton";
@@ -25,7 +29,7 @@ import { Dropdown } from "./Dropdown";
 import ScaffoldEditorModal from "./ScaffoldEditorModal";
 import { toastError, toastWarning } from "../stores/toasts";
 import { useI18n } from "../lib/i18n";
-import { Plus, Pencil } from "lucide-solid";
+import { Plus, Pencil, ChevronUp, ChevronDown } from "lucide-solid";
 
 // ── Hotkey conflict detection ──────────────────────────────────
 
@@ -112,7 +116,7 @@ const CreationRuleEditor: Component = () => {
     setScaffoldEditor({ mode: "edit", name: entry.name, path: entry.path });
   }
 
-  const [rules, { refetch }] = createResource(
+  const [rules, { refetch, mutate }] = createResource(
     () => refreshTick(),
     async () => ipc.listCreationRules(),
   );
@@ -135,17 +139,6 @@ const CreationRuleEditor: Component = () => {
     setRefreshTick((t) => t + 1);
   }
 
-  /** User's preferred folder for new notes, used as the default `target_folder`
-   *  for newly-created rules. When the user has chosen "Notebox root" or
-   *  "Current folder" this resolves to an empty string, which the executor
-   *  treats as "use the notebox root". */
-  function defaultTargetFolder(): string {
-    if (noteboxSettings.files.new_note_location === "specified") {
-      return noteboxSettings.files.new_note_folder;
-    }
-    return "";
-  }
-
   /** Shape of a fresh user-created rule. Centralized so the "+ New Rule"
    *  button and the "Restore Defaults" button for non-builtin rules stay
    *  in sync. */
@@ -155,7 +148,9 @@ const CreationRuleEditor: Component = () => {
       name: "",
       icon_emoji: "",
       scaffold_path: "",
-      target_folder: defaultTargetFolder(),
+      // Empty target folder: the rule inherits the notebox's "New note
+      // location" setting at trigger time rather than baking a path in.
+      target_folder: "",
       // Blank by default: the user is prompted for a filename on each creation.
       // (A pattern of date/time/zid tokens is the alternative — see the field
       // hint. `{{title}}`/`{{slug}}` are scaffold-content variables, not
@@ -267,6 +262,33 @@ const CreationRuleEditor: Component = () => {
     const current = editingRule();
     if (!current) return;
     setEditingRule({ ...current, [key]: value });
+  }
+
+  /** Move a rule one place earlier (delta = -1) or later (delta = +1) on the
+   *  toolbar. The rule trades places with its toolbar neighbour rather than
+   *  with whatever sits beside it in the settings list, so rules that aren't
+   *  toolbar buttons keep their position and every click shifts the button by
+   *  exactly one slot. */
+  async function moveRule(rule: CreationRule, delta: -1 | 1) {
+    const list = rules() ?? [];
+    const neighbourId = toolbarNeighbourId(list, rule.id, delta);
+    if (!neighbourId) return;
+    const reordered = swapRules(list, rule.id, neighbourId);
+
+    // Adopt the new list in both views straight away. Waiting for a reload
+    // would leave this list showing the old order for a tick, and a quick
+    // second click would then compute its move from that stale copy.
+    mutate(reordered);
+    replaceCreationRules(reordered);
+    try {
+      await ipc.reorderCreationRules(reordered.map((r) => r.id));
+    } catch (e) {
+      toastError(t("creationRules.reorderFailed"), e);
+      // The save failed, so the optimistic order above is a lie. Re-read
+      // what's actually on disk into both views.
+      refresh();
+      void loadCreationRules();
+    }
   }
 
   function selectFolder(folder: string) {
@@ -664,6 +686,32 @@ const CreationRuleEditor: Component = () => {
                       </button>
                     </Show>
                   </Show>
+                </div>
+                {/* Reordering only changes the toolbar, so a rule that isn't
+                    a toolbar button has nothing to move. Its chevrons are
+                    hidden rather than dropped, which keeps every row's
+                    controls on the same vertical line. */}
+                <div
+                  class={`creation-rules__reorder${isToolbarRule(rule) ? "" : " creation-rules__reorder--empty"}`}
+                >
+                  <button
+                    class="ui-icon-btn"
+                    onClick={() => moveRule(rule, -1)}
+                    disabled={!toolbarNeighbourId(rules() ?? [], rule.id, -1)}
+                    title={t("creationRules.moveUp")}
+                    aria-label={t("creationRules.moveUp")}
+                  >
+                    <ChevronUp size={16} />
+                  </button>
+                  <button
+                    class="ui-icon-btn"
+                    onClick={() => moveRule(rule, 1)}
+                    disabled={!toolbarNeighbourId(rules() ?? [], rule.id, 1)}
+                    title={t("creationRules.moveDown")}
+                    aria-label={t("creationRules.moveDown")}
+                  >
+                    <ChevronDown size={16} />
+                  </button>
                 </div>
               </div>
             )}
