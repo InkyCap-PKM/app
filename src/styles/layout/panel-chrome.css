@@ -74,7 +74,11 @@
   background: var(--status-bg);
   color: var(--status-fg);
   font-size: var(--text-base);
-  padding: var(--space-1) var(--space-5);
+  /* The right padding clears the width of the editor's vertical scrollbar plus
+     a small gap, so the controls at the right end never touch it (it runs
+     right up beside them in distraction-free mode). */
+  padding: var(--space-1) calc(var(--scrollbar-size) + var(--space-3))
+    var(--space-1) var(--toolbar-btn-inset);
   display: flex;
   align-items: center;
   gap: var(--space-6);

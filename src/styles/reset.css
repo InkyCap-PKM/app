@@ -76,8 +76,8 @@ textarea::placeholder {
 }
 
 ::-webkit-scrollbar {
-  width: 12px;
-  height: 12px;
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
 }
 
 /* The corner is the square where a vertical and a horizontal scrollbar

@@ -9,6 +9,14 @@
   --left-width: 240px;
   --right-width: 280px;
   --toolbar-width: 44px;
+  /* Gap between the window's left edge and the left edge of a centred
+     .vertical-toolbar__btn: its 18px icon (set in VerticalToolbar.tsx), side
+     padding and 1px borders. The status bar starts its first control here so
+     the notebox button lines up with the toolbar buttons' hover highlight. */
+  --toolbar-btn-inset: max(
+    0px,
+    calc((var(--toolbar-width) - 18px - 2 * var(--space-4) - 2px) / 2)
+  );
   display: grid;
   grid-template-areas:
     "toolbar sidebar main right"
@@ -73,33 +81,30 @@
 
 /* The status bar itself disappears: lifting it to `position: fixed` removes it
    from the grid's `auto` row (which then collapses to 0, so the editor fills
-   the full height) and shrink-wraps it to the bottom-right corner. Only the
-   exit button remains, floating there.
-
-   In this mode the editor reclaims the full width, so its 12px vertical
-   scrollbar (and the bottom stepper button at the corner) now run right under
-   where the button would sit. Inset past the scrollbar (12px + gap) and lift
-   it a little off the corner so it never overlaps — this also lands it near
-   the right-edge position it occupies in the normal status bar. */
+   the full height). The bar keeps its normal height and padding along the
+   bottom edge, but turns transparent and lets clicks pass through, so the
+   exit button stays in exactly the spot it held before the mode was entered.
+   The bar's right padding keeps the button clear of the editor's vertical
+   scrollbar (see .status-bar). */
 .app-shell--distraction-free .status-bar {
   position: fixed;
-  right: 18px;
-  bottom: 10px;
-  width: auto;
-  height: auto;
-  padding: 0;
-  gap: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  justify-content: flex-end;
   background: transparent;
+  pointer-events: none;
   z-index: var(--z-menu);
 }
 
-/* The lone floating exit button: a semi-transparent pill so it stays
-   unobtrusive over the content, solidifying on hover. */
+/* The lone floating exit button: same size as in the normal status bar, with
+   a semi-transparent fill so it stays unobtrusive over the content and
+   solidifies on hover. The outline is an inset shadow rather than a border so
+   it adds no width and the icon does not move. */
 .app-shell--distraction-free .status-bar__df {
+  pointer-events: auto;
   background: var(--status-btn-bg);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--popup-radius);
-  padding: 5px 7px;
+  box-shadow: inset 0 0 0 1px var(--border-primary);
   opacity: 0.55;
   backdrop-filter: blur(4px);
 }

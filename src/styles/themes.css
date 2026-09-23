@@ -153,6 +153,11 @@
   --space-8: calc(32px * var(--density));
   --space-9: calc(48px * var(--density));
 
+  /* Thickness of every scrollbar in the app (see reset.css). Layout that must
+     keep clear of a scrollbar, such as the status bar's right end, measures
+     from this. */
+  --scrollbar-size: 12px;
+
   /* The panel resize handles (.resize-handle) are built from two widths.
      --resize-handle-width is the bar you SEE on hover. --resize-handle-hit is
      the invisible strip that DETECTS the hover; it straddles the panel divider

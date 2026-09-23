@@ -359,8 +359,8 @@ const StatusBar: Component = () => {
               onClick={toggleSwitcher}
               title={t("statusBar.changeNotebox")}
             >
-              {displayName()}
               <ArchiveRestore size={14} />
+              {displayName()}
             </button>
             <span>{tPlural("common.file", info().file_count)}</span>
           </>
@@ -490,8 +490,8 @@ const StatusBar: Component = () => {
       </Show>
 
       {/* In distraction-free mode the whole bar is lifted out of the grid and
-          shrink-wrapped to the bottom-right corner (see CSS), so this button
-          is all that floats there. */}
+          made transparent (see CSS), so this button is all that shows, in the
+          same spot it holds in the normal status bar. */}
       <button
         class="status-bar__df"
         onClick={toggleDistractionFree}
