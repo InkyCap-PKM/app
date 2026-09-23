@@ -80,7 +80,10 @@ textarea::placeholder {
   height: 12px;
 }
 
-::-webkit-scrollbar-track {
+/* The corner is the square where a vertical and a horizontal scrollbar
+   meet; left unstyled, WebKit paints it in its own default colour. */
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
   background: transparent;
 }
 
