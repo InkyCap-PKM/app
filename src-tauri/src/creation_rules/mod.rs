@@ -156,7 +156,7 @@ pub fn load_rules(notebox_root: &Path) -> Vec<CreationRule> {
 /// named and the order is fully determined; the "unmentioned keep relative
 /// order" behaviour is defensive against a stale or partial list.
 pub fn reorder_rules(rules: &mut Vec<CreationRule>, ordered_ids: &[String]) {
-    let mut rest: Vec<CreationRule> = rules.drain(..).collect();
+    let mut rest: Vec<CreationRule> = std::mem::take(rules);
     let mut ordered: Vec<CreationRule> = Vec::with_capacity(rest.len());
     for id in ordered_ids {
         if let Some(pos) = rest.iter().position(|r| r.id == *id) {
