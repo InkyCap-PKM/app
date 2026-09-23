@@ -22,6 +22,15 @@
   flex-shrink: 0;
 }
 
+/* Exception: the search tips list is tall, so on a short window it shrinks to
+   the space left below the input and scrolls, rather than running off the
+   bottom of the pane. */
+.search-panel > .search-panel__hints {
+  flex-shrink: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .search-panel__input-row,
 .search-panel__replace-row {
   display: flex;
