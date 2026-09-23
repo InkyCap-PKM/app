@@ -16,10 +16,14 @@
   font-weight: 500;
   cursor: pointer;
   /* The status bar places this button's left edge at --toolbar-btn-inset.
-     The left padding then centres its 14px icon (set in StatusBar.tsx) on the
-     same vertical line as the toolbar's icons above it. */
-  padding: 1px 8px 1px
-    max(8px, calc(var(--toolbar-width) / 2 - var(--toolbar-btn-inset) - 7px));
+     The side padding then centres its 14px icon (set in StatusBar.tsx) on the
+     same vertical line as the toolbar's icons above it. The right side uses
+     the same padding so the chip looks even at both ends. */
+  --notebox-name-pad-x: max(
+    8px,
+    calc(var(--toolbar-width) / 2 - var(--toolbar-btn-inset) - 7px)
+  );
+  padding: 1px var(--notebox-name-pad-x);
   border-radius: var(--radius-sm);
   font-family: inherit;
 }
