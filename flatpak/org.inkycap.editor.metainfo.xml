@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AppStream description of InkyCap: what software centres (GNOME Software,
+  KDE Discover) show for the Flatpak. Installed by flatpak/org.inkycap.editor.yml.
+  Check it with:  appstreamcli validate flatpak/org.inkycap.editor.metainfo.xml
+
+  Before a Flathub submission, add <screenshots> and a <releases> list; both
+  are required there, and <releases> then needs an entry per release.
+-->
+<component type="desktop-application">
+  <id>org.inkycap.editor</id>
+  <name>InkyCap</name>
+  <summary>Typst-based notes for writing and research</summary>
+  <summary xml:lang="fr">Notes basées sur Typst pour l'écriture et la recherche</summary>
+  <developer id="org.inkycap">
+    <name>Joshua Chalifour</name>
+  </developer>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>LiLiQ-P-1.1</project_license>
+  <description>
+    <p>
+      InkyCap is a personal knowledge management tool built on Typst markup.
+      It focuses on academics, writers, and anyone wanting conventional
+      note-linking together with advanced features for publishing, knowledge
+      discovery, recall and ideation, as well as agenda-keeping and project
+      work.
+    </p>
+    <p xml:lang="fr">
+      InkyCap est un outil de gestion des connaissances personnelles fondé sur
+      le balisage Typst. Il s'adresse aux universitaires, aux auteurs et à
+      quiconque souhaite des notes liées classiques ainsi que des fonctions
+      avancées de publication, de découverte des connaissances, de rappel et
+      d'idéation, en plus de la tenue d'agenda et du travail par projets.
+    </p>
+  </description>
+  <launchable type="desktop-id">org.inkycap.editor.desktop</launchable>
+  <url type="homepage">https://inkycap.org</url>
+  <url type="vcs-browser">https://codefloe.com/InkyCap/app</url>
+  <url type="bugtracker">https://codefloe.com/InkyCap/app/issues</url>
+  <categories>
+    <category>Office</category>
+  </categories>
+  <content_rating type="oars-1.1"/>
+</component>

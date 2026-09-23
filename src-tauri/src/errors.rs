@@ -89,6 +89,24 @@ pub enum InkyCapError {
     /// and asks again when `notebox:index-ready` fires.
     #[error("The notebox is still being indexed")]
     IndexNotReady,
+
+    /// The in-app Upgrade can't be used for this copy or this release: the
+    /// install type can't update itself (Flatpak, NixOS, a self-built copy),
+    /// or the release has no installer for this system. The frontend points
+    /// the user at the Download button instead.
+    #[error("Automatic upgrade isn't available: {0}")]
+    UpgradeUnavailable(String),
+
+    /// A downloaded update failed its signature check and was not installed.
+    /// Kept apart from other failures so the message can say plainly that
+    /// nothing was changed and why.
+    #[error("The update couldn't be verified, so it wasn't installed: {0}")]
+    UpgradeNotVerified(String),
+
+    /// Installing a verified update failed (the system installer refused, a
+    /// file couldn't be replaced, …). The running version is unchanged.
+    #[error("The update couldn't be installed: {0}")]
+    UpgradeFailed(String),
 }
 
 impl InkyCapError {
@@ -119,6 +137,9 @@ impl InkyCapError {
             InkyCapError::Cancelled => "cancelled",
             InkyCapError::DocumentationReadOnly => "documentation-read-only",
             InkyCapError::IndexNotReady => "index-not-ready",
+            InkyCapError::UpgradeUnavailable(_) => "upgrade-unavailable",
+            InkyCapError::UpgradeNotVerified(_) => "upgrade-not-verified",
+            InkyCapError::UpgradeFailed(_) => "upgrade-failed",
         }
     }
 
@@ -141,7 +162,10 @@ impl InkyCapError {
             | InkyCapError::Network(s)
             | InkyCapError::BadRequest(s)
             | InkyCapError::NoteNameConflict(s)
-            | InkyCapError::NoteboxAlreadyOpen(s) => Some(s.clone()),
+            | InkyCapError::NoteboxAlreadyOpen(s)
+            | InkyCapError::UpgradeUnavailable(s)
+            | InkyCapError::UpgradeNotVerified(s)
+            | InkyCapError::UpgradeFailed(s) => Some(s.clone()),
             InkyCapError::NoteboxNotOpen
             | InkyCapError::FilenameRequired
             | InkyCapError::Cancelled

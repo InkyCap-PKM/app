@@ -30,3 +30,4 @@ pub mod typ_audit;
 pub mod typst;
 pub mod typst_packages;
 pub mod updates;
+pub mod upgrade;

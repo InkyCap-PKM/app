@@ -5,8 +5,7 @@ All notable changes to InkyCap are recorded here. The format is based on
 
 ## Versioning
 
-InkyCap uses date-based versions, `YY.MM.RELEASE` (see
-[documentation/developer/releasing.md](documentation/developer/releasing.md)).
+InkyCap uses date-based versions, `YY.MM.RELEASE` (`scripts/version.mjs`).
 The last `RELEASE` number selects the channel: **even** is a user-facing stable
 release, **odd** is a development (beta) release. Add a new heading below for
 each tagged release, newest first, grouping entries under **Added**, **Changed**,

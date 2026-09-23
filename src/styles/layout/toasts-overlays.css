@@ -85,6 +85,12 @@
   word-break: break-word;
 }
 
+/* Optional action button (Toast.action), left-aligned under the text. */
+.toast__actions {
+  display: flex;
+  padding-top: var(--space-1);
+}
+
 /* Persistent toasts (in-progress work) suppress the default body cursor
    so it doesn't suggest the user can click anywhere to dismiss — the X
    button is the only intended dismiss surface. */

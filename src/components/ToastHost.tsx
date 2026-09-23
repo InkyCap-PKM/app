@@ -64,6 +64,22 @@ const ToastHost: Component = () => {
                 <Show when={toast.detail}>
                   <span class="toast__detail">{toast.detail}</span>
                 </Show>
+                <Show when={toast.action}>
+                  {(action) => (
+                    <span class="toast__actions">
+                      <button
+                        type="button"
+                        class="btn btn--secondary btn--sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          action().run();
+                        }}
+                      >
+                        {action().label}
+                      </button>
+                    </span>
+                  )}
+                </Show>
               </div>
               <Show when={showCloseBtn}>
                 <button

@@ -39,6 +39,39 @@ pub fn cache_dir() -> PathBuf {
         .join("inkycap")
 }
 
+/// Folders that Tauri names after the app ID (`identifier` in
+/// tauri.conf.json) rather than `inkycap`: the window size/position file
+/// and the webview's stored data (panel layout and similar). Used only by
+/// `id_migration`, which copies them across when the ID changes.
+pub fn app_id_dirs(app_id: &str) -> Vec<PathBuf> {
+    // WebKit on macOS keeps the webview's stored data under the app ID in
+    // ~/Library/WebKit, outside the folders Tauri itself uses.
+    let macos_webkit = if cfg!(target_os = "macos") {
+        dirs::home_dir().map(|h| h.join("Library").join("WebKit"))
+    } else {
+        None
+    };
+    let bases = [
+        dirs::config_dir(),
+        dirs::data_dir(),
+        dirs::data_local_dir(),
+        macos_webkit,
+    ];
+    let mut out: Vec<PathBuf> = Vec::new();
+    for dir in bases.into_iter().flatten().map(|b| b.join(app_id)) {
+        if !out.contains(&dir) {
+            out.push(dir);
+        }
+    }
+    out
+}
+
+/// The per-user folder a Flatpak app with this ID keeps all its data in
+/// (`~/.var/app/<id>`).
+pub fn flatpak_app_dir(app_id: &str) -> Option<PathBuf> {
+    dirs::home_dir().map(|h| h.join(".var").join("app").join(app_id))
+}
+
 /// Best-effort migration of regenerable indexes that used to live
 /// under `data_dir()` to their new home under `cache_dir()`. Called
 /// once at app startup. Cross-filesystem rename failures fall back

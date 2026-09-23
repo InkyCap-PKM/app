@@ -4,10 +4,15 @@
 //   npm run release:feeds                 sign and write the feeds (release still a draft)
 //   npm run release:feeds -- --partial    allow some installers to be missing
 //   npm run release:feeds -- --in FILE    merge into FILE instead of the live latest.json
+//   npm run release:feeds -- --test-base https://inkycap.org/releases/test
+//                                         private test: feeds whose downloads point at
+//                                         <base>/files/ instead of CodeFloe, written to
+//                                         feeds-test/; point a test copy at it with the
+//                                         `updates.feed_url` setting
 //   npm run release:feeds -- --verify-with OLD.pub
 //                                         check signatures against OLD.pub instead of
 //                                         tauri.conf.json (only for the release that
-//                                         replaces the key; see releasing.md)
+//                                         replaces the key)
 //   npm run release:feeds:check           after publishing and uploading: confirm the
 //                                         download links serve the signed files and
 //                                         inkycap.org serves feeds naming this version
@@ -20,8 +25,10 @@
 // leaves the installers unchanged, so the files attached to the draft stay
 // valid as long as they are these same files.
 //
-// The signing key and the full release steps are described in
-// documentation/developer/releasing.md.
+// The private signing key lives outside the repository, at
+// ~/.config/inkycap-release/updater.key on each computer used for releases;
+// `npm run release:check-setup` checks that computer's setup. The password is
+// never stored: this command asks for it.
 
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
@@ -136,9 +143,11 @@ function sign(path, password) {
 }
 
 async function makeFeeds(args, version, channel) {
+  const testBase = typeof args["test-base"] === "string" ? args["test-base"].replace(/\/+$/, "") : null;
+  if (testBase !== null && !testBase.startsWith("https://")) fail("--test-base must start with https://");
   const dir = artifactsDir(version);
   if (!existsSync(dir)) {
-    fail(`No folder ${relative(ROOT, dir)}/. Put this release's installers there (see releasing.md, steps 3 and 5).`);
+    fail(`No folder ${relative(ROOT, dir)}/. Put this release's installers there (the .deb, .rpm, Windows and macOS files).`);
   }
 
   console.log("Checking this computer's release setup:");
@@ -157,7 +166,7 @@ async function makeFeeds(args, version, channel) {
     console.log(`  ${hit ? "ok     " : "MISSING"} ${a.label}${hit ? "" : `: expected a file named ${a.file(version)}`}`);
   }
   if (found.length === 0) fail("No installers found, so there is nothing to sign.");
-  if (missing.length && !args.partial) {
+  if (missing.length && !args.partial && testBase === null) {
     fail(
       "Some installers are missing. Add them, or run again with --partial to publish without them\n" +
         "(people on those platforms will see the update and use the Download button).",
@@ -182,18 +191,23 @@ async function makeFeeds(args, version, channel) {
       fail(
         `${artifact.label}: ${check.reason}.\n` +
           "The key file on this computer may be out of date: paste the current private key text into it again.\n" +
-          "(Replacing the key? See \"The signing key\" in releasing.md: that release uses --verify-with.)",
+          "(Replacing the key? That one release is signed with the old key and checked with --verify-with.)",
       );
     }
     if (check.signedVersion && check.signedVersion.replace(/^v/, "") !== version) {
       fail(`${artifact.label}: the signature records version ${check.signedVersion}, but this release is ${version}.`);
     }
-    entries.push({ artifact, path, signature, url: assetUrl(version, artifact.file(version)) });
+    const file = artifact.file(version);
+    const url = testBase === null ? assetUrl(version, file) : `${testBase}/files/${file}`;
+    entries.push({ artifact, path, signature, url });
     console.log(`  ok   ${artifact.label}`);
   }
 
-  let base;
-  if (typeof args.in === "string") {
+  // A test feed starts from nothing: it must never carry the real releases.
+  let base = {};
+  if (testBase !== null) {
+    // (nothing to merge)
+  } else if (typeof args.in === "string") {
     base = JSON.parse(readFileSync(args.in, "utf8"));
   } else {
     try {
@@ -204,15 +218,37 @@ async function makeFeeds(args, version, channel) {
   }
 
   const now = new Date();
-  const outDir = join(dir, "feeds");
+  const outDir = join(dir, testBase === null ? "feeds" : "feeds-test");
   rmSync(outDir, { recursive: true, force: true });
   mkdirSync(join(outDir, "updater"), { recursive: true });
   const write = (name, value) => writeFileSync(join(outDir, name), `${JSON.stringify(value, null, 2)}\n`);
 
-  write("latest.json", buildLatestFeed(base, { version, channel, notes, date: now.toISOString().slice(0, 10) }));
+  const date = now.toISOString().slice(0, 10);
+  // A test release is offered on both channels, so the test copy finds it
+  // whatever its "Include development releases" setting.
+  const channels = testBase === null ? updaterChannelsFor(channel) : ["stable", "beta"];
+  let latest = buildLatestFeed(base, { version, channel, notes, date });
+  if (testBase !== null) latest = buildLatestFeed(latest, { version, channel: channel === "beta" ? "stable" : "beta", notes, date });
+  write("latest.json", latest);
   const updater = buildUpdaterFeed({ version, notes, pubDate: now.toISOString().replace(/\.\d+Z$/, "Z"), entries });
-  const channels = updaterChannelsFor(channel);
   for (const c of channels) write(join("updater", `${c}.json`), updater);
+
+  if (testBase !== null) {
+    const shown = relative(ROOT, outDir);
+    const folder = new URL(testBase).pathname.replace(/^\//, "");
+    console.log(`
+Test feeds written. Upload through cPanel's File Manager into the website's
+${folder}/ folder (it is not linked from anywhere):
+
+  ${shown}/latest.json       ->  ${folder}/latest.json
+  ${shown}/updater/*.json    ->  ${folder}/updater/
+${entries.map(({ path }) => `  ${relative(ROOT, path)}  ->  ${folder}/files/`).join("\n")}
+
+Then point the test copy at it: in its settings.json, under "updates", set
+  "feed_url": "${testBase}/latest.json"
+Delete the ${folder}/ folder when the test is done.`);
+    return;
+  }
 
   const shown = relative(ROOT, outDir);
   console.log(`
@@ -283,7 +319,7 @@ async function checkLive(version, channel) {
       "Not finished yet:\n  " +
         problems.join("\n  ") +
         "\n\nDownload links: publish the release, with the signed files attached.\n" +
-        "Feeds: upload the files from release-artifacts/<version>/feeds/ (see releasing.md).\n" +
+        "Feeds: upload the files from release-artifacts/<version>/feeds/ into releases/ on inkycap.org.\n" +
         "Until this passes, the Upgrade button may fail; the Download button still works.",
     );
   }

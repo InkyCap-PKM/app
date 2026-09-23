@@ -21,6 +21,7 @@ pub mod events;
 pub mod external_tools;
 pub mod font_resolver;
 pub mod git;
+pub mod id_migration;
 pub mod link_index;
 pub mod markdown;
 pub mod models;
@@ -160,6 +161,11 @@ pub fn run() {
         .format_timestamp_millis()
         .init();
 
+    // Before anything reads settings or the webview starts: bring data stored
+    // under the old app ID across (see id_migration; temporary).
+    let context = tauri::generate_context!();
+    let id_migration = id_migration::run(&context.config().identifier);
+
     // Apply the Linux-only "disable DMABUF renderer" workaround before the
     // webview starts. `WEBKIT_DISABLE_DMABUF_RENDERER` is read once when
     // WebKitGTK initializes, so it must be set here — before `tauri::Builder`
@@ -182,6 +188,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             use std::sync::atomic::Ordering;
 
@@ -236,10 +243,17 @@ pub fn run() {
             }
         })
         .manage(state::AppState::new())
+        .manage(commands::upgrade::PendingUpgrade::default())
+        .manage(id_migration)
         .invoke_handler(tauri::generate_handler![
             commands::about::read_third_party_notices,
             commands::about::app_version,
             commands::updates::check_latest_release,
+            commands::upgrade::upgrade_support,
+            commands::upgrade::upgrade_download,
+            commands::upgrade::upgrade_install,
+            commands::upgrade::upgrade_restart,
+            id_migration::take_id_migration_notice,
             commands::git::git_setup_collaboration,
             commands::git::git_reconnect_collaboration,
             commands::git::git_status,
@@ -463,7 +477,7 @@ pub fn run() {
             commands::backup::list_backup_contents,
             commands::backup::restore_backup_files,
         ])
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building tauri application")
         .run(|handle, event| {
             // Authoritative drag-drop allowlist source for SEC-1. The

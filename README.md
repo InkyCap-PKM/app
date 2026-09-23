@@ -66,9 +66,7 @@ Pre-built packages are published on the
 - **Windows:** the `*-setup.exe` installer or the `.msi` package.
 - **macOS:** the `.dmg` disk image (separate builds for Apple silicon and Intel Macs). These builds are not code-signed or notarized yet, so the first launch shows an "unidentified developer" warning: right-click the app and choose **Open** once, and macOS remembers the choice.
 
-InkyCap has an in-app update-checker (Settings, Overview) that lets you request whether there is a new version available but you must download and install updates yourself (they are not automatic). See
-[documentation/developer/releasing.md](documentation/developer/releasing.md) for
-how releases and the updater work.
+InkyCap has an in-app update checker (Settings, Overview) that tells you when a new version is available. It never installs anything by itself. When InkyCap was installed from the `.deb`, `.rpm`, Windows or macOS packages above, an **Upgrade** button downloads the new version, checks its signature, and installs it for you; you can always use **Download** to install it yourself instead. The Flatpak, and copies packaged by others or built from source, are updated by hand.
 
 ## Building from source
 

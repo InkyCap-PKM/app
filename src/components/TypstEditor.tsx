@@ -867,6 +867,11 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
   document.addEventListener("inkycap:flush-editor", onFlushRequest);
   onCleanup(() => document.removeEventListener("inkycap:flush-editor", onFlushRequest));
 
+  // Save now, skipping the autosave delay (see flushAllEditors).
+  const onFlushAll = () => void flushSave();
+  document.addEventListener("inkycap:flush-all-editors", onFlushAll);
+  onCleanup(() => document.removeEventListener("inkycap:flush-all-editors", onFlushAll));
+
   // Re-read the open file from disk and replace the CM6 buffer when it differs.
   // Shared by the sidebar property-edit reload and the post-sync reload. The
   // buffer-equality check makes a no-change reload a cheap no-op (so a file

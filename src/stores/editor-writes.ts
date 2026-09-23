@@ -65,3 +65,13 @@ export async function awaitAllPendingWrites(): Promise<void> {
   // be tracked separately and aren't the caller's concern.
   await Promise.allSettled([...pendingWrites.values()]);
 }
+
+/** Write every open editor's unsaved changes now, without waiting for the
+ *  autosave delay, and wait for all writes to land. Used before anything
+ *  that stops the app, such as installing an update. Each mounted editor
+ *  answers the `inkycap:flush-all-editors` event by starting its write, which
+ *  registers here synchronously, so the wait below covers it. */
+export async function flushAllEditors(): Promise<void> {
+  document.dispatchEvent(new CustomEvent("inkycap:flush-all-editors"));
+  await awaitAllPendingWrites();
+}

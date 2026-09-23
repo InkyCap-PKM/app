@@ -116,8 +116,7 @@ InkyCap is trunk-based: a single long-lived branch, `main`, with no separate
   `main` (e.g. `v26.6.4`) that triggers the release pipeline. The last version
   component selects the channel: **even = stable, odd = beta/development**. So
   `main` can carry unreleased work freely; users only ever receive what is
-  tagged and published. The runbook is
-  [documentation/developer/releasing.md](documentation/developer/releasing.md).
+  tagged and published.
 - **Maintenance branches are created only when needed.** If a shipped release
   needs a fix while `main` has already moved on, branch `release/YY.MM.x` from
   the release tag, fix and tag the patch there, then bring the fix back to

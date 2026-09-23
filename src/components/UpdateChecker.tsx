@@ -1,8 +1,8 @@
-// "Check for updates" control for Settings → Overview. InkyCap does not
-// self-update: a check asks the backend whether a newer release exists and, if
-// so, offers a link to the releases page to download it by hand. A check only
-// runs on click. State machine: check → (available → View releases) | up-to-date
-// | error.
+// "Check for updates" control for Settings → Overview. A check asks the backend
+// whether a newer release exists; if so it offers Download (always) and, for
+// copies installed by InkyCap's own installers, Upgrade: download and verify →
+// install → Restart now. A check only runs on click (or on startup, if opted
+// in); an upgrade only on click.
 import { Show, Switch, Match } from "solid-js";
 import { useI18n } from "../lib/i18n";
 import * as ipc from "../lib/ipc";
@@ -14,6 +14,12 @@ import {
   updateNotes,
   updateError,
   checkForUpdates,
+  upgradeSupport,
+  upgradePhase,
+  upgradePercent,
+  upgradeError,
+  startUpgrade,
+  restartIntoUpdate,
 } from "../stores/updater";
 
 // The download and releases links come from the backend's release feed (see
@@ -30,8 +36,13 @@ export default function UpdateChecker() {
         return t("settings.updates.checking");
       case "uptodate":
         return t("settings.updates.uptodate");
-      case "available":
-        return t("settings.updates.available", { version: updateLatestVersion() ?? "" });
+      case "available": {
+        const version = updateLatestVersion() ?? "";
+        if (upgradePhase() === "installed") return t("settings.updates.installed", { version });
+        return upgradeSupport() === "available"
+          ? t("settings.updates.availableUpgrade", { version })
+          : t("settings.updates.available", { version });
+      }
       case "error":
         return t("settings.updates.errorIntro");
       default:
@@ -43,6 +54,7 @@ export default function UpdateChecker() {
   // result — the idle hint ("check whether a newer version is available") is
   // redundant next to a button that says exactly that, so it's suppressed.
   const showStatus = () => status() !== "idle";
+  const upgradeBusy = () => upgradePhase() === "downloading" || upgradePhase() === "installing";
 
   return (
     <div class="settings__update-control">
@@ -53,10 +65,29 @@ export default function UpdateChecker() {
               {t("settings.updates.checkingShort")}
             </button>
           </Match>
+          <Match when={status() === "available" && upgradePhase() === "installed"}>
+            <button type="button" class="btn btn--primary btn--sm" onClick={() => void restartIntoUpdate()}>
+              {t("settings.updates.restartNow")}
+            </button>
+          </Match>
+          <Match when={status() === "available" && upgradeBusy()}>
+            <button type="button" class="btn btn--primary btn--sm" disabled>
+              {upgradePhase() === "installing"
+                ? t("settings.updates.installingShort")
+                : upgradePercent() === null
+                  ? t("settings.updates.downloading")
+                  : t("settings.updates.downloadingPercent", { percent: String(upgradePercent()) })}
+            </button>
+          </Match>
           <Match when={status() === "available"}>
+            <Show when={upgradeSupport() === "available"}>
+              <button type="button" class="btn btn--primary btn--sm" onClick={() => void startUpgrade()}>
+                {t("settings.updates.upgrade")}
+              </button>
+            </Show>
             <button
               type="button"
-              class="btn btn--primary btn--sm"
+              class={`btn btn--sm ${upgradeSupport() === "available" ? "btn--secondary" : "btn--primary"}`}
               onClick={() => ipc.openUrlExternally(updateDownloadUrl())}
             >
               {t("settings.updates.download")}
@@ -83,6 +114,17 @@ export default function UpdateChecker() {
       </Show>
       <Show when={status() === "error" && updateError()}>
         <span class="settings__description settings__update-error">{updateError()}</span>
+      </Show>
+      <Show when={status() === "available" && upgradePhase() === "installing"}>
+        <span class="settings__description settings__update-status">{t("settings.updates.installing")}</span>
+      </Show>
+      <Show when={status() === "available" && upgradePhase() === "failed"}>
+        <span class="settings__description settings__update-error">
+          {t("settings.updates.upgradeFailed")} {upgradeError()}
+        </span>
+      </Show>
+      <Show when={status() === "available" && upgradeSupport() === "flatpak"}>
+        <span class="settings__description settings__update-status">{t("settings.updates.flatpakManual")}</span>
       </Show>
     </div>
   );

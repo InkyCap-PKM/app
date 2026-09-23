@@ -4,12 +4,14 @@
 //   npm run release:check-setup
 //
 // release-feeds.mjs runs the "signing" checks itself before it starts.
-// The signing key is described in documentation/developer/releasing.md.
+// The private key lives outside the repository, at ~/.config/inkycap-release/
+// updater.key (made with `npm run tauri signer generate -- -w <that path>`);
+// its public half is `plugins.updater.pubkey` in src-tauri/tauri.conf.json.
 
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { KEY_FILE, KEYS_DOC, TAURI_CLI, readUpdaterPubkey } from "./config.mjs";
+import { KEY_FILE, TAURI_CLI, readUpdaterPubkey } from "./config.mjs";
 import { parsePublicKey, keyIdHex } from "./minisign.mjs";
 
 const hasCommand = (cmd) => spawnSync(cmd, ["--version"], { stdio: "ignore" }).status === 0;
@@ -33,7 +35,7 @@ export function checkSetup() {
     "signing",
     `Updater key file at ${KEY_FILE}`,
     keyOk,
-    `Create that file and paste the private key text into it. See ${KEYS_DOC}.`,
+    "Create that file and paste the private key text into it (a new key is made with `npm run tauri signer generate`).",
   );
   if (keyOk) {
     const text = Buffer.from(readFileSync(KEY_FILE, "utf8").trim(), "base64").toString("utf8");
@@ -53,7 +55,7 @@ export function checkSetup() {
   const pubkey = readUpdaterPubkey();
   let pubOk = false;
   let note;
-  let pubFix = `Put the public key in src-tauri/tauri.conf.json under plugins.updater.pubkey. See ${KEYS_DOC}.`;
+  let pubFix = "Put the public key text in src-tauri/tauri.conf.json under plugins.updater.pubkey.";
   if (pubkey) {
     try {
       note = `key ${keyIdHex(parsePublicKey(pubkey).keyId)}`;

@@ -14,10 +14,12 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-shell = "2"
-# In-app "Check for updates" is notify-only: commands::updates fetches a static
-# release feed (via reqwest) and the UI links to the download page. InkyCap does
-# not self-update — no signed manifest, no in-place install. Checks run only when
-# the user clicks, or on startup if they opt in (local-first, no telemetry).
+# In-app updates. commands::updates checks a static release feed (via reqwest);
+# commands::upgrade installs a newer release through the Tauri updater plugin,
+# which refuses any download not signed with the key in tauri.conf.json. Checks
+# run only when the user clicks, or on startup if they opt in (local-first, no
+# telemetry); installing always needs a click.
+tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # serde_yaml 0.9 is the final release — the crate is archived/unmaintained

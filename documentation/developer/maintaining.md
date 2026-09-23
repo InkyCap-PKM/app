@@ -2,9 +2,8 @@
 
 Repo-administration runbook for maintainers: the one-time and occasional
 settings that keep the project healthy as contributors arrive. This is distinct
-from [releasing.md](releasing.md) (how to cut a release) and
-[../../CONTRIBUTING.md](../../CONTRIBUTING.md) (the contributor-facing workflow);
-it documents the CodeFloe/Forgejo configuration that backs them.
+from [../../CONTRIBUTING.md](../../CONTRIBUTING.md) (the contributor-facing
+workflow); it documents the CodeFloe/Forgejo configuration that backs them.
 
 ## Branch protection
 

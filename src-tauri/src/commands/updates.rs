@@ -1,8 +1,9 @@
 //! "Is there a newer release?" check.
 //!
-//! InkyCap does not self-update — installers are downloaded by hand from the
-//! download page. This command finds the latest published release so the UI can
-//! show a "version X is available" notice with links to download it.
+//! This command finds the latest published release so the UI can show a
+//! "version X is available" notice with links to download it. Installing it in
+//! place (the Upgrade button) is a separate step in `commands::upgrade`, which
+//! reads its own signed feed from the same folder as the release feed.
 //!
 //! ## Where the answer comes from
 //!
@@ -36,9 +37,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::errors::InkyCapError;
 
-/// InkyCap's own release feed. See `documentation/developer/releasing.md` for
-/// the file's schema and how it is published.
-const DEFAULT_FEED_URL: &str = "https://inkycap.org/releases/latest.json";
+/// InkyCap's own release feed, written at each release by
+/// `scripts/release-feeds.mjs`; the file's shape is built in
+/// `scripts/release/feeds.mjs`.
+pub(crate) const DEFAULT_FEED_URL: &str = "https://inkycap.org/releases/latest.json";
 
 /// Forge releases API used when the feed is unreachable. This is the API root
 /// for one repository; the channel endpoints hang off it.
@@ -243,7 +245,7 @@ fn web_url(url: Option<&str>) -> Option<String> {
 /// allowed here: an override points the update check at a third party, and a
 /// downgrade to cleartext would let a network attacker choose the download link
 /// the user is shown.
-fn validate_feed_override(url: &str) -> Result<String, InkyCapError> {
+pub(crate) fn validate_feed_override(url: &str) -> Result<String, InkyCapError> {
     let url = url.trim();
     if url.to_ascii_lowercase().starts_with("https://") && url.len() > "https://".len() {
         Ok(url.to_string())

@@ -17,6 +17,14 @@ export interface Toast {
    *  thinks they cancelled the work when they only hid its progress
    *  indicator). */
   persistent?: boolean;
+  /** An optional button in the toast body (e.g. "Copy command"). Clicking
+   *  it runs `run` and leaves the toast open. */
+  action?: ToastAction;
+}
+
+export interface ToastAction {
+  label: string;
+  run: () => void;
 }
 
 let nextId = 1;
@@ -39,6 +47,8 @@ export interface ShowToastOptions {
    *  toast without an `onCancel` has no way to abort the underlying
    *  job, so it shouldn't pretend to. */
   onCancel?: () => void;
+  /** Add a button to the toast body; see `Toast.action`. */
+  action?: ToastAction;
 }
 
 export function showToast(
@@ -57,6 +67,7 @@ export function showToast(
       detail,
       onCancel: options?.onCancel,
       persistent: options?.persistent,
+      action: options?.action,
     },
   ]);
   if (!options?.persistent) {

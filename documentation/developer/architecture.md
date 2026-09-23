@@ -287,4 +287,3 @@ merge churn. See [`subsystems/collaboration-git.md`](subsystems/collaboration-gi
 - **The editor:** [visual-editor/pill-system.md](visual-editor/pill-system.md).
 - **Extending without forking:** [extending/README.md](extending/README.md).
 - **UI design system:** [ui-styling.md](ui-styling.md).
-- **Shipping a build:** [releasing.md](releasing.md).

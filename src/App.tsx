@@ -37,6 +37,7 @@ import { initNotebox, openNotebox, showNoteboxPicker, noteboxInfo, initAttempted
 import { initTheme, applyFontSettings } from "./stores/theme";
 import { initLocale, syncLocaleFromSettings } from "./stores/locale";
 import { maybeCheckOnStartup } from "./stores/updater";
+import { maybeShowIdMigrationNotice } from "./stores/id-migration";
 import {
   initSettings,
   onSettingsChange,
@@ -317,6 +318,7 @@ const App: Component = () => {
     // request unless the user enabled settings.updates.check_on_startup.
     if (!noteboxParam && params.get("new") === null) {
       void maybeCheckOnStartup();
+      void maybeShowIdMigrationNotice();
     }
 
     // External drag-drop from the OS file manager.

@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { assertNoteboxWritable } from "../stores/notebox";
 import type {
   NoteboxInfo,
@@ -1230,6 +1230,56 @@ export async function checkLatestRelease(
   feedUrl: string | null = null,
 ): Promise<LatestRelease> {
   return invoke<LatestRelease>("check_latest_release", { includeBeta, feedUrl });
+}
+
+/** Whether this copy can upgrade itself: `available` (installed by one of
+ *  InkyCap's own installers), `flatpak` (updates are installed by hand), or
+ *  `unsupported` (repackaged or self-built copies). The Download button is
+ *  offered in every case. */
+export type UpgradeSupport = "available" | "flatpak" | "unsupported";
+
+export async function upgradeSupport(): Promise<UpgradeSupport> {
+  return invoke<UpgradeSupport>("upgrade_support");
+}
+
+/** Bytes downloaded so far; `total` is null when the server doesn't say. */
+export interface UpgradeProgress {
+  downloaded: number;
+  total: number | null;
+}
+
+/** Download the newest release for this system and verify its signature,
+ *  reporting progress to `onProgress`. Installs nothing. Resolves to the
+ *  version downloaded. `feedUrl` is the same advanced override as
+ *  `checkLatestRelease`'s. */
+export async function upgradeDownload(
+  includeBeta: boolean,
+  feedUrl: string | null,
+  onProgress: (progress: UpgradeProgress) => void,
+): Promise<string> {
+  const channel = new Channel<UpgradeProgress>();
+  channel.onmessage = onProgress;
+  return invoke<string>("upgrade_download", { includeBeta, feedUrl, onProgress: channel });
+}
+
+/** Install the update `upgradeDownload` fetched. On Linux this shows the
+ *  system's administrator password prompt; cancelling it rejects with the
+ *  `cancelled` error code. On Windows the installer closes and reopens the
+ *  app, so this does not resolve there. */
+export async function upgradeInstall(): Promise<void> {
+  return invoke<void>("upgrade_install");
+}
+
+/** Restart InkyCap into the newly installed version. */
+export async function upgradeRestart(): Promise<void> {
+  return invoke<void>("upgrade_restart");
+}
+
+/** True once, on the first launch that copied settings from the old
+ *  (`com.inkycap.editor`) Flatpak; the app then tells the user to remove it.
+ *  Temporary: see src-tauri/src/id_migration.rs. */
+export async function takeIdMigrationNotice(): Promise<boolean> {
+  return invoke<boolean>("take_id_migration_notice");
 }
 
 // Creation rules

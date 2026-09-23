@@ -13,7 +13,6 @@ import { fileURLToPath } from "node:url";
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 export const TAURI_CONF = join(ROOT, "src-tauri", "tauri.conf.json");
 export const TAURI_CLI = join(ROOT, "node_modules", ".bin", process.platform === "win32" ? "tauri.cmd" : "tauri");
-export const KEYS_DOC = "documentation/developer/releasing.md (\"The signing key\")";
 
 /** Per-computer folder holding the private updater key. Never inside the repo. */
 export const RELEASE_HOME = join(homedir(), ".config", "inkycap-release");
