@@ -199,8 +199,10 @@ pub async fn export_collection_note_pdf(
                 template,
                 base.bibliography_style.as_deref(),
                 standard,
+                false,
             )
             .map_err(|e| InkyCapError::ExportFailed(e.to_string()))?
+            .bytes
     } else {
         if let Some(ref style) = base.bibliography_style {
             compiler.set_bibliography_style(Some(style.clone()));
@@ -219,8 +221,15 @@ pub async fn export_collection_note_pdf(
     Ok(())
 }
 
-/// Batch-export all notes in a collection to PDF files in the given output directory.
+/// Batch-export all notes in a collection to PDF files in the given output
+/// directory. A note that can't be read, compiled, or written is left out and
+/// listed in `skipped_notes` so the user learns which notes need fixing.
+///
+/// `only_files` limits the run to those note paths (used to retry just the
+/// notes a previous run skipped). With `bypass_errors`, a note that fails to
+/// compile is exported with its errored markup kept as plain text.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn export_collection_batch_pdf(
     collection_path: String,
     view_name: String,
@@ -229,9 +238,11 @@ pub async fn export_collection_batch_pdf(
     pdf_standard: Option<PdfStandardPreset>,
     include_bibliography: Option<bool>,
     review_mode: Option<String>,
+    only_files: Option<Vec<String>>,
+    bypass_errors: Option<bool>,
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
-) -> Result<Vec<String>, InkyCapError> {
+) -> Result<super::BatchExportResult, InkyCapError> {
     let session = state.session(window.label()).await;
     let data = crate::commands::collections::get_collection_data_internal(
         &collection_path,
@@ -261,15 +272,22 @@ pub async fn export_collection_batch_pdf(
         .typst_template
         .as_deref()
         .map(|t| resolve_template_path_with_root(t, notebox_root_ref));
+    let bypass = bypass_errors.unwrap_or(false);
     let mut exported = Vec::new();
-    let mut errors = Vec::new();
+    let mut skipped_notes = Vec::new();
+    let mut bypassed_count = 0;
 
     for row in &data.rows {
+        if let Some(only) = &only_files {
+            if !only.contains(&row.file_path) {
+                continue;
+            }
+        }
         let note_path_buf = PathBuf::from(&row.file_path);
         let content = match storage.read_file(&note_path_buf).await {
             Ok(c) => c,
             Err(e) => {
-                errors.push(format!("{}: {}", row.file_name, e));
+                skipped_notes.push(super::SkippedNote::for_row(row, e));
                 continue;
             }
         };
@@ -310,62 +328,57 @@ pub async fn export_collection_batch_pdf(
 
         let standard = pdf_standard.unwrap_or_default();
         let source = ensure_document_date_for_standard(source, standard);
-        check_pdf_standard_requirements(&source, standard)?;
-        let compile_result: Result<Vec<u8>, _> = if let Some(ref template) = resolved_template {
-            compiler
-                .compile_pdf_with_template(
-                    &note_path_buf,
-                    source,
-                    template,
-                    base.bibliography_style.as_deref(),
-                    standard,
-                )
-                .map_err(|e| format!("{}: {}", row.file_name, e))
+        // A note that doesn't meet the chosen PDF standard is skipped like a
+        // compile failure, so it can't abort the rest of the batch.
+        if let Err(e) = check_pdf_standard_requirements(&source, standard) {
+            skipped_notes.push(super::SkippedNote::for_row(row, e));
+            continue;
+        }
+        let compile_result = if let Some(ref template) = resolved_template {
+            compiler.compile_pdf_with_template(
+                &note_path_buf,
+                source,
+                template,
+                base.bibliography_style.as_deref(),
+                standard,
+                bypass,
+            )
         } else {
             if let Some(ref style) = base.bibliography_style {
                 compiler.set_bibliography_style(Some(style.clone()));
             }
-            let result = compiler
-                .compile_pdf(&note_path_buf, source, standard)
-                .map_err(|e| format!("{}: {}", row.file_name, e));
+            let result = compiler.compile_pdf_with(&note_path_buf, source, standard, bypass);
             compiler.set_bibliography_style(None);
             result
         };
 
-        let pdf_bytes = match compile_result {
-            Ok(bytes) => bytes,
-            Err(msg) => {
-                errors.push(msg);
+        let output = match compile_result {
+            Ok(output) => output,
+            Err(e) => {
+                skipped_notes.push(super::SkippedNote::for_row(row, e));
                 continue;
             }
         };
 
         let pdf_name = row.file_name.strip_suffix(".typ").unwrap_or(&row.file_name);
         let pdf_path = output_dir.join(format!("{}.pdf", pdf_name));
-        if let Err(e) = tokio::fs::write(&pdf_path, &pdf_bytes).await {
-            errors.push(format!("{}: {}", pdf_name, e));
+        if let Err(e) = tokio::fs::write(&pdf_path, &output.bytes).await {
+            skipped_notes.push(super::SkippedNote::for_row(row, e));
             continue;
+        }
+        if output.bypassed {
+            bypassed_count += 1;
         }
         exported.push(crate::storage::to_frontend_string(&pdf_path));
     }
 
-    if exported.is_empty() && !errors.is_empty() {
-        return Err(InkyCapError::ExportFailed(format!(
-            "All files failed to export:\n{}",
-            errors.join("\n")
-        )));
-    }
-
-    if !errors.is_empty() {
-        log::error!(
-            "Batch export: {} of {} files failed:\n{}",
-            errors.len(),
-            data.rows.len(),
-            errors.join("\n")
-        );
-    }
-
-    Ok(exported)
+    // Even when every note failed, the list comes back as a normal result so
+    // the user can open each note or choose to bypass the errors.
+    Ok(super::BatchExportResult {
+        files: exported,
+        skipped_notes,
+        bypassed_count,
+    })
 }
 
 // ── Book (merged collection) export ─────────────────────────────
@@ -421,6 +434,9 @@ pub async fn export_collection_book_pdf(
     // previous attempt reported them as failing to compile). Empty/None on the
     // first attempt.
     exclude_notes: Option<Vec<String>>,
+    // Keep errored markup as plain text instead of failing (the user chose to
+    // bypass errors after a previous attempt reported them).
+    bypass_errors: Option<bool>,
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
 ) -> Result<BookExportResult, InkyCapError> {
@@ -720,11 +736,15 @@ pub async fn export_collection_book_pdf(
     // Keep a copy to map any compile error's offset back to the note it came
     // from (the merged source is consumed by the compiler).
     let source_for_diag = source.clone();
-    let compile_result =
-        compiler.compile_pdf_diagnostics(&synthetic_main, source, book_pdf_standard);
+    let compile_result = compiler.compile_pdf_diagnostics(
+        &synthetic_main,
+        source,
+        book_pdf_standard,
+        bypass_errors.unwrap_or(false),
+    );
     compiler.set_bibliography_style(None);
-    let pdf_bytes = match compile_result {
-        Ok(bytes) => bytes,
+    let output = match compile_result {
+        Ok(output) => output,
         Err(diags) => {
             let message = book_wrapper::describe_book_diagnostics(
                 &source_for_diag,
@@ -743,11 +763,12 @@ pub async fn export_collection_book_pdf(
                 output_path: None,
                 failing_notes: failing,
                 message: Some(message),
+                bypassed: false,
             });
         }
     };
 
-    tokio::fs::write(&output_path, &pdf_bytes)
+    tokio::fs::write(&output_path, &output.bytes)
         .await
         .map_err(|e| InkyCapError::ExportFailed(format!("Failed to write PDF: {}", e)))?;
 
@@ -755,6 +776,7 @@ pub async fn export_collection_book_pdf(
         output_path: Some(output_path),
         failing_notes: Vec::new(),
         message: None,
+        bypassed: output.bypassed,
     })
 }
 
@@ -768,6 +790,8 @@ pub struct BookExportResult {
     pub output_path: Option<String>,
     pub failing_notes: Vec<String>,
     pub message: Option<String>,
+    /// True when the book was written with errored markup kept as plain text.
+    pub bypassed: bool,
 }
 
 /// Extract a `title:` value from the leading `#note(...)` call of a note's

@@ -17,7 +17,7 @@ use typst_layout::PagedDocument;
 use typst_pdf::{PdfOptions, PdfStandard, PdfStandards};
 
 use crate::typst_pipeline::diagnostic::TypstDiagnostic;
-use crate::typst_pipeline::recovery;
+use crate::typst_pipeline::recovery::{self, RecoveryStyle};
 use crate::typst_pipeline::world::NoteboxWorld;
 
 /// Lightweight timer for the `typst::compile` hot path. CLAUDE.md asks for
@@ -114,6 +114,14 @@ pub enum PdfStandardPreset {
 }
 
 impl PdfStandardPreset {
+    /// Whether an export in this format may bypass errors by keeping errored
+    /// markup as plain text. Archival and accessible formats may not: an
+    /// error can hide exactly the structure (alt text, headings, language)
+    /// those formats exist to guarantee.
+    pub fn allows_bypassing_errors(self) -> bool {
+        matches!(self, Self::Standard)
+    }
+
     pub fn to_pdf_standards(self) -> PdfStandards {
         match self {
             Self::Standard => PdfStandards::default(),
@@ -183,6 +191,30 @@ pub struct TypstHtmlResult {
     pub recovered: bool,
     pub html: String,
     pub diagnostics: Vec<TypstDiagnostic>,
+}
+
+/// A compiled PDF.
+#[derive(Debug, Clone)]
+pub struct PdfOutput {
+    pub bytes: Vec<u8>,
+    /// True when the note had errors and was compiled by keeping the errored
+    /// markup as plain text (only possible when bypassing errors was asked for).
+    pub bypassed: bool,
+}
+
+/// Why a PDF compile failed, with structured diagnostics where they exist.
+enum PdfFailure {
+    SetMain(String),
+    Compile(Vec<TypstDiagnostic>),
+    PdfExport(Vec<TypstDiagnostic>),
+}
+
+fn join_messages(diags: &[TypstDiagnostic]) -> String {
+    diags
+        .iter()
+        .map(|d| d.message.as_str())
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 pub struct TypstCompiler {
@@ -292,7 +324,12 @@ impl TypstCompiler {
         match warned.output {
             Ok(document) => Some(document),
             Err(errors) => {
-                let recovered = recovery::recover::<PagedDocument>(&self.world, abs_path, &errors);
+                let recovered = recovery::recover::<PagedDocument>(
+                    &self.world,
+                    abs_path,
+                    &errors,
+                    RecoveryStyle::Marker,
+                );
                 // Restore the user's original source so later queries/compiles
                 // against this path see what they wrote, not the patched variant.
                 let _ = self.world.set_main(abs_path, source);
@@ -370,7 +407,12 @@ impl TypstCompiler {
                 // Error-tolerant fallback for the reading view: salvage a
                 // renderable document by dropping the errored spans. The
                 // diagnostics above still report the real errors verbatim.
-                let recovered = recovery::recover::<PagedDocument>(&self.world, abs_path, &errors);
+                let recovered = recovery::recover::<PagedDocument>(
+                    &self.world,
+                    abs_path,
+                    &errors,
+                    RecoveryStyle::Marker,
+                );
                 // The recovery pass left the patched source in the world;
                 // restore the user's original so later queries see it.
                 let _ = self.world.set_main(abs_path, source);
@@ -400,87 +442,115 @@ impl TypstCompiler {
         source: String,
         pdf_standard: PdfStandardPreset,
     ) -> Result<Vec<u8>, CompileError> {
-        let _evict = EvictComemoOnDrop;
-        self.world
-            .set_main(abs_path, source)
-            .map_err(|err| CompileError::SetMain(abs_path.to_path_buf(), format!("{err:?}")))?;
-
-        let _t = CompileTimer::start("compile_pdf", abs_path);
-        let warned = typst::compile::<PagedDocument>(&self.world);
-        _t.done();
-
-        match warned.output {
-            Ok(document) => {
-                let options = PdfOptions {
-                    standards: pdf_standard.to_pdf_standards(),
-                    ..PdfOptions::default()
-                };
-                typst_pdf::pdf(&document, &options).map_err(|errs| {
-                    let msg = errs
-                        .iter()
-                        .map(|d| crate::typst_pipeline::diagnostic::from_source(d, &self.world))
-                        .map(|d| d.message)
-                        .collect::<Vec<_>>()
-                        .join("; ");
-                    CompileError::PdfExport(msg)
-                })
-            }
-            Err(errors) => {
-                let msg = errors
-                    .iter()
-                    .map(|d| crate::typst_pipeline::diagnostic::from_source(d, &self.world))
-                    .map(|d| d.message)
-                    .collect::<Vec<_>>()
-                    .join("; ");
-                Err(CompileError::Compile(msg))
-            }
-        }
+        self.compile_pdf_with(abs_path, source, pdf_standard, false)
+            .map(|out| out.bytes)
     }
 
-    /// Like [`compile_pdf`](Self::compile_pdf) but returns the structured
-    /// diagnostics on failure instead of a flattened string. The book
-    /// exporter uses this so it can map each error's source offset back to
-    /// the originating note (see `book_wrapper::describe_book_diagnostics`) —
-    /// a flattened message can't be traced to a chapter. Kept as a sibling of
-    /// `compile_pdf` rather than refactoring it, so the established
-    /// `CompileError` contract every other caller relies on is unchanged.
+    /// Like [`compile_pdf`](Self::compile_pdf), with the option to bypass
+    /// errors. When `bypass_errors` is true and the note fails to compile, the
+    /// markup holding each error is kept as plain literal text (see
+    /// [`RecoveryStyle::LiteralText`]) and [`PdfOutput::bypassed`] is set.
+    /// Errors that recovery can't get past are still returned, and so are all
+    /// errors when the format doesn't allow bypassing them (see
+    /// [`PdfStandardPreset::allows_bypassing_errors`]).
+    pub fn compile_pdf_with(
+        &mut self,
+        abs_path: &Path,
+        source: String,
+        pdf_standard: PdfStandardPreset,
+        bypass_errors: bool,
+    ) -> Result<PdfOutput, CompileError> {
+        self.compile_pdf_structured(abs_path, source, pdf_standard, bypass_errors)
+            .map_err(|failure| match failure {
+                PdfFailure::SetMain(msg) => CompileError::SetMain(abs_path.to_path_buf(), msg),
+                PdfFailure::Compile(diags) => CompileError::Compile(join_messages(&diags)),
+                PdfFailure::PdfExport(diags) => CompileError::PdfExport(join_messages(&diags)),
+            })
+    }
+
+    /// Like [`compile_pdf_with`](Self::compile_pdf_with) but returns the
+    /// structured diagnostics on failure instead of a flattened string. The
+    /// book exporter uses this so it can map each error's source offset back
+    /// to the originating note (see `book_wrapper::describe_book_diagnostics`);
+    /// a flattened message can't be traced to a chapter.
     pub fn compile_pdf_diagnostics(
         &mut self,
         abs_path: &Path,
         source: String,
         pdf_standard: PdfStandardPreset,
-    ) -> Result<Vec<u8>, Vec<TypstDiagnostic>> {
+        bypass_errors: bool,
+    ) -> Result<PdfOutput, Vec<TypstDiagnostic>> {
+        self.compile_pdf_structured(abs_path, source, pdf_standard, bypass_errors)
+            .map_err(|failure| match failure {
+                PdfFailure::SetMain(msg) => vec![TypstDiagnostic {
+                    severity: "error",
+                    message: format!(
+                        "failed to register main file {}: {msg}",
+                        abs_path.display() // path-stringification-ok: error message
+                    ),
+                    primary: None,
+                    trace: Vec::new(),
+                    hints: Vec::new(),
+                }],
+                PdfFailure::Compile(diags) | PdfFailure::PdfExport(diags) => diags,
+            })
+    }
+
+    /// Shared body of the PDF compile entry points.
+    fn compile_pdf_structured(
+        &mut self,
+        abs_path: &Path,
+        source: String,
+        pdf_standard: PdfStandardPreset,
+        bypass_errors: bool,
+    ) -> Result<PdfOutput, PdfFailure> {
         let _evict = EvictComemoOnDrop;
-        if let Err(err) = self.world.set_main(abs_path, source) {
-            return Err(vec![TypstDiagnostic {
-                severity: "error",
-                message: format!(
-                    "failed to register main file {}: {err:?}",
-                    abs_path.display()
-                ),
-                primary: None,
-                trace: Vec::new(),
-                hints: Vec::new(),
-            }]);
-        }
+        // Recovery rewrites the main file in place, so keep the original to
+        // restore afterwards (see `compile_svg`).
+        let bypass_errors = bypass_errors && pdf_standard.allows_bypassing_errors();
+        let original = bypass_errors.then(|| source.clone());
+        self.world
+            .set_main(abs_path, source)
+            .map_err(|err| PdfFailure::SetMain(format!("{err:?}")))?;
+
+        let _t = CompileTimer::start("compile_pdf", abs_path);
         let warned = typst::compile::<PagedDocument>(&self.world);
-        match warned.output {
-            Ok(document) => {
-                let options = PdfOptions {
-                    standards: pdf_standard.to_pdf_standards(),
-                    ..PdfOptions::default()
-                };
-                typst_pdf::pdf(&document, &options).map_err(|errs| {
-                    errs.iter()
-                        .map(|d| crate::typst_pipeline::diagnostic::from_source(d, &self.world))
-                        .collect::<Vec<_>>()
-                })
+        _t.done();
+
+        let (document, bypassed) = match warned.output {
+            Ok(document) => (document, false),
+            Err(errors) => {
+                let recovered = original.map(|original| {
+                    let doc = recovery::recover::<PagedDocument>(
+                        &self.world,
+                        abs_path,
+                        &errors,
+                        RecoveryStyle::LiteralText,
+                    );
+                    let _ = self.world.set_main(abs_path, original);
+                    doc
+                });
+                match recovered.flatten() {
+                    Some(document) => (document, true),
+                    None => return Err(PdfFailure::Compile(self.to_diagnostics(&errors))),
+                }
             }
-            Err(errors) => Err(errors
-                .iter()
-                .map(|d| crate::typst_pipeline::diagnostic::from_source(d, &self.world))
-                .collect::<Vec<_>>()),
-        }
+        };
+
+        let options = PdfOptions {
+            standards: pdf_standard.to_pdf_standards(),
+            ..PdfOptions::default()
+        };
+        let bytes = typst_pdf::pdf(&document, &options)
+            .map_err(|errs| PdfFailure::PdfExport(self.to_diagnostics(&errs)))?;
+        Ok(PdfOutput { bytes, bypassed })
+    }
+
+    fn to_diagnostics(&self, errors: &[typst::diag::SourceDiagnostic]) -> Vec<TypstDiagnostic> {
+        errors
+            .iter()
+            .map(|d| crate::typst_pipeline::diagnostic::from_source(d, &self.world))
+            .collect()
     }
 
     /// Compile with a template import injected. Used for collection-level
@@ -492,23 +562,38 @@ impl TypstCompiler {
         template: &str,
         bib_style: Option<&str>,
         pdf_standard: PdfStandardPreset,
-    ) -> Result<Vec<u8>, CompileError> {
+        bypass_errors: bool,
+    ) -> Result<PdfOutput, CompileError> {
         let with_template = inject_template_import(&source, template);
         let old_style = self.bibliography_style.clone();
         if let Some(style) = bib_style {
             self.bibliography_style = Some(style.to_string());
         }
-        let result = self.compile_pdf(abs_path, with_template, pdf_standard);
+        let result = self.compile_pdf_with(abs_path, with_template, pdf_standard, bypass_errors);
         self.bibliography_style = old_style;
         result
     }
 
     /// Compile the note at `abs_path` to HTML using Typst's native HTML backend.
     /// Produces semantic HTML suitable for a flowing reading view or export.
+    /// Failed compiles are salvaged with warning markers
+    /// ([`RecoveryStyle::Marker`]); see [`compile_html_with`](Self::compile_html_with).
     pub fn compile_html(
         &mut self,
         abs_path: &Path,
         source: String,
+    ) -> Result<TypstHtmlResult, CompileError> {
+        self.compile_html_with(abs_path, source, RecoveryStyle::Marker)
+    }
+
+    /// Like [`compile_html`](Self::compile_html), choosing how a failed compile
+    /// is salvaged. When salvage succeeds, `ok` is false, `recovered` is true
+    /// and `html` holds the recovered page.
+    pub fn compile_html_with(
+        &mut self,
+        abs_path: &Path,
+        source: String,
+        recovery_style: RecoveryStyle,
     ) -> Result<TypstHtmlResult, CompileError> {
         let _evict = EvictComemoOnDrop;
         // Clone so the original source can be restored after the recovery
@@ -572,8 +657,13 @@ impl TypstCompiler {
                 );
                 // Error-tolerant fallback for the Journal Scroll: salvage
                 // renderable HTML by dropping the errored spans.
-                let recovered = recovery::recover::<HtmlDocument>(&self.world, abs_path, &errors)
-                    .and_then(|document| typst_html::html(&document, &HtmlOptions::default()).ok());
+                let recovered = recovery::recover::<HtmlDocument>(
+                    &self.world,
+                    abs_path,
+                    &errors,
+                    recovery_style,
+                )
+                .and_then(|document| typst_html::html(&document, &HtmlOptions::default()).ok());
                 let _ = self.world.set_main(abs_path, source);
                 match recovered {
                     Some(html) => Ok(TypstHtmlResult {
@@ -752,6 +842,87 @@ mod tests {
             "the included-file parse error should still be surfaced: {:?}",
             result.diagnostics,
         );
+    }
+
+    /// Bypassing errors keeps the errored markup as plain text: a stray
+    /// reference stays readable, a function call with a bad argument appears
+    /// whole as written, and a `(` right after it stays ordinary text.
+    #[test]
+    fn bypassing_errors_keeps_the_literal_source_text() {
+        let (_dir, root) = canonical_tempdir();
+        crate::notebox_package::scaffold(&root);
+        let import = crate::notebox_package::import_line();
+        let src = format!(
+            "{import}\n\nMet on @2025-09-15(at noon).\n\n#image(\"/missing.png\", width: 50%)\n\nlast line\n"
+        );
+        let note_path = root.join("broken.typ");
+        fs::write(&note_path, &src).expect("write note");
+
+        let mut compiler = TypstCompiler::new(root);
+        let result = compiler
+            .compile_html_with(&note_path, src, RecoveryStyle::LiteralText)
+            .expect("compile_html_with");
+
+        assert!(!result.ok, "the note has errors");
+        assert!(
+            result.recovered,
+            "bypass should produce a page: {:?}",
+            result.diagnostics
+        );
+        assert!(
+            result.html.contains("@2025-09-15(at noon)"),
+            "html: {}",
+            result.html
+        );
+        assert!(result.html.contains("#image("), "html: {}", result.html);
+        assert!(
+            result.html.contains("/missing.png"),
+            "html: {}",
+            result.html
+        );
+        assert!(result.html.contains("last line"), "html: {}", result.html);
+        assert!(
+            !result.html.contains('\u{26a0}'),
+            "no warning markers in an export"
+        );
+    }
+
+    /// Plain PDF may bypass errors; archival and accessible formats refuse and
+    /// report the original errors instead.
+    #[test]
+    fn only_plain_pdf_may_bypass_errors() {
+        let (_dir, root) = canonical_tempdir();
+        crate::notebox_package::scaffold(&root);
+        let import = crate::notebox_package::import_line();
+        let src = format!(
+            "{import}\n#set document(title: \"T\", date: datetime(year: 2026, month: 1, day: 1))\n\
+             #set text(lang: \"en\")\n\nSee @missing-label here.\n"
+        );
+        let note_path = root.join("broken.typ");
+        fs::write(&note_path, &src).expect("write note");
+
+        let mut compiler = TypstCompiler::new(root);
+        let plain = compiler
+            .compile_pdf_with(&note_path, src.clone(), PdfStandardPreset::Standard, true)
+            .expect("plain PDF bypasses the error");
+        assert!(plain.bypassed);
+        assert!(plain.bytes.starts_with(b"%PDF-"));
+
+        assert!(compiler
+            .compile_pdf_with(&note_path, src.clone(), PdfStandardPreset::Standard, false)
+            .is_err());
+        for standard in [
+            PdfStandardPreset::PdfA4,
+            PdfStandardPreset::PdfUa1,
+            PdfStandardPreset::PdfA2aUa1,
+        ] {
+            assert!(
+                compiler
+                    .compile_pdf_with(&note_path, src.clone(), standard, true)
+                    .is_err(),
+                "{standard:?} must not bypass errors"
+            );
+        }
     }
 
     /// `#video` / `#audio` compile in both targets: a placeholder in paged

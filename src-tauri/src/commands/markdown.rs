@@ -497,7 +497,8 @@ pub async fn export_note_markdown_to_file(
     Ok(())
 }
 
-/// Batch export all notes in a collection view as markdown files.
+/// Batch export all notes in a collection view as markdown files. A note that
+/// can't be read or written is left out and listed in `skipped_notes`.
 #[tauri::command]
 pub async fn export_collection_batch_markdown(
     collection_path: String,
@@ -507,7 +508,7 @@ pub async fn export_collection_batch_markdown(
     review_mode: Option<String>,
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
-) -> Result<Vec<String>, InkyCapError> {
+) -> Result<crate::commands::export::BatchExportResult, InkyCapError> {
     let session = state.session(window.label()).await;
     let storage = session.get_storage().await?;
     let output_dir_buf = PathBuf::from(&output_dir);
@@ -529,13 +530,14 @@ pub async fn export_collection_batch_markdown(
     };
 
     let mut exported = Vec::new();
+    let mut skipped_notes = Vec::new();
 
     for row in &collection.rows {
         let file_path = PathBuf::from(&row.file_path);
         let content = match storage.read_file(&file_path).await {
             Ok(c) => c,
             Err(e) => {
-                log::warn!("Skipping {}: {}", row.file_path, e);
+                skipped_notes.push(crate::commands::export::SkippedNote::for_row(row, e));
                 continue;
             }
         };
@@ -548,9 +550,13 @@ pub async fn export_collection_batch_markdown(
 
         match tokio::fs::write(&output_file, &markdown).await {
             Ok(()) => exported.push(crate::storage::to_frontend_string(&output_file)),
-            Err(e) => log::error!("Failed to write {}: {}", output_file.display(), e),
+            Err(e) => skipped_notes.push(crate::commands::export::SkippedNote::for_row(row, e)),
         }
     }
 
-    Ok(exported)
+    Ok(crate::commands::export::BatchExportResult {
+        files: exported,
+        skipped_notes,
+        bypassed_count: 0,
+    })
 }

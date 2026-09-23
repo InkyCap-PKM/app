@@ -1665,6 +1665,29 @@ export async function exportCollectionNotePdf(
   });
 }
 
+/// Result of a collection export that writes one file per note into a folder
+/// (PDF files, Markdown files, static HTML site). `files` are the paths
+/// written; `skippedNotes` lists notes that failed and were left out, so the
+/// caller can show them and let the user open each one. `bypassedCount` is
+/// how many notes were exported with their errors kept as plain text (only
+/// when the caller asked to bypass errors).
+export interface BatchExportResult {
+  files: string[];
+  skippedNotes: SkippedNote[];
+  bypassedCount: number;
+}
+
+/// A note a batch export left out, and why.
+export interface SkippedNote {
+  path: string;
+  name: string;
+  reason: string;
+}
+
+/// Export each note of a collection view as its own PDF. `onlyFiles` limits
+/// the run to those note paths (to retry the notes a previous run skipped).
+/// `bypassErrors` keeps errored markup as plain text instead of skipping the
+/// note; the backend ignores it for archival and accessible PDF formats.
 export async function exportCollectionBatchPdf(
   collectionPath: string,
   viewName: string,
@@ -1673,8 +1696,10 @@ export async function exportCollectionBatchPdf(
   pdfStandard?: PdfStandardPreset,
   includeBibliography?: boolean,
   reviewMode?: ReviewMarkupMode,
-): Promise<string[]> {
-  return invoke<string[]>("export_collection_batch_pdf", {
+  onlyFiles?: string[],
+  bypassErrors?: boolean,
+): Promise<BatchExportResult> {
+  return invoke<BatchExportResult>("export_collection_batch_pdf", {
     collectionPath,
     viewName,
     outputDir,
@@ -1682,6 +1707,8 @@ export async function exportCollectionBatchPdf(
     pdfStandard: pdfStandard ?? null,
     includeBibliography: includeBibliography ?? null,
     reviewMode: reviewMode ?? null,
+    onlyFiles: onlyFiles ?? null,
+    bypassErrors: bypassErrors ?? null,
   });
 }
 
@@ -1726,18 +1753,24 @@ export interface BookExportOverrides {
 /// compile — the caller can re-export passing them as `excludeNotes` to omit
 /// them — and `message` is the human-readable diagnostic. A failure no
 /// exclusion could fix is thrown as an error instead of returned here.
+/// `bypassed` is true when the book was written with errored markup kept as
+/// plain text.
 export interface BookExportResult {
   outputPath: string | null;
   failingNotes: string[];
   message: string | null;
+  bypassed: boolean;
 }
 
+/// `bypassErrors` keeps errored markup as plain text instead of failing; the
+/// backend ignores it for archival and accessible PDF formats.
 export async function exportCollectionBookPdf(
   collectionPath: string,
   viewName: string,
   outputPath: string,
   overrides?: BookExportOverrides,
   excludeNotes?: string[],
+  bypassErrors?: boolean,
 ): Promise<BookExportResult> {
   return invoke<BookExportResult>("export_collection_book_pdf", {
     collectionPath,
@@ -1745,6 +1778,7 @@ export async function exportCollectionBookPdf(
     outputPath,
     overrides: overrides ?? null,
     excludeNotes: excludeNotes ?? null,
+    bypassErrors: bypassErrors ?? null,
   });
 }
 
@@ -1884,24 +1918,20 @@ export async function saveNameAuditReport(): Promise<string> {
   return invoke<string>("save_name_audit_report");
 }
 
-/// Result of a static-site export. `files` are the artifacts written;
-/// `skippedNotes` lists notes that couldn't be compiled (as "name: reason")
-/// and were left out, so the caller can tell the user what to fix. A run
-/// where every note fails rejects instead.
-export interface StaticSiteExportResult {
-  files: string[];
-  skippedNotes: string[];
-}
 
+/// Export a collection view as a static HTML site. `bypassErrors` keeps
+/// errored markup as plain text instead of leaving the note out.
 export async function exportCollectionStaticSite(
   collectionPath: string,
   viewName: string,
   outputDir: string,
-): Promise<StaticSiteExportResult> {
-  return invoke<StaticSiteExportResult>("export_collection_static_site", {
+  bypassErrors?: boolean,
+): Promise<BatchExportResult> {
+  return invoke<BatchExportResult>("export_collection_static_site", {
     collectionPath,
     viewName,
     outputDir,
+    bypassErrors: bypassErrors ?? null,
   });
 }
 
@@ -2133,8 +2163,8 @@ export async function exportCollectionBatchMarkdown(
   outputDir: string,
   unconvertibleMode: UnconvertibleMode,
   reviewMode?: ReviewMarkupMode,
-): Promise<string[]> {
-  return invoke<string[]>("export_collection_batch_markdown", {
+): Promise<BatchExportResult> {
+  return invoke<BatchExportResult>("export_collection_batch_markdown", {
     collectionPath,
     viewName,
     outputDir,

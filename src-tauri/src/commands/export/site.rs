@@ -5,6 +5,7 @@ use tauri::State;
 use crate::errors::InkyCapError;
 use crate::state::AppState;
 use crate::storage::traits::NoteboxStorage;
+use crate::typst_pipeline::recovery::RecoveryStyle;
 use crate::typst_pipeline::style_injection;
 
 use super::helpers::{
@@ -19,9 +20,11 @@ pub async fn export_collection_static_site(
     collection_path: String,
     view_name: String,
     output_dir: String,
+    bypass_errors: Option<bool>,
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
-) -> Result<StaticSiteExportResult, InkyCapError> {
+) -> Result<super::BatchExportResult, InkyCapError> {
+    let bypass = bypass_errors.unwrap_or(false);
     let session = state.session(window.label()).await;
     let data = crate::commands::collections::get_collection_data_internal(
         &collection_path,
@@ -61,6 +64,7 @@ pub async fn export_collection_static_site(
 
     let mut exported = Vec::new();
     let mut skipped_notes = Vec::new();
+    let mut bypassed_count = 0;
     // Stems that actually produced a page, so the index links only to files
     // that exist (a skipped note must not appear as a dead nav link).
     let mut exported_stems: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -70,7 +74,7 @@ pub async fn export_collection_static_site(
         let content = match storage.read_file(&note_path_buf).await {
             Ok(c) => c,
             Err(e) => {
-                skipped_notes.push(format!("{}: {}", row.file_name, e));
+                skipped_notes.push(super::SkippedNote::for_row(row, e));
                 continue;
             }
         };
@@ -99,26 +103,33 @@ pub async fn export_collection_static_site(
         compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
 
         // A note that won't compile is skipped and reported rather than
-        // aborting the whole site — the resilient counterpart of the batch
-        // PDF export. Recovery (partial render with markers) is deliberately
-        // not used here: an exported page should be whole, not silently
-        // missing its errored region (see typst_pipeline/recovery.rs).
-        let result = match compiler.compile_html(&note_path_buf, source) {
+        // aborting the whole site. The on-screen salvage (warning markers) is
+        // never used for an exported page; only when the user chose to bypass
+        // errors is a failed note kept, with its errored markup as plain text
+        // (see typst_pipeline/recovery.rs).
+        let style = if bypass {
+            RecoveryStyle::LiteralText
+        } else {
+            RecoveryStyle::Marker
+        };
+        let result = match compiler.compile_html_with(&note_path_buf, source, style) {
             Ok(r) => r,
             Err(e) => {
-                skipped_notes.push(format!("{}: {}", row.file_name, e));
+                skipped_notes.push(super::SkippedNote::for_row(row, e));
                 continue;
             }
         };
 
-        if !result.ok {
+        if bypass && result.recovered {
+            bypassed_count += 1;
+        } else if !result.ok {
             let reason = result
                 .diagnostics
                 .iter()
                 .map(|d| d.message.clone())
                 .next()
                 .unwrap_or_else(|| "compilation failed".to_string());
-            skipped_notes.push(format!("{}: {}", row.file_name, reason));
+            skipped_notes.push(super::SkippedNote::for_row(row, reason));
             continue;
         }
 
@@ -151,7 +162,7 @@ pub async fn export_collection_static_site(
             Some(root) => match localize_html_assets(&full_html, root, &output_dir).await {
                 Ok((rewritten, _copied)) => rewritten,
                 Err(e) => {
-                    skipped_notes.push(format!("{}: {}", html_name, e));
+                    skipped_notes.push(super::SkippedNote::for_row(row, e));
                     continue;
                 }
             },
@@ -164,17 +175,19 @@ pub async fn export_collection_static_site(
                 exported.push(html_name.clone());
                 exported_stems.insert(stem.to_string());
             }
-            Err(e) => skipped_notes.push(format!("{}: {}", html_name, e)),
+            Err(e) => skipped_notes.push(super::SkippedNote::for_row(row, e)),
         }
     }
 
-    // Writing an index + stylesheet around zero pages is never useful, so a
-    // run where every note failed is a hard error carrying the reasons.
+    // Writing an index + stylesheet around zero pages is never useful. The
+    // skipped list still comes back as a normal result so the user can open
+    // each note or choose to bypass the errors.
     if exported.is_empty() {
-        return Err(InkyCapError::ExportFailed(format!(
-            "No notes could be exported to HTML:\n{}",
-            skipped_notes.join("\n"),
-        )));
+        return Ok(super::BatchExportResult {
+            files: exported,
+            skipped_notes,
+            bypassed_count,
+        });
     }
 
     let index_html = generate_site_index(&data.rows, &name_to_file, &exported_stems);
@@ -188,22 +201,11 @@ pub async fn export_collection_static_site(
         .map_err(|e| InkyCapError::ExportFailed(format!("Failed to write style.css: {}", e)))?;
     exported.push("style.css".to_string());
 
-    Ok(StaticSiteExportResult {
+    Ok(super::BatchExportResult {
         files: exported,
         skipped_notes,
+        bypassed_count,
     })
-}
-
-/// Outcome of a static-site export. `files` are the artifacts written to the
-/// output directory (note pages + index.html + style.css); `skipped_notes`
-/// lists notes that couldn't be compiled and were left out, as
-/// `"name: reason"` strings the caller surfaces so the user can fix them.
-/// A run where *every* note fails comes back as `Err` instead.
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StaticSiteExportResult {
-    pub files: Vec<String>,
-    pub skipped_notes: Vec<String>,
 }
 
 fn slug_from_name(name: &str) -> String {

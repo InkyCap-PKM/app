@@ -281,6 +281,41 @@
   border-top: 1px solid var(--accent-danger);
 }
 
+.collection-table__export-error-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+
+/* Notes an export left out; each name opens the note. Capped so a long
+   list scrolls instead of pushing the table off screen. */
+.collection-table__export-error-notes {
+  margin: 0;
+  padding-left: var(--space-6);
+  max-height: 12em;
+  overflow-y: auto;
+  align-self: stretch;
+  line-height: var(--leading-normal);
+}
+
+/* A <button> wearing the table's link style needs the native button chrome
+   removed. */
+.collection-table__export-error-note {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  text-align: start;
+}
+
+.collection-table__export-error-reason {
+  margin-inline-start: var(--space-3);
+  color: var(--fg-muted);
+}
+
 .collection-table__export-error-text {
   flex: 1;
   margin: 0;

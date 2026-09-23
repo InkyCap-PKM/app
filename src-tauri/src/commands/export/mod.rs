@@ -32,6 +32,44 @@ pub use pdf::{
 };
 pub use site::export_collection_static_site;
 
+/// Outcome of a collection export that writes one file per note into a
+/// folder (PDF files, Markdown files, static HTML site). `files` are the
+/// paths written; `skipped_notes` lists notes that failed and were left out,
+/// so the caller can show them and let the user open each one to fix it.
+/// `bypassed_count` is how many notes were exported with their errors kept as
+/// plain text, which only happens when the caller asked to bypass errors.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchExportResult {
+    pub files: Vec<String>,
+    pub skipped_notes: Vec<SkippedNote>,
+    pub bypassed_count: usize,
+}
+
+/// A note a batch export left out, and why.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkippedNote {
+    /// The note's path, as the collection data reported it to the frontend.
+    pub path: String,
+    /// The note's file name, for display.
+    pub name: String,
+    pub reason: String,
+}
+
+impl SkippedNote {
+    pub fn for_row(
+        row: &crate::models::collection::CollectionRow,
+        reason: impl std::fmt::Display,
+    ) -> Self {
+        Self {
+            path: row.file_path.clone(),
+            name: row.file_name.clone(),
+            reason: reason.to_string(),
+        }
+    }
+}
+
 /// Number of collaboration review-markup constructs (`#suggestion`,
 /// `#annotation`) in a note. The export dialog calls this when opening so it
 /// only shows its "Review markup" control for notes that actually carry
