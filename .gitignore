@@ -62,8 +62,8 @@ dist-linux/
 .flatpak-builder/
 flatpak/.build/
 
-# Release feed staging: the generated latest.json (scripts/release-manifest.mjs)
-# is uploaded to the website, not committed here.
+# Release staging: installers gathered for signing and the generated feeds
+# (scripts/release-feeds.mjs) are uploaded, not committed here.
 release-artifacts/
 /latest.json
 flatpak/.repo/

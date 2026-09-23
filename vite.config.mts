@@ -57,7 +57,7 @@ export default defineConfig({
     // so CodeMirror popup positioning no-ops instead of throwing in a deferred
     // rAF callback. See src/test-setup.ts.
     setupFiles: ["./src/test-setup.ts"],
-    include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    include: ["src/**/*.{test,spec}.{ts,tsx}", "scripts/**/*.test.mjs"],
     // `codemirror-lang-typst` ships a `.wasm` parser. Inlining it routes the
     // import through Vite's plugins (the test wasm loader above) so the
     // `.wasm` module is transformed; otherwise Vitest externalizes the dep

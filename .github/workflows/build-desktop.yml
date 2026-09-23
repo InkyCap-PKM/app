@@ -28,6 +28,10 @@
 #   inkycap-macos-x86_64    .dmg + .app.tar.gz   (Intel, cross-compiled)
 #   inkycap-windows-x86_64  *-setup.exe + .msi
 #
+# The .app.tar.gz is what the in-app Upgrade button installs on macOS. None of
+# these files are signed for the updater here; that happens on the
+# maintainer's computer afterwards (see documentation/developer/releasing.md).
+#
 # The macOS builds are NOT code-signed or notarized — macOS users will see an
 # "unidentified developer" warning. Setting that up needs an Apple Developer
 # account; see the note at the bottom of releasing.md.
@@ -142,6 +146,24 @@ jobs:
             exit 1
           fi
           echo "Verified: built binary reports version $EXPECT."
+
+      # The Upgrade button on macOS installs a compressed copy of the app, not
+      # the .dmg. The updater unpacks it by dropping the archive's top folder,
+      # so InkyCap.app must sit at the archive's root. The file is signed
+      # later, on the maintainer's computer (scripts/release-feeds.mjs), which
+      # is why this job needs no secrets.
+      - name: Make the macOS update archive
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./package.json').version")"
+          case "${{ matrix.target }}" in
+            aarch64-*) ARCH=aarch64 ;;
+            x86_64-*)  ARCH=x64 ;;
+          esac
+          DIR="src-tauri/target/${{ matrix.target }}/release/bundle/macos"
+          tar -czf "$DIR/InkyCap_${VERSION}_${ARCH}.app.tar.gz" -C "$DIR" InkyCap.app
 
       - name: Upload installers
         uses: actions/upload-artifact@v7

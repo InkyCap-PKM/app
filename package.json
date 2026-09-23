@@ -15,8 +15,9 @@
     "version:stable": "node scripts/version.mjs stable",
     "version:beta": "node scripts/version.mjs beta",
     "version:patch": "node scripts/version.mjs patch",
-    "release:manifest": "node scripts/release-manifest.mjs",
-    "release:manifest:verify": "node scripts/release-manifest.mjs --verify",
+    "release:check-setup": "node scripts/release/check-setup.mjs",
+    "release:feeds": "node scripts/release-feeds.mjs",
+    "release:feeds:check": "node scripts/release-feeds.mjs --check",
     "postinstall": "patch-package",
     "tauri": "tauri",
     "icons": "node scripts/gen-icon-tile.mjs && npx tauri icon design-assets/inkycap-tile-ink.svg && node scripts/sharpen-linux-icons.mjs && python3 scripts/sharpen-win-mac-icons.py"

@@ -35,6 +35,9 @@
   "plugins": {
     "shell": {
       "open": "(mailto:\\w+|tel:\\w+|https?://\\w+|[a-zA-Z][a-zA-Z0-9+.-]+://).+"
+    },
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg3QzNBN0ZDM0NEOTM4RUQKUldUdE9OazgvS2ZEaHhSV2JqcExvUTVyUTJzSjRqL3dEc2FWMlR5SWJNakJRZkREQXlrQVF2Y3UK"
     }
   },
   "bundle": {
