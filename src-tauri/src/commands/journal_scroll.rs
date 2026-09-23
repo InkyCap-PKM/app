@@ -74,6 +74,11 @@ pub enum SortDir {
 pub struct ScrollEntry {
     pub path: String,
     pub title: String,
+    /// The entry is the scroll's anchor, and the anchor falls outside the
+    /// query's filter (e.g. a topic note while the scroll is limited to the
+    /// daily notes folder). It is still listed, placed where its date falls
+    /// among the matching notes, so the scroll continues from that point.
+    pub out_of_scope: bool,
 }
 
 /// Resolve a Journal Scroll query (filter + sort) into the ordered list of
@@ -87,7 +92,7 @@ pub async fn run_scroll_query(
 ) -> Result<Vec<ScrollEntry>, InkyCapError> {
     let session = state.session(window.label()).await;
     let anchor_path = sanitize_notebox_arg(&query.anchor)?;
-    let sorted = build_sorted(&query.filter, &query.sort, &session).await?;
+    let sorted = build_sorted(&query.filter, &query.sort, &anchor_path, &session).await?;
     Ok(slice_around_anchor(
         &sorted,
         &anchor_path,
@@ -127,7 +132,7 @@ pub async fn find_offset_in_scroll_query(
     let session = state.session(window.label()).await;
     let anchor_path = sanitize_notebox_arg(&query.anchor)?;
     let target_path = sanitize_notebox_arg(&query.target)?;
-    let sorted = build_sorted(&query.filter, &query.sort, &session).await?;
+    let sorted = build_sorted(&query.filter, &query.sort, &anchor_path, &session).await?;
     let anchor_str = to_frontend_string(&anchor_path);
     let target_str = to_frontend_string(&target_path);
     let anchor_idx = sorted.iter().position(|e| e.path == anchor_str);
@@ -136,9 +141,10 @@ pub async fn find_offset_in_scroll_query(
         (Some(a), Some(t)) => Ok(Some((t as i64 - a as i64) as i32)),
         // Target not in result.
         (_, None) => Ok(None),
-        // Anchor not in result (shouldn't happen for a normal scroll, but
-        // we treat the anchor as offset 0 by convention so target's index
-        // becomes its absolute offset).
+        // Anchor not in result (only when it isn't a note in the index; an
+        // out-of-scope note is always added by `build_sorted`). Treat the
+        // anchor as offset 0 by convention so target's index becomes its
+        // absolute offset.
         (None, Some(t)) => Ok(Some(t as i32)),
     }
 }
@@ -148,9 +154,15 @@ pub async fn find_offset_in_scroll_query(
 /// see the same sorted ordering — diverging here would let the
 /// in-result-extension wikilink path target an entry the scroll itself
 /// would never page to.
+///
+/// The anchor is always part of the result, even when the filter excludes
+/// it, so the scroll can start from the note the user opened it on. An
+/// out-of-scope anchor is placed where its date falls among the matching
+/// notes (see [`sort_candidates`]).
 async fn build_sorted(
     filter: &ScrollFilter,
     sort: &ScrollSort,
+    anchor: &Path,
     session: &NoteboxSession,
 ) -> Result<Vec<ScrollEntry>, InkyCapError> {
     // Filters that need the link index read it first per the lock-ordering
@@ -182,7 +194,24 @@ async fn build_sorted(
             .collect(),
     };
 
-    Ok(sort_candidates(candidates, sort))
+    let anchor_str = to_frontend_string(anchor);
+    let anchor_in_scope = candidates
+        .iter()
+        .any(|note| to_frontend_string(&note.path) == anchor_str);
+    // Index keys can differ in shape from the path the frontend sends, so
+    // fall back to comparing canonical strings when the direct lookup misses.
+    let outside_anchor = if anchor_in_scope {
+        None
+    } else {
+        index.notes.get(anchor).or_else(|| {
+            index
+                .notes
+                .values()
+                .find(|note| to_frontend_string(&note.path) == anchor_str)
+        })
+    };
+
+    Ok(sort_candidates(candidates, outside_anchor, sort))
 }
 
 /// Sort a candidate note set into the scroll's display order.
@@ -194,21 +223,34 @@ async fn build_sorted(
 /// anchor-return and offset math). Instead it lands in tier 1, after every
 /// tier-0 note, ordered among its peers by file creation date so the tail
 /// is still a stable, sensible chronological run.
-fn sort_candidates(candidates: Vec<&NoteMetadata>, sort: &ScrollSort) -> Vec<ScrollEntry> {
+///
+/// `outside_anchor` is an anchor the filter excluded. It is sorted in with
+/// the candidates and marked `out_of_scope`. When it lacks the sort
+/// property (a topic note has no `date` or ZID, say) it is placed by its
+/// creation date instead of dropping to the tail, so the notes after it are
+/// still the ones nearest to it in time.
+fn sort_candidates(
+    candidates: Vec<&NoteMetadata>,
+    outside_anchor: Option<&NoteMetadata>,
+    sort: &ScrollSort,
+) -> Vec<ScrollEntry> {
     let mut keyed: Vec<((u8, String), ScrollEntry)> = candidates
         .into_iter()
         .map(|note| {
-            let entry = ScrollEntry {
-                path: to_frontend_string(&note.path),
-                title: get_title(note),
-            };
             let key = match sort_key(note, sort) {
                 Some(k) => (0u8, k),
                 None => (1u8, creation_date_key(note)),
             };
-            (key, entry)
+            (key, scroll_entry(note, false))
         })
         .collect();
+    if let Some(note) = outside_anchor {
+        let key = match sort_key(note, sort).or_else(|| creation_date_as_sort_key(note, sort)) {
+            Some(k) => (0u8, k),
+            None => (1u8, creation_date_key(note)),
+        };
+        keyed.push((key, scroll_entry(note, true)));
+    }
 
     let direction = sort_direction(sort);
     keyed.sort_by(|a, b| {
@@ -419,6 +461,14 @@ fn collect_property_any<'a>(index: &'a PropertyIndex, name: &str) -> Vec<&'a Not
 
 // === Sort helpers ===
 
+fn scroll_entry(note: &NoteMetadata, out_of_scope: bool) -> ScrollEntry {
+    ScrollEntry {
+        path: to_frontend_string(&note.path),
+        title: get_title(note),
+        out_of_scope,
+    }
+}
+
 fn sort_key(note: &NoteMetadata, sort: &ScrollSort) -> Option<String> {
     match sort {
         ScrollSort::Property { name, .. } => note
@@ -441,6 +491,30 @@ fn creation_date_key(note: &NoteMetadata) -> String {
         .get("file.ctime")
         .and_then(|v| v.as_str().map(|s| s.to_string()))
         .unwrap_or_default()
+}
+
+/// The note's creation date written in the same form as the sort axis's
+/// keys, so it can be compared against them: 14 digits (`YYYYMMDDhhmmss`)
+/// for ZID sorting, the RFC 3339 timestamp for date properties (which also
+/// orders correctly against a plain `YYYY-MM-DD`). `None` for a title sort,
+/// where a date means nothing, or when the creation date is unknown.
+fn creation_date_as_sort_key(note: &NoteMetadata, sort: &ScrollSort) -> Option<String> {
+    let ctime = creation_date_key(note);
+    if ctime.is_empty() {
+        return None;
+    }
+    match sort {
+        ScrollSort::Title { .. } => None,
+        ScrollSort::Property { .. } => Some(ctime),
+        ScrollSort::Zid { .. } => {
+            let digits: String = ctime
+                .chars()
+                .filter(|c| c.is_ascii_digit())
+                .take(14)
+                .collect();
+            (digits.len() == 14).then_some(digits)
+        }
+    }
 }
 
 fn sort_direction(sort: &ScrollSort) -> SortDir {
@@ -659,6 +733,7 @@ mod tests {
             .map(|i| ScrollEntry {
                 path: format!("/v/{i}.typ"),
                 title: format!("{i}"),
+                out_of_scope: false,
             })
             .collect();
         let anchor = PathBuf::from("/v/2.typ");
@@ -754,6 +829,7 @@ mod tests {
         let candidates = vec![&no_zid_old, &with_zid_old, &no_zid_new, &with_zid_new];
         let sorted = sort_candidates(
             candidates,
+            None,
             &ScrollSort::Zid {
                 direction: SortDir::Desc,
             },
@@ -798,10 +874,99 @@ mod tests {
         let notes_b = mk();
         let paths =
             |entries: Vec<ScrollEntry>| entries.into_iter().map(|e| e.path).collect::<Vec<_>>();
-        let order_a = paths(sort_candidates(notes_a.iter().collect(), &sort));
+        let order_a = paths(sort_candidates(notes_a.iter().collect(), None, &sort));
         // Reversed input must yield the same output.
-        let order_b = paths(sort_candidates(notes_b.iter().rev().collect(), &sort));
+        let order_b = paths(sort_candidates(notes_b.iter().rev().collect(), None, &sort));
         assert_eq!(order_a, ["/v/a.typ", "/v/b.typ", "/v/c.typ"]);
         assert_eq!(order_a, order_b);
+    }
+
+    fn daily(path: &str, date: &str) -> NoteMetadata {
+        note(path, &[("date", PropertyValue::String(date.into()))], &[])
+    }
+
+    #[test]
+    fn outside_anchor_sorts_in_by_its_own_key_and_is_marked() {
+        let days = [
+            daily("/v/daily/1.typ", "2026-01-01"),
+            daily("/v/daily/2.typ", "2026-02-01"),
+            daily("/v/daily/3.typ", "2026-03-01"),
+        ];
+        let topic = daily("/v/topics/t.typ", "2026-02-15");
+        let sort = ScrollSort::Property {
+            name: "date".into(),
+            direction: SortDir::Desc,
+        };
+        let sorted = sort_candidates(days.iter().collect(), Some(&topic), &sort);
+        let order: Vec<(&str, bool)> = sorted
+            .iter()
+            .map(|e| (e.path.as_str(), e.out_of_scope))
+            .collect();
+        assert_eq!(
+            order,
+            vec![
+                ("/v/daily/3.typ", false),
+                ("/v/topics/t.typ", true),
+                ("/v/daily/2.typ", false),
+                ("/v/daily/1.typ", false),
+            ]
+        );
+    }
+
+    #[test]
+    fn outside_anchor_without_sort_key_is_placed_by_creation_date() {
+        // Daily notes are sorted by `date`; the topic note has none, so its
+        // creation date places it instead of the keyless tail.
+        let days = [
+            daily("/v/daily/1.typ", "2026-01-01"),
+            daily("/v/daily/2.typ", "2026-02-01"),
+            daily("/v/daily/3.typ", "2026-03-01"),
+        ];
+        let topic = note(
+            "/v/topics/t.typ",
+            &[(
+                "file.ctime",
+                PropertyValue::String("2026-02-15T09:30:00Z".into()),
+            )],
+            &[],
+        );
+        let sort = ScrollSort::Property {
+            name: "date".into(),
+            direction: SortDir::Desc,
+        };
+        let sorted = sort_candidates(days.iter().collect(), Some(&topic), &sort);
+        let order: Vec<&str> = sorted.iter().map(|e| e.path.as_str()).collect();
+        assert_eq!(
+            order,
+            vec![
+                "/v/daily/3.typ",
+                "/v/topics/t.typ",
+                "/v/daily/2.typ",
+                "/v/daily/1.typ"
+            ]
+        );
+    }
+
+    #[test]
+    fn creation_date_matches_the_zid_key_shape() {
+        let topic = note(
+            "/v/t.typ",
+            &[(
+                "file.ctime",
+                PropertyValue::String("2026-02-15T09:30:05Z".into()),
+            )],
+            &[],
+        );
+        let zid = ScrollSort::Zid {
+            direction: SortDir::Desc,
+        };
+        assert_eq!(
+            creation_date_as_sort_key(&topic, &zid).as_deref(),
+            Some("20260215093005")
+        );
+        let title = ScrollSort::Title {
+            direction: SortDir::Asc,
+        };
+        assert_eq!(creation_date_as_sort_key(&topic, &title), None);
     }
 }

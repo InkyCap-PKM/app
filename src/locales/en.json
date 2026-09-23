@@ -292,6 +292,7 @@
   "journalScroll.badge.linksTo": "Links to the anchor note",
   "journalScroll.badge.linkedFrom": "Linked from the anchor note",
   "journalScroll.badge.sharesTags": "Shares a tag with the anchor note",
+  "journalScroll.badge.outOfScope": "Anchor is outside the scope you set for your Journal; scrolling from the closest information within scope",
   "journalScroll.diag.issue.one": "{count} compile issue — click to {action}",
   "journalScroll.diag.issue.other": "{count} compile issues — click to {action}",
   "journalScroll.diag.warning.one": "{count} compile warning — click to {action}",

@@ -934,6 +934,10 @@ export interface ScrollQuery {
 export interface ScrollEntry {
   path: string;
   title: string;
+  /** This entry is the scroll's anchor and falls outside the scroll's scope.
+   *  It is still listed, placed where its date falls among the notes in
+   *  scope, so the scroll continues from that point in time. */
+  out_of_scope: boolean;
 }
 
 /** @deprecated use `ScrollEntry` directly. */

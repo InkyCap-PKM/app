@@ -57,6 +57,7 @@ import {
 import { openTab } from "../stores/tabs";
 import { settings } from "../stores/settings";
 import { Anchor, MessageSquareWarning, Tags } from "lucide-solid";
+import { FlagNoticeIcon } from "./icons/FlagNotice";
 import { SquareArrowOutUpRight, SquareArrowInDownLeft } from "./icons";
 import { DiagnosticRow } from "./DiagnosticRow";
 import type { ConnectionFlags, ScrollEntry, TypstHtmlResult } from "../lib/types";
@@ -296,7 +297,7 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
       seen.add(e.path);
       let stable = entryIdentity.get(e.path);
       if (!stable) {
-        stable = { path: e.path, title: e.title };
+        stable = { path: e.path, title: e.title, out_of_scope: e.out_of_scope };
         entryIdentity.set(e.path, stable);
       }
       out.push(stable);
@@ -893,6 +894,15 @@ const JournalScrollEntryView: Component<JournalScrollEntryViewProps> = (
             >
               <MessageSquareWarning size={15} />
             </button>
+          </Show>
+          <Show when={props.entry.out_of_scope}>
+            <span
+              class="journal-scroll__entry-connection journal-scroll__entry-connection--out-of-scope"
+              title={t("journalScroll.badge.outOfScope")}
+              aria-label={t("journalScroll.badge.outOfScope")}
+            >
+              <FlagNoticeIcon size={14} />
+            </span>
           </Show>
           <Show when={props.flags}>
             {(f) => (

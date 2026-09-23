@@ -225,6 +225,11 @@
 .journal-scroll__entry-connection--shares-tags {
   color: var(--accent-warn);
 }
+/* Not a connection: flags an anchor that sits outside the scroll's scope.
+   Same colour as the flag notice used elsewhere (e.g. Settings). */
+.journal-scroll__entry-connection--out-of-scope {
+  color: var(--callout-warning);
+}
 
 .journal-scroll__entry-body {
   /* Mirrors the reading view's continuous-HTML layout so a single note

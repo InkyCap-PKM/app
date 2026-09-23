@@ -292,6 +292,7 @@
   "journalScroll.badge.linksTo": "Pointe vers la note d'ancrage",
   "journalScroll.badge.linkedFrom": "Lié depuis la note d'ancrage",
   "journalScroll.badge.sharesTags": "Partage une étiquette avec la note d'ancrage",
+  "journalScroll.badge.outOfScope": "L'ancre est hors de la portée définie pour votre journal; défilement à partir de l'information la plus proche dans cette portée",
   "journalScroll.diag.issue.one": "{count} problème de compilation — cliquer pour {action}",
   "journalScroll.diag.issue.other": "{count} problèmes de compilation — cliquer pour {action}",
   "journalScroll.diag.warning.one": "{count} avertissement de compilation — cliquer pour {action}",
