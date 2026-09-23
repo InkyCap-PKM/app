@@ -12,6 +12,66 @@ each tagged release, newest first, grouping entries under **Added**, **Changed**
 **Fixed**, **Removed**, **Security**, or **Deprecated** as needed.
 
 
+## [26.9.14] - 2026-09-23
+
+InkyCap can now upgrade itself (in most cases): when a new version is available, an Upgrade
+button downloads it, checks that it is genuine, and installs it. This Flatpak
+moves to a new app ID and must be reinstalled. The new tab page can show
+recent notes, today's agenda and unwritten notes.
+
+### Added
+
+- An **Upgrade** button next to Download in Settings, Overview, for InkyCap
+  installed from the `.deb`, `.rpm`, Windows or macOS packages. It downloads
+  the new version, checks its signature (a download not signed by InkyCap is
+  refused), saves any open notes, installs it, and offers Restart now. On
+  Linux, the system asks for your password; on Windows the installer closes
+  and reopens InkyCap. If anything goes wrong, nothing is changed and the
+  Download button remains for manual installations. The Flatpak, and copies packaged by
+  others or built from source, keep the Download button only. This version
+  itself still has to be installed manually so that future versions can use the new Upgrade functionality.
+- A new feature permits the empty tab page to, optionally, show recent notes, tasks and reminders due today, and unwritten notes (linked-to but not yet created).
+  Turn each on in Settings, Behaviour, Tabs.
+- The Journal Scroll's Connections pane lists unwritten notes linked from the
+  entries on screen; clicking one creates it.
+- Creation rules can be given a custom sequenced to appear in the left toolbar.
+- Collection exports list every note they left out due to errors, with the reason, in a
+  banner that stays until closed; each name opens the note to fix it. You can
+  also choose to export anyway, keeping any markup with an error as plain text
+  so no content is lost.
+- The user manual explains how to link to a section of the note you are
+  writing.
+
+### Changed
+
+- **Flatpak:** the app ID is now `org.inkycap.editor` (it was
+  `com.inkycap.editor`), matching the project's website. Flatpak treats this as
+  a new app: install this version, and your settings are copied from the old
+  one on first launch. Then manually remove the old one from the command line with
+  `flatpak uninstall com.inkycap.editor`.
+- The first launch of this version rebuilds each notebox's saved index once,
+  so a large notebox takes longer to open that one time.
+- Scaffolds no longer use the `{{cursor}}` placeholder, which never moved the
+  cursor and only left stray text. Remove it by hand from scaffolds written
+  before this version. Text inside a Typst comment in a scaffold is now left
+  exactly as written.
+- If the Journal Scroll is opened on a note outside the scroll's chosen scope,
+  that note anchors the scroll's date and the entries that follow.
+- Minor aesthetic improvements on the new tab text
+
+### Fixed
+
+- Pasting between a pair of delimiters (backticks, double square brackets),
+  deleting a few characters and then typing no longer puts the new text at
+  the start of the pasted text.
+- Collection exports no longer report success while silently leaving out
+  notes that failed, and one note failing the chosen PDF standard no longer
+  stops the rest.
+- The search tips box scrolls when the window is too short to show it whole.
+- The corner where two scrollbars meet matches the surface around it.
+- The manage-noteboxes and distraction-free buttons line up in the status
+  bar, and the collaboration line in Settings uses the full row width.
+
 ## [26.9.12] - 2026-09-18
 
 The window's title bar is more compact (Linux - Gnome), the user manual has been

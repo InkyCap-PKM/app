@@ -1,6 +1,6 @@
 {
   "name": "inkycap",
-  "version": "26.9.12",
+  "version": "26.9.14",
   "description": "Typst-based PKM with linked-notes for writing and academic research",
   "private": true,
   "scripts": {
