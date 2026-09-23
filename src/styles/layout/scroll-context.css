@@ -96,6 +96,24 @@
   background: var(--bg-hover);
 }
 
+.scroll-context__connection-name {
+  flex: 1;
+  min-width: 0;
+}
+
+/* A note a visible entry links to that isn't written yet: a sprout in front
+   and the dim italic the Links tab uses for unwritten links. */
+.scroll-context__connection-sprout {
+  flex-shrink: 0;
+  margin-inline-end: var(--space-2);
+  color: var(--fg-dim);
+}
+
+.scroll-context__connection--unwritten .scroll-context__connection-name {
+  color: var(--fg-dim);
+  font-style: italic;
+}
+
 .scroll-context__connection-dirs {
   color: var(--fg-dim);
   font-size: var(--text-sm);

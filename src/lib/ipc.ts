@@ -2218,9 +2218,16 @@ export async function getRecentNotes(limit: number): Promise<RecentNote[]> {
 }
 
 /** Notes that are linked to but not written yet, ordered by when a linking
- *  note last changed, newest first. */
-export async function getUnwrittenNotes(limit: number): Promise<UnwrittenNote[]> {
-  return invoke<UnwrittenNote[]>("get_unwritten_notes", { limit });
+ *  note last changed, newest first. With `fromPaths`, only links written in
+ *  those notes count and every match comes back (`limit` is ignored). */
+export async function getUnwrittenNotes(
+  limit: number,
+  fromPaths?: string[],
+): Promise<UnwrittenNote[]> {
+  return invoke<UnwrittenNote[]>("get_unwritten_notes", {
+    limit,
+    fromPaths: fromPaths ?? null,
+  });
 }
 
 /** Collection-scoped agenda — tasks / dated items for one collection view. */

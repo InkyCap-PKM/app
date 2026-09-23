@@ -2366,6 +2366,8 @@
   "scrollContext.noCitations": "No citations in visible entries.",
   "scrollContext.connDir.incoming": "← incoming",
   "scrollContext.connDir.outgoing": "outgoing →",
+  "scrollContext.unwritten": "Not written yet",
+  "scrollContext.unwrittenTitle": "Not written yet. Click to create “{name}” in a new tab",
   "scrollContext.tagChipTitle.one": "{tag} — appears on {count} visible entry",
   "scrollContext.tagChipTitle.other": "{tag} — appears on {count} visible entries",
   "scrollContext.citationTitle": "{name} — click to highlight where it's cited",

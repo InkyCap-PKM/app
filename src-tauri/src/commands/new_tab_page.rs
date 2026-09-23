@@ -1,7 +1,8 @@
 // ---------------------------------------------------------------------------
 // Lists shown on the new tab page: recently modified notes and notes that are
 // linked to but not written yet. (The page's "Today" list comes from
-// `agenda::get_today_agenda_items`.)
+// `agenda::get_today_agenda_items`.) The Journal Scroll's Connections pane
+// also uses the unwritten notes list, limited to the entries on screen.
 //
 // Both lists read only the in-memory property index; nothing touches the disk,
 // so they stay cheap enough to refetch after every save while the page is
@@ -58,18 +59,34 @@ pub async fn get_recent_notes(
     Ok(recent_notes(&notes, limit.min(MAX_LIST_LENGTH)))
 }
 
-/// The `limit` unwritten notes whose linking notes changed most recently,
-/// newest first.
+/// Unwritten notes, newest linking note first.
+///
+/// With `from_paths`, only links written in those notes count, and the whole
+/// list comes back (it is already bounded by how many notes were given);
+/// `limit` is ignored. Without it, links from every note count and the list
+/// holds at most `limit` entries.
 #[tauri::command]
 pub async fn get_unwritten_notes(
     limit: usize,
+    from_paths: Option<Vec<String>>,
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
 ) -> Result<Vec<UnwrittenNote>, InkyCapError> {
     let session = state.session(window.label()).await;
     let index = session.property_index.read().await;
     let notes: Vec<&NoteMetadata> = index.notes.values().collect();
-    Ok(unwritten_notes(&notes, limit.min(MAX_LIST_LENGTH)))
+    Ok(match from_paths {
+        Some(from) => {
+            let from: std::collections::HashSet<String> = from.into_iter().collect();
+            let linkers: Vec<&NoteMetadata> = notes
+                .iter()
+                .copied()
+                .filter(|n| from.contains(&to_frontend_string(&n.path)))
+                .collect();
+            unwritten_notes(&linkers, &notes, usize::MAX)
+        }
+        None => unwritten_notes(&notes, &notes, limit.min(MAX_LIST_LENGTH)),
+    })
 }
 
 /// A note's `file.mtime` property in seconds since the Unix epoch, or 0 when
@@ -99,14 +116,20 @@ fn recent_notes(notes: &[&NoteMetadata], limit: usize) -> Vec<RecentNote> {
         .collect()
 }
 
-fn unwritten_notes(notes: &[&NoteMetadata], limit: usize) -> Vec<UnwrittenNote> {
+/// Body links in `linkers` whose target names none of `all_notes`, grouped
+/// by name, newest linking note first, at most `limit` of them.
+fn unwritten_notes(
+    linkers: &[&NoteMetadata],
+    all_notes: &[&NoteMetadata],
+    limit: usize,
+) -> Vec<UnwrittenNote> {
     use std::collections::HashMap;
 
-    let paths: Vec<std::path::PathBuf> = notes.iter().map(|n| n.path.clone()).collect();
+    let paths: Vec<std::path::PathBuf> = all_notes.iter().map(|n| n.path.clone()).collect();
     let by_path: HashMap<&std::path::PathBuf, &NoteMetadata> =
-        notes.iter().map(|n| (&n.path, *n)).collect();
+        linkers.iter().map(|n| (&n.path, *n)).collect();
     let links = unresolved_links(
-        notes.iter().map(|n| (&n.path, n.body_links.as_slice())),
+        linkers.iter().map(|n| (&n.path, n.body_links.as_slice())),
         &paths,
     );
 
@@ -202,7 +225,7 @@ mod tests {
             "2026-02-01T00:00:00+00:00",
             &["idea::part", "Other"],
         );
-        let found = unwritten_notes(&[&a, &b], 10);
+        let found = unwritten_notes(&[&a, &b], &[&a, &b], 10);
 
         assert_eq!(found.len(), 2);
         let idea = found
@@ -217,10 +240,20 @@ mod tests {
     }
 
     #[test]
+    fn unwritten_notes_from_some_linkers_still_check_every_note() {
+        let a = note("/nb/A.typ", "2026-01-01T00:00:00+00:00", &["B", "Idea"]);
+        let b = note("/nb/B.typ", "2026-02-01T00:00:00+00:00", &["Other"]);
+        // Only A's links count, but B still exists, so only "Idea" is listed.
+        let found = unwritten_notes(&[&a], &[&a, &b], 10);
+        let targets: Vec<&str> = found.iter().map(|u| u.target.as_str()).collect();
+        assert_eq!(targets, vec!["Idea"]);
+    }
+
+    #[test]
     fn unwritten_notes_ignore_property_links() {
         let mut a = note("/nb/A.typ", "2026-01-01T00:00:00+00:00", &["In Body"]);
         a.links.push("In Property".to_string());
-        let found = unwritten_notes(&[&a], 10);
+        let found = unwritten_notes(&[&a], &[&a], 10);
         let targets: Vec<&str> = found.iter().map(|u| u.target.as_str()).collect();
         assert_eq!(targets, vec!["In Body"]);
     }

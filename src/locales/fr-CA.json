@@ -2366,6 +2366,8 @@
   "scrollContext.noCitations": "Aucune citation dans les entrées visibles.",
   "scrollContext.connDir.incoming": "← entrant",
   "scrollContext.connDir.outgoing": "sortant →",
+  "scrollContext.unwritten": "Pas encore écrite",
+  "scrollContext.unwrittenTitle": "Pas encore écrite. Cliquez pour créer « {name} » dans un nouvel onglet",
   "scrollContext.tagChipTitle.one": "{tag} — apparaît sur {count} entrée visible",
   "scrollContext.tagChipTitle.other": "{tag} — apparaît sur {count} entrées visibles",
   "scrollContext.citationTitle": "{name} — cliquez pour mettre en évidence où elle est citée",

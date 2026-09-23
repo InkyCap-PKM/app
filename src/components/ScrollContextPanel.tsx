@@ -4,7 +4,9 @@
 //
 //   1. Outline — headings across visible entries, click → scroll-to-heading.
 //   2. Connections — notes outside the scroll that link to / from any
-//      visible entry, click → open in new tab.
+//      visible entry, click → open in new tab. Notes a visible entry links
+//      to that aren't written yet are listed too, marked with a sprout;
+//      clicking one creates it.
 //   3. Tag concentration — tags occurring across visible entries.
 //   4. Citations — aggregated citations across visible entries.
 //
@@ -24,12 +26,13 @@ import {
   createSignal,
   onCleanup,
 } from "solid-js";
-import { ChevronDown, ChevronRight } from "lucide-solid";
+import { ChevronDown, ChevronRight, Sprout } from "lucide-solid";
 import * as ipc from "../lib/ipc";
 import { compareName } from "../lib/sort";
 import { getEntries, getVisibleEntries } from "../stores/journal-scroll";
-import { indexReady } from "../stores/notebox";
+import { indexReady, propertyVersion } from "../stores/notebox";
 import { openTab } from "../stores/tabs";
+import { navigateWikilink } from "../lib/wikilink-nav";
 import { useI18n, tPlural } from "../lib/i18n";
 import CitationRow from "./CitationRow";
 import type { HeadingInfo } from "../lib/ipc";
@@ -49,13 +52,15 @@ interface OutlineRow extends VisibleNote {
 }
 
 interface ConnectionRow {
-  /** Path of the related note (outside the scroll). */
+  /** Path of the related note (outside the scroll); empty when unwritten. */
   path: string;
-  /** Resolved name (file stem). */
+  /** Resolved name (file stem), or the link text when unwritten. */
   name: string;
   /** Direction(s) of relation against the visible entries. */
   incoming: boolean;
   outgoing: boolean;
+  /** Linked to from a visible entry but not written yet. */
+  unwritten: boolean;
 }
 
 // ── Section collapse state, persisted across sessions ──────────────────────
@@ -209,9 +214,15 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
     { initialValue: dataCache.get(props.tabId)?.outline ?? [] },
   );
 
-  const [connections] = createResource<ConnectionRow[], VisibleNote[]>(
-    visible,
-    async (notes) => {
+  // Keyed on `propertyVersion` too, which changes once the index has taken
+  // in a created or edited note, so a note written from this list stops
+  // showing as unwritten.
+  const [connections] = createResource<
+    ConnectionRow[],
+    { notes: VisibleNote[]; pv: number }
+  >(
+    () => ({ notes: visible(), pv: propertyVersion() }),
+    async ({ notes }) => {
       if (notes.length === 0) return [];
       const visiblePaths = new Set(notes.map((n) => n.path));
       const merged = new Map<string, ConnectionRow>();
@@ -222,13 +233,14 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
           name: link.name,
           incoming: false,
           outgoing: false,
+          unwritten: false,
         };
         if (direction === "incoming") row.incoming = true;
         else row.outgoing = true;
         merged.set(link.path, row);
       };
-      await Promise.all(
-        notes.map(async (n) => {
+      await Promise.all([
+        ...notes.map(async (n) => {
           try {
             const [back, forward] = await Promise.all([
               ipc.getBacklinks(n.path),
@@ -240,7 +252,25 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
             // Skip on transient failure (e.g., file deleted mid-scan).
           }
         }),
-      );
+        ipc
+          .getUnwrittenNotes(0, [...visiblePaths])
+          .then((unwritten) => {
+            // Keyed apart from real paths; the backend already merged
+            // spellings that differ only in capitals.
+            for (const u of unwritten) {
+              merged.set(`unwritten:${u.target.toLowerCase()}`, {
+                path: "",
+                name: u.target,
+                incoming: false,
+                outgoing: true,
+                unwritten: true,
+              });
+            }
+          })
+          .catch(() => {
+            /* skip: the written connections still show */
+          }),
+      ]);
       const rows = [...merged.values()].sort((a, b) =>
         compareName(a.name, b.name),
       );
@@ -500,11 +530,27 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
                 <button
                   type="button"
                   class="scroll-context__connection"
-                  onClick={() => openInNewTab(row.path, row.name)}
-                  title={`${row.incoming ? t("scrollContext.connDir.incoming") : ""}${
-                    row.incoming && row.outgoing ? " · " : ""
-                  }${row.outgoing ? t("scrollContext.connDir.outgoing") : ""}`}
+                  classList={{ "scroll-context__connection--unwritten": row.unwritten }}
+                  onClick={() =>
+                    row.unwritten
+                      ? navigateWikilink(row.name, undefined, true)
+                      : openInNewTab(row.path, row.name)
+                  }
+                  title={
+                    row.unwritten
+                      ? t("scrollContext.unwrittenTitle", { name: row.name })
+                      : `${row.incoming ? t("scrollContext.connDir.incoming") : ""}${
+                          row.incoming && row.outgoing ? " · " : ""
+                        }${row.outgoing ? t("scrollContext.connDir.outgoing") : ""}`
+                  }
                 >
+                  <Show when={row.unwritten}>
+                    <Sprout
+                      size={13}
+                      class="scroll-context__connection-sprout"
+                      aria-label={t("scrollContext.unwritten")}
+                    />
+                  </Show>
                   <span class="scroll-context__connection-name">
                     {row.name}
                   </span>
