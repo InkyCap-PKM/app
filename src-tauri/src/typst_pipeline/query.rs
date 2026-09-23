@@ -27,6 +27,9 @@ pub struct QueryResult {
     pub tags: Vec<String>,
     /// Raw wikilink target strings from `#wikilink(...)` and `link-ref(...)`.
     pub links: Vec<String>,
+    /// The subset of `links` written in the note body with `#wikilink(...)`,
+    /// leaving out `link-ref(...)` values inside `#note(...)` properties.
+    pub body_links: Vec<String>,
     /// Heading labels referenced by wikilinks with `label:` parameter.
     pub heading_labels: Vec<String>,
     /// Inline `#task` / `#due` markers from `<inkycap-agenda>`.
@@ -197,9 +200,11 @@ pub fn compile_and_query(
     // on evaluation, and CLAUDE.md's Typst-first principle steers us
     // here (typst::syntax is the supported parsing surface).
     let (ast_links, ast_tags, ast_agenda) = extract_body_metadata_via_syntax(&source);
+    // Every link found this way is a `wikilink(...)` call, so a body link.
     for link in ast_links {
         if !result.links.contains(&link) {
-            result.links.push(link);
+            result.links.push(link.clone());
+            result.body_links.push(link);
         }
     }
     for tag in ast_tags {
@@ -447,7 +452,14 @@ fn extract_links(
         };
 
         if let Some(Value::Str(target)) = dict_get(dict, "target") {
-            result.links.push(target.as_str().to_string());
+            let target = target.as_str().to_string();
+            // The package tags each link with where it was written. A link
+            // without the tag counts as a body link.
+            let from_metadata = matches!(dict_get(dict, "from"), Some(Value::Str(from)) if from.as_str() == "metadata");
+            if !from_metadata {
+                result.body_links.push(target.clone());
+            }
+            result.links.push(target);
         }
         if let Some(Value::Str(label)) = dict_get(dict, "label") {
             result.heading_labels.push(label.as_str().to_string());
@@ -796,6 +808,22 @@ Reference to #wikilink("Target Note") here.
         let result = compile_and_query(&mut compiler, &note_path, source);
 
         assert!(result.links.contains(&"Source Note".to_string()));
+    }
+
+    #[test]
+    fn body_links_leave_out_property_link_refs() {
+        let (_dir, root) = setup_notebox_with_package(
+            "#note(source: link-ref(\"Source Note\"))\n\nSee #wikilink(\"Body Note\").",
+        );
+        let note_path = root.join("test.typ");
+        let source = fs::read_to_string(&note_path).unwrap();
+
+        let mut compiler = TypstCompiler::new(root);
+        let result = compile_and_query(&mut compiler, &note_path, source);
+
+        assert!(result.links.contains(&"Source Note".to_string()));
+        assert!(result.links.contains(&"Body Note".to_string()));
+        assert_eq!(result.body_links, vec!["Body Note".to_string()]);
     }
 
     #[test]

@@ -151,6 +151,38 @@ pub fn note_stem(path: &std::path::Path) -> String {
     }
 }
 
+/// The note name a wikilink target points at: the target with any
+/// `::heading` or `#heading` suffix removed and surrounding spaces trimmed.
+/// `None` when nothing is left (a link to a heading in the same note).
+fn link_note_name(target: &str) -> Option<&str> {
+    let name = target.split("::").next().unwrap_or(target);
+    let name = name.split('#').next().unwrap_or(name).trim();
+    (!name.is_empty()).then_some(name)
+}
+
+/// Every wikilink that names a note which does not exist yet, as
+/// `(linking note, note name)` pairs. The name has any heading suffix removed.
+///
+/// Matching follows the same rules as backlink resolution, so a target listed
+/// here is exactly one that shows as unresolved everywhere else.
+pub fn unresolved_links<'a>(
+    sources: impl IntoIterator<Item = (&'a NoteId, &'a [String])>,
+    all_paths: &[PathBuf],
+) -> Vec<(&'a NoteId, &'a str)> {
+    let stems = StemIndex::build(all_paths);
+    let mut out = Vec::new();
+    for (source, targets) in sources {
+        for target in targets {
+            if let Some(name) = link_note_name(target) {
+                if stems.resolve(name).is_none() {
+                    out.push((source, name));
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Lowercase-stem → paths map, built once per resolution batch so that
 /// resolving L wikilinks against N notebox paths is O(N + L) instead of O(L·N).
 struct StemIndex<'a> {
@@ -172,12 +204,7 @@ impl<'a> StemIndex<'a> {
     }
 
     fn resolve(&self, target: &str) -> Option<PathBuf> {
-        let target_name = target.split("::").next().unwrap_or(target);
-        let target_name = target_name.split('#').next().unwrap_or(target_name).trim();
-        if target_name.is_empty() {
-            return None;
-        }
-        let key = target_name.to_lowercase();
+        let key = link_note_name(target)?.to_lowercase();
         let candidates = self.by_stem.get(&key)?;
         // Shortest path wins (most specific match).
         candidates
@@ -221,6 +248,19 @@ mod tests {
             resolve("Note::heading", &paths),
             Some(PathBuf::from("/notebox/notes/Note.typ"))
         );
+    }
+
+    #[test]
+    fn test_unresolved_links_skips_existing_and_strips_headings() {
+        let paths = vec![PathBuf::from("/notebox/Existing.typ")];
+        let source = PathBuf::from("/notebox/Source.typ");
+        let targets = vec![
+            "existing".to_string(),
+            "Missing::intro".to_string(),
+            "#local-heading".to_string(),
+        ];
+        let found = unresolved_links([(&source, targets.as_slice())], &paths);
+        assert_eq!(found, vec![(&source, "Missing")]);
     }
 
     #[test]

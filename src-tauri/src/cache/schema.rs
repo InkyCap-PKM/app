@@ -7,7 +7,7 @@
 
 use rusqlite::Connection;
 
-pub const SCHEMA_VERSION: i32 = 7;
+pub const SCHEMA_VERSION: i32 = 8;
 
 pub const CREATE_STATEMENTS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)",
@@ -45,6 +45,7 @@ pub const CREATE_STATEMENTS: &[&str] = &[
         source_path TEXT NOT NULL,
         target_text TEXT NOT NULL,
         ordinal INTEGER NOT NULL,
+        in_body INTEGER NOT NULL DEFAULT 1,
         PRIMARY KEY (notebox_id, source_path, ordinal),
         FOREIGN KEY (notebox_id, source_path) REFERENCES files(notebox_id, path) ON DELETE CASCADE
     )",

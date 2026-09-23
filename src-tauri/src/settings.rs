@@ -228,12 +228,22 @@ impl Default for StartupSettings {
 /// General behaviour settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-#[derive(Default)]
 pub struct BehaviourSettings {
     /// When a file is opened in a new tab (Ctrl/Cmd+click or a right-click
     /// "open in new tab" action), switch the content focus to that tab
     /// immediately. When false, the tab opens in the background.
     pub switch_to_new_tab: bool,
+
+    /// Show the most recently modified notes on the new tab page.
+    pub new_tab_recent_notes: bool,
+    /// Show the tasks and dated reminders due today on the new tab page.
+    pub new_tab_today: bool,
+    /// Show notes that are linked to but not written yet on the new tab page.
+    pub new_tab_unwritten_notes: bool,
+    /// How many entries each list on the new tab page shows before the rest
+    /// is cut off (or, for the "Today" list, before it scrolls). The Settings
+    /// UI offers 3, 6 or 12.
+    pub new_tab_list_length: u32,
 
     /// Linux-only workaround for a WebKitGTK rendering bug: when true,
     /// InkyCap sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` (and the sibling
@@ -246,6 +256,19 @@ pub struct BehaviourSettings {
     /// the majority who don't hit the bug. Ignored on macOS/Windows, whose
     /// webviews (WKWebView / WebView2) are unaffected. See issue #22.
     pub disable_dmabuf_renderer: bool,
+}
+
+impl Default for BehaviourSettings {
+    fn default() -> Self {
+        Self {
+            switch_to_new_tab: false,
+            new_tab_recent_notes: false,
+            new_tab_today: false,
+            new_tab_unwritten_notes: false,
+            new_tab_list_length: 6,
+            disable_dmabuf_renderer: false,
+        }
+    }
 }
 
 /// In-app update preferences. A check never runs without user action unless

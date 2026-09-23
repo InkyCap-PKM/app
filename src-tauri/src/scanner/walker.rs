@@ -33,6 +33,7 @@ pub fn parse_note(
         path: path.to_path_buf(),
         properties: std::collections::HashMap::new(),
         links: Vec::new(),
+        body_links: Vec::new(),
         tags: Vec::new(),
         agenda_markers: Vec::new(),
         unresolved_suggestions: 0,
@@ -78,6 +79,7 @@ async fn parse_note_from_disk(
         path: path.to_path_buf(),
         properties,
         links: Vec::new(),
+        body_links: Vec::new(),
         tags: Vec::new(),
         agenda_markers: Vec::new(),
         unresolved_suggestions: 0,
@@ -135,6 +137,7 @@ pub fn insert_file_properties(
 /// body-derived properties from `#note(...)`.
 fn enrich_with_query(note: &mut NoteMetadata, qr: QueryResult) {
     note.links = qr.links;
+    note.body_links = qr.body_links;
     note.tags = qr.tags;
     note.agenda_markers = qr.agenda;
     note.unresolved_suggestions = qr.suggestions;
@@ -180,6 +183,7 @@ pub(crate) fn note_to_cached_file(
         title,
         tags: note.tags.clone(),
         links: note.links.clone(),
+        body_links: note.body_links.clone(),
         agenda_markers: note.agenda_markers.clone(),
         unresolved_suggestions: note.unresolved_suggestions as u32,
         recurrence: note.recurrence.clone(),
@@ -299,6 +303,7 @@ fn cached_to_note(
         path: abs_path.to_path_buf(),
         properties,
         links: cached.links.clone(),
+        body_links: cached.body_links.clone(),
         tags: cached.tags.clone(),
         agenda_markers: cached.agenda_markers.clone(),
         unresolved_suggestions: cached.unresolved_suggestions as usize,
@@ -587,6 +592,7 @@ mod tests {
             title: Some("A".to_string()),
             tags: Vec::new(),
             links: vec!["B".to_string()],
+            body_links: vec!["B".to_string()],
             agenda_markers: Vec::new(),
             recurrence: None,
             unresolved_suggestions: 0,

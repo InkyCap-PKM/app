@@ -1,4 +1,4 @@
-/* Shared empty-state pattern (headline + hints).
+/* Shared empty-state pattern (hints).
    Split from layout.css; import order (see ../layout.css) preserves the
    original cascade. */
 
@@ -13,15 +13,14 @@
   margin: 0;
 }
 
-/* Headline. Same visual weight the empty state used to have. */
-.empty-state__primary {
-  font-size: var(--text-lg);
+/* Shortcut hints. Sized to match the file tree text. The action buttons
+   keep the compact .btn--sm padding but take the same text size. */
+.empty-state__hint,
+.empty-state__hint .btn {
+  font-size: var(--text-md);
 }
 
-/* Shortcut hints. Smaller and pushed down slightly so they read as
-   supporting text rather than competing with the headline. */
 .empty-state__hint {
-  font-size: var(--text-sm);
   margin-top: var(--space-6);
 }
 

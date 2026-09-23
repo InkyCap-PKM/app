@@ -17,6 +17,7 @@ pub mod markdown;
 pub mod mycelial;
 pub mod mycelial_exclusions;
 pub mod name_audit;
+pub mod new_tab_page;
 pub mod notebox;
 pub mod plugins;
 pub mod properties;

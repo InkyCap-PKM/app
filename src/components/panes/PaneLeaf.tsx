@@ -1,62 +1,12 @@
-import { Component, For, Show } from "solid-js";
+import { Component, Show } from "solid-js";
 import { tabs, setTabDirty, type Tab } from "../../stores/tabs";
 import { focusPane, focusedPaneId, type LeafPane } from "../../stores/panes";
-import { useI18n } from "../../lib/i18n";
-import { modifierKey } from "../../lib/platform";
-import { openHelpView } from "../../stores/help";
-import { executeCommand, findCommandByKeybinding } from "../../lib/command-registry";
 import CollectionTable from "../CollectionTable";
 import TypstEditor from "../TypstEditor";
 import MycelialView from "../MycelialView";
 import VersionDiffView from "../VersionDiffView";
 import TabStrip from "./TabStrip";
-
-/// Tabula-rasa view shown when a pane's active tab is the `empty`
-/// placeholder (or it has no tab). The modifier glyph adapts to the host OS.
-///
-/// Every hint doubles as a button that performs the action it describes, so a
-/// click and the shortcut do the same thing. "Create a note" is bound by a
-/// creation rule rather than a fixed command, so it is looked up by the key
-/// combo the hint names.
-const EMPTY_STATE_ACTIONS: { labelKey: string; run: () => void }[] = [
-  {
-    labelKey: "mainContent.emptyState.openFileHint",
-    run: () => { executeCommand("file:quick-open"); },
-  },
-  {
-    labelKey: "mainContent.emptyState.createFileHint",
-    run: () => { findCommandByKeybinding("Ctrl+N")?.execute(); },
-  },
-  {
-    labelKey: "mainContent.emptyState.commandsHint",
-    run: () => { executeCommand("view:command-palette"); },
-  },
-  {
-    labelKey: "mainContent.emptyState.markupHelp",
-    run: () => openHelpView("markup"),
-  },
-];
-
-const EmptyState: Component = () => {
-  const t = useI18n();
-  const modifier = modifierKey();
-  return (
-    <div class="empty-state">
-      <p class="empty-state__primary">{t("mainContent.emptyState")}</p>
-      <p>{" "}</p>
-      <p class="empty-state__hint">{t("mainContent.emptyState.shortcuts")}</p>
-      <For each={EMPTY_STATE_ACTIONS}>
-        {(action) => (
-          <p class="empty-state__hint">
-            <button class="btn btn--ghost btn--sm" onClick={action.run}>
-              {t(action.labelKey, { modifier })}
-            </button>
-          </p>
-        )}
-      </For>
-    </div>
-  );
-};
+import NewTabPage from "./NewTabPage";
 
 /**
  * One leaf pane: its tab strip over the content of its active tab. The
@@ -84,13 +34,13 @@ const PaneLeaf: Component<{ leaf: LeafPane }> = (props) => {
       <div
         class={`main-content__body${activeTab()?.type === "collection" ? " main-content__body--collection" : ""}`}
       >
-        <Show when={activeTab()} fallback={<EmptyState />}>
+        <Show when={activeTab()} fallback={<NewTabPage />}>
           {(tab) => (
             <Show when={`${tab().id}::${tab().type}::${tab().path}::${tab().version?.commit ?? ""}`} keyed>
               {(_key: string) => {
                 const currentTab = tab();
                 if (currentTab.type === "empty" || !currentTab.path) {
-                  return <EmptyState />;
+                  return <NewTabPage />;
                 }
                 if (currentTab.type === "collection") {
                   return <CollectionTable path={currentTab.path} tabId={currentTab.id} />;
@@ -102,7 +52,7 @@ const PaneLeaf: Component<{ leaf: LeafPane }> = (props) => {
                   // A version-diff tab without metadata can't render (e.g. a
                   // restored nav-history entry) — fall back rather than crash.
                   return (
-                    <Show when={currentTab.version} fallback={<EmptyState />}>
+                    <Show when={currentTab.version} fallback={<NewTabPage />}>
                       {(v) => (
                         <VersionDiffView
                           path={currentTab.path}

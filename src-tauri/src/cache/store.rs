@@ -27,6 +27,9 @@ pub struct CachedFile {
     pub tags: Vec<String>,
     /// Wikilink targets in their original (unresolved) form.
     pub links: Vec<String>,
+    /// The subset of `links` written in the note body. Stored as the
+    /// `in_body` flag on each `file_links` row.
+    pub body_links: Vec<String>,
     /// Inline `#task` / `#due` markers from the note body.
     pub agenda_markers: Vec<crate::models::note::AgendaMarker>,
     /// Document-level `#note(recurrence: …)` repeat rule, if any.
@@ -108,11 +111,43 @@ fn cached_file_from_row(row: FileRow) -> Result<CachedFile> {
         title,
         tags: Vec::new(),
         links: Vec::new(),
+        body_links: Vec::new(),
         agenda_markers,
         recurrence,
         unresolved_suggestions: unresolved_suggestions.max(0) as u32,
         content,
     })
+}
+
+impl CachedFile {
+    /// Append a link read from the cache, recording it as a body link too
+    /// when `in_body` is set.
+    fn push_link(&mut self, target: String, in_body: bool) {
+        if in_body {
+            self.body_links.push(target.clone());
+        }
+        self.links.push(target);
+    }
+
+    /// Each link paired with whether it was written in the note body. A target
+    /// that appears several times is marked as a body link as many times as it
+    /// appears in `body_links`.
+    fn links_with_origin(&self) -> impl Iterator<Item = (&String, bool)> {
+        let mut body_left: HashMap<&str, usize> = HashMap::new();
+        for link in &self.body_links {
+            *body_left.entry(link.as_str()).or_default() += 1;
+        }
+        self.links.iter().map(move |link| {
+            let in_body = match body_left.get_mut(link.as_str()) {
+                Some(n) if *n > 0 => {
+                    *n -= 1;
+                    true
+                }
+                _ => false,
+            };
+            (link, in_body)
+        })
+    }
 }
 
 impl MetadataCache {
@@ -225,18 +260,19 @@ impl MetadataCache {
         // Links — preserve order via the `ordinal` column.
         {
             let mut stmt = conn.prepare(
-                "SELECT source_path, target_text FROM file_links \
+                "SELECT source_path, target_text, in_body FROM file_links \
                  WHERE notebox_id = ?1 ORDER BY source_path, ordinal",
             )?;
             let rows = stmt.query_map(params![notebox_id], |row| {
                 let path: String = row.get(0)?;
                 let target: String = row.get(1)?;
-                Ok((path, target))
+                let in_body: bool = row.get(2)?;
+                Ok((path, target, in_body))
             })?;
             for row in rows {
-                let (path, target) = row?;
+                let (path, target, in_body) = row?;
                 if let Some(file) = files.get_mut(&PathBuf::from(&path)) {
-                    file.links.push(target);
+                    file.push_link(target, in_body);
                 }
             }
         }
@@ -273,12 +309,16 @@ impl MetadataCache {
             .collect::<rusqlite::Result<Vec<String>>>()?;
 
         let mut links = conn.prepare(
-            "SELECT target_text FROM file_links \
+            "SELECT target_text, in_body FROM file_links \
              WHERE notebox_id = ?1 AND source_path = ?2 ORDER BY ordinal",
         )?;
-        file.links = links
-            .query_map(params![notebox_id, &path_str], |row| row.get(0))?
-            .collect::<rusqlite::Result<Vec<String>>>()?;
+        let rows = links.query_map(params![notebox_id, &path_str], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?))
+        })?;
+        for row in rows {
+            let (target, in_body) = row?;
+            file.push_link(target, in_body);
+        }
 
         Ok(Some(file))
     }
@@ -320,8 +360,8 @@ impl MetadataCache {
             let mut delete_links =
                 tx.prepare("DELETE FROM file_links WHERE notebox_id = ?1 AND source_path = ?2")?;
             let mut insert_link = tx.prepare(
-                "INSERT INTO file_links (notebox_id, source_path, target_text, ordinal) \
-                 VALUES (?1, ?2, ?3, ?4)",
+                "INSERT INTO file_links (notebox_id, source_path, target_text, ordinal, in_body) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
             )?;
 
             for file in files {
@@ -349,8 +389,14 @@ impl MetadataCache {
                 }
 
                 delete_links.execute(params![notebox_id, &path_str])?;
-                for (ordinal, link) in file.links.iter().enumerate() {
-                    insert_link.execute(params![notebox_id, &path_str, link, ordinal as i64,])?;
+                for (ordinal, (link, in_body)) in file.links_with_origin().enumerate() {
+                    insert_link.execute(params![
+                        notebox_id,
+                        &path_str,
+                        link,
+                        ordinal as i64,
+                        in_body
+                    ])?;
                 }
             }
         }
@@ -455,6 +501,7 @@ mod tests {
             title: Some("Fourth Space".to_string()),
             tags: vec!["place".to_string(), "idea".to_string()],
             links: vec!["Third Space".to_string(), "Commons".to_string()],
+            body_links: vec!["Commons".to_string()],
             agenda_markers: Vec::new(),
             recurrence: None,
             unresolved_suggestions: 1,
@@ -485,6 +532,8 @@ mod tests {
         assert_eq!(one.title.as_deref(), Some("Fourth Space"));
         assert_eq!(one.tags, from_all.tags);
         assert_eq!(one.links, vec!["Third Space", "Commons"]);
+        assert_eq!(one.body_links, vec!["Commons"]);
+        assert_eq!(from_all.body_links, vec!["Commons"]);
         assert_eq!(one.unresolved_suggestions, 1);
         assert_eq!(one.content, from_all.content);
     }

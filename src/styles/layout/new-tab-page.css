@@ -1,0 +1,130 @@
+/* New tab page: the optional list cards shown below the fixed actions of an
+   empty tab (see components/panes/NewTabPage.tsx). The actions themselves use
+   the shared .empty-state pattern. */
+
+.new-tab-page {
+  padding-bottom: var(--space-8);
+}
+
+/* Cards wrap onto new rows as the pane narrows, and a card left alone on the
+   last row stays centred. Widths are in rem so they follow the text size. */
+.new-tab-page__sections {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-start;
+  gap: var(--space-6);
+  margin: var(--space-9) auto 0;
+  padding: 0 var(--space-7);
+}
+
+/* The empty page sits on the chrome colour, so each card takes the brighter
+   page colour, like a small sheet of the writing surface. */
+.new-tab-page__section {
+  flex: 1 1 18rem;
+  max-width: 24rem;
+  min-width: 0;
+  background: var(--surface-0);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4) var(--space-3) var(--space-3);
+}
+
+.new-tab-page__section-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-1) var(--space-4) var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--fg-muted);
+}
+
+.new-tab-page__section-title svg {
+  color: var(--accent-text);
+  flex-shrink: 0;
+}
+
+.new-tab-page__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Today's list has no fixed length, so it scrolls inside its card once it
+   passes the chosen number of rows (--new-tab-rows, set from Settings). The
+   height of one row is worked out from the same sizes the row uses below. */
+.new-tab-page__list--scroll {
+  --new-tab-row-height: calc(
+    2 * var(--space-2) + (var(--text-md) + var(--text-sm)) * var(--leading-tight)
+  );
+  max-height: calc(var(--new-tab-rows, 6) * var(--new-tab-row-height));
+  overflow-y: auto;
+}
+
+.new-tab-page__quiet {
+  margin: 0;
+  padding: var(--space-2) var(--space-4) var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+}
+
+.new-tab-page__row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  width: 100%;
+  padding: var(--space-2) var(--space-4);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: var(--text-md);
+  color: var(--fg-secondary);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.new-tab-page__row:hover {
+  background: var(--bg-hover);
+}
+
+.new-tab-page__row > svg {
+  flex-shrink: 0;
+  align-self: center;
+  color: var(--fg-dim);
+}
+
+.new-tab-page__row-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.new-tab-page__row-text,
+.new-tab-page__row-detail {
+  line-height: var(--leading-tight);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.new-tab-page__row-detail,
+.new-tab-page__row-aside {
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+}
+
+.new-tab-page__row-aside {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.new-tab-page__row--done .new-tab-page__row-text {
+  text-decoration: line-through;
+  color: var(--fg-dim);
+}

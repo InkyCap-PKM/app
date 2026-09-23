@@ -88,6 +88,10 @@ const DEFAULTS: UserSettings = {
   },
   behaviour: {
     switch_to_new_tab: false,
+    new_tab_recent_notes: false,
+    new_tab_today: false,
+    new_tab_unwritten_notes: false,
+    new_tab_list_length: 6,
     disable_dmabuf_renderer: false,
   },
   backup: {

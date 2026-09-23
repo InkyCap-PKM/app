@@ -135,10 +135,10 @@ export function formatUserDate(
 export function formatUserDateTime(input: Date | string | number): string {
   const d = toDate(input);
   if (!d) return typeof input === "string" ? input : String(input);
-  const datePart = formatUserDate(d);
-  const timePart = d.toLocaleTimeString(localeCode(), {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  return `${datePart} ${timePart}`;
+  return `${formatUserDate(d)} ${formatUserTime(d)}`;
+}
+
+/** Format the time of day (hours and minutes) the way the UI locale writes it. */
+export function formatUserTime(d: Date): string {
+  return d.toLocaleTimeString(localeCode(), { hour: "2-digit", minute: "2-digit" });
 }

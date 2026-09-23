@@ -192,6 +192,7 @@ mod tests {
             path: PathBuf::from(path),
             properties: HashMap::new(),
             links: vec![],
+            body_links: Vec::new(),
             tags: tags.into_iter().map(String::from).collect(),
             agenda_markers: vec![],
             unresolved_suggestions: 0,

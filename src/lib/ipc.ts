@@ -30,6 +30,8 @@ import type {
   MycelialExclusionInfo,
   PropertyType,
   AgendaItem,
+  RecentNote,
+  UnwrittenNote,
   Recurrence,
   ConnectionFlags,
   ScrollEntry,
@@ -2173,6 +2175,22 @@ export async function findOffsetInScrollQuery(query: {
 /** Notebox-wide agenda — every task / dated item across all notes. */
 export async function getAgendaItems(): Promise<AgendaItem[]> {
   return invoke<AgendaItem[]>("get_agenda_items");
+}
+
+/** Tasks and dated reminders due today, across the whole notebox. */
+export async function getTodayAgendaItems(): Promise<AgendaItem[]> {
+  return invoke<AgendaItem[]>("get_today_agenda_items");
+}
+
+/** The `limit` most recently modified notes, newest first. */
+export async function getRecentNotes(limit: number): Promise<RecentNote[]> {
+  return invoke<RecentNote[]>("get_recent_notes", { limit });
+}
+
+/** Notes that are linked to but not written yet, ordered by when a linking
+ *  note last changed, newest first. */
+export async function getUnwrittenNotes(limit: number): Promise<UnwrittenNote[]> {
+  return invoke<UnwrittenNote[]>("get_unwritten_notes", { limit });
 }
 
 /** Collection-scoped agenda — tasks / dated items for one collection view. */

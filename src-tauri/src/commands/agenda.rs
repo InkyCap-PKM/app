@@ -309,6 +309,31 @@ pub async fn get_agenda_items(
     Ok(agenda_items_for_notes(&notes, local_today()))
 }
 
+/// Agenda items dated today (in the user's local time zone), done or not.
+/// Feeds the "Today" section of the new tab page. Filtering here keeps the
+/// reply small: recurring reminders expand up to a year ahead, and none of
+/// those later occurrences need to cross to the frontend.
+#[tauri::command]
+pub async fn get_today_agenda_items(
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<Vec<AgendaItem>, InkyCapError> {
+    let session = state.session(window.label()).await;
+    let index = session.property_index.read().await;
+    let notes: Vec<&NoteMetadata> = index.notes.values().collect();
+    let today = local_today();
+    Ok(items_dated(agenda_items_for_notes(&notes, today), today))
+}
+
+/// Keep only the items whose date is `day`.
+fn items_dated(items: Vec<AgendaItem>, day: NaiveDate) -> Vec<AgendaItem> {
+    let iso = day.format("%Y-%m-%d").to_string();
+    items
+        .into_iter()
+        .filter(|item| item.date.as_deref() == Some(iso.as_str()))
+        .collect()
+}
+
 /// Collection-scoped agenda — feeds the Collection "Agenda" view. Membership
 /// is resolved exactly the way the table view resolves it (the collection's
 /// global filter plus the view's own filter), so a note appears here because
@@ -365,6 +390,7 @@ mod tests {
             path: PathBuf::from(path),
             properties,
             links: Vec::new(),
+            body_links: Vec::new(),
             tags: tags.iter().map(|t| (*t).to_string()).collect(),
             agenda_markers: markers,
             unresolved_suggestions: 0,
@@ -394,6 +420,26 @@ mod tests {
         assert_eq!(items[0].date.as_deref(), Some("2026-06-23"));
         assert_eq!(items[0].text, "Submit paper");
         assert_eq!(items[0].tags, vec!["work".to_string()]);
+    }
+
+    #[test]
+    fn items_dated_keeps_only_that_day() {
+        let due_today = note(
+            "/notebox/a.typ",
+            &[("due", PropertyValue::String("2026-06-15".into()))],
+            &[],
+            Vec::new(),
+        );
+        let due_later = note(
+            "/notebox/b.typ",
+            &[("due", PropertyValue::String("2026-06-16".into()))],
+            &[],
+            Vec::new(),
+        );
+        let items = agenda_items_for_notes(&[&due_today, &due_later], today());
+        let dated = items_dated(items, today());
+        assert_eq!(dated.len(), 1);
+        assert_eq!(dated[0].date.as_deref(), Some("2026-06-15"));
     }
 
     #[test]

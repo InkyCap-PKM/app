@@ -101,8 +101,12 @@ pub struct AgendaMarker {
 pub struct NoteMetadata {
     pub path: PathBuf,
     pub properties: HashMap<String, PropertyValue>,
-    /// Wikilinks found in the note body
+    /// Every outgoing link target: wikilinks in the body plus `link-ref`s in
+    /// `#note(...)` properties.
     pub links: Vec<String>,
+    /// The subset of `links` written in the note body.
+    #[serde(default)]
+    pub body_links: Vec<String>,
     pub tags: Vec<String>,
     /// Inline `#task` / `#due` markers found in the note body.
     #[serde(default)]

@@ -486,6 +486,16 @@ export interface BehaviourSettings {
    *  immediately. When false, the tab opens in the background. */
   switch_to_new_tab: boolean;
 
+  /** Show the most recently modified notes on the new tab page. */
+  new_tab_recent_notes: boolean;
+  /** Show the tasks and dated reminders due today on the new tab page. */
+  new_tab_today: boolean;
+  /** Show notes that are linked to but not written yet on the new tab page. */
+  new_tab_unwritten_notes: boolean;
+  /** How many entries each new tab page list shows (the "Today" list
+   *  scrolls past this many instead). Settings offers 3, 6 or 12. */
+  new_tab_list_length: number;
+
   /** Linux-only WebKitGTK workaround. When true, InkyCap disables the DMABUF
    *  GPU compositing path at startup to fix stray/duplicated UI artifacts on
    *  some GPU + driver + compositor combinations. Read once before the webview
@@ -969,6 +979,29 @@ export interface AgendaItem {
   occurrence_index: number | null;
   /** The repeat rule, for rendering a human summary. `null` when not recurring. */
   recurrence: Recurrence | null;
+}
+
+// New tab page lists. Mirror the Rust structs in `commands/new_tab_page.rs`.
+
+/** One note in the new tab page's "Recent notes" list. */
+export interface RecentNote {
+  path: string;
+  title: string;
+  /** Last modification, in seconds since the Unix epoch. */
+  modified_time: number;
+}
+
+/** A wikilink target that names no existing note. */
+export interface UnwrittenNote {
+  /** The note name as written in the most recently modified linking note. */
+  target: string;
+  /** The most recently modified note that links to the target. */
+  source_path: string;
+  source_title: string;
+  /** When that linking note was last modified, in seconds since the epoch. */
+  modified_time: number;
+  /** How many notes link to the target. */
+  source_count: number;
 }
 
 // Search types

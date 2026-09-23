@@ -1,12 +1,16 @@
-// Behaviour tab: startup behaviour + target, tab-switching preference, and
-// the Journal Scroll sort/anchor-scope settings.
+// Behaviour tab: startup behaviour + target, tab preferences (switching and
+// the new tab page's optional lists), and the Journal Scroll sort/anchor-scope
+// settings.
 import { createResource, createEffect, Show } from "solid-js";
 import * as ipc from "../../lib/ipc";
 import { settings, updateSetting, noteboxSettings, updateNoteboxSetting } from "../../stores/settings";
-import { useI18n } from "../../lib/i18n";
+import { useI18n, formatNumber } from "../../lib/i18n";
 import { dailyNotesFolder } from "../../stores/journal-scroll";
 import { isLinux } from "../../lib/platform";
 import { SettingSelect, SettingPathText, SettingToggle, collectPaths } from "./shared";
+
+/** The list lengths offered for the new tab page. */
+const NEW_TAB_LIST_LENGTHS = [3, 6, 12];
 
 export function BehaviourSettingsSection() {
   const t = useI18n();
@@ -131,6 +135,40 @@ export function BehaviourSettingsSection() {
         value={settings.behaviour.switch_to_new_tab}
         onChange={(v) => updateSetting("behaviour", "switch_to_new_tab", v)}
       />
+      <SettingToggle
+        label={t("settings.behaviour.newTabRecent.label")}
+        description={t("settings.behaviour.newTabRecent.description")}
+        value={settings.behaviour.new_tab_recent_notes}
+        onChange={(v) => updateSetting("behaviour", "new_tab_recent_notes", v)}
+      />
+      <SettingToggle
+        label={t("settings.behaviour.newTabToday.label")}
+        description={t("settings.behaviour.newTabToday.description")}
+        value={settings.behaviour.new_tab_today}
+        onChange={(v) => updateSetting("behaviour", "new_tab_today", v)}
+      />
+      <SettingToggle
+        label={t("settings.behaviour.newTabUnwritten.label")}
+        description={t("settings.behaviour.newTabUnwritten.description")}
+        value={settings.behaviour.new_tab_unwritten_notes}
+        onChange={(v) => updateSetting("behaviour", "new_tab_unwritten_notes", v)}
+      />
+      {/* Only relevant once at least one list is on. */}
+      <Show
+        when={
+          settings.behaviour.new_tab_recent_notes ||
+          settings.behaviour.new_tab_today ||
+          settings.behaviour.new_tab_unwritten_notes
+        }
+      >
+        <SettingSelect
+          label={t("settings.behaviour.newTabListLength.label")}
+          description={t("settings.behaviour.newTabListLength.description")}
+          value={String(settings.behaviour.new_tab_list_length)}
+          options={NEW_TAB_LIST_LENGTHS.map((n) => ({ value: String(n), label: formatNumber(n) }))}
+          onChange={(v) => updateSetting("behaviour", "new_tab_list_length", Number(v))}
+        />
+      </Show>
 
       {/* Graphics (Linux/WebKitGTK only) */}
       <Show when={isLinux()}>

@@ -17,6 +17,7 @@
 @import "./layout/agenda.css";
 @import "./layout/tabs.css";
 @import "./layout/empty-state.css";
+@import "./layout/new-tab-page.css";
 @import "./layout/collection-table.css";
 @import "./layout/context-menu.css";
 @import "./layout/property-rows.css";

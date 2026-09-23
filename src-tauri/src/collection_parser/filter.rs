@@ -616,6 +616,7 @@ mod tests {
             path: std::path::PathBuf::from("/notebox/notes/TestNote.md"),
             properties,
             links: vec![],
+            body_links: Vec::new(),
             tags: vec![],
             agenda_markers: vec![],
             unresolved_suggestions: 0,
