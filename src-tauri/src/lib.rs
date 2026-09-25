@@ -9,8 +9,8 @@
 pub mod app_paths;
 pub mod backup;
 pub mod bookmarks;
-pub mod clipboard;
 pub mod cache;
+pub mod clipboard;
 pub mod collection_parser;
 pub mod commands;
 pub mod config;

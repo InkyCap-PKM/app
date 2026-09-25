@@ -171,7 +171,10 @@ mod win32 {
     /// Open the clipboard, lock the data for `format`, hand it to `read`,
     /// and always unlock and close again so other apps don't see a stale
     /// clipboard owner.
-    fn with_clipboard_data<T>(format: u32, read: impl FnOnce(*const u8, usize) -> Option<T>) -> Option<T> {
+    fn with_clipboard_data<T>(
+        format: u32,
+        read: impl FnOnce(*const u8, usize) -> Option<T>,
+    ) -> Option<T> {
         unsafe {
             let null_hwnd: HWND = std::ptr::null_mut();
             if OpenClipboard(null_hwnd) == 0 {
@@ -219,7 +222,10 @@ mod win32 {
 
     /// The registered "HTML Format": UTF-8 bytes with an offsets header.
     pub fn read_html() -> Option<String> {
-        let name: Vec<u16> = "HTML Format".encode_utf16().chain(std::iter::once(0)).collect();
+        let name: Vec<u16> = "HTML Format"
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
         // SAFETY: `name` is a null-terminated UTF-16 string.
         let format = unsafe { RegisterClipboardFormatW(name.as_ptr()) };
         if format == 0 {
@@ -239,7 +245,10 @@ mod tests {
 
     #[test]
     fn decodes_utf8_and_utf16_html() {
-        assert_eq!(decode_html_bytes(b"<p>caf\xc3\xa9</p>\0").as_deref(), Some("<p>café</p>"));
+        assert_eq!(
+            decode_html_bytes(b"<p>caf\xc3\xa9</p>\0").as_deref(),
+            Some("<p>café</p>")
+        );
         let mut utf16 = vec![0xFF, 0xFE];
         utf16.extend("<b>é</b>".encode_utf16().flat_map(u16::to_le_bytes));
         assert_eq!(decode_html_bytes(&utf16).as_deref(), Some("<b>é</b>"));
@@ -252,9 +261,8 @@ mod tests {
         let header_template = "Version:0.9\r\nStartHTML:0000000000\r\nEndHTML:0000000000\r\n";
         let start = header_template.len();
         let end = start + html.len();
-        let payload = format!(
-            "Version:0.9\r\nStartHTML:{start:010}\r\nEndHTML:{end:010}\r\n{html}"
-        );
+        let payload =
+            format!("Version:0.9\r\nStartHTML:{start:010}\r\nEndHTML:{end:010}\r\n{html}");
         assert_eq!(html_from_cf_html(payload.as_bytes()).as_deref(), Some(html));
     }
 }

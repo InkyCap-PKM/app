@@ -23,8 +23,8 @@ const MAX_DEPTH: usize = 200;
 /// Elements whose content is never user-visible prose.
 const SKIPPED: &[&str] = &[
     "head", "script", "style", "noscript", "template", "title", "meta", "link", "base", "svg",
-    "canvas", "iframe", "object", "embed", "video", "audio", "source", "track", "button",
-    "input", "select", "textarea", "option", "datalist", "map", "area",
+    "canvas", "iframe", "object", "embed", "video", "audio", "source", "track", "button", "input",
+    "select", "textarea", "option", "datalist", "map", "area",
 ];
 
 /// Convert an HTML document or fragment into Typst markup, without the
@@ -88,7 +88,10 @@ enum Tail {
     /// Strong or emphasis written with `*…*` / `_…_`, starting at byte
     /// `start`. A following letter would stop the closing delimiter from
     /// counting, so the span is rewritten into `#strong[…]` / `#emph[…]`.
-    Delim { start: usize, name: &'static str },
+    Delim {
+        start: usize,
+        name: &'static str,
+    },
 }
 
 struct Writer {
@@ -196,7 +199,9 @@ impl Writer {
     /// Append already-valid Typst, first adjusting what came before it if
     /// the new first character would change how that is parsed.
     fn push(&mut self, s: &str) {
-        let Some(first) = s.chars().next() else { return };
+        let Some(first) = s.chars().next() else {
+            return;
+        };
         match self.tail {
             Tail::Call if matches!(first, '(' | '.') => self.out.push('\\'),
             Tail::Delim { start, name } if is_wordy(first) => {
@@ -216,7 +221,10 @@ impl Writer {
     /// characters are escaped.
     fn text(&mut self, raw: &str) {
         let is_ws = |c: char| matches!(c, ' ' | '\t' | '\n' | '\r' | '\x0C');
-        let body = raw.split(is_ws).filter(|s| !s.is_empty()).collect::<Vec<_>>();
+        let body = raw
+            .split(is_ws)
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>();
         if raw.starts_with(is_ws) {
             self.space();
         }
@@ -878,11 +886,7 @@ fn pre_text(node: &NodeRef, out: &mut String) {
 /// A Typst raw block, fenced with more backticks than the code contains in
 /// a row.
 fn fenced(lang: &str, code: &str) -> String {
-    let longest_run = code
-        .split(|c| c != '`')
-        .map(str::len)
-        .max()
-        .unwrap_or(0);
+    let longest_run = code.split(|c| c != '`').map(str::len).max().unwrap_or(0);
     let fence = "`".repeat((longest_run + 1).max(3));
     format!("{fence}{lang}\n{code}\n{fence}")
 }
@@ -891,11 +895,7 @@ fn fenced(lang: &str, code: &str) -> String {
 /// its `<code>` child, or its wrapper (`language-rust`, `lang-rust`,
 /// GitHub's `highlight-source-rust`).
 fn code_language(pre: &NodeRef) -> String {
-    let candidates = [
-        Some(*pre),
-        pre.first_element_child(),
-        pre.parent(),
-    ];
+    let candidates = [Some(*pre), pre.first_element_child(), pre.parent()];
     for node in candidates.into_iter().flatten() {
         let Some(class) = node.class() else { continue };
         for name in class.split_whitespace() {
@@ -979,17 +979,19 @@ fn table(node: &NodeRef, w: &mut Writer, cx: Ctx) {
     {
         rows[0].header = true;
     }
-    let spans = rows.iter().flat_map(|r| &r.cells).any(|c| {
-        span(c, "colspan") > 1 || span(c, "rowspan") > 1
-    });
+    let spans = rows
+        .iter()
+        .flat_map(|r| &r.cells)
+        .any(|c| span(c, "colspan") > 1 || span(c, "rowspan") > 1);
 
-    let caption = caption.map(|c| {
-        let mut sub = w.child();
-        sub.single_line = true;
-        walk_children(&c, &mut sub, cx);
-        sub.finish()
-    })
-    .filter(|c| !c.is_empty());
+    let caption = caption
+        .map(|c| {
+            let mut sub = w.child();
+            sub.single_line = true;
+            walk_children(&c, &mut sub, cx);
+            sub.finish()
+        })
+        .filter(|c| !c.is_empty());
     let indent = match caption {
         Some(_) => format!("{}  ", w.indent),
         None => w.indent.clone(),
@@ -1126,7 +1128,10 @@ fn escape_markup(text: &str, line_start: bool) -> String {
             }
             Some('-' | '+' | '/') => escape_first = followed_by_space(1),
             Some(c) if c.is_ascii_digit() => {
-                let run = chars.iter().take_while(|&&(_, c)| c.is_ascii_digit()).count();
+                let run = chars
+                    .iter()
+                    .take_while(|&&(_, c)| c.is_ascii_digit())
+                    .count();
                 if chars.get(run).is_some_and(|&(_, c)| c == '.') && followed_by_space(run + 1) {
                     escape_at = Some(run);
                 }
@@ -1351,7 +1356,10 @@ mod tests {
             conv(r#"<img src="https://x.org/cat.png">"#),
             "#link(\"https://x.org/cat.png\")[cat.png]"
         );
-        assert_eq!(conv(r#"<img src="data:image/png;base64,AA" alt="dot">"#), "dot");
+        assert_eq!(
+            conv(r#"<img src="data:image/png;base64,AA" alt="dot">"#),
+            "dot"
+        );
     }
 
     #[test]
@@ -1365,7 +1373,10 @@ mod tests {
     #[test]
     fn ordered_lists_and_start() {
         assert_eq!(conv("<ol><li>a</li><li>b</li></ol>"), "+ a\n+ b");
-        assert_eq!(conv(r#"<ol start="4"><li>a</li><li>b</li></ol>"#), "4. a\n+ b");
+        assert_eq!(
+            conv(r#"<ol start="4"><li>a</li><li>b</li></ol>"#),
+            "4. a\n+ b"
+        );
     }
 
     #[test]
@@ -1386,7 +1397,9 @@ mod tests {
     #[test]
     fn checklists_become_tasks() {
         assert_eq!(
-            conv(r#"<ul><li><input type="checkbox" checked> Done "it"</li><li><input type="checkbox"> Todo</li></ul>"#),
+            conv(
+                r#"<ul><li><input type="checkbox" checked> Done "it"</li><li><input type="checkbox"> Todo</li></ul>"#
+            ),
             "#task(\"Done \\\"it\\\"\", done: true)\n#task(\"Todo\")"
         );
     }
@@ -1437,7 +1450,8 @@ mod tests {
 
     #[test]
     fn table_spans_use_table_cell() {
-        let html = r#"<table><tr><td colspan="2">wide</td></tr><tr><td>a</td><td>b</td></tr></table>"#;
+        let html =
+            r#"<table><tr><td colspan="2">wide</td></tr><tr><td>a</td><td>b</td></tr></table>"#;
         assert_eq!(
             conv(html),
             "#table(\n  columns: (auto, auto),\n  table.cell(colspan: 2)[wide],\n  [a], [b],\n)"
@@ -1464,7 +1478,9 @@ mod tests {
     #[test]
     fn hidden_and_non_content_elements_are_skipped() {
         assert_eq!(
-            conv(r#"<style>p{}</style><script>x()</script><p>keep<span hidden>no</span><span style="display: none">no</span></p>"#),
+            conv(
+                r#"<style>p{}</style><script>x()</script><p>keep<span hidden>no</span><span style="display: none">no</span></p>"#
+            ),
             "keep"
         );
     }
