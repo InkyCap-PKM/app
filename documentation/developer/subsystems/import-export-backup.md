@@ -83,6 +83,26 @@ The Tauri commands are `scan_markdown_frontmatter`, `import_markdown_notebox`,
 `detect_markdown_dialect`, `convert_markdown_to_typst`, and
 `paste_markdown_as_typst` (clipboard).
 
+### 1.6 Pasting HTML (`src-tauri/src/html/`)
+
+*Paste from HTML* (`paste_html_as_typst`) reads the clipboard's HTML flavour
+through [`clipboard.rs`](../../../src-tauri/src/clipboard.rs) (GTK `text/html`,
+`NSPasteboardTypeHTML`, or Win32 `HTML Format` with its offsets header
+stripped) and converts it with `html_to_typst`, a DOM walk over `dom_query`
+(html5ever) that writes Typst directly rather than going through Markdown. It
+recognizes headings, paragraphs, lists and checklists (`#task`), term lists,
+block quotes, raw blocks, tables (in the visual editor's canonical
+`#table(columns: (auto, …))` form; spans use `table.cell`), links, and inline
+formatting, including the `style="font-weight: …"` spans that Google Docs
+produces. Remote images become `#link(...)` calls: nothing is downloaded.
+
+Text is escaped against Typst's own lexer rules: `*`/`_` stay bare inside a
+word, bare `http(s)://` URLs are copied verbatim using `typst::syntax::link_prefix`,
+and line-start markers (`=`, `-`, `+`, `/`, `1.`) are escaped only at the start
+of a line. When `*…*` / `_…_` would touch a letter, the converter writes
+`#strong[…]` / `#emph[…]` instead. When the clipboard has no HTML, its plain
+text is inserted escaped (`plain_text_to_typst`).
+
 ---
 
 ## 2. Export (`src-tauri/src/commands/export/`)

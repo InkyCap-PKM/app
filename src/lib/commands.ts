@@ -510,6 +510,32 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
     },
   });
 
+  registerCommand({
+    id: "edit:paste-as-html",
+    title: t("command.edit.paste-as-html"),
+    category: "Edit",
+    execute: async () => {
+      const handle = activeEditorView();
+      if (!handle) return;
+      try {
+        const typst = await ipc.pasteHtmlAsTypst();
+        if (!typst) {
+          showToast("info", t("command.edit.paste-empty"));
+          return;
+        }
+        const { from, to } = handle.view.state.selection.main;
+        handle.view.dispatch({
+          changes: { from, to, insert: typst },
+          selection: { anchor: from + typst.length },
+          scrollIntoView: true,
+        });
+        handle.view.focus();
+      } catch (e) {
+        showToast("error", errorText(e));
+      }
+    },
+  });
+
   // Annotation / suggestion authoring. These mirror the four InkyCap entries
   // in the `/` slash palette and the Annotations pane toolbar — all three route
   // through `insertAnnotationMarkup`, which wraps the current selection and

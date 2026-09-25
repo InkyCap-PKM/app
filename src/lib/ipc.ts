@@ -2122,6 +2122,13 @@ export async function pasteMarkdownAsTypst(): Promise<string | null> {
   return invoke<string | null>("paste_markdown_as_typst");
 }
 
+/** Read the clipboard's HTML (or, failing that, its plain text) and return it
+ *  as Typst markup ready to insert at the cursor. `null` when the clipboard
+ *  has nothing to paste. */
+export async function pasteHtmlAsTypst(): Promise<string | null> {
+  return invoke<string | null>("paste_html_as_typst");
+}
+
 export interface ImportResult {
   notes_converted: number;
   files_copied: number;

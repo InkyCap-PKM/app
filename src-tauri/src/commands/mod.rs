@@ -12,6 +12,7 @@ pub mod files;
 pub mod flow;
 pub mod fonts;
 pub mod git;
+pub mod html;
 pub mod journal_scroll;
 pub mod markdown;
 pub mod mycelial;

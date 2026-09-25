@@ -115,6 +115,16 @@ This quick paste uses the *Standard* dialect (things like prices or references s
 
 #callout("note")[On Linux, this command reads the system clipboard directly and has been a little finicky to trigger in some setups. If a paste doesn't seem to take, a full archive import will be more reliable.]
 
+== Pasting from a webpage
+
+When you copy part of a webpage in your browser, the clipboard holds its formatting as HTML. Run the *Paste from HTML* command (in the command palette under _Edit_, or filter the palette by typing `html`) and InkyCap converts that HTML to Typst and inserts it at your cursor. Headings, paragraphs, bold and italic text, lists, checklists, quotes, code, tables, and links all come across. Content copied from word processors such as Google Docs works the same way.
+
+A few things to know:
+
+- Images on the web aren't downloaded; each one becomes a link to its original address, labelled with its description.
+- Links that only point elsewhere on the same page (or to a page on the same site without a full address) keep their text but not the link.
+- If the clipboard holds only plain text, it's pasted as-is, with any characters Typst would treat as formatting escaped so the text appears exactly as copied.
+
 == Round-trips (import and export)
 
 InkyCap aims to keep importing and exporting evenly matched; tables, highlights, callouts, and the like travel both directions (you can export InkyCap's Typst notes into Markdown notes). Nevertheless, conversion between formats is not necessarily perfect. After a large import it's worth verifying some notes to confirm that everything is as you'd expect, especially footnotes and any complex math.

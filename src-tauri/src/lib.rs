@@ -9,6 +9,7 @@
 pub mod app_paths;
 pub mod backup;
 pub mod bookmarks;
+pub mod clipboard;
 pub mod cache;
 pub mod collection_parser;
 pub mod commands;
@@ -21,6 +22,7 @@ pub mod events;
 pub mod external_tools;
 pub mod font_resolver;
 pub mod git;
+pub mod html;
 pub mod id_migration;
 pub mod link_index;
 pub mod markdown;
@@ -450,6 +452,7 @@ pub fn run() {
             commands::typst::compile_typst_svg,
             commands::typst::compile_typst_html,
             commands::markdown::paste_markdown_as_typst,
+            commands::html::paste_html_as_typst,
             commands::markdown::convert_markdown_to_typst,
             commands::markdown::import_markdown_notebox,
             commands::markdown::scan_markdown_frontmatter,

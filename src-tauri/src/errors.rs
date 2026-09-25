@@ -107,6 +107,10 @@ pub enum InkyCapError {
     /// file couldn't be replaced, …). The running version is unchanged.
     #[error("The update couldn't be installed: {0}")]
     UpgradeFailed(String),
+
+    /// The system clipboard couldn't be read.
+    #[error("Couldn't read the clipboard: {0}")]
+    Clipboard(String),
 }
 
 impl InkyCapError {
@@ -140,6 +144,7 @@ impl InkyCapError {
             InkyCapError::UpgradeUnavailable(_) => "upgrade-unavailable",
             InkyCapError::UpgradeNotVerified(_) => "upgrade-not-verified",
             InkyCapError::UpgradeFailed(_) => "upgrade-failed",
+            InkyCapError::Clipboard(_) => "clipboard",
         }
     }
 
@@ -165,7 +170,8 @@ impl InkyCapError {
             | InkyCapError::NoteboxAlreadyOpen(s)
             | InkyCapError::UpgradeUnavailable(s)
             | InkyCapError::UpgradeNotVerified(s)
-            | InkyCapError::UpgradeFailed(s) => Some(s.clone()),
+            | InkyCapError::UpgradeFailed(s)
+            | InkyCapError::Clipboard(s) => Some(s.clone()),
             InkyCapError::NoteboxNotOpen
             | InkyCapError::FilenameRequired
             | InkyCapError::Cancelled
