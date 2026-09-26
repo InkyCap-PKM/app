@@ -1,6 +1,8 @@
 // Tauri-level drag-drop listener.
 //
 // Handles native file drops from outside the webview (file manager).
+// Files dropped on a folder in the file tree are copied into that folder;
+// files dropped on the editor are copied in and linked at the drop point.
 // On Linux/webkit2gtk, DOM drag events for external drags have their
 // dataTransfer blocked by cross-origin security, so we use Tauri's
 // own drag/drop event which bypasses the webview's security model.
@@ -19,38 +21,21 @@ import { protectedRangesField } from "../editor/typst-decorations/visual-plugin"
 import { getLastDragPos } from "../editor/typst-decorations/drag-drop";
 import type { EditorState } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
-import { fileToBase64 } from "./file-bytes";
-import { askMarkdownImport } from "./markdown-import-prompt";
-import * as ipc from "./ipc";
+import { activeNotePath } from "../stores/tabs";
+import { bringFilesIntoNotebox, incomingFromPath, type IncomingFile } from "./incoming-files";
+import {
+  clearExternalDrop,
+  dropFolderAt,
+  installExternalDropTracking,
+  takeNativeDropFolder,
+  uninstallExternalDropTracking,
+} from "./external-drop";
 
 const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp"]);
-const MARKDOWN_EXTS = new Set(["md", "markdown"]);
 
 function getExtension(name: string): string {
   const dot = name.lastIndexOf(".");
   return dot >= 0 ? name.slice(dot + 1).toLowerCase() : "";
-}
-
-/** A dropped name is markdown when its extension is `.md` / `.markdown`. */
-function isMarkdown(name: string): boolean {
-  return MARKDOWN_EXTS.has(getExtension(name));
-}
-
-/**
- * For a batch of dropped names, decide how to handle any markdown among them.
- * Returns `"convert"`/`"keep"` (the user's choice when markdown is present),
- * `"none"` when no markdown was dropped (nothing to ask), or `"cancel"` when
- * the user dismissed the modal — in which case the caller aborts the drop.
- */
-async function decideMarkdownHandling(
-  names: string[],
-): Promise<"convert" | "keep" | "none" | "cancel"> {
-  const mdNames = names.filter(isMarkdown);
-  if (mdNames.length === 0) return "none";
-  const choice = await askMarkdownImport(
-    mdNames.map((n) => n.split(/[/\\]/).pop() ?? n),
-  );
-  return choice;
 }
 
 /** Scan the document text to find the end of the prelude (the #import,
@@ -125,7 +110,7 @@ function clampPastProtected(state: EditorState, pos: number): number {
 
 /// Build markup for a saved attachment.
 /// `relativePath` is notebox-root-relative (e.g. `assets/Foo.png`) — what
-/// `copy_path_to_attachments` returns since the SEC-1 / path-fix work.
+/// `copy_path_into_notebox` returns since the SEC-1 / path-fix work.
 /// We emit it with a leading `/` so Typst's compiler reads it as
 /// project-root-relative (works in reading view + export), while the
 /// visual editor's `resolveEmbedPath` also handles the slash form.
@@ -227,30 +212,19 @@ async function handleTauriDrop(
   paths: string[],
   position: DropCoords,
 ): Promise<void> {
+  const files = paths.map(incomingFromPath);
+  // Dropped on a folder in the file tree: copy everything into that folder.
+  const folder = takeNativeDropFolder();
+  if (folder !== null) {
+    await bringFilesIntoNotebox(files, { targetFolder: folder }, { announce: true });
+    return;
+  }
   const target = resolveDropTarget(position);
   if (!target) {
     console.warn("[tauri-drop] no active editor, ignoring drop");
     return;
   }
-  let { view, dropPos } = target;
-
-  const md = await decideMarkdownHandling(paths);
-  if (md === "cancel") return;
-  const convertMarkdown = md === "convert";
-
-  for (const absPath of paths) {
-    try {
-      // Markdown → convert to a Typst note (unless the user chose "keep");
-      // everything else copies into the attachment folder as before.
-      const savedName =
-        isMarkdown(absPath) && convertMarkdown
-          ? await ipc.importMarkdownFile(absPath)
-          : await ipc.copyPathToAttachments(absPath);
-      ({ newDropPos: dropPos } = insertSavedAttachment(view, dropPos, savedName));
-    } catch (err) {
-      console.error("[tauri-drop] failed to import", absPath, err);
-    }
-  }
+  await dropIntoEditor(target, files);
 }
 
 async function handleHtml5Drop(event: DragEvent): Promise<void> {
@@ -260,35 +234,36 @@ async function handleHtml5Drop(event: DragEvent): Promise<void> {
   // when the drop happens on the editor surface — this window-level handler
   // exists only to catch drops that landed on sidebar / non-editor surfaces.
   if (event.defaultPrevented) return;
-  const files = event.dataTransfer?.files;
-  if (!files || files.length === 0) return;
+  const dropped = event.dataTransfer?.files;
+  if (!dropped || dropped.length === 0) return;
   event.preventDefault();
+  const files: IncomingFile[] = Array.from(dropped).map((file) => ({ name: file.name, file }));
 
+  // Dropped on a folder in the file tree: copy everything into that folder.
+  const folder = dropFolderAt(event.clientX, event.clientY);
+  if (folder !== null) {
+    await bringFilesIntoNotebox(files, { targetFolder: folder }, { announce: true });
+    return;
+  }
   const target = resolveDropTarget({ x: event.clientX, y: event.clientY });
   if (!target) {
     console.warn("[html5-drop] no active editor, ignoring drop");
     return;
   }
+  await dropIntoEditor(target, files);
+}
+
+/// Bring files dropped on the editor into the notebox (notes per "New note
+/// location", other files to the attachments folder) and insert markup for
+/// each one at the drop position.
+async function dropIntoEditor(
+  target: NonNullable<ReturnType<typeof resolveDropTarget>>,
+  files: IncomingFile[],
+): Promise<void> {
   let { view, dropPos } = target;
-
-  const fileArr = Array.from(files);
-  const md = await decideMarkdownHandling(fileArr.map((f) => f.name));
-  if (md === "cancel") return;
-  const convertMarkdown = md === "convert";
-
-  for (const file of fileArr) {
-    try {
-      const base64 = await fileToBase64(file);
-      // Markdown → convert to a Typst note (unless the user chose "keep");
-      // everything else copies into the attachment folder as before.
-      const savedName =
-        isMarkdown(file.name) && convertMarkdown
-          ? await ipc.importMarkdownText(file.name, base64)
-          : await ipc.copyToAttachments(file.name, base64);
-      ({ newDropPos: dropPos } = insertSavedAttachment(view, dropPos, savedName));
-    } catch (err) {
-      console.error("[html5-drop] failed to import", file.name, err);
-    }
+  const saved = await bringFilesIntoNotebox(files, { currentNote: activeNotePath() });
+  for (const rel of saved ?? []) {
+    ({ newDropPos: dropPos } = insertSavedAttachment(view, dropPos, rel));
   }
 }
 
@@ -303,10 +278,12 @@ let html5DragOverHandler: ((e: DragEvent) => void) | null = null;
 export async function initTauriDragDrop(): Promise<void> {
   if (initialized) return;
   initialized = true;
+  installExternalDropTracking();
   try {
     const webview = getCurrentWebviewWindow();
     tauriUnlisten = await webview.onDragDropEvent((event) => {
       const payload = event.payload;
+      if (payload.type === "leave") clearExternalDrop();
       if (payload.type === "drop" && payload.paths.length > 0) {
         console.debug("[tauri-drop] drop:", payload.paths, payload.position);
         void handleTauriDrop(payload.paths, payload.position);
@@ -328,6 +305,7 @@ export async function initTauriDragDrop(): Promise<void> {
 export function initHtml5DragDrop(): void {
   if (initialized) return;
   initialized = true;
+  installExternalDropTracking();
   // Prevent the default behaviour (open file in webview) on dragover so
   // the drop event actually fires for files from Explorer.
   html5DragOverHandler = (e) => {
@@ -339,6 +317,7 @@ export function initHtml5DragDrop(): void {
 }
 
 export function destroyTauriDragDrop(): void {
+  uninstallExternalDropTracking();
   if (tauriUnlisten) {
     tauriUnlisten();
     tauriUnlisten = null;

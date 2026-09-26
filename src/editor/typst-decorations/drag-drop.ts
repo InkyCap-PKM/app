@@ -2,6 +2,8 @@ import { EditorView, ViewPlugin } from "@codemirror/view";
 import * as ipc from "../../lib/ipc";
 import { typstStringEscape } from "../../lib/typst";
 import { fileToBase64 } from "../../lib/file-bytes";
+import { ensureNoteboxImports } from "../../lib/notebox-import-check";
+import { activeNotePath } from "../../stores/tabs";
 import { pasteUrlHandler } from "./paste-url";
 import { protectedRangesField } from "./visual-plugin";
 
@@ -67,31 +69,58 @@ function insertAttachment(view: EditorView, relativePath: string, pos: number) {
   });
 }
 
-async function handleDroppedFile(view: EditorView, file: File, pos: number) {
+/** Copy a dropped file into the notebox and insert markup for it. Resolves
+ *  with the saved path, or `null` if the copy failed. */
+async function handleDroppedFile(
+  view: EditorView,
+  file: File,
+  pos: number,
+): Promise<string | null> {
   try {
     const base64 = await fileToBase64(file);
-    const savedName = await ipc.copyToAttachments(file.name, base64);
+    const savedName = await ipc.copyBytesIntoNotebox(file.name, base64, {
+      currentNote: activeNotePath(),
+    });
     insertAttachment(view, savedName, pos);
+    return savedName;
   } catch (err) {
     console.error("[drag-drop] handleDroppedFile failed:", err);
+    return null;
   }
 }
 
-async function handleDroppedUri(view: EditorView, uri: string, pos: number) {
+/** Like {@link handleDroppedFile}, for a dropped `file://` URI. */
+async function handleDroppedUri(
+  view: EditorView,
+  uri: string,
+  pos: number,
+): Promise<string | null> {
   const trimmed = uri.trim();
-  if (!trimmed.startsWith("file://")) return;
+  if (!trimmed.startsWith("file://")) return null;
   let absPath: string;
   try {
     absPath = decodeURIComponent(new URL(trimmed).pathname);
   } catch {
-    return;
+    return null;
   }
   try {
-    const savedName = await ipc.copyPathToAttachments(absPath);
+    const savedName = await ipc.copyPathIntoNotebox(absPath, {
+      currentNote: activeNotePath(),
+    });
     insertAttachment(view, savedName, pos);
+    return savedName;
   } catch (err) {
-    console.error("[drag-drop] copyPathToAttachments failed:", absPath, err);
+    console.error("[drag-drop] copyPathIntoNotebox failed:", absPath, err);
+    return null;
   }
+}
+
+/** Once every dropped file is copied, check any Typst files among them for
+ *  the InkyCap import line. */
+function afterDrop(copies: Promise<string | null>[]): void {
+  void Promise.all(copies).then((saved) =>
+    ensureNoteboxImports(saved.filter((p): p is string => p !== null)),
+  );
 }
 
 function parseUriList(raw: string): string[] {
@@ -105,7 +134,7 @@ async function handlePastedImage(view: EditorView, file: File) {
   try {
     const base64 = await fileToBase64(file);
     const name = file.name || `pasted-${Date.now()}.${getExtension(file.type.split("/")[1] ?? "png")}`;
-    const savedName = await ipc.copyToAttachments(name, base64);
+    const savedName = await ipc.copyBytesIntoNotebox(name, base64);
     const pos = view.state.selection.main.from;
     insertAttachment(view, savedName, pos);
   } catch (err) {
@@ -118,10 +147,11 @@ async function handlePastedImage(view: EditorView, file: File) {
  *  event, so we read them from the Rust side and insert whatever was saved. */
 async function handleClipboardPasteFallback(view: EditorView) {
   try {
-    const saved = await ipc.pasteClipboardToAttachments();
+    const saved = await ipc.pasteClipboardIntoNotebox({ currentNote: activeNotePath() });
     for (const rel of saved) {
       insertAttachment(view, rel, view.state.selection.main.from);
     }
+    await ensureNoteboxImports(saved);
   } catch (err) {
     console.error("[paste] clipboard fallback failed:", err);
   }
@@ -188,27 +218,21 @@ export const dragDropHandler = ViewPlugin.fromClass(
 
         if (cd.files && cd.files.length > 0) {
           event.preventDefault();
-          for (const file of Array.from(cd.files)) {
-            void handleDroppedFile(view, file, pos);
-          }
+          afterDrop(Array.from(cd.files).map((file) => handleDroppedFile(view, file, pos)));
           return true;
         }
 
         const uriList = cd.getData("text/uri-list");
         if (uriList) {
           event.preventDefault();
-          for (const uri of parseUriList(uriList)) {
-            void handleDroppedUri(view, uri, pos);
-          }
+          afterDrop(parseUriList(uriList).map((uri) => handleDroppedUri(view, uri, pos)));
           return true;
         }
 
         const text = cd.getData("text/plain");
         if (text && text.trim().startsWith("file://")) {
           event.preventDefault();
-          for (const uri of parseUriList(text)) {
-            void handleDroppedUri(view, uri, pos);
-          }
+          afterDrop(parseUriList(text).map((uri) => handleDroppedUri(view, uri, pos)));
           return true;
         }
 

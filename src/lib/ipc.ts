@@ -983,23 +983,46 @@ export async function deleteFolder(path: string): Promise<void> {
   return invoke<void>("delete_folder", { path });
 }
 
-export async function copyToAttachments(
+/**
+ * Where a file brought into the notebox should go. `targetFolder` is a folder
+ * the user explicitly chose (by dropping onto it in the file tree); every file
+ * goes there. Otherwise notes follow the "New note location" setting, for
+ * which `currentNote` supplies the "Current folder", and other files go to the
+ * attachments folder. Mirrors the Rust `IncomingPlacement`.
+ */
+export interface IncomingPlacement {
+  targetFolder?: string;
+  currentNote?: string;
+}
+
+/** Like {@link copyPathIntoNotebox}, for file contents given as base64. */
+export async function copyBytesIntoNotebox(
   filename: string,
   dataBase64: string,
+  placement?: IncomingPlacement,
 ): Promise<string> {
-  return invoke<string>("copy_to_attachments", { filename, dataBase64 });
+  return invoke<string>("copy_bytes_into_notebox", {
+    filename,
+    dataBase64,
+    placement: placement ?? null,
+  });
 }
 
 /**
- * Copy a file identified by absolute filesystem path into the
- * notebox's attachments folder. Used by drag-drop / paste handlers
+ * Copy a file identified by absolute filesystem path into the notebox,
+ * placed per `placement` (see {@link IncomingPlacement}). Returns the saved
+ * notebox-relative path. Used by drag-drop / paste handlers
  * when the browser gives us a `file://` URL instead of an in-memory
  * File (the usual case on Linux/GNOME when dragging from Nautilus).
  */
-export async function copyPathToAttachments(
+export async function copyPathIntoNotebox(
   sourcePath: string,
+  placement?: IncomingPlacement,
 ): Promise<string> {
-  return invoke<string>("copy_path_to_attachments", { sourcePath });
+  return invoke<string>("copy_path_into_notebox", {
+    sourcePath,
+    placement: placement ?? null,
+  });
 }
 
 /**
@@ -1036,7 +1059,7 @@ export interface PickedImportFile {
 /**
  * Open a native multi-file picker and return the chosen files' paths plus a
  * markdown flag — WITHOUT copying anything. Each path is authorized for a
- * follow-up {@link copyPathToAttachments} (keep) or {@link importMarkdownFile}
+ * follow-up {@link copyPathIntoNotebox} (keep) or {@link importMarkdownFile}
  * (convert) call. Empty array if the user cancelled. Backs "Copy into notebox",
  * which asks per-operation whether to convert markdown to Typst.
  */
@@ -1049,20 +1072,31 @@ export async function pickFilesForImport(): Promise<PickedImportFile[]> {
  * root, returning the new note's notebox-relative path. The path must have been
  * authorized by a recent OS drag-drop or {@link pickFilesForImport}.
  */
-export async function importMarkdownFile(sourcePath: string): Promise<string> {
-  return invoke<string>("import_markdown_file", { sourcePath });
+export async function importMarkdownFile(
+  sourcePath: string,
+  placement?: IncomingPlacement,
+): Promise<string> {
+  return invoke<string>("import_markdown_file", {
+    sourcePath,
+    placement: placement ?? null,
+  });
 }
 
 /**
- * Convert markdown bytes (base64 UTF-8) into a `.typ` note at the notebox root,
- * returning its notebox-relative path. The bytes-only sibling of
+ * Convert markdown bytes (base64 UTF-8) into a `.typ` note placed per
+ * `placement` (see {@link IncomingPlacement}), returning its notebox-relative path. The bytes-only sibling of
  * {@link importMarkdownFile} for the Windows HTML5 drag-drop path.
  */
 export async function importMarkdownText(
   filename: string,
   contentBase64: string,
+  placement?: IncomingPlacement,
 ): Promise<string> {
-  return invoke<string>("import_markdown_text", { filename, contentBase64 });
+  return invoke<string>("import_markdown_text", {
+    filename,
+    contentBase64,
+    placement: placement ?? null,
+  });
 }
 
 export interface AttachmentMigrationPreview {
@@ -1140,12 +1174,17 @@ export async function readClipboardFilePaths(): Promise<string[]> {
 
 /**
  * Read the native clipboard (file references or raw image bytes), copy
- * the content into the notebox attachment folder, and return the
- * notebox-relative paths to insert. Used by the paste handler when the
- * webview's clipboardData yields nothing — the WebKitGTK case on Linux.
+ * the content into the notebox (placed per `placement`, see
+ * {@link IncomingPlacement}), and return the notebox-relative paths to
+ * insert. Used by the paste handler when the webview's clipboardData yields
+ * nothing — the WebKitGTK case on Linux.
  */
-export async function pasteClipboardToAttachments(): Promise<string[]> {
-  return invoke<string[]>("paste_clipboard_to_attachments");
+export async function pasteClipboardIntoNotebox(
+  placement?: IncomingPlacement,
+): Promise<string[]> {
+  return invoke<string[]>("paste_clipboard_into_notebox", {
+    placement: placement ?? null,
+  });
 }
 
 /**
@@ -1330,18 +1369,24 @@ export async function reorderCreationRules(
  * path, `.typ` optional) to start the note from that scaffold instead of the
  * rule's own; the Ctrl+Shift+\ scaffold picker uses this to begin a
  * brand-new note "just from a scaffold" when no note is open.
+ *
+ * Pass `currentNote` (the path of the note the user is working in) so the
+ * "Current folder" option of "New note location" can create the note beside
+ * it.
  */
 export async function executeCreationRule(
   ruleId: string,
   titleOverride?: string,
   targetFolderOverride?: string,
   scaffoldOverride?: string,
+  currentNote?: string,
 ): Promise<CreationResult> {
   return invoke<CreationResult>("execute_creation_rule", {
     ruleId,
     titleOverride: titleOverride ?? null,
     targetFolderOverride: targetFolderOverride ?? null,
     scaffoldOverride: scaffoldOverride ?? null,
+    currentNote: currentNote ?? null,
   });
 }
 
@@ -1884,6 +1929,19 @@ export async function auditTypFiles(): Promise<TypAuditReport> {
 
 export async function repairTypFiles(paths: string[]): Promise<TypRepairSummary> {
   return invoke<TypRepairSummary>("repair_typ_files", { paths });
+}
+
+/// True when the note at `path` is a `.typ` file in the open notebox (outside
+/// `.inkycap/`, not the read-only documentation notebox) that lacks the
+/// InkyCap import line. False for any file the check doesn't apply to.
+export async function noteMissingNoteboxImport(path: string): Promise<boolean> {
+  return invoke<boolean>("note_missing_notebox_import", { path });
+}
+
+/// Prepend the InkyCap import line to the note at `path` if it's missing.
+/// Adds nothing else. Resolves `true` when the file was rewritten.
+export async function addNoteboxImport(path: string): Promise<boolean> {
+  return invoke<boolean>("add_notebox_import", { path });
 }
 
 /// The Markdown fixes the user accepted for one file — a subset of that file's

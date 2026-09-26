@@ -13,7 +13,7 @@
  * conversion in one call without the intermediate string.
  *
  * The data URL prefix (`data:<mime>;base64,`) is stripped before return,
- * matching the format that `copy_to_attachments` (Rust) expects.
+ * matching the format that `copy_bytes_into_notebox` (Rust) expects.
  */
 export function fileToBase64(file: Blob): Promise<string> {
   return new Promise((resolve, reject) => {

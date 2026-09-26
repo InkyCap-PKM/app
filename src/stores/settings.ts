@@ -74,6 +74,7 @@ const DEFAULTS: UserSettings = {
   },
   export: {
     pandoc_path: null,
+    auto_add_notebox_import: true,
   },
   document: {
     text_size: null,

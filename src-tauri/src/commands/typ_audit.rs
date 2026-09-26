@@ -13,11 +13,13 @@
 //!    table has nothing to display for the file (no title/author/date),
 //!    and `typst query` against `<inkycap-note>` returns no entries.
 //!
-//! This module exposes two Tauri commands:
+//! This module exposes these Tauri commands:
 //! - [`audit_typ_files`] — walk the notebox and report which files are
 //!   missing each preamble element.
 //! - [`repair_typ_files`] — apply non-destructive fixes (prepend the
 //!   import, insert a stub `#note()`) to a user-chosen subset.
+//! - [`note_missing_notebox_import`] / [`add_notebox_import`] — the
+//!   single-file check and fix the editor runs when a note is opened.
 //!
 //! The repairs never overwrite existing content: if a file already has a
 //! `#note(...)` call we leave it alone, even if the call is empty or
@@ -319,7 +321,6 @@ pub async fn repair_typ_files(
     let session = state.session(window.label()).await;
     let storage = session.get_storage().await?;
 
-    let import_line = crate::notebox_package::import_line();
     let mut summary = TypRepairSummary {
         repaired: Vec::new(),
         errors: Vec::new(),
@@ -337,7 +338,7 @@ pub async fn repair_typ_files(
             }
         };
 
-        let repaired = apply_preamble_fixes(&original, &import_line);
+        let repaired = apply_preamble_fixes(&original);
         if repaired == original {
             // Already conformant — nothing to do.
             continue;
@@ -353,6 +354,77 @@ pub async fn repair_typ_files(
     }
 
     Ok(summary)
+}
+
+/// The notebox-relative path of `path` when it is a user note that the
+/// single-file import check applies to: a `.typ` file inside the open notebox,
+/// outside the internal `.inkycap/` tree, in a notebox the user can edit (not
+/// the read-only documentation notebox). `None` otherwise.
+async fn user_note_rel_path(
+    session: &NoteboxSession,
+    path: &str,
+) -> Result<Option<PathBuf>, InkyCapError> {
+    if session.is_documentation() {
+        return Ok(None);
+    }
+    let storage = session.get_storage().await?;
+    let arg = crate::storage::path::sanitize_notebox_arg(path)?;
+    let rel = crate::commands::file_ops::notebox_relative_path(&arg, &storage);
+    let is_typ = rel.extension().is_some_and(|e| e == "typ");
+    let is_internal = rel
+        .components()
+        .next()
+        .is_some_and(|c| c.as_os_str() == ".inkycap");
+    // Absolute paths that didn't strip to a relative one are outside the
+    // notebox; storage would refuse them anyway.
+    if !is_typ || is_internal || rel.is_absolute() {
+        return Ok(None);
+    }
+    Ok(Some(rel))
+}
+
+/// True when the note at `path` is a user note in the open notebox (see
+/// [`user_note_rel_path`]) whose source lacks the `inkycap-notebox` import.
+/// The editor calls this before loading a note, so it can offer to add the
+/// import (or add it automatically, per the user's setting). Always `false`
+/// for files the check doesn't apply to.
+#[tauri::command]
+pub async fn note_missing_notebox_import(
+    path: String,
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<bool, InkyCapError> {
+    let session = state.session(window.label()).await;
+    let Some(rel) = user_note_rel_path(&session, &path).await? else {
+        return Ok(false);
+    };
+    let content = session.get_storage().await?.read_file(&rel).await?;
+    Ok(!has_notebox_import(&content))
+}
+
+/// Prepend the `inkycap-notebox` import line to the note at `path` if it is
+/// missing. Unlike [`repair_typ_files`] this adds only the import, never a
+/// `#note()` stub, so opening a file changes as little as possible. Returns
+/// `true` when the file was rewritten; `false` when it already had the import
+/// or the check doesn't apply to it.
+#[tauri::command]
+pub async fn add_notebox_import(
+    path: String,
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<bool, InkyCapError> {
+    let session = state.session(window.label()).await;
+    let Some(rel) = user_note_rel_path(&session, &path).await? else {
+        return Ok(false);
+    };
+    let storage = session.get_storage().await?;
+    let original = storage.read_file(&rel).await?;
+    let fixed = crate::notebox_package::ensure_import(&original);
+    if fixed == original {
+        return Ok(false);
+    }
+    storage.write_file(&rel, &fixed).await?;
+    Ok(true)
 }
 
 /// The Markdown fixes the user accepted for one file. A subset of the audit's
@@ -446,18 +518,9 @@ fn has_notebox_import(content: &str) -> bool {
 ///
 /// The function never deletes content. If the source already satisfies
 /// both invariants, it is returned unchanged.
-fn apply_preamble_fixes(source: &str, import_line: &str) -> String {
-    let mut out = String::with_capacity(source.len() + import_line.len() + 16);
-
+fn apply_preamble_fixes(source: &str) -> String {
     // 1. Ensure the notebox-package import is present, prepended if absent.
-    let with_import = if has_notebox_import(source) {
-        source.to_string()
-    } else {
-        // Preserve the user's leading whitespace structure: insert the
-        // import at the very top, followed by a single newline. Don't
-        // collapse blank lines that already exist below.
-        format!("{}\n{}", import_line, source)
-    };
+    let with_import = crate::notebox_package::ensure_import(source);
 
     // 2. Ensure a `#note(...)` call exists. If not, insert `#note()`
     //    right after the trailing newline of the inkycap-notebox import
@@ -487,12 +550,7 @@ fn apply_preamble_fixes(source: &str, import_line: &str) -> String {
     };
 
     match insert_at {
-        Some(idx) => {
-            out.push_str(&with_import[..idx]);
-            out.push_str("#note()\n");
-            out.push_str(&with_import[idx..]);
-            out
-        }
+        Some(idx) => format!("{}#note()\n{}", &with_import[..idx], &with_import[idx..]),
         None => format!("#note()\n{}", with_import),
     }
 }
@@ -500,10 +558,6 @@ fn apply_preamble_fixes(source: &str, import_line: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn import_line() -> String {
-        crate::notebox_package::import_line()
-    }
 
     #[test]
     fn audit_report_is_valid_typst() {
@@ -566,7 +620,7 @@ mod tests {
     #[test]
     fn repair_adds_both_when_missing() {
         let src = "= Body\nText.\n";
-        let out = apply_preamble_fixes(src, &import_line());
+        let out = apply_preamble_fixes(src);
         assert!(has_notebox_import(&out));
         assert!(note_call_span(&out).is_some());
         assert!(out.ends_with("= Body\nText.\n"));
@@ -575,7 +629,7 @@ mod tests {
     #[test]
     fn repair_only_adds_note_when_import_present() {
         let src = "#import \"/.inkycap/notebox.typ\": *\n= Body\n";
-        let out = apply_preamble_fixes(src, &import_line());
+        let out = apply_preamble_fixes(src);
         // Import line not duplicated.
         assert_eq!(out.matches("/.inkycap/notebox.typ").count(), 1);
         assert!(note_call_span(&out).is_some());
@@ -586,7 +640,7 @@ mod tests {
     #[test]
     fn repair_only_adds_import_when_note_present() {
         let src = "#note(collection: (\"X\",))\n= Body\n";
-        let out = apply_preamble_fixes(src, &import_line());
+        let out = apply_preamble_fixes(src);
         assert!(has_notebox_import(&out));
         assert!(note_call_span(&out).is_some());
         // The user's existing #note() must be preserved verbatim.
@@ -598,7 +652,7 @@ mod tests {
     #[test]
     fn repair_idempotent_on_conformant_file() {
         let src = "#import \"/.inkycap/notebox.typ\": *\n#note(title: \"X\")\n= Body\n";
-        let out = apply_preamble_fixes(src, &import_line());
+        let out = apply_preamble_fixes(src);
         assert_eq!(out, src);
     }
 
@@ -608,7 +662,7 @@ mod tests {
         // repair. Same hazard category as the strip_bibliography_call
         // bug — keep this test in lockstep.
         let src = "= Café — résumé\nNaïve coöperate. 你好 شكرا 👨‍👩‍👧‍👦\n";
-        let out = apply_preamble_fixes(src, &import_line());
+        let out = apply_preamble_fixes(src);
         assert!(out.contains("Café — résumé"));
         assert!(out.contains("Naïve coöperate. 你好 شكرا 👨‍👩‍👧‍👦"));
     }

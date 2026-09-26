@@ -578,6 +578,14 @@ export function getActiveTab(): Tab | undefined {
   return id ? tabs.find((t) => t.id === id) : undefined;
 }
 
+/** Path of the file open in the focused pane's active tab, or `undefined`
+ *  when that tab isn't a file (a collection, an empty tab, …). This is the
+ *  note the "Current folder" option of "New note location" refers to. */
+export function activeNotePath(): string | undefined {
+  const tab = getActiveTab();
+  return tab?.type === "file" ? tab.path : undefined;
+}
+
 /** Display title for a tab. Empty tabs show the localized "New tab" label
  *  rather than their stored placeholder title; file tabs drop the extension;
  *  other tab types keep their title verbatim. The dot must follow at least one

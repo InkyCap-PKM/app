@@ -448,6 +448,8 @@ export interface NoteboxTabSession {
 
 export interface ExportSettings {
   pandoc_path: string | null;
+  /** Add the InkyCap import line to opened notes that lack it, without asking. */
+  auto_add_notebox_import: boolean;
 }
 
 /** Notebox backup settings. Controls scheduling, destination, retention,

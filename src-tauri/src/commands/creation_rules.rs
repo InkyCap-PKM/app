@@ -144,12 +144,17 @@ pub async fn reorder_creation_rules(
 /// note is open (an empty tab). It's a bare scaffold name or a path relative
 /// to the scaffolds dir; the `.typ` suffix is optional. When `None`, the
 /// rule's own scaffold applies unchanged.
+///
+/// `current_note` is the path of the note the user is working in. When "New
+/// note location" is set to "Current folder", a rule without its own folder
+/// creates the note next to it (at the notebox root when `None`).
 #[tauri::command]
 pub async fn execute_creation_rule(
     rule_id: String,
     title_override: Option<String>,
     target_folder_override: Option<String>,
     scaffold_override: Option<String>,
+    current_note: Option<String>,
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
 ) -> Result<CreationResult, InkyCapError> {
@@ -185,13 +190,9 @@ pub async fn execute_creation_rule(
             locale_typesetting,
         )
     };
-    let fallback_folder = {
-        let notebox = session.notebox_settings.read().await;
-        match notebox.files.new_note_location.as_str() {
-            "specified" => notebox.files.new_note_folder.clone(),
-            _ => String::new(),
-        }
-    };
+    let fallback_folder =
+        crate::commands::file_placement::default_note_folder(&session, current_note.as_deref())
+            .await;
 
     // The override wins over both the rule's own target_folder and the
     // user-pref fallback. We model this by cloning the rule and rewriting

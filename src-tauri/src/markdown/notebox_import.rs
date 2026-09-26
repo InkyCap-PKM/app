@@ -183,14 +183,16 @@ pub fn import_from_directory(
 }
 
 /// Import a single markdown file's text into the open notebox as one `.typ`
-/// note placed at the notebox root. This is the single-file analogue of
+/// note placed in `note_folder` (notebox-relative; empty for the notebox
+/// root). This is the single-file analogue of
 /// [`import_from_directory`]: it runs the exact same markdown→Typst conversion
 /// (frontmatter → `#note(...)`, wikilinks, image rebasing, math handling)
 /// rather than copying the `.md` in verbatim. Used by the file tree's "Copy
 /// into notebox" action so a selected `.md` becomes a real note.
 ///
-/// The note name is derived from `file_stem` and made collision-free against
-/// the notebox root (`<stem>.typ`, `<stem> 1.typ`, …). When `sibling_dir` is
+/// The note name is derived from `file_stem` and made collision-free within
+/// `note_folder` (`<stem>.typ`, `<stem> 1.typ`, …). The caller must make sure
+/// `note_folder` stays inside the notebox. When `sibling_dir` is
 /// `Some`, any image/embed the note references that exists alongside the source
 /// file is routed into the attachment folder, matching the directory importer;
 /// the bytes-only case (no source directory) passes `None`, leaving referenced
@@ -203,6 +205,7 @@ pub fn import_single_markdown(
     text: &str,
     file_stem: &str,
     notebox_root: &Path,
+    note_folder: &str,
     sibling_dir: Option<&Path>,
     dialect: MarkdownDialect,
     attachment_folder: String,
@@ -225,7 +228,7 @@ pub fn import_single_markdown(
     // (a fresh notebox may not have it yet). No-op when already present.
     notebox_package::scaffold(notebox_root);
 
-    // Collision-free destination name at the notebox root.
+    // Collision-free destination name inside the note folder.
     let stem = {
         let s = file_stem.trim();
         if s.is_empty() {
@@ -234,10 +237,20 @@ pub fn import_single_markdown(
             s
         }
     };
-    let mut rel = format!("{stem}.typ");
+    let folder = note_folder.trim_matches('/');
+    let in_folder = |name: String| {
+        if folder.is_empty() {
+            name
+        } else {
+            format!("{folder}/{name}")
+        }
+    };
+    fs::create_dir_all(notebox_root.join(folder))
+        .map_err(|e| format!("Failed to create folder {folder}: {e}"))?;
+    let mut rel = in_folder(format!("{stem}.typ"));
     let mut counter = 1;
     while notebox_root.join(&rel).exists() {
-        rel = format!("{stem} {counter}.typ");
+        rel = in_folder(format!("{stem} {counter}.typ"));
         counter += 1;
     }
     let relative = PathBuf::from(&rel);
@@ -1313,6 +1326,7 @@ mod tests {
             &fs::read_to_string(src.path().join("My Note.md")).unwrap(),
             "My Note",
             target.path(),
+            "",
             Some(src.path()),
             MarkdownDialect::Obsidian,
             "Assets".to_string(),
@@ -1340,6 +1354,7 @@ mod tests {
             "# Second",
             "My Note",
             target.path(),
+            "",
             None,
             MarkdownDialect::Standard,
             "Assets".to_string(),
@@ -1349,6 +1364,23 @@ mod tests {
         assert!(target.path().join("My Note 1.typ").exists());
         // Original is untouched.
         assert!(target.path().join("My Note.typ").exists());
+    }
+
+    #[test]
+    fn import_single_markdown_places_note_in_folder() {
+        let target = TempDir::new().unwrap();
+        let (rel, _) = import_single_markdown(
+            "# Café",
+            "Café",
+            target.path(),
+            "Notes/Inbox",
+            None,
+            MarkdownDialect::Standard,
+            "Assets".to_string(),
+        )
+        .unwrap();
+        assert_eq!(rel, "Notes/Inbox/Café.typ");
+        assert!(target.path().join("Notes/Inbox/Café.typ").exists());
     }
 
     #[test]

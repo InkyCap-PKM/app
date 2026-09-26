@@ -130,7 +130,9 @@ pub fn scaffolds_dir(notebox_root: &Path) -> PathBuf {
 /// code to find a note's preamble import via the single canonical, version-less
 /// path emitted by [`import_line`].
 pub fn is_notebox_import_line(line: &str) -> bool {
-    let trimmed = line.trim_start();
+    // A file's first line may begin with a byte order mark, which
+    // `trim_start` doesn't treat as whitespace.
+    let trimmed = line.trim_start_matches('\u{feff}').trim_start();
     if !trimmed.starts_with("#import") {
         return false;
     }
@@ -144,7 +146,11 @@ pub fn ensure_import(source: &str) -> String {
     if source.lines().any(is_notebox_import_line) {
         return source.to_string();
     }
-    format!("{}\n{}", import_line(), source)
+    // Keep a leading byte order mark at the very start of the file.
+    match source.strip_prefix('\u{feff}') {
+        Some(rest) => format!("\u{feff}{}\n{}", import_line(), rest),
+        None => format!("{}\n{}", import_line(), source),
+    }
 }
 
 static LIB_TYP: &[u8] = include_bytes!("../../inkycap-notebox/lib.typ");
@@ -497,5 +503,22 @@ mod tests {
         ));
         assert!(!is_notebox_import_line("#import \"other.typ\": *"));
         assert!(!is_notebox_import_line("= heading"));
+        assert!(is_notebox_import_line(
+            "\u{feff}#import \"/.inkycap/notebox.typ\": *"
+        ));
+    }
+
+    #[test]
+    fn ensure_import_prepends_once() {
+        let fixed = ensure_import("= Café — résumé\n");
+        assert_eq!(fixed, format!("{}\n= Café — résumé\n", import_line()));
+        assert_eq!(ensure_import(&fixed), fixed);
+    }
+
+    #[test]
+    fn ensure_import_keeps_byte_order_mark_first() {
+        let fixed = ensure_import("\u{feff}= Hello\n");
+        assert_eq!(fixed, format!("\u{feff}{}\n= Hello\n", import_line()));
+        assert_eq!(ensure_import(&fixed), fixed);
     }
 }

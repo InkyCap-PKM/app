@@ -82,6 +82,7 @@ import JournalScrollPill from "./JournalScrollPill";
 import JournalScrollView from "./JournalScrollView";
 import PaneNavBar from "./panes/PaneNavBar";
 import { DiagnosticRow } from "./DiagnosticRow";
+import { ensureNoteboxImport } from "../lib/notebox-import-check";
 
 export interface TypstEditorProps {
   path: string;
@@ -685,6 +686,13 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
       // otherwise we'd read the pre-flush content and a subsequent edit
       // would clobber the just-written changes.
       await awaitPendingWrite(path);
+      // Add the InkyCap import to a note that lacks it (or ask first) before
+      // reading, so the editor loads the fixed text. Skipped when the tab is
+      // restoring its in-memory state: that buffer may hold unsaved edits
+      // that would overwrite a change made on disk now.
+      if (getCachedEditorState(props.tabId, path) === undefined) {
+        await ensureNoteboxImport(path);
+      }
       try {
         return await ipc.readFileContent(path);
       } catch (err) {

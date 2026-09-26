@@ -432,10 +432,22 @@ impl Default for FontSettings {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-#[derive(Default)]
 pub struct ExportSettings {
     /// Custom path to the Pandoc binary. If not set, auto-detected from PATH.
     pub pandoc_path: Option<String>,
+    /// When a `.typ` note in the notebox is opened without the
+    /// `inkycap-notebox` import line, add it without asking. When `false`,
+    /// the editor asks first.
+    pub auto_add_notebox_import: bool,
+}
+
+impl Default for ExportSettings {
+    fn default() -> Self {
+        Self {
+            pandoc_path: None,
+            auto_add_notebox_import: true,
+        }
+    }
 }
 
 /// Notebox backup settings — controls how, when, and where the backup

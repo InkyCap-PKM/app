@@ -196,11 +196,16 @@ pub fn resolve_target_dir(
     } else {
         rule.target_folder.as_str()
     };
+    notebox_root.join(expand_folder(raw, locale))
+}
+
+/// Expand template variables (such as `{{date:YYYY}}`) in a notebox-relative
+/// folder path. An empty path stays empty, meaning the notebox root.
+pub fn expand_folder(raw: &str, locale: Locale) -> String {
     if raw.is_empty() {
-        return notebox_root.to_path_buf();
+        return String::new();
     }
-    let expanded = scaffolds::expand_variables(raw, "", locale);
-    notebox_root.join(&expanded.content)
+    scaffolds::expand_variables(raw, "", locale).content
 }
 
 /// Sanitize a user-supplied filename for use as a `.typ` basename.

@@ -38,6 +38,25 @@ pub struct NoteboxFileSettings {
     pub folder_grouping: String,
 }
 
+impl NoteboxFileSettings {
+    /// The notebox-relative folder where new notes go when nothing more
+    /// specific applies: the chosen folder for "specified", `current_folder`
+    /// (the folder of the note the user is working in) for "current", and the
+    /// notebox root (empty string) otherwise. May still contain template
+    /// variables such as `{{date:YYYY}}`.
+    pub fn default_note_folder(&self, current_folder: &str) -> String {
+        let folder = match self.new_note_location.as_str() {
+            "specified" => self.new_note_folder.as_str(),
+            "current" => current_folder,
+            _ => "",
+        };
+        folder
+            .trim()
+            .trim_matches(|c| c == '/' || c == '\\')
+            .to_string()
+    }
+}
+
 impl Default for NoteboxFileSettings {
     fn default() -> Self {
         Self {

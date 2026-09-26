@@ -45,7 +45,7 @@ import { compareName, compareZid } from "../lib/sort";
 import { settings, updateSetting, noteboxSettings } from "../stores/settings";
 import type { FileSortMode } from "../lib/types";
 import { noteboxInfo, noteboxUiKey, fileTreeVersion, propertyVersion, bumpPropertyVersion } from "../stores/notebox";
-import { openTab, openCreatedNote, closeTab, tabs, getActiveTab } from "../stores/tabs";
+import { openTab, openCreatedNote, closeTab, tabs, getActiveTab, activeNotePath } from "../stores/tabs";
 import {
   isEnabled as isScrollEnabled,
   updateAnchor as updateScrollAnchor,
@@ -63,12 +63,13 @@ import GitCollaborationPanel from "./GitCollaborationPanel";
 import AgendaPanel from "./AgendaPanel";
 import HelpPanel from "./HelpPanel";
 import type { SidebarMode } from "./VerticalToolbar";
-import { toastError, toastSuccess } from "../stores/toasts";
+import { toastError } from "../stores/toasts";
 import { promptText, promptConfirm } from "../stores/prompt";
 import { pickFolder } from "../stores/folderPicker";
 import { triggerCreationRule, creationRules } from "../stores/creation-rules";
 import { useI18n } from "../lib/i18n";
-import { askMarkdownImport } from "../lib/markdown-import-prompt";
+import { bringFilesIntoNotebox, incomingFromPath } from "../lib/incoming-files";
+import { externalDropFolder } from "../lib/external-drop";
 
 interface LeftSidebarProps {
   mode: () => SidebarMode;
@@ -226,6 +227,9 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   // can highlight. `draggingPath` is the row being dragged, so it can dim
   // in place.
   const [dragOverDir, setDragOverDir] = createSignal<string | null>(null);
+  /// Folder to highlight as a drop target: the one an in-tree move is over,
+  /// or the one files dragged in from outside the app are over.
+  const dropHighlightDir = () => dragOverDir() ?? externalDropFolder();
   const [draggingPath, setDraggingPath] = createSignal<string | null>(null);
 
   // Drag ghost: a real DOM chip that follows the cursor. We don't use the
@@ -1402,50 +1406,12 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     try {
       const picked = await ipc.pickFilesForImport();
       if (picked.length === 0) return; // cancelled
-
-      // Markdown files are notes, not attachments. If any were selected, ask
-      // once whether to convert them to Typst or keep them as-is.
-      const mdFiles = picked.filter((f) => f.is_markdown);
-      let convertMarkdown = false;
-      if (mdFiles.length > 0) {
-        const names = mdFiles.map((f) => f.path.split(/[/\\]/).pop() ?? f.path);
-        const choice = await askMarkdownImport(names);
-        if (choice === "cancel") return;
-        convertMarkdown = choice === "convert";
-      }
-
-      let attachments = 0;
-      let notes = 0;
-      let lastName = "";
-      for (const file of picked) {
-        if (file.is_markdown && convertMarkdown) {
-          const rel = await ipc.importMarkdownFile(file.path);
-          notes += 1;
-          lastName = rel.split(/[/\\]/).pop() ?? rel;
-        } else {
-          const rel = await ipc.copyPathToAttachments(file.path);
-          attachments += 1;
-          lastName = rel;
-        }
-      }
-
+      await bringFilesIntoNotebox(
+        picked.map((f) => incomingFromPath(f.path)),
+        { currentNote: activeNotePath() },
+        { announce: true },
+      );
       refresh();
-      // Summarize: prefer the note phrasing when notes were imported, else the
-      // attachment phrasing. (A mixed selection reports the note count, since
-      // that's the gesture's headline outcome.)
-      if (notes > 0) {
-        toastSuccess(
-          notes === 1
-            ? t("leftSidebar.importedNoteOne", { name: lastName })
-            : t("leftSidebar.importedNoteMany", { count: notes }),
-        );
-      } else if (attachments > 0) {
-        toastSuccess(
-          attachments === 1
-            ? t("leftSidebar.uploadedOne", { name: lastName })
-            : t("leftSidebar.uploadedMany", { count: attachments }),
-        );
-      }
     } catch (e) {
       toastError(t("leftSidebar.uploadFailed"), e);
     }
@@ -1829,8 +1795,10 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                   classList={{
                     "left-sidebar__tree-root": true,
                     "left-sidebar__tree-root--drop-target":
-                      dragOverDir() === (noteboxInfo()?.path ?? ""),
+                      dropHighlightDir() === (noteboxInfo()?.path ?? ""),
                   }}
+                  // Files dropped here from outside the app go to the root.
+                  data-drop-folder={noteboxInfo()?.path ?? ""}
                   // One Tab stop for the whole tree (ARIA tree pattern); arrow keys
                   // move `focusedTreePath`. `data-focus-entry` makes F6 land here.
                   tabindex={0}
@@ -1911,7 +1879,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                             onToggleDir={toggleDir}
                             treeMoveMime={TREE_MOVE_MIME}
                             dragItems={dragItemsFor}
-                            dragOverDir={dragOverDir}
+                            dragOverDir={dropHighlightDir}
                             setDragOverDir={setDragOverDir}
                             draggingPath={draggingPath}
                             setDraggingPath={setDraggingPath}
@@ -2588,6 +2556,8 @@ const TreeNode: Component<{
               "sidebar-item--dragging": props.draggingPath() === props.node.path,
             }}
             style={{ "padding-left": `${depth * 16 + 8}px` }}
+            // Files dropped on this row from outside the app go here.
+            data-drop-folder={dropDest()}
             draggable={true}
             onDragStart={(e) => {
               // Intra-sidebar move payload — the dragged file/folder.

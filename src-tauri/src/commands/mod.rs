@@ -8,6 +8,7 @@ pub mod collections;
 pub mod creation_rules;
 pub mod export;
 pub mod file_ops;
+pub mod file_placement;
 pub mod files;
 pub mod flow;
 pub mod fonts;

@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use tauri::{Emitter, Manager, State};
 
+use crate::commands::file_placement::{incoming_folder, IncomingPlacement};
 use crate::errors::InkyCapError;
 use crate::state::{AppState, NoteboxSession};
 use crate::storage::sanitize_notebox_arg;
@@ -13,12 +14,14 @@ use crate::storage::traits::NoteboxStorage;
 use crate::storage::validate_notebox_path;
 use crate::typst_pipeline::path_rebase::{rebase_relative_paths, rewrite_referenced_path};
 
-/// Copy a file (given as base64 data) to the attachment folder.
-/// Returns the saved filename (may be renamed to avoid collisions).
+/// Copy a file (given as base64 data) into the notebox, placed per
+/// `placement` (see [`crate::commands::file_placement`]). Returns the saved notebox-relative path (renamed if needed to avoid
+/// overwriting an existing file).
 #[tauri::command]
-pub async fn copy_to_attachments(
+pub async fn copy_bytes_into_notebox(
     filename: String,
     data_base64: String,
+    placement: Option<IncomingPlacement>,
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
@@ -33,7 +36,8 @@ pub async fn copy_to_attachments(
         .decode(&data_base64)
         .map_err(|e| InkyCapError::InvalidPath(format!("Invalid base64: {}", e)))?;
 
-    write_to_attachments(&filename, &data, &app, &session).await
+    let placement = placement.unwrap_or_default();
+    write_incoming_file(&filename, &data, &placement, &app, &session).await
 }
 
 /// Read file paths from the system clipboard. Used by the paste
@@ -100,18 +104,20 @@ pub async fn read_clipboard_file_paths(app: tauri::AppHandle) -> Result<Vec<Stri
 }
 
 /// Read whatever the native clipboard holds — file references or raw image
-/// bytes — copy it into the notebox's attachment folder, and return the
+/// bytes — copy it into the notebox (placed per `placement`, see
+/// [`crate::commands::file_placement`]), and return the
 /// notebox-relative paths the editor should insert. Backs the paste handler:
 /// WebKitGTK hides clipboard files from the webview (and, on Linux, hides
 /// pasted image data too), so a paste that the webview sees as empty is read
 /// here from the Rust side instead.
 ///
-/// Unlike [`copy_path_to_attachments`], file references are *not* gated by
+/// Unlike [`copy_path_into_notebox`], file references are *not* gated by
 /// the SEC-1 drop allowlist: the path set originates from the OS clipboard
 /// via a trusted native read, not from frontend-supplied input, so there is
 /// no untrusted path to validate against the allowlist.
 #[tauri::command]
-pub async fn paste_clipboard_to_attachments(
+pub async fn paste_clipboard_into_notebox(
+    placement: Option<IncomingPlacement>,
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
@@ -121,6 +127,7 @@ pub async fn paste_clipboard_to_attachments(
         return Err(InkyCapError::DocumentationReadOnly);
     }
     // 1. File references — "copy a file in the file manager, then paste".
+    let placement = placement.unwrap_or_default();
     let uris = read_clipboard_file_paths(app.clone()).await?;
     if !uris.is_empty() {
         let mut saved = Vec::new();
@@ -136,7 +143,7 @@ pub async fn paste_clipboard_to_attachments(
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "pasted".to_string());
-            saved.push(write_to_attachments(&filename, &data, &app, &session).await?);
+            saved.push(write_incoming_file(&filename, &data, &placement, &app, &session).await?);
         }
         if !saved.is_empty() {
             return Ok(saved);
@@ -164,7 +171,7 @@ pub async fn paste_clipboard_to_attachments(
                 .unwrap_or(0);
             let name = format!("pasted-{ts}.png");
             return Ok(vec![
-                write_to_attachments(&name, &bytes, &app, &session).await?,
+                write_incoming_file(&name, &bytes, &placement, &app, &session).await?,
             ]);
         }
     }
@@ -397,8 +404,8 @@ fn hex_val(c: u8) -> Option<u8> {
     }
 }
 
-/// Copy a file from an absolute filesystem path into the attachment
-/// folder. Used by drag-drop and paste handlers when the browser
+/// Copy a file from an absolute filesystem path into the notebox, placed per
+/// `placement` (see [`crate::commands::file_placement`]). Used by drag-drop and paste handlers when the browser
 /// gives us a `file://` URL or a `text/uri-list` entry instead of
 /// an in-memory File object (which happens on Linux/GNOME when the
 /// user drags from the native file manager). The file is read on
@@ -413,8 +420,9 @@ fn hex_val(c: u8) -> Option<u8> {
 /// calls this command with a path the user did not actually drop will
 /// see `InvalidPath`.
 #[tauri::command]
-pub async fn copy_path_to_attachments(
+pub async fn copy_path_into_notebox(
     source_path: String,
+    placement: Option<IncomingPlacement>,
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
@@ -450,14 +458,15 @@ pub async fn copy_path_to_attachments(
     // Async read — copied source files can be large media; don't block the
     // async worker on the read.
     let data = tokio::fs::read(&src).await?;
-    write_to_attachments(&filename, &data, &app, &session).await
+    let placement = placement.unwrap_or_default();
+    write_incoming_file(&filename, &data, &placement, &app, &session).await
 }
 
 /// Open a native file-picker and copy each selected file into the notebox's
 /// configured attachments folder. Returns the notebox-root-relative paths of
 /// each saved file.
 ///
-/// **Security.** Unlike `copy_path_to_attachments`, the source paths here
+/// **Security.** Unlike `copy_path_into_notebox`, the source paths here
 /// are not on `AppState.drop_allowlist`: they come from a Rust-mediated
 /// `tauri_plugin_dialog` picker that the user explicitly drove. The threat
 /// model the drop allowlist defends against — a compromised renderer
@@ -514,7 +523,14 @@ pub async fn pick_and_upload_to_attachments(
                 InkyCapError::InvalidPath(format!("source has no filename: {}", pb.display()))
             })?;
         let data = tokio::fs::read(&pb).await?;
-        let rel = write_to_attachments(&filename, &data, &app, &session).await?;
+        let rel = write_incoming_file(
+            &filename,
+            &data,
+            &IncomingPlacement::default(),
+            &app,
+            &session,
+        )
+        .await?;
         saved.push(rel);
     }
     Ok(saved)
@@ -628,7 +644,7 @@ fn is_markdown_file(path: &std::path::Path) -> bool {
 /// Open the native multi-file picker and return a manifest of the chosen files
 /// (frontend path + markdown flag) **without** copying anything. Each chosen
 /// path is registered on the drop allowlist so the follow-up per-file command
-/// the frontend issues — [`copy_path_to_attachments`] (keep) or
+/// the frontend issues — [`copy_path_into_notebox`] (keep) or
 /// [`import_markdown_file`] (convert) — is authorized for exactly that path.
 ///
 /// This splits picking from acting so the frontend can ask the user, per
@@ -698,13 +714,14 @@ pub async fn pick_files_for_import(
 /// (frontmatter → `#note(...)`, wikilinks, image rebasing); images referenced
 /// alongside the source are routed into the attachment folder.
 ///
-/// **Security.** Like [`copy_path_to_attachments`], the path must be on the
+/// **Security.** Like [`copy_path_into_notebox`], the path must be on the
 /// drop allowlist — populated either by an OS drag-drop (drag-drop import) or
 /// by [`pick_files_for_import`] (the "Copy into notebox" picker). A
 /// frontend-supplied path that wasn't recently authorized is rejected.
 #[tauri::command]
 pub async fn import_markdown_file(
     source_path: String,
+    placement: Option<IncomingPlacement>,
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
@@ -731,11 +748,12 @@ pub async fn import_markdown_file(
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "Imported note".to_string());
-    convert_markdown_into_notebox(&text, &stem, src.parent(), &app, &session).await
+    let placement = placement.unwrap_or_default();
+    convert_markdown_into_notebox(&text, &stem, src.parent(), &placement, &app, &session).await
 }
 
-/// Convert markdown text (base64-encoded UTF-8) into a `.typ` note at the
-/// notebox root, returning its notebox-relative path. The bytes-only sibling of
+/// Convert markdown text (base64-encoded UTF-8) into a `.typ` note, placed per
+/// `placement` (see [`crate::commands::file_placement`]), returning its notebox-relative path. The bytes-only sibling of
 /// [`import_markdown_file`] for the HTML5 drag-drop path (Windows), where the
 /// webview hands us file *bytes* rather than a path. No drop allowlist applies
 /// — the content comes from the webview's own `dataTransfer`, not a path the
@@ -745,6 +763,7 @@ pub async fn import_markdown_file(
 pub async fn import_markdown_text(
     filename: String,
     content_base64: String,
+    placement: Option<IncomingPlacement>,
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
@@ -763,17 +782,19 @@ pub async fn import_markdown_text(
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "Imported note".to_string());
-    convert_markdown_into_notebox(&text, &stem, None, &app, &session).await
+    let placement = placement.unwrap_or_default();
+    convert_markdown_into_notebox(&text, &stem, None, &placement, &app, &session).await
 }
 
 /// Shared core: convert markdown `text` into a `.typ` note named after `stem`
-/// at the notebox root, emit a tree-refresh event, and return the note's
+/// in the folder `placement` picks, emit a tree-refresh event, and return the note's
 /// notebox-relative path. `sibling_dir`, when given, is the directory scanned
 /// for referenced images to route into the attachment folder.
 async fn convert_markdown_into_notebox(
     text: &str,
     stem: &str,
     sibling_dir: Option<&std::path::Path>,
+    placement: &IncomingPlacement,
     app: &tauri::AppHandle,
     session: &NoteboxSession,
 ) -> Result<String, InkyCapError> {
@@ -788,11 +809,16 @@ async fn convert_markdown_into_notebox(
         .files
         .attachment_folder
         .clone();
+    let note_folder = incoming_folder(app, session, placement, true).await;
+    // The folder comes from settings or the frontend, so make sure it can't
+    // point outside the notebox.
+    validate_notebox_path(&root, &root.join(&note_folder))?;
 
     let (rel, result) = crate::markdown::notebox_import::import_single_markdown(
         text,
         stem,
         &root,
+        &note_folder,
         sibling_dir,
         crate::markdown::md_to_typst::MarkdownDialect::Standard,
         attachment_folder,
@@ -804,7 +830,7 @@ async fn convert_markdown_into_notebox(
     }
 
     // The file watcher indexes new `.typ` files, but emit explicitly so the
-    // tree updates immediately — same reasoning as `write_to_attachments`.
+    // tree updates immediately — same reasoning as `write_incoming_file`.
     let abs = root.join(&rel);
     let _ = app.emit(
         "notebox:file-created",
@@ -813,22 +839,21 @@ async fn convert_markdown_into_notebox(
     Ok(rel)
 }
 
-/// Write `data` into the notebox's attachment folder under `filename`.
-/// Finds a collision-free name and returns the saved name.
-async fn write_to_attachments(
+/// Write a file brought in from outside the notebox under `filename`, finding
+/// a collision-free name, and return its notebox-relative path. The folder
+/// follows `placement` (see [`crate::commands::file_placement`]).
+async fn write_incoming_file(
     filename: &str,
     data: &[u8],
+    placement: &IncomingPlacement,
     app: &tauri::AppHandle,
     session: &NoteboxSession,
 ) -> Result<String, InkyCapError> {
-    let attachment_folder = session
-        .notebox_settings
-        .read()
-        .await
-        .files
-        .attachment_folder
-        .clone();
-    write_into_notebox_subfolder(&attachment_folder, filename, data, app, session).await
+    let is_note = std::path::Path::new(filename)
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("typ"));
+    let folder = incoming_folder(app, session, placement, is_note).await;
+    write_into_notebox_subfolder(&folder, filename, data, app, session).await
 }
 
 /// Write `data` into `subfolder` (notebox-root-relative) under `filename`,
@@ -1536,7 +1561,7 @@ pub(crate) async fn rebase_paths_for_note_move(
 /// the notebox-relative form. Strips the storage root (canonical or
 /// declared) when the path is absolute; passes the input through when
 /// it's already relative.
-fn notebox_relative_path(
+pub(crate) fn notebox_relative_path(
     path: &std::path::Path,
     storage: &crate::storage::local::LocalNoteboxStorage,
 ) -> std::path::PathBuf {

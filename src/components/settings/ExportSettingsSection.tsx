@@ -1,5 +1,6 @@
-// Export/Import tab: Markdown-archive import (dialect detect + property
-// mapping) and the Pandoc-path configuration with live detection status.
+// Export/Import tab: the Typst-file import toggle, Markdown-archive import
+// (dialect detect + property mapping) and the Pandoc-path configuration with
+// live detection status.
 import { createSignal, onMount, Show } from "solid-js";
 import * as ipc from "../../lib/ipc";
 import { settings, updateSetting } from "../../stores/settings";
@@ -7,7 +8,7 @@ import { errorText } from "../../lib/errors";
 import { useI18n } from "../../lib/i18n";
 import { homeDirDefault } from "../../lib/dialog-defaults";
 import { PropertyMappingDialog, type TargetOption as MappingTargetOption } from "../PropertyMappingDialog";
-import { loadMappingTargets, SettingLabel } from "./shared";
+import { loadMappingTargets, SettingLabel, SettingToggle } from "./shared";
 
 export function ExportSettingsSection() {
   const t = useI18n();
@@ -155,7 +156,14 @@ export function ExportSettingsSection() {
       <div class="settings__section-header">
         <div class="settings__label">{t("settings.export.heading")}</div>
       </div>
-      <div class="settings__label" style={{ "margin-top": "8px" }}>{t("settings.export.importMarkdown")}</div>
+      <SettingToggle
+        label={t("settings.export.importTypst")}
+        description={t("settings.export.autoAddImport")}
+        help={t("settings.export.autoAddImportHelp")}
+        value={settings.export?.auto_add_notebox_import ?? true}
+        onChange={(v) => updateSetting("export", "auto_add_notebox_import", v)}
+      />
+      <div class="settings__label" style={{ "margin-top": "24px" }}>{t("settings.export.importMarkdown")}</div>
       <span class="settings__description">
         {t("settings.export.importMarkdownDescription")}
       </span>

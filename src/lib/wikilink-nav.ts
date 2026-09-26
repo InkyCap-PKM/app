@@ -10,7 +10,7 @@
 import * as ipc from "./ipc";
 import { t } from "./i18n";
 import { showContextMenu } from "./context-menu";
-import { openTab } from "../stores/tabs";
+import { activeNotePath, openTab } from "../stores/tabs";
 import { isEnabled as isScrollEnabled, toggleScroll } from "../stores/journal-scroll";
 
 /** A wikilink destination resolved (or freshly created) to a concrete note. */
@@ -29,7 +29,13 @@ interface ResolvedWikilink {
  * bypassed). Returns the created note's path.
  */
 export async function createNoteForTarget(target: string): Promise<string> {
-  const result = await ipc.executeCreationRule("new-note", target);
+  const result = await ipc.executeCreationRule(
+    "new-note",
+    target,
+    undefined,
+    undefined,
+    activeNotePath(),
+  );
   return result.path;
 }
 

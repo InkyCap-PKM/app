@@ -7,6 +7,7 @@ import type { CreationRule, CreationResult } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { promptText } from "./prompt";
 import { settings } from "./settings";
+import { activeNotePath } from "./tabs";
 import { t } from "../lib/i18n";
 import { errorCode, errorDetail } from "../lib/errors";
 import { resolveNoteNameConflict } from "../lib/note-name-conflict";
@@ -116,7 +117,13 @@ export async function triggerCreationRule(
   //    cancel. Other errors propagate.
   for (;;) {
     try {
-      return await ipc.executeCreationRule(ruleId, nameOverride, folderOverride, scaffoldOverride);
+      return await ipc.executeCreationRule(
+        ruleId,
+        nameOverride,
+        folderOverride,
+        scaffoldOverride,
+        activeNotePath(),
+      );
     } catch (e) {
       const code = errorCode(e);
       if (code === "filename-required") {

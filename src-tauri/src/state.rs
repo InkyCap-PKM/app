@@ -887,7 +887,7 @@ pub struct AppState {
     /// Allowlist of absolute paths that the user has just dropped onto a
     /// window via the OS drag-drop event. Populated by the Rust-side
     /// `on_drag_drop_event` listener (see `lib.rs`) and consumed once by
-    /// `copy_path_to_attachments`. This is the only authority for "did the
+    /// `copy_path_into_notebox`. This is the only authority for "did the
     /// user really drop this file?" — it prevents a compromised renderer or
     /// future plugin from invoking the command with arbitrary paths.
     /// Entries auto-expire after `DROP_ALLOWLIST_TTL`.
@@ -914,7 +914,7 @@ pub struct AppState {
 
 /// How long a dropped-path entry remains valid before it's pruned. Long
 /// enough to cover the round-trip through the JS event listener and the
-/// async `copy_path_to_attachments` invocation, short enough that a stale
+/// async `copy_path_into_notebox` invocation, short enough that a stale
 /// entry can't be reused later in the session.
 const DROP_ALLOWLIST_TTL: Duration = Duration::from_secs(60);
 
@@ -1023,7 +1023,7 @@ impl AppState {
     /// our window. Called from the Rust-side `on_drag_drop_event` listener
     /// in `lib.rs`. Synchronous (no `await`) so it can populate the allowlist
     /// before the parallel JS event handler races to call
-    /// `copy_path_to_attachments`.
+    /// `copy_path_into_notebox`.
     pub fn register_drop_paths<I: IntoIterator<Item = PathBuf>>(&self, paths: I) {
         let mut allow = self.drop_allowlist.lock().expect("drop_allowlist poisoned");
         let now = Instant::now();
