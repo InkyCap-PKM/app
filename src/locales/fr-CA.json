@@ -1622,6 +1622,8 @@
   "settings.appearance.bgDark.description": "Par défaut (encre sarcelle) ou Mode2 (anthracite).",
   "settings.appearance.bg.option.default": "Par défaut",
   "settings.appearance.bg.option.warm": "Mode2",
+  "settings.appearance.colourblind.label": "Couleurs adaptées au daltonisme",
+  "settings.appearance.colourblind.description": "Utilise des couleurs faciles à distinguer avec les types courants de daltonisme, pour les erreurs, les avertissements, les modifications et la Vue mycélienne. Votre couleur d'accent et vos notes ne sont pas modifiées.",
   "settings.appearance.accent.label": "Couleur d'accent",
   "settings.appearance.accent.description": "Utilisez la couleur par défaut d'InkyCap, choisissez une couleur personnalisée ou suivez l'accent de votre système d'exploitation.",
   "settings.appearance.accent.sourceLabel": "Source de la couleur d'accent",

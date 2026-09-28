@@ -344,6 +344,14 @@ export interface AppearanceSettings {
    */
   bg_palette_dark: BgPalette;
   /**
+   * When true, the colours that carry meaning (errors, warnings, success,
+   * added and removed text, Mycelial View kinds, and source-mode strings and
+   * numbers) switch to a set chosen to stay distinct for colourblind users.
+   * Works with either background palette and leaves the accent colour and
+   * note content alone.
+   */
+  colourblind_friendly: boolean;
+  /**
    * Where the accent color comes from:
    * - "default" — InkyCap's built-in accent (#1D7874). `accent_color` is ignored.
    * - "custom"  — the value in `accent_color` is used.

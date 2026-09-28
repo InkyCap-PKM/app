@@ -1,12 +1,17 @@
 import { Component, For, Show } from "solid-js";
+import { Dynamic } from "solid-js/web";
+import { CircleCheck, Info, OctagonAlert, TriangleAlert } from "lucide-solid";
 import { toasts, dismissToast, type ToastLevel } from "../stores/toasts";
+import { useI18n } from "../lib/i18n";
 import LoadingDots from "./LoadingDots";
 
-const LEVEL_ICONS: Record<ToastLevel, string> = {
-  error: "✖",
-  warning: "⚠",
-  info: "ℹ",
-  success: "✔",
+/** Each level's icon, the same set the export dialog uses. Each has its own
+ *  shape, and none looks like the close button's ×. */
+const LEVEL_ICONS: Record<ToastLevel, typeof Info> = {
+  error: OctagonAlert,
+  warning: TriangleAlert,
+  info: Info,
+  success: CircleCheck,
 };
 
 /// Split a toast message that ends in `…` (or `...`) into its static
@@ -22,6 +27,7 @@ function splitTrailingEllipsis(message: string): { prefix: string; animated: boo
 }
 
 const ToastHost: Component = () => {
+  const t = useI18n();
   return (
     <div class="toast-host">
       <For each={toasts()}>
@@ -38,7 +44,7 @@ const ToastHost: Component = () => {
           //   - the toast is persistent without `onCancel` (the user
           //     needs *some* way to clear it manually).
           const showCloseBtn = toast.onCancel != null || toast.persistent;
-          const closeBtnLabel = toast.onCancel ? "Cancel" : "Dismiss";
+          const closeBtnLabel = () => t(toast.onCancel ? "common.cancel" : "common.dismiss");
 
           function handleClose(e: MouseEvent) {
             e.stopPropagation();
@@ -53,7 +59,9 @@ const ToastHost: Component = () => {
               role="alert"
               onClick={allowBodyDismiss ? () => dismissToast(toast.id) : undefined}
             >
-              <span class="toast__icon">{LEVEL_ICONS[toast.level]}</span>
+              <span class="toast__icon">
+                <Dynamic component={LEVEL_ICONS[toast.level]} size="1em" aria-hidden="true" />
+              </span>
               <div class="toast__body">
                 <span class="toast__message">
                   {prefix}
@@ -86,8 +94,8 @@ const ToastHost: Component = () => {
                   type="button"
                   class="toast__close"
                   onClick={handleClose}
-                  aria-label={closeBtnLabel}
-                  title={closeBtnLabel}
+                  aria-label={closeBtnLabel()}
+                  title={closeBtnLabel()}
                 >
                   ×
                 </button>

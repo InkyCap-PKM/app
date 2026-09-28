@@ -944,6 +944,56 @@ html[data-input-modality="pointer"] {
   }
 }
 
+/* Colourblind-friendly colours (Settings > Appearance). Replaces only the
+   colours that carry meaning, so it works with either background palette
+   and leaves the accent colour alone. Based on the Okabe-Ito palette:
+   errors are vermilion, success and "added" are blue, warnings are amber,
+   info is reddish purple. Pairs that must be told apart also differ in
+   lightness, which every type of colour blindness still sees.
+
+   colourblind-palette.test.ts checks each value's contrast against every
+   background and that the important pairs stay distinct under simulated
+   colour blindness; run it after changing any value here. Not changed on
+   purpose: user-chosen highlight colours, and callout, suggestion and
+   annotation colours, which match what the notebox's Typst package prints. */
+:root[data-colourblind]:not([data-theme="dark"]) {
+  --accent-danger: #7F2500;
+  --accent-danger-bg: color-mix(in srgb, var(--accent-danger) 10%, var(--bg-primary));
+  --accent-warn: #946300;
+  --accent-success: #0068A3;
+  --accent-green: var(--accent-success);
+  --accent-info: #6B2A5A;
+  --accent-orange: var(--accent-warn);
+  --callout-warning: var(--accent-warn);
+
+  --mycelial-latent: #946300;
+  --mycelial-emergent: #6B2A5A;
+  --mycelial-kindred: #0068A3;
+
+  --syntax-string: #946300;
+  --syntax-mono: #946300;
+  --syntax-number: #0068A3;
+}
+
+:root[data-colourblind][data-theme="dark"] {
+  --accent-danger: #EE6A2E;
+  --accent-danger-bg: color-mix(in srgb, var(--accent-danger) 20%, var(--bg-primary));
+  --accent-warn: #F0C43C;
+  --accent-success: #56B4E9;
+  --accent-green: var(--accent-success);
+  --accent-info: #F5CDE3;
+  --accent-orange: var(--accent-warn);
+  --callout-warning: var(--accent-warn);
+
+  --mycelial-latent: #F0C43C;
+  --mycelial-emergent: #F5CDE3;
+  --mycelial-kindred: #56B4E9;
+
+  --syntax-string: #F0C43C;
+  --syntax-mono: #F0C43C;
+  --syntax-number: #56B4E9;
+}
+
 /* ── Wikilink suggest popup (body-level, outside CM editor) ── */
 
 .wikilink-suggest {

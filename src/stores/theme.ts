@@ -72,6 +72,15 @@ function applyPalette() {
   }
 }
 
+/** Switch the meaning-carrying colours to the colourblind-friendly set, or
+ *  back. The set itself lives in themes.css under `data-colourblind`. */
+function applyColourblindFriendly() {
+  document.documentElement.toggleAttribute(
+    "data-colourblind",
+    settings.appearance.colourblind_friendly,
+  );
+}
+
 /**
  * Apply the accent color according to the current `accent_source`:
  * - "default" — clear the inline `--accent-color` so the CSS fallback in
@@ -221,6 +230,7 @@ export function initTheme() {
   const pref = settings.appearance.theme;
   setupSystemListener(pref);
   applyTheme(resolveTheme(pref));
+  applyColourblindFriendly();
   applyAccent();
   applyFontSettings(settings.fonts);
 }
@@ -303,6 +313,12 @@ export function setBgPaletteLight(palette: BgPalette) {
 export function setBgPaletteDark(palette: BgPalette) {
   updateSetting("appearance", "bg_palette_dark", palette);
   applyPalette();
+}
+
+/** Turn the colourblind-friendly colours on or off and persist the choice. */
+export function setColourblindFriendly(enabled: boolean) {
+  updateSetting("appearance", "colourblind_friendly", enabled);
+  applyColourblindFriendly();
 }
 
 /** Get the current resolved theme (always "dark" or "light"). */

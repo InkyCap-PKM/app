@@ -49,6 +49,7 @@ const DEFAULTS: UserSettings = {
     theme: "system",
     bg_palette_light: "default",
     bg_palette_dark: "default",
+    colourblind_friendly: false,
     accent_source: "default",
     accent_color: "#1D7874",
     zoom_target: "content",

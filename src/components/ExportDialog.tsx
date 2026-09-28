@@ -4,7 +4,7 @@ import { exportDefault, rememberExportFile } from "../lib/dialog-defaults";
 import * as ipc from "../lib/ipc";
 import type { PdfStandardPreset, ReviewMarkupMode } from "../lib/ipc";
 import { Dropdown } from "./Dropdown";
-import { CircleCheck, CircleX, TriangleAlert } from "lucide-solid";
+import { CircleCheck, OctagonAlert, TriangleAlert } from "lucide-solid";
 import { t } from "../lib/i18n";
 import { errorText } from "../lib/errors";
 
@@ -413,7 +413,7 @@ const ExportDialog: Component = () => {
 
             <Show when={error()}>
               <div class="export-dialog__error" role="alert">
-                <CircleX size={16} class="export-dialog__status-icon" aria-hidden="true" />
+                <OctagonAlert size={16} class="export-dialog__status-icon" aria-hidden="true" />
                 <pre class="export-dialog__error-text">{error()}</pre>
                 <button
                   type="button"

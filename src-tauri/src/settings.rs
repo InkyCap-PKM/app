@@ -112,6 +112,12 @@ pub struct AppearanceSettings {
     pub bg_palette_light: String,
     /// Background palette for the dark theme: "default" or "warm".
     pub bg_palette_dark: String,
+    /// When true, the colours that carry meaning (errors, warnings, success,
+    /// added and removed text, Mycelial View kinds, and source-mode strings
+    /// and numbers) switch to a set chosen to stay distinct for colourblind
+    /// users. Works with either background palette and leaves the accent
+    /// colour and note content alone.
+    pub colourblind_friendly: bool,
     /// Accent source: "default", "custom", or "os".
     /// Determines how the frontend resolves the working accent color.
     pub accent_source: String,
@@ -153,6 +159,7 @@ impl Default for AppearanceSettings {
             theme: "system".to_string(),
             bg_palette_light: "default".to_string(),
             bg_palette_dark: "default".to_string(),
+            colourblind_friendly: false,
             accent_source: "default".to_string(),
             accent_color: "#1D7874".to_string(),
             zoom_target: "content".to_string(),

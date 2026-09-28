@@ -63,6 +63,11 @@
   line-height: var(--leading-normal);
 }
 
+/* Centre the icon on the first line of text. */
+.toast__icon svg {
+  vertical-align: middle;
+}
+
 .toast--error .toast__icon { color: var(--accent-danger); }
 .toast--warning .toast__icon { color: var(--accent-warn); }
 .toast--success .toast__icon { color: var(--accent-success); }

@@ -2,7 +2,7 @@
 // zoom + folder-grouping, date format, and rendering defaults.
 import { createResource } from "solid-js";
 import { settings, updateSetting, noteboxSettings, updateNoteboxSetting } from "../../stores/settings";
-import { setThemePreference, setBgPaletteLight, setBgPaletteDark } from "../../stores/theme";
+import { setThemePreference, setBgPaletteLight, setBgPaletteDark, setColourblindFriendly } from "../../stores/theme";
 import type { BgPalette, FontChoice, SystemFontDefaults } from "../../lib/types";
 import * as ipc from "../../lib/ipc";
 import { useI18n } from "../../lib/i18n";
@@ -103,6 +103,12 @@ export function AppearanceSettingsSection() {
         onChange={(v) => setBgPaletteDark(v as BgPalette)}
       />
       <AccentSettingRow />
+      <SettingToggle
+        label={t("settings.appearance.colourblind.label")}
+        description={t("settings.appearance.colourblind.description")}
+        value={settings.appearance.colourblind_friendly}
+        onChange={setColourblindFriendly}
+      />
 
       <FontRoleRow
         label={t("settings.appearance.font.interface.label")}
