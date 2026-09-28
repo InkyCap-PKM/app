@@ -101,9 +101,9 @@
   min-width: 0;
 }
 
-/* A note a visible entry links to that isn't written yet: a sprout in front
+/* A note a visible entry links to that isn't written yet: a dashed page in front
    and the dim italic the Links tab uses for unwritten links. */
-.scroll-context__connection-sprout {
+.scroll-context__connection-unwritten-icon {
   flex-shrink: 0;
   margin-inline-end: var(--space-2);
   color: var(--fg-dim);

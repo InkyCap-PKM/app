@@ -70,6 +70,7 @@ import {
   Filter,
   Sprout,
 } from "lucide-solid";
+import { UnwrittenNoteIcon } from "./icons";
 import { Dynamic } from "solid-js/web";
 import ReferencesPanel from "./ReferencesPanel";
 import CollectionSettings from "./CollectionSettings";
@@ -2160,10 +2161,16 @@ const RightPanel: Component = () => {
                                   : t("rightPanel.rowTitle.unresolved")
                               }
                             >
-                              <span class="sidebar-item__icon" innerHTML={link.resolved
-                                ? `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2H4.5a1.5 1.5 0 0 0-1.5 1.5v9a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5V5.5L9.5 2z"/><polyline points="9.5 2 9.5 5.5 13 5.5"/></svg>`
-                                : `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2H4.5a1.5 1.5 0 0 0-1.5 1.5v9a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5V5.5L9.5 2z" stroke-dasharray="2.5 2"/><polyline points="9.5 2 9.5 5.5 13 5.5" stroke-dasharray="2.5 2"/></svg>`
-                              } />
+                              <Show
+                                when={link.resolved}
+                                fallback={
+                                  <span class="sidebar-item__icon">
+                                    <UnwrittenNoteIcon />
+                                  </span>
+                                }
+                              >
+                                <span class="sidebar-item__icon" innerHTML={`<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2H4.5a1.5 1.5 0 0 0-1.5 1.5v9a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5V5.5L9.5 2z"/><polyline points="9.5 2 9.5 5.5 13 5.5"/></svg>`} />
+                              </Show>
                               <span class="sidebar-item__label">{link.name}</span>
                               <Show when={!link.resolved}>
                                 <button

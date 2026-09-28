@@ -5,7 +5,7 @@
 //   1. Outline — headings across visible entries, click → scroll-to-heading.
 //   2. Connections — notes outside the scroll that link to / from any
 //      visible entry, click → open in new tab. Notes a visible entry links
-//      to that aren't written yet are listed too, marked with a sprout;
+//      to that aren't written yet are listed too, marked with a dashed page;
 //      clicking one creates it.
 //   3. Tag concentration — tags occurring across visible entries.
 //   4. Citations — aggregated citations across visible entries.
@@ -26,7 +26,8 @@ import {
   createSignal,
   onCleanup,
 } from "solid-js";
-import { ChevronDown, ChevronRight, Sprout } from "lucide-solid";
+import { ChevronDown, ChevronRight } from "lucide-solid";
+import { UnwrittenNoteIcon } from "./icons";
 import * as ipc from "../lib/ipc";
 import { compareName } from "../lib/sort";
 import { getEntries, getVisibleEntries } from "../stores/journal-scroll";
@@ -545,9 +546,9 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
                   }
                 >
                   <Show when={row.unwritten}>
-                    <Sprout
+                    <UnwrittenNoteIcon
                       size={13}
-                      class="scroll-context__connection-sprout"
+                      class="scroll-context__connection-unwritten-icon"
                       aria-label={t("scrollContext.unwritten")}
                     />
                   </Show>
