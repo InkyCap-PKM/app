@@ -36,7 +36,16 @@ export interface FuzzyMatch {
  * score. Callers add their own tiebreak (recency, name) after it.
  */
 export function compareMatches(a: FuzzyMatch, b: FuzzyMatch): number {
-  return KIND_RANK[b.kind] - KIND_RANK[a.kind] || b.score - a.score;
+  return compareMatchKinds(a, b) || b.score - a.score;
+}
+
+/**
+ * Order two matches by {@link MatchKind} alone, best first. For pickers that
+ * rank on something of their own between kind and score, such as which field
+ * of an entry matched.
+ */
+export function compareMatchKinds(a: FuzzyMatch, b: FuzzyMatch): number {
+  return KIND_RANK[b.kind] - KIND_RANK[a.kind];
 }
 
 /**

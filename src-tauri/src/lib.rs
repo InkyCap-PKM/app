@@ -338,6 +338,7 @@ pub fn run() {
             commands::files::get_potential_links,
             commands::files::get_outbound_links,
             commands::files::get_all_aliases,
+            commands::files::get_note_identifiers,
             commands::settings::get_settings,
             commands::settings::update_settings,
             commands::plugins::read_plugin_manifests,

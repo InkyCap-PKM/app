@@ -1,5 +1,6 @@
 // Quick-open command palette (Ctrl+O).
-// Fuzzy searches the notebox file list and opens the selected file.
+// Fuzzy searches the notebox's notes by file name, `title`, and `zid`, and
+// opens the selected one.
 
 import {
   Component,
@@ -8,9 +9,17 @@ import {
   createEffect,
   For,
   Show,
+  on,
 } from "solid-js";
 import { fileList, type FileEntry } from "../stores/filelist";
-import { fuzzyMatch, compareMatches, type FuzzyMatch } from "../lib/fuzzy";
+import {
+  fuzzyMatch,
+  substringMatch,
+  compareMatchKinds,
+  type FuzzyMatch,
+} from "../lib/fuzzy";
+import { getNoteIdentifiers, type NoteIdentifiers } from "../lib/ipc";
+import { normalizePath } from "../lib/paths";
 import { compareName } from "../lib/sort";
 import { openTab } from "../stores/tabs";
 import { useI18n } from "../lib/i18n";
@@ -21,9 +30,54 @@ interface QuickOpenProps {
   onClose: () => void;
 }
 
+/** Which part of a note the query matched. */
+type MatchField = "name" | "title" | "zid";
+
+/** Name matches list ahead of title and zid matches of the same kind. */
+const FIELD_RANK: Record<MatchField, number> = { name: 0, title: 1, zid: 1 };
+
 interface ScoredEntry {
   entry: FileEntry;
   match: FuzzyMatch;
+  field: MatchField;
+  /** The text that matched; `match.ranges` index into it. */
+  text: string;
+}
+
+/** Best first: match kind, then field (name before title/zid), then score. */
+function compareScored(a: ScoredEntry, b: ScoredEntry): number {
+  return (
+    compareMatchKinds(a.match, b.match) ||
+    FIELD_RANK[a.field] - FIELD_RANK[b.field] ||
+    b.match.score - a.match.score
+  );
+}
+
+/**
+ * The best way `query` matches a note, or null if nothing does. The title
+ * matches loosely like the name; the zid only as an unbroken run, since
+ * loose matching of digits would hit nearly every timestamp-style zid. A
+ * title or zid identical to the name is skipped so it doesn't repeat.
+ */
+function matchNote(
+  query: string,
+  entry: FileEntry,
+  ids: NoteIdentifiers | undefined,
+): ScoredEntry | null {
+  const name = displayName(entry.name);
+  const candidates: ScoredEntry[] = [];
+  const add = (field: MatchField, text: string, match: FuzzyMatch | null) => {
+    if (match) candidates.push({ entry, match, field, text });
+  };
+
+  add("name", name, fuzzyMatch(query, name));
+  if (ids?.title && ids.title !== name) {
+    add("title", ids.title, fuzzyMatch(query, ids.title));
+  }
+  if (ids?.zid && ids.zid !== name) {
+    add("zid", ids.zid, substringMatch(query, ids.zid));
+  }
+  return candidates.sort(compareScored)[0] ?? null;
 }
 
 /** Rows rendered initially, and added each time the user scrolls (or arrows)
@@ -49,6 +103,29 @@ const QuickOpen: Component<QuickOpenProps> = (props) => {
   const [visibleCount, setVisibleCount] = createSignal(PAGE_SIZE);
   let resultsEl: HTMLDivElement | undefined;
   const hover = createHoverGuard();
+
+  // Each note's title and zid, keyed by normalized path. Fetched fresh from
+  // the backend's in-memory index every time the picker opens (so it is never
+  // stale) and dropped when it closes.
+  const [identifiers, setIdentifiers] = createSignal(
+    new Map<string, NoteIdentifiers>(),
+  );
+  createEffect(
+    on(
+      () => props.visible,
+      (visible) => {
+        if (!visible) {
+          setIdentifiers(new Map());
+          return;
+        }
+        getNoteIdentifiers()
+          .then((list) =>
+            setIdentifiers(new Map(list.map((i) => [normalizePath(i.path), i]))),
+          )
+          .catch(console.error);
+      },
+    ),
+  );
 
   // Keep the selected row visible as the selection moves past either edge of
   // the scroll viewport. `block: "nearest"` scrolls the minimum amount. We
@@ -83,27 +160,27 @@ const QuickOpen: Component<QuickOpenProps> = (props) => {
         .map((entry) => ({
           entry,
           match: { score: 0, ranges: [], kind: "substring" as const },
+          field: "name" as const,
+          text: displayName(entry.name),
         }));
     }
 
-    // Match (and later display) against the extension-less name, so the
-    // `.typ` suffix neither shows in the list nor catches fuzzy highlights.
+    // Names are matched (and later displayed) without the `.typ` suffix, so it
+    // neither shows in the list nor catches fuzzy highlights.
+    const ids = identifiers();
     const scored: ScoredEntry[] = [];
     for (const entry of files) {
-      const m = fuzzyMatch(q, displayName(entry.name));
-      if (m) {
-        scored.push({ entry, match: m });
-      }
+      const m = matchNote(q, entry, ids.get(normalizePath(entry.path)));
+      if (m) scored.push(m);
     }
 
-    // Kind first, then score: a name that spells the query out in order beats
-    // one that merely has those letters sprinkled through it, and a name that
-    // *is* the query tops both. Tiebreak by recency so equally-good matches
-    // list the more recently edited note first.
+    // Kind first: text that spells the query out in order beats text that
+    // merely has those letters sprinkled through it, and text that *is* the
+    // query tops both. Tiebreak by recency so equally-good matches list the
+    // more recently edited note first.
     scored.sort(
       (a, b) =>
-        compareMatches(a.match, b.match) ||
-        b.entry.modified_time - a.entry.modified_time,
+        compareScored(a, b) || b.entry.modified_time - a.entry.modified_time,
     );
     return scored;
   });
@@ -204,7 +281,7 @@ const QuickOpen: Component<QuickOpenProps> = (props) => {
     }
   }
 
-  /** Render a filename with matched characters highlighted. */
+  /** Render a name, title, or zid with matched characters highlighted. */
   function HighlightedName(props: { name: string; ranges: [number, number][] }) {
     if (props.ranges.length === 0) return <>{props.name}</>;
 
@@ -270,12 +347,27 @@ const QuickOpen: Component<QuickOpenProps> = (props) => {
                   <span class="quick-open__result-name">
                     <HighlightedName
                       name={displayName(item.entry.name)}
-                      ranges={item.match.ranges}
+                      ranges={item.field === "name" ? item.match.ranges : []}
                     />
                   </span>
                   <Show when={item.entry.folder}>
                     <span class="quick-open__result-folder">
                       {item.entry.folder}
+                    </span>
+                  </Show>
+                  <Show when={item.field !== "name"}>
+                    <span class="quick-open__result-matched-field">
+                      <span class="badge">
+                        {item.field === "title"
+                          ? t("quickOpen.matchedTitle")
+                          : t("quickOpen.matchedZid")}
+                      </span>
+                      <span>
+                        <HighlightedName
+                          name={item.text}
+                          ranges={item.match.ranges}
+                        />
+                      </span>
                     </span>
                   </Show>
                 </div>

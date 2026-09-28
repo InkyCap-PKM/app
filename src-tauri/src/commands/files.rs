@@ -981,6 +981,43 @@ pub async fn get_all_aliases(
     Ok(entries)
 }
 
+/// A note's title and zid, for pickers that let the user find a note by
+/// either one as well as by its file name.
+#[derive(serde::Serialize)]
+pub struct NoteIdentifiers {
+    pub path: String,
+    pub title: Option<String>,
+    pub zid: Option<String>,
+}
+
+/// Title and zid of every note that has at least one of them. Read from the
+/// in-memory property index (no file I/O), so it is cheap enough to call each
+/// time Quick Open is shown. Empty until the index finishes building.
+#[tauri::command]
+pub async fn get_note_identifiers(
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<Vec<NoteIdentifiers>, InkyCapError> {
+    let session = state.session(window.label()).await;
+    let index = session.property_index.read().await;
+    Ok(index
+        .notes
+        .iter()
+        .filter_map(|(path, meta)| {
+            let title = meta.title();
+            let zid = meta.zid();
+            if title.is_none() && zid.is_none() {
+                return None;
+            }
+            Some(NoteIdentifiers {
+                path: to_frontend_string(path),
+                title,
+                zid,
+            })
+        })
+        .collect())
+}
+
 /// Multi-line excerpt of a backlink. `line` is the line that mentions the
 /// target; `context_before` / `context_after` carry up to 2 surrounding
 /// lines each so the Links pane can show extra context when the user

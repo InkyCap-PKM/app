@@ -572,6 +572,22 @@ export async function getAllAliases(): Promise<AliasEntry[]> {
   return invoke<AliasEntry[]>("get_all_aliases");
 }
 
+// Note identifiers
+
+/** A note's `title` and `zid` properties, for finding it by either one. */
+export interface NoteIdentifiers {
+  path: string;
+  title: string | null;
+  zid: string | null;
+}
+
+/** Title and zid of every note that has at least one. Read from the in-memory
+ *  index, so cheap to call whenever a picker opens. Empty until the notebox's
+ *  index has finished building. */
+export async function getNoteIdentifiers(): Promise<NoteIdentifiers[]> {
+  return invoke<NoteIdentifiers[]>("get_note_identifiers");
+}
+
 // Settings
 
 export async function getSettings(): Promise<UserSettings> {

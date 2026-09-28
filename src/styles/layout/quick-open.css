@@ -74,6 +74,22 @@
   overflow-wrap: anywhere;
 }
 
+/* The title or zid a note matched on, when it wasn't its name: its own line
+   beneath the name and folder, led by a label saying which field it is. */
+.quick-open__result-matched-field {
+  flex-basis: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  color: var(--fg-muted);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.quick-open__result-matched-field .badge {
+  flex-shrink: 0;
+}
+
 .quick-open__result-folder {
   color: var(--fg-dim);
   font-size: var(--text-base);
