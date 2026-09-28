@@ -290,6 +290,7 @@
 
 .property-map__name-input:focus {
   border-color: var(--accent);
+  box-shadow: var(--input-focus-edge);
 }
 
 .property-map__name-input--error {

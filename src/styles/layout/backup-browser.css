@@ -152,11 +152,13 @@
 }
 
 .backup-browser__archive-item {
+  position: relative;
   text-align: left;
   background: transparent;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  padding: 8px 10px;
+  /* Right side leaves room for the selected check mark. */
+  padding: 8px 28px 8px 10px;
   cursor: pointer;
   color: var(--fg-primary);
   display: flex;
@@ -171,6 +173,20 @@
 .backup-browser__archive-item.is-selected {
   border-color: var(--accent);
   background: var(--bg-hover);
+}
+
+/* Check mark on the selected archive, so selection doesn't read only as the
+   hover background plus an accent border. */
+.backup-browser__archive-check {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  color: var(--accent);
+  display: none;
+}
+
+.backup-browser__archive-item.is-selected .backup-browser__archive-check {
+  display: block;
 }
 
 .backup-browser__archive-name {
@@ -194,11 +210,11 @@
 }
 
 .backup-browser__warning {
-  background: var(--bg-warning, var(--bg-hover));
-  border: 1px solid var(--border-warning, var(--border-subtle));
+  background: var(--bg-hover);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   padding: var(--space-4) var(--space-5);
-  color: var(--fg-warning, var(--fg-primary));
+  color: var(--fg-primary);
   font-size: var(--text-sm);
 }
 

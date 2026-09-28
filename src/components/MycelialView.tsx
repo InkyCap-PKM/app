@@ -105,32 +105,38 @@ function highlightParts(
   ];
 }
 
-const LEGEND: { kind: BoxKind; labelKey: string; color: string; dashed: boolean }[] =
+/** How each kind's box border is drawn. The legend swatch uses the same
+ *  pattern, and each kind's pattern differs from the others', so kinds can be
+ *  told apart without relying on colour. Must match `.mycelial-box--<kind>`
+ *  in mycelial.css. */
+type LegendPattern = "thick" | "solid" | "dashed" | "dotted" | "double";
+
+const LEGEND: { kind: BoxKind; labelKey: string; color: string; pattern: LegendPattern }[] =
   [
-    { kind: "center", labelKey: "mycelial.legend.center", color: "var(--accent)", dashed: false },
+    { kind: "center", labelKey: "mycelial.legend.center", color: "var(--accent)", pattern: "thick" },
     {
       kind: "latent",
       labelKey: "mycelial.legend.latent",
-      color: "var(--mycelial-latent, #c08a3e)",
-      dashed: true,
+      color: "var(--mycelial-latent)",
+      pattern: "dashed",
     },
     {
       kind: "emergent",
       labelKey: "mycelial.legend.emergent",
-      color: "var(--mycelial-emergent, #6f4423)",
-      dashed: false,
+      color: "var(--mycelial-emergent)",
+      pattern: "solid",
     },
     {
       kind: "kindred",
       labelKey: "mycelial.legend.kindred",
-      color: "var(--mycelial-kindred, #4a7c74)",
-      dashed: true,
+      color: "var(--mycelial-kindred)",
+      pattern: "dotted",
     },
     {
       kind: "source",
       labelKey: "mycelial.legend.source",
-      color: "var(--mycelial-source, #6e6e6e)",
-      dashed: false,
+      color: "var(--mycelial-source)",
+      pattern: "double",
     },
   ];
 
@@ -832,11 +838,11 @@ export default function MycelialView(props: MycelialViewProps) {
 
   function connectionColor(kind: string): string {
     return kind === "emergent"
-      ? "var(--mycelial-emergent, #6f4423)"
+      ? "var(--mycelial-emergent)"
       : kind === "latent"
-        ? "var(--mycelial-latent, #c08a3e)"
+        ? "var(--mycelial-latent)"
         : kind === "kindred"
-          ? "var(--mycelial-kindred, #4a7c74)"
+          ? "var(--mycelial-kindred)"
           : "var(--border-primary)";
   }
 
@@ -849,11 +855,13 @@ export default function MycelialView(props: MycelialViewProps) {
         stroke={connectionColor(conn.kind)}
         stroke-width={conn.kind === "anchor" ? 1.5 : strokeWidth(conn.score)}
         stroke-linecap="round"
+        // Same patterns as the boxes' borders: latent dashed, kindred
+        // dotted (a near-zero dash with round caps draws a dot).
         stroke-dasharray={
           conn.kind === "latent"
             ? "5 4"
             : conn.kind === "kindred"
-              ? "10 6"
+              ? "0.1 5"
               : "none"
         }
         opacity={
@@ -1403,10 +1411,7 @@ export default function MycelialView(props: MycelialViewProps) {
               }}
             >
               <span
-                class="mycelial-view__legend-line"
-                classList={{
-                  "mycelial-view__legend-line--dashed": item.dashed,
-                }}
+                class={`mycelial-view__legend-line mycelial-view__legend-line--${item.pattern}`}
                 style={{ "border-color": item.color }}
               />
               {t(item.labelKey)}

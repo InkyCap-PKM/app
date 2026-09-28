@@ -18,6 +18,7 @@ import {
   ChevronDown,
   ChevronRight,
   Repeat,
+  ClockAlert,
   ListChevronsUpDown,
   ListChevronsDownUp,
   BookmarkPlus,
@@ -950,15 +951,28 @@ const AgendaList: Component<AgendaListProps> = (props) => {
                   <Repeat size={11} class="agenda__recur-icon" aria-hidden="true" />
                 </Show>
                 <Show when={it.date}>
-                  <span
-                    class="agenda__date"
-                    classList={{
-                      "agenda__date--overdue":
-                        !it.done && !!it.date && it.date < today,
-                    }}
-                  >
-                    {formatDate(it.date!)}
-                  </span>
+                  {(() => {
+                    const overdue = !it.done && !!it.date && it.date < today;
+                    return (
+                      <span
+                        class="agenda__date"
+                        classList={{ "agenda__date--overdue": overdue }}
+                        title={overdue ? t("agenda.date.overdue") : undefined}
+                      >
+                        {/* An icon as well as the colour, so "overdue" doesn't
+                            depend on telling red apart. */}
+                        <Show when={overdue}>
+                          <ClockAlert
+                            size={11}
+                            class="agenda__overdue-icon"
+                            role="img"
+                            aria-label={t("agenda.date.overdue")}
+                          />
+                        </Show>
+                        {formatDate(it.date!)}
+                      </span>
+                    );
+                  })()}
                 </Show>
               </div>
             )}

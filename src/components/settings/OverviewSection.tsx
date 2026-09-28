@@ -23,7 +23,7 @@ import { homeDirDefault } from "../../lib/dialog-defaults";
 import { useI18n } from "../../lib/i18n";
 import type { NoteboxRegistryEntry } from "../../lib/types";
 import { open } from "@tauri-apps/plugin-dialog";
-import { Pencil, Check, X, Handshake } from "lucide-solid";
+import { Pencil, Check, X, Handshake, CircleAlert } from "lucide-solid";
 import HelpButton from "../HelpButton";
 import ExperimentalNotice from "../ExperimentalNotice";
 import UpdateChecker, { UpdateReleaseNotes } from "../UpdateChecker";
@@ -807,6 +807,11 @@ export function NoteboxManagementSection(props: { onClose: () => void }) {
               class="settings__description"
               classList={{ "settings__description--error": !!addError() }}
             >
+              {/* An icon marks the error, so it doesn't read only as red text
+                  in the slot that usually shows the chosen folder. */}
+              <Show when={addError()}>
+                <CircleAlert size={13} class="settings__description-icon" aria-hidden="true" />
+              </Show>
               {addError() || addPath() || t("settings.notebox.noFolderSelected")}
             </span>
           </div>

@@ -227,6 +227,7 @@
 
 .left-sidebar__filter-input:focus {
   border-color: var(--accent);
+  box-shadow: var(--input-focus-edge);
 }
 
 .left-sidebar__filter-clear {

@@ -5,6 +5,7 @@
 import { Component, For, Show } from "solid-js";
 import type { TypstDiagnostic } from "../lib/types";
 import { useI18n } from "../lib/i18n";
+import { diagnosticSeverityName } from "../editor/diagnostic-style";
 
 export const DiagnosticRow: Component<{ d: TypstDiagnostic }> = (props) => {
   const t = useI18n();
@@ -17,7 +18,7 @@ export const DiagnosticRow: Component<{ d: TypstDiagnostic }> = (props) => {
     }}
   >
     <div class="typst-reading__diagnostic-line">
-      <span class="typst-reading__diagnostic-severity">{props.d.severity}</span>
+      <span class="typst-reading__diagnostic-severity">{diagnosticSeverityName(props.d.severity, t)}</span>
       <span class="typst-reading__diagnostic-message">{props.d.message}</span>
       <Show when={props.d.primary?.path}>
         <span class="typst-reading__diagnostic-loc">

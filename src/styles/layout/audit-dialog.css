@@ -206,7 +206,7 @@
 }
 
 .audit-dialog__error {
-  background: var(--bg-danger, rgba(229, 85, 85, 0.1));
+  background: color-mix(in srgb, var(--accent-danger) 10%, transparent);
   border: 1px solid var(--accent-danger);
   color: var(--accent-danger);
   padding: var(--space-4) var(--space-5);

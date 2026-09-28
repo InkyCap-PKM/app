@@ -95,6 +95,7 @@
 
 .filter-builder__input:focus {
   border-color: var(--accent);
+  box-shadow: var(--input-focus-edge);
 }
 
 .filter-builder__input--property {

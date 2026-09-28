@@ -237,6 +237,7 @@
 .cm-suggestion-menu__comment:focus-visible {
   outline: none;
   border-color: var(--accent);
+  box-shadow: var(--input-focus-edge);
 }
 
 .cm-suggestion-menu__actions {

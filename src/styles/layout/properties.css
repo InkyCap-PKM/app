@@ -175,6 +175,7 @@
 
 .property-editor__input:focus {
   border-color: var(--border-input-focus);
+  box-shadow: var(--input-focus-edge);
 }
 
 .property-editor__input--error {

@@ -47,7 +47,17 @@ export interface LspServerCapabilities {
   diagnosticProvider?: unknown;
 }
 
-type DiagnosticsHandler = (uri: string, diagnostics: LspDiagnostic[]) => void;
+type DiagnosticsListener = (diagnostics: LspDiagnostic[]) => void;
+
+/** One spelling for a document URI, so a URI the server sends back matches
+ *  the one an editor opened even if the two percent-encode differently. */
+function normalizeUri(uri: string): string {
+  try {
+    return decodeURIComponent(uri);
+  } catch {
+    return uri;
+  }
+}
 
 export class LspClient {
   private transport = new LspTransport();
@@ -55,10 +65,36 @@ export class LspClient {
   private initialized = false;
   private rootUri: string | null = null;
   private openDocuments = new Map<string, number>(); // uri → version
-  private onDiagnostics: DiagnosticsHandler = () => {};
+  /** Editors listening for each document's diagnostics, by normalized URI.
+   *  A set, because split panes can show the same note twice. */
+  private diagnosticsListeners = new Map<string, Set<DiagnosticsListener>>();
+  /** The latest diagnostics the server sent for each document, handed to a
+   *  listener as soon as it subscribes. The server publishes once after a
+   *  document opens, which can arrive before the editor has subscribed. */
+  private latestDiagnostics = new Map<string, LspDiagnostic[]>();
 
-  setDiagnosticsHandler(handler: DiagnosticsHandler) {
-    this.onDiagnostics = handler;
+  /**
+   * Receive the diagnostics (errors, warnings) the server reports for one
+   * document. Each editor subscribes for its own note, so several editors can
+   * listen at once without replacing one another. Returns the function that
+   * ends this subscription and no other.
+   */
+  subscribeDiagnostics(uri: string, listener: DiagnosticsListener): () => void {
+    const key = normalizeUri(uri);
+    let listeners = this.diagnosticsListeners.get(key);
+    if (!listeners) {
+      listeners = new Set();
+      this.diagnosticsListeners.set(key, listeners);
+    }
+    listeners.add(listener);
+    const latest = this.latestDiagnostics.get(key);
+    if (latest) listener(latest);
+    return () => {
+      const current = this.diagnosticsListeners.get(key);
+      if (!current) return;
+      current.delete(listener);
+      if (current.size === 0) this.diagnosticsListeners.delete(key);
+    };
   }
 
   setErrorHandler(handler: (err: string) => void) {
@@ -157,6 +193,7 @@ export class LspClient {
   async closeDocument(uri: string): Promise<void> {
     if (!this.initialized || !this.openDocuments.has(uri)) return;
     this.openDocuments.delete(uri);
+    this.latestDiagnostics.delete(normalizeUri(uri));
     await this.transport.notify("textDocument/didClose", {
       textDocument: { uri },
     });
@@ -198,7 +235,11 @@ export class LspClient {
   private handleNotification(msg: LspMessage) {
     if (msg.method === "textDocument/publishDiagnostics") {
       const params = msg.params as { uri: string; diagnostics: LspDiagnostic[] };
-      this.onDiagnostics(params.uri, params.diagnostics);
+      const key = normalizeUri(params.uri);
+      this.latestDiagnostics.set(key, params.diagnostics);
+      for (const listener of this.diagnosticsListeners.get(key) ?? []) {
+        listener(params.diagnostics);
+      }
     }
   }
 }

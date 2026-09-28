@@ -398,6 +398,11 @@
   color: var(--accent-danger);
 }
 
+.settings__description-icon {
+  vertical-align: -2px;
+  margin-right: var(--space-1);
+}
+
 .settings__field-hint {
   font-size: var(--text-sm);
   color: var(--fg-dim);
@@ -586,6 +591,7 @@
 
 .settings__number-input:focus {
   border-color: var(--accent);
+  box-shadow: var(--input-focus-edge);
 }
 
 /* Text input */
@@ -603,6 +609,7 @@
 
 .settings__text-input:focus {
   border-color: var(--accent);
+  box-shadow: var(--input-focus-edge);
 }
 
 /* Placeholder hint text must read as a prompt, not as a real entered value —
@@ -835,8 +842,14 @@
   border-right: none;
 }
 
+/* The focus edge is drawn on the outer sides only, so the input and its
+   toggle read as one field with no line between them. */
 .settings__combobox-input:focus {
   border-color: var(--accent);
+  box-shadow:
+    inset var(--input-focus-edge-width) 0 0 var(--border-input-focus),
+    inset 0 var(--input-focus-edge-width) 0 var(--border-input-focus),
+    inset 0 calc(-1 * var(--input-focus-edge-width)) 0 var(--border-input-focus);
 }
 
 .settings__combobox-toggle {
@@ -859,6 +872,10 @@
 
 .settings__combobox-input:focus + .settings__combobox-toggle {
   border-color: var(--accent);
+  box-shadow:
+    inset calc(-1 * var(--input-focus-edge-width)) 0 0 var(--border-input-focus),
+    inset 0 var(--input-focus-edge-width) 0 var(--border-input-focus),
+    inset 0 calc(-1 * var(--input-focus-edge-width)) 0 var(--border-input-focus);
 }
 
 /* Large settings form fields keep the medium (7px) corner — at full width a
@@ -994,6 +1011,7 @@
 
 .color-picker__hex:focus {
   border-color: var(--accent);
+  box-shadow: var(--input-focus-edge);
 }
 
 .color-picker__warning {

@@ -75,6 +75,7 @@
 .help-panel__filter:focus {
   outline: none;
   border-color: var(--accent);
+  box-shadow: var(--input-focus-edge);
 }
 
 /* Clear (×) button inside the filter — mirrors the search panel's. */

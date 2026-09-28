@@ -59,5 +59,6 @@
 
 .search-panel__input:focus {
   border-color: var(--accent);
+  box-shadow: var(--input-focus-edge);
 }
 

@@ -563,6 +563,40 @@
   padding: 3px 8px;
 }
 
+/* Each segment carries its own border (instead of the shared toggle's), so
+   the chosen format can recolour its border: one outline that follows the
+   toggle's rounding, as on the Journal Scroll button, marking the choice by
+   shape and not only by the faint tint. The segments overlap by the border's
+   width so the middle divider stays a single line, and the chosen one sits
+   on top of that overlap. */
+.editor-header__format-toggle {
+  border: none;
+  overflow: visible;
+  background: none;
+}
+
+.editor-header__format-seg {
+  border: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+}
+
+.editor-header__format-seg + .editor-header__format-seg {
+  margin-left: -1px;
+}
+
+.editor-header__format-seg:first-child {
+  border-radius: var(--radius-control) 0 0 var(--radius-control);
+}
+
+.editor-header__format-seg:last-child {
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+}
+
+.editor-header__format-seg.is-active {
+  position: relative;
+  border-color: currentColor;
+}
+
 .editor-header__format-seg.is-format-svg.is-active {
   background: color-mix(in srgb, var(--accent-green) 14%, transparent);
   color: var(--accent-green);

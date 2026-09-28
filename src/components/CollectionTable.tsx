@@ -1468,12 +1468,18 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
                                   cur?.column === col ? null : { column: col, anchor },
                                 );
                               }}
-                              title={t("columnFilter.filterColumn", {
-                                label: propertyLabel(col),
-                              })}
-                              aria-label={t("columnFilter.filterColumn", {
-                                label: propertyLabel(col),
-                              })}
+                              title={t(
+                                columnFilterGroup(col) != null
+                                  ? "columnFilter.filterColumnActive"
+                                  : "columnFilter.filterColumn",
+                                { label: propertyLabel(col) },
+                              )}
+                              aria-label={t(
+                                columnFilterGroup(col) != null
+                                  ? "columnFilter.filterColumnActive"
+                                  : "columnFilter.filterColumn",
+                                { label: propertyLabel(col) },
+                              )}
                             >
                               <Funnel size={13} />
                             </button>

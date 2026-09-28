@@ -4,6 +4,7 @@ import { exportDefault, rememberExportFile } from "../lib/dialog-defaults";
 import * as ipc from "../lib/ipc";
 import type { PdfStandardPreset, ReviewMarkupMode } from "../lib/ipc";
 import { Dropdown } from "./Dropdown";
+import { CircleCheck, CircleX, TriangleAlert } from "lucide-solid";
 import { t } from "../lib/i18n";
 import { errorText } from "../lib/errors";
 
@@ -326,7 +327,8 @@ const ExportDialog: Component = () => {
 
             <Show when={FORMAT_INFO[format()].pandoc && !pandocAvailable()}>
               <div class="export-dialog__warning">
-                {t("export.pandocNotFoundWarn")}
+                <TriangleAlert size={16} class="export-dialog__status-icon" aria-hidden="true" />
+                <span>{t("export.pandocNotFoundWarn")}</span>
               </div>
             </Show>
 
@@ -411,6 +413,7 @@ const ExportDialog: Component = () => {
 
             <Show when={error()}>
               <div class="export-dialog__error" role="alert">
+                <CircleX size={16} class="export-dialog__status-icon" aria-hidden="true" />
                 <pre class="export-dialog__error-text">{error()}</pre>
                 <button
                   type="button"
@@ -425,7 +428,10 @@ const ExportDialog: Component = () => {
             </Show>
 
             <Show when={success()}>
-              <div class="export-dialog__success">{success()}</div>
+              <div class="export-dialog__success">
+                <CircleCheck size={16} class="export-dialog__status-icon" aria-hidden="true" />
+                <span>{success()}</span>
+              </div>
             </Show>
           </div>
 

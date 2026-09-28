@@ -257,7 +257,7 @@
   font-weight: 500;
   padding: 1px 6px;
   border-radius: var(--radius-control);
-  background: var(--warning-bg, rgba(229, 165, 10, 0.12));
+  background: var(--warn-bg-alpha);
   color: var(--accent-warn);
 }
 

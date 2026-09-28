@@ -2,6 +2,7 @@ import { type Extension, EditorState, Facet, StateEffect, StateField } from "@co
 import { EditorView, ViewPlugin, type ViewUpdate, hoverTooltip, type Tooltip } from "@codemirror/view";
 import { type CompletionContext, type CompletionResult, type Completion, startCompletion, snippet } from "@codemirror/autocomplete";
 import { setDiagnostics, type Diagnostic } from "@codemirror/lint";
+import { renderDiagnosticMessage } from "../diagnostic-style";
 import { referenceActions } from "./reference-quickfix";
 import { LspClient, filePathToUri, type LspDiagnostic, type LspPosition, type LspCompletionItem } from "./client";
 import * as ipc from "../../lib/ipc";
@@ -28,8 +29,15 @@ export const visualModeFacet = Facet.define<boolean, boolean>({
   combine: (values) => values.some((v) => v),
 });
 
+/** Carries the latest diagnostics the server reported for this note. */
 const lspDiagnosticsEffect = StateEffect.define<Diagnostic[]>();
 
+/**
+ * The latest diagnostics the server reported for this note, whether or not
+ * they're on screen. Kept apart from what the lint layer shows so switching
+ * back from visual mode can bring them back without waiting for the server.
+ * Positions follow edits so they stay valid until the next report.
+ */
 const lspDiagnosticsField = StateField.define<Diagnostic[]>({
   create: () => [],
   update(value, tr) {
@@ -38,9 +46,67 @@ const lspDiagnosticsField = StateField.define<Diagnostic[]>({
         return effect.value;
       }
     }
-    return value;
+    if (!tr.docChanged) return value;
+    return value.map((d) => ({
+      ...d,
+      from: tr.changes.mapPos(d.from),
+      to: tr.changes.mapPos(d.to, 1),
+    }));
   },
 });
+
+/** The diagnostics to show: none in the visual editor, which is a writing
+ *  surface rather than a code editor; all of them in source mode. */
+function shownDiagnostics(state: EditorState): Diagnostic[] {
+  if (state.facet(visualModeFacet)) return [];
+  return state.field(lspDiagnosticsField, false) ?? [];
+}
+
+function diagnosticsKey(diagnostics: Diagnostic[]): string {
+  return diagnostics.map((d) => `${d.from}:${d.to}:${d.severity}:${d.message}`).join("\n");
+}
+
+/**
+ * Hands the stored diagnostics to the lint layer when a new report differs
+ * from what's on screen, or when the editor switches between visual and
+ * source mode. The server sends the same report again on every hover, and
+ * handing an unchanged set to the lint layer would close the message the
+ * mouse just opened.
+ */
+const diagnosticsDisplay = ViewPlugin.fromClass(
+  class {
+    private shownKey: string;
+    private destroyed = false;
+
+    constructor(view: EditorView) {
+      this.shownKey = diagnosticsKey(shownDiagnostics(view.state));
+    }
+
+    update(update: ViewUpdate) {
+      const reported = update.transactions.some((tr) =>
+        tr.effects.some((e) => e.is(lspDiagnosticsEffect)),
+      );
+      const modeChanged =
+        update.startState.facet(visualModeFacet) !== update.state.facet(visualModeFacet);
+      if (!reported && !modeChanged) return;
+      const next = shownDiagnostics(update.state);
+      const key = diagnosticsKey(next);
+      if (key === this.shownKey) return;
+      this.shownKey = key;
+      // An editor can't be updated from inside its own update, so hand the
+      // set over just after this one finishes.
+      const view = update.view;
+      queueMicrotask(() => {
+        if (this.destroyed) return;
+        view.dispatch(setDiagnostics(view.state, shownDiagnostics(view.state)));
+      });
+    }
+
+    destroy() {
+      this.destroyed = true;
+    }
+  },
+);
 
 function offsetToLspPosition(doc: { lineAt(pos: number): { number: number; from: number } }, offset: number): LspPosition {
   const line = doc.lineAt(offset);
@@ -310,7 +376,7 @@ function convertDiagnostics(
   return relevant.map((d) => {
     const from = lspPositionToOffset(doc, d.range.start);
     const to = lspPositionToOffset(doc, d.range.end);
-    const severity = d.severity === 1 ? "error"
+    const severity: Diagnostic["severity"] = d.severity === 1 ? "error"
       : d.severity === 2 ? "warning"
       : "info";
 
@@ -343,8 +409,9 @@ function convertDiagnostics(
     return {
       from: Math.min(from, doc.length),
       to: Math.min(to, doc.length),
-      severity: severity as "error" | "warning" | "info",
+      severity,
       message,
+      renderMessage: renderDiagnosticMessage(severity, message),
       source: d.source,
       ...(actions ? { actions } : {}),
     };
@@ -356,27 +423,23 @@ export function createLspDiagnosticsUpdater(view: EditorView) {
   const client = view.state.facet(lspClientFacet);
   if (!client || !uri) return () => {};
 
-  const normalizeUri = (u: string) => decodeURIComponent(u);
-  const normalizedUri = normalizeUri(uri);
   const suppressUnknownVars = isScaffoldFragmentUri(uri);
 
   let disposed = false;
-  const handler = (diagUri: string, diagnostics: LspDiagnostic[]) => {
-    if (normalizeUri(diagUri) !== normalizedUri) return;
+  const unsubscribe = client.subscribeDiagnostics(uri, (diagnostics) => {
     // Fetch (cached) bibliography keys first so unresolved-citation errors can be
     // annotated. The await is a no-op on cache hits; on a miss the diagnostics
     // land a few ms later, which is imperceptible for a transient lint underline.
     void refreshBibKeys().then((bibKeys) => {
       if (disposed) return;
       const converted = convertDiagnostics(view.state.doc, diagnostics, bibKeys, suppressUnknownVars);
-      view.dispatch(setDiagnostics(view.state, converted));
+      view.dispatch({ effects: lspDiagnosticsEffect.of(converted) });
     });
-  };
+  });
 
-  client.setDiagnosticsHandler(handler);
   return () => {
     disposed = true;
-    client.setDiagnosticsHandler(() => {});
+    unsubscribe();
   };
 }
 
@@ -451,6 +514,7 @@ export function lspExtension(client: LspClient, documentUri: string): Extension 
     lspClientFacet.of(client),
     documentUriFacet.of(documentUri),
     lspDiagnosticsField,
+    diagnosticsDisplay,
     lspCompletionProvider,
     lspTriggerExtension,
     hoverTooltip(lspHoverSource, { hideOnChange: true }),

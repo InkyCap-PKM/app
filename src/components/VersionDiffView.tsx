@@ -118,7 +118,10 @@ const VersionDiffView: Component<{
               // override them here in the editor theme (higher precedence than
               // the base theme): float the controls into normal flow and give the
               // Restore button the app's muted-button look so it's actually visible.
-              ".cm-deletedChunk": { position: "relative" },
+              ".cm-deletedChunk": {
+                position: "relative",
+                backgroundColor: "color-mix(in srgb, var(--accent-danger) 8%, transparent)",
+              },
               ".cm-deletedChunk .cm-chunkButtons": {
                 position: "static",
                 display: "flex",
@@ -142,6 +145,51 @@ const VersionDiffView: Component<{
                 background: "var(--bg-hover)",
                 color: "var(--fg-secondary)",
               },
+              // Added and removed text differ by shape as well as colour, so
+              // the difference still reads without telling the colours apart:
+              // added text is underlined, removed text is struck through, and
+              // the margin shows + / − instead of a thin coloured bar. The
+              // selectors match the merge base theme's so these win over it.
+              "&.cm-merge-b .cm-changedLine": {
+                backgroundColor: "color-mix(in srgb, var(--accent-success) 8%, transparent)",
+              },
+              "&.cm-merge-b .cm-changedText": {
+                background: "none",
+                textDecoration: "underline 2px var(--accent-success)",
+                textUnderlineOffset: "3px",
+              },
+              // A line with both additions and removals in it.
+              ".cm-inlineChangedLine": {
+                backgroundColor: "color-mix(in srgb, var(--fg-muted) 6%, transparent)",
+              },
+              ".cm-deletedChunk .cm-deletedLine del, &.cm-merge-b .cm-deletedText, .cm-deletedChunk .cm-deletedText": {
+                background: "none",
+                textDecoration: "line-through var(--accent-danger)",
+              },
+              ".cm-changeGutter": {
+                width: "1.2em",
+                padding: "0",
+                textAlign: "center",
+                fontWeight: "600",
+              },
+              ".cm-changeGutter .cm-gutterElement": {
+                background: "none",
+              },
+              ".cm-changeGutter .cm-changedLineGutter": {
+                background: "none",
+                color: "var(--accent-success)",
+              },
+              ".cm-changeGutter .cm-changedLineGutter::before": { content: '"+"' },
+              ".cm-changeGutter .cm-deletedLineGutter": {
+                background: "none",
+                color: "var(--accent-danger)",
+              },
+              ".cm-changeGutter .cm-inlineChangedLineGutter": {
+                background: "none",
+                color: "var(--fg-muted)",
+              },
+              ".cm-changeGutter .cm-deletedLineGutter::before": { content: '"−"' },
+              ".cm-changeGutter .cm-inlineChangedLineGutter::before": { content: '"±"' },
             }),
           ],
         }),

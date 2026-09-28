@@ -455,9 +455,15 @@
   color: var(--fg-primary);
 }
 
+/* An active filter fills the funnel, so it reads as "on" by shape as well
+   as by colour. */
 .collection-table__filter-btn--active {
   opacity: 1;
   color: var(--accent);
+}
+
+.collection-table__filter-btn--active svg {
+  fill: currentColor;
 }
 
 .collection-table__table td {

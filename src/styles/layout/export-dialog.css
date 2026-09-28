@@ -87,21 +87,33 @@
   cursor: pointer;
 }
 
+/* Warning, error and success messages each lead with their own icon, so the
+   kind of message doesn't depend on its colour. */
+.export-dialog__warning,
+.export-dialog__error,
+.export-dialog__success {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+
+.export-dialog__status-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
 .export-dialog__warning {
   font-size: var(--text-base);
   color: var(--accent-warn);
-  background: var(--warning-bg, rgba(229, 165, 10, 0.1));
+  background: color-mix(in srgb, var(--accent-warn) 10%, transparent);
   padding: var(--space-4);
   border-radius: var(--radius-sm);
 }
 
 .export-dialog__error {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-4);
   font-size: var(--text-base);
   color: var(--accent-danger);
-  background: var(--error-bg, rgba(238, 85, 85, 0.1));
+  background: color-mix(in srgb, var(--accent-danger) 10%, transparent);
   padding: var(--space-4);
   border-radius: var(--radius-sm);
 }
@@ -140,7 +152,7 @@
 .export-dialog__success {
   font-size: var(--text-base);
   color: var(--accent-success);
-  background: var(--success-bg, rgba(76, 175, 80, 0.1));
+  background: color-mix(in srgb, var(--accent-success) 10%, transparent);
   padding: var(--space-4);
   border-radius: var(--radius-sm);
   white-space: pre-line;

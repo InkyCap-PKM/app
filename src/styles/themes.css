@@ -210,6 +210,13 @@
   --focus-ring-drawn: var(--focus-ring-color);
   --focus-ring: 0 0 0 2px var(--focus-ring-drawn);
   --focus-ring-outline: 2px solid var(--focus-ring-drawn);
+  /* Text fields mark focus by thickening their border as well as recolouring
+     it, so focus shows by shape and not only by colour. Drawn inside the
+     border so the field doesn't change size. Unlike the ring above, this
+     stays on for mouse users: a text field always needs to show where typing
+     will go. */
+  --input-focus-edge-width: 1px;
+  --input-focus-edge: inset 0 0 0 var(--input-focus-edge-width) var(--border-input-focus);
 
   /* ── Motion ─────────────────────────────────────────────────────
      Consistent micro-interaction timing. Keep transitions short and

@@ -10,6 +10,7 @@ import {
 } from "@codemirror/search";
 import { autocompletion, completionKeymap } from "@codemirror/autocomplete";
 import { lintKeymap, lintGutter } from "@codemirror/lint";
+import { diagnosticTheme, ERROR_UNDERLINE_STYLE } from "./diagnostic-style";
 import { TypstParser, typstHighlight } from "codemirror-lang-typst";
 import { syntaxHighlighting, HighlightStyle, defineLanguageFacet, language, Language, LanguageSupport } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
@@ -331,8 +332,12 @@ const inkycapTheme = EditorView.theme({
   ".cm-searchMatch": {
     backgroundColor: "transparent",
   },
+  // The outline sets the current match apart from the others when "All" is
+  // on, without relying on a second shade of the match colour.
   ".cm-searchMatch-selected": {
     backgroundColor: "var(--bg-search-match)",
+    outline: "1.5px solid var(--fg-muted)",
+    borderRadius: "var(--radius-xs)",
   },
   // The search panel's "All" toggle adds this class to the editor root to
   // bring back the highlight on every match (otherwise only the current
@@ -637,7 +642,7 @@ const inkycapHighlight = HighlightStyle.define([
   { tag: tags.special(tags.string), color: "var(--syntax-string)" },
   { tag: tags.special(tags.variableName), color: "var(--syntax-variable)" },
   { tag: tags.special(tags.contentSeparator), color: "var(--syntax-keyword)" },
-  { tag: tags.invalid, color: "var(--accent-danger)", textDecoration: "underline wavy" },
+  { tag: tags.invalid, color: "var(--accent-danger)", textDecoration: `underline ${ERROR_UNDERLINE_STYLE}` },
 ]);
 
 // Obsidian-style "scroll past the end", but half as far as CodeMirror's
@@ -767,6 +772,7 @@ function baseExtensions(options: TypstEditorOptions): Extension[] {
     wordCountTracker,
     cursorPositionTracker,
     lintGutter(),
+    diagnosticTheme,
     EditorView.lineWrapping,
     // Obsidian-style "scroll past the end": lets the last line scroll up toward
     // the middle of the viewport instead of staying pinned to the bottom while

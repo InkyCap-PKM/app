@@ -304,6 +304,13 @@ export const visualTheme = EditorView.theme({
     fontSize: "0.95em",
     marginBottom: "4px",
   },
+  // The kind's icon, sized to the heading text and drawn in its colour.
+  ".cm-typst-callout-icon": {
+    flex: "none",
+    width: "1.1em",
+    height: "1.1em",
+    marginRight: "0.4em",
+  },
   ".cm-typst-callout-body": {
     fontSize: "var(--callout-body-size)",
     lineHeight: "var(--callout-line-height)",
@@ -1030,7 +1037,7 @@ export const visualTheme = EditorView.theme({
   // Dotted warning underline; non-intrusive but visible.
   ".cm-typst-ref-broken": {
     color: "var(--syntax-type)",
-    textDecoration: "underline dotted var(--danger, #e06c75)",
+    textDecoration: "underline dotted var(--accent-danger)",
     textUnderlineOffset: "2px",
     cursor: "text",
   },
@@ -1146,17 +1153,20 @@ export const visualTheme = EditorView.theme({
     backgroundColor: "var(--bg-selection, Highlight)",
     color: "inherit",
   },
+  // Selected cells get the same edge as selected rows and columns, so they
+  // don't read as search matches, which share the fill colour.
   ".cm-typst-table-cell--selected": {
-    backgroundColor: "var(--bg-search-match, rgba(59, 130, 246, 0.15))",
+    backgroundColor: "var(--bg-search-match)",
+    boxShadow: "inset 0 0 0 1.5px var(--accent)",
   },
 
   // ── Column/row selection highlight ──
   ".cm-table-col--selected": {
-    backgroundColor: "rgba(59, 130, 246, 0.08)",
+    backgroundColor: "color-mix(in srgb, var(--accent) 8%, transparent)",
     boxShadow: "inset 0 0 0 1.5px var(--accent)",
   },
   ".cm-table-row--selected": {
-    backgroundColor: "rgba(59, 130, 246, 0.08)",
+    backgroundColor: "color-mix(in srgb, var(--accent) 8%, transparent)",
   },
   ".cm-table-row--selected td, .cm-table-row--selected th": {
     boxShadow: "inset 0 0 0 1.5px var(--accent)",

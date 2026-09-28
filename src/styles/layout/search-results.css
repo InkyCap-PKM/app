@@ -130,9 +130,12 @@
   font-family: inherit;
 }
 
+/* Same fill as a match in the editor, plus bold so the match stands out by
+   weight and not only by colour (as in Quick Open and the command palette). */
 .search-panel__highlight {
-  background: var(--search-highlight, rgba(255, 213, 0, 0.3));
+  background: var(--bg-search-match);
   color: inherit;
+  font-weight: 600;
   border-radius: var(--radius-xs);
   padding: 0 1px;
 }

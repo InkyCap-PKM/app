@@ -56,7 +56,7 @@ import {
 } from "../stores/journal-scroll";
 import { openTab } from "../stores/tabs";
 import { settings } from "../stores/settings";
-import { Anchor, MessageSquareWarning, Tags } from "lucide-solid";
+import { Anchor, MessageSquareWarning, MessageSquareX, Tags } from "lucide-solid";
 import { FlagNoticeIcon } from "./icons/FlagNotice";
 import { SquareArrowOutUpRight, SquareArrowInDownLeft } from "./icons";
 import { DiagnosticRow } from "./DiagnosticRow";
@@ -892,7 +892,11 @@ const JournalScrollEntryView: Component<JournalScrollEntryViewProps> = (
               )}
               aria-expanded={showDiag()}
             >
-              <MessageSquareWarning size={15} />
+              {/* Errors get their own icon so the two states differ by
+                  shape, not only by colour. */}
+              <Show when={hasError()} fallback={<MessageSquareWarning size={15} />}>
+                <MessageSquareX size={15} />
+              </Show>
             </button>
           </Show>
           <Show when={props.entry.out_of_scope}>

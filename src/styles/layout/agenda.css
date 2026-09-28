@@ -273,8 +273,15 @@ input.date-value__offset {
 }
 
 .agenda__date--overdue {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   color: var(--accent-danger);
   font-weight: 500;
+}
+
+.agenda__overdue-icon {
+  flex-shrink: 0;
 }
 
 .agenda__recur-icon {

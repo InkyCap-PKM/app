@@ -14,6 +14,7 @@ import { parseInlineBody, HIGHLIGHT_FORMAT_CLASS, type BodySegment } from "./blo
 import { findLabelDefinition } from "./label-nav";
 import { t } from "../../lib/i18n";
 import { calloutKindLabel } from "./callout-kinds";
+import { calloutIcon } from "./callout-icons";
 import { applyWidgetHighlight, highlightInlineStyle, type WidgetHighlight } from "./visual-colors";
 
 /** Convert a Typst length value (e.g. `40%`, `200pt`, `3cm`) to a CSS value.
@@ -188,12 +189,18 @@ function makeBlockPillOverlay(funcName: string, pos: number, view: EditorView): 
 
 /** The heading row shared by the rendered callout/annotation widgets and the
  *  callout's edit-state head row. `pill` (edit state only) sits before the
- *  label; the row's fixed minimum height keeps it the same size either way. */
-function buildCalloutHeading(label: string, color: string, pill?: HTMLElement): HTMLElement {
+ *  label, then the callout kind's `icon`; the row's fixed minimum height keeps
+ *  it the same size either way. */
+function buildCalloutHeading(
+  label: string,
+  color: string,
+  parts: { pill?: HTMLElement; icon?: SVGElement } = {},
+): HTMLElement {
   const heading = document.createElement("div");
   heading.className = "cm-typst-callout-heading";
   heading.style.color = color;
-  if (pill) heading.appendChild(pill);
+  if (parts.pill) heading.appendChild(parts.pill);
+  if (parts.icon) heading.appendChild(parts.icon);
   heading.appendChild(document.createTextNode(label));
   return heading;
 }
@@ -2181,7 +2188,11 @@ export class CalloutBlockWidget extends BlockBodyElementWidget {
     inner.style.borderLeftColor = color;
     inner.style.backgroundColor = `color-mix(in srgb, ${color} 8%, transparent)`;
 
-    inner.appendChild(buildCalloutHeading(calloutKindLabel(this.kind, this.title), color));
+    inner.appendChild(buildCalloutHeading(
+      calloutKindLabel(this.kind, this.title),
+      color,
+      { icon: calloutIcon(this.kind) },
+    ));
 
     if (this.bodyText) {
       const body = document.createElement("div");
@@ -2247,7 +2258,7 @@ export class AnnotationBlockWidget extends WidgetType {
       ? t("widget.annotation.labelBy", { name: attribution })
       : t("widget.annotation.label");
     const pill = this.withPill ? makeBlockPill("annotation", this.pos, view) : undefined;
-    inner.appendChild(buildCalloutHeading(label, ANNOTATION_COLOR, pill));
+    inner.appendChild(buildCalloutHeading(label, ANNOTATION_COLOR, { pill }));
 
     if (this.bodyText) {
       const body = document.createElement("div");
@@ -2348,7 +2359,7 @@ export class CalloutHeadRowWidget extends WidgetType {
     wrap.appendChild(buildCalloutHeading(
       calloutKindLabel(this.kind, this.title),
       this.color,
-      makeBlockPill("callout", this.pos, view),
+      { pill: makeBlockPill("callout", this.pos, view), icon: calloutIcon(this.kind) },
     ));
     return wrap;
   }

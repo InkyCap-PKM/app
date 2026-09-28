@@ -186,6 +186,7 @@
 
 .references-panel__search:focus {
   border-color: var(--accent);
+  box-shadow: var(--input-focus-edge);
 }
 
 .references-panel__search-clear {
@@ -248,7 +249,7 @@
 
 .references-panel__skip-warning {
   font-size: var(--text-xs);
-  color: var(--fg-warning, var(--fg-muted));
+  color: var(--fg-muted);
   margin-left: var(--space-3);
   cursor: help;
 }

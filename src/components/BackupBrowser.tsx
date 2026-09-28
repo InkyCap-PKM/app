@@ -14,6 +14,7 @@
 import { errorText } from "../lib/errors";
 import { Component, For, Show, createMemo, createResource, createSignal, onCleanup, onMount } from "solid-js";
 import { open } from "@tauri-apps/plugin-dialog";
+import { Check } from "lucide-solid";
 import { backupDefault, homeDirDefault } from "../lib/dialog-defaults";
 import * as ipc from "../lib/ipc";
 import type { BackupEntry, BackupContentEntry, RestoreConflictPolicy } from "../lib/ipc";
@@ -308,6 +309,7 @@ const BackupBrowser: Component<Props> = (props) => {
                       classList={{
                         "is-selected": selectedArchive()?.path === ext().path,
                       }}
+                      aria-pressed={selectedArchive()?.path === ext().path}
                       onClick={() => {
                         setSelectedArchive(ext());
                         setFilter("");
@@ -315,6 +317,7 @@ const BackupBrowser: Component<Props> = (props) => {
                         setPwOverride("");
                       }}
                     >
+                      <Check size={14} class="backup-browser__archive-check" aria-hidden="true" />
                       <div class="backup-browser__archive-label">
                         {t("backup.browse.pickedExternal")}
                       </div>
@@ -331,6 +334,7 @@ const BackupBrowser: Component<Props> = (props) => {
                       classList={{
                         "is-selected": selectedArchive()?.path === a.path,
                       }}
+                      aria-pressed={selectedArchive()?.path === a.path}
                       onClick={() => {
                         setSelectedArchive(a);
                         setFilter("");
@@ -338,6 +342,7 @@ const BackupBrowser: Component<Props> = (props) => {
                         setPwOverride("");
                       }}
                     >
+                      <Check size={14} class="backup-browser__archive-check" aria-hidden="true" />
                       <div class="backup-browser__archive-name">{a.name}</div>
                       <div class="backup-browser__archive-meta">
                         {formatBytes(a.size_bytes)} · {formatMtime(a.mtime_unix)}

@@ -46,6 +46,7 @@
 
 .right-panel__links-filter-input:focus {
   border-color: var(--accent);
+  box-shadow: var(--input-focus-edge);
 }
 
 .right-panel__links-filter-clear {
@@ -125,6 +126,7 @@
 
 .link-context__match {
   color: var(--accent-text);
+  font-weight: 600;
 }
 
 .link--unresolved .sidebar-item__label {

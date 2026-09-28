@@ -1,6 +1,7 @@
 // Backup section (rendered under the Export tab): destination + schedule,
 // per-archive password management, last-backup status, and run-now/browse.
 import { createSignal, createResource, onMount, onCleanup, Show } from "solid-js";
+import { CircleAlert } from "lucide-solid";
 import * as ipc from "../../lib/ipc";
 import { settings, updateSetting } from "../../stores/settings";
 import { noteboxInfo } from "../../stores/notebox";
@@ -41,7 +42,9 @@ export function BackupSettingsSection() {
 
   const [pwInput, setPwInput] = createSignal("");
   const [pwConfirm, setPwConfirm] = createSignal("");
-  const [pwStatus, setPwStatus] = createSignal<string | null>(null);
+  // Result of the last password action. `isError` picks the error styling;
+  // "saved" and "cleared" are confirmations, not errors.
+  const [pwStatus, setPwStatus] = createSignal<{ text: string; isError: boolean } | null>(null);
   const [running, setRunning] = createSignal(false);
   const [browserOpen, setBrowserOpen] = createSignal(false);
 
@@ -71,11 +74,11 @@ export function BackupSettingsSection() {
   async function savePassword() {
     setPwStatus(null);
     if (pwInput().length === 0) {
-      setPwStatus(t("backup.password.empty"));
+      setPwStatus({ text: t("backup.password.empty"), isError: true });
       return;
     }
     if (pwInput() !== pwConfirm()) {
-      setPwStatus(t("backup.password.mismatch"));
+      setPwStatus({ text: t("backup.password.mismatch"), isError: true });
       return;
     }
     // Changing an existing password is destructive in the sense that
@@ -98,10 +101,10 @@ export function BackupSettingsSection() {
       updateSetting("backup", "password_protected", true);
       setPwInput("");
       setPwConfirm("");
-      setPwStatus(t("backup.password.saved"));
+      setPwStatus({ text: t("backup.password.saved"), isError: false });
       void refetchHasPassword();
     } catch (e) {
-      setPwStatus(t("backup.password.failed", { error: errorText(e) }));
+      setPwStatus({ text: t("backup.password.failed", { error: errorText(e) }), isError: true });
     }
   }
 
@@ -121,10 +124,10 @@ export function BackupSettingsSection() {
       updateSetting("backup", "password_protected", false);
       setPwInput("");
       setPwConfirm("");
-      setPwStatus(t("backup.password.cleared"));
+      setPwStatus({ text: t("backup.password.cleared"), isError: false });
       void refetchHasPassword();
     } catch (e) {
-      setPwStatus(t("backup.password.failed", { error: errorText(e) }));
+      setPwStatus({ text: t("backup.password.failed", { error: errorText(e) }), isError: true });
     }
   }
 
@@ -329,9 +332,17 @@ export function BackupSettingsSection() {
           </Show>
         </div>
         <Show when={pwStatus()}>
-          <span class="settings__description" style={{ color: "var(--accent-danger)" }}>
-            {pwStatus()}
-          </span>
+          {(status) => (
+            <span
+              class="settings__description"
+              classList={{ "settings__description--error": status().isError }}
+            >
+              <Show when={status().isError}>
+                <CircleAlert size={13} class="settings__description-icon" aria-hidden="true" />
+              </Show>
+              {status().text}
+            </span>
+          )}
         </Show>
       </div>
 

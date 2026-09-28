@@ -382,7 +382,7 @@
 /* Outgoing "Changes to share" preview — same card as the digest, tinted by a
    warm accent border to read as "pending action" rather than "already done". */
 .git-panel__share {
-  border-left-color: var(--warning, var(--accent));
+  border-left-color: var(--accent-warn);
 }
 
 .git-panel__share-heading {
@@ -397,7 +397,7 @@
    (clicking opens the note to resolve), so it carries the attention accent and
    its rows keep the interactive hover (no --readonly). */
 .git-panel__unresolved {
-  border-left-color: var(--warning, var(--accent));
+  border-left-color: var(--accent-warn);
 }
 
 /* The unresolved rows are <button>s — strip native button chrome so they read

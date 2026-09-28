@@ -266,15 +266,29 @@
   opacity: 0.45;
 }
 
-/* Small line swatch — dashed for the latent / context types. */
+/* Small line swatch drawn in the same pattern as its kind's box border
+   (see LEGEND in MycelialView.tsx). */
 .mycelial-view__legend-line {
   width: 18px;
   border-top: 2.5px solid var(--fg-dim);
   display: inline-block;
 }
 
+.mycelial-view__legend-line--thick {
+  border-top-width: 4px;
+}
+
 .mycelial-view__legend-line--dashed {
   border-top-style: dashed;
+}
+
+.mycelial-view__legend-line--dotted {
+  border-top-style: dotted;
+}
+
+.mycelial-view__legend-line--double {
+  border-top-style: double;
+  border-top-width: 4px;
 }
 
 /* ─── Mycelial boxes ─── */
@@ -381,10 +395,13 @@
   cursor: default;
 }
 
-/* Source notes — provenance a signal emerged from. */
+/* Source notes — provenance a signal emerged from. The double border sets
+   them apart from plain context notes by shape, not only colour. */
 .mycelial-box--source {
   background: var(--bg-secondary);
   border-color: var(--mycelial-source);
+  border-style: double;
+  border-width: 3px;
 }
 
 
@@ -416,7 +433,8 @@
 /* Kindred notes — semantically similar, no link path to the anchor. */
 .mycelial-box--kindred {
   border-color: var(--mycelial-kindred);
-  border-style: dashed;
+  border-style: dotted;
+  border-width: 2px;
   background: color-mix(in srgb, var(--mycelial-kindred) 6%, var(--bg-primary));
 }
 
@@ -843,6 +861,7 @@
 
 .mycelial-namer__input:focus {
   border-color: var(--accent);
+  box-shadow: var(--input-focus-edge);
 }
 
 .mycelial-namer__actions {
@@ -921,6 +940,7 @@
 
 .mycelial-context__filter:focus {
   border-color: var(--accent);
+  box-shadow: var(--input-focus-edge);
 }
 
 .mycelial-context__filter-clear {

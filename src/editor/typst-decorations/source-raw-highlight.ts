@@ -18,6 +18,7 @@ import {
 } from "@codemirror/view";
 import { LanguageDescription, LanguageSupport, syntaxTree } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
+import { ERROR_UNDERLINE_STYLE } from "../diagnostic-style";
 import { RangeSetBuilder, StateEffect, StateField } from "@codemirror/state";
 import { classHighlighter, highlightTree } from "@lezer/highlight";
 import { isTypstFenceLang, typstSnippetSupport } from "./typst-snippet-lang";
@@ -213,11 +214,11 @@ const tokTheme = EditorView.theme({
   ".tok-operator": { color: "var(--fg-secondary, var(--fg-primary))" },
   ".tok-punctuation": { color: "var(--fg-dim)" },
   ".tok-invalid": {
-    color: "#e06c75",
-    textDecoration: "underline",
+    color: "var(--accent-danger)",
+    textDecoration: `underline ${ERROR_UNDERLINE_STYLE}`,
   },
   ".tok-inserted": { color: "var(--syntax-string, #98c379)" },
-  ".tok-deleted": { color: "#e06c75" },
+  ".tok-deleted": { color: "var(--accent-danger)" },
   ".tok-heading": {
     color: "var(--syntax-keyword, #61afef)",
     fontWeight: "bold",

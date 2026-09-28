@@ -143,5 +143,6 @@
 
 .status-bar__rename-input:focus {
   border-color: var(--accent);
+  box-shadow: var(--input-focus-edge);
 }
 
