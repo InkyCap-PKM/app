@@ -6,7 +6,8 @@
 // keyboard-shortcut entries. The store functions stay dialog-free (they take a
 // resolved path) so they remain unit-testable; this is the thin UI seam.
 
-import { save, open as openDialog } from "@tauri-apps/plugin-dialog";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import * as ipc from "./ipc";
 import { homeDirDefault } from "./dialog-defaults";
 import { exportPackage, importPackage } from "../stores/git";
 import { t } from "./i18n";
@@ -20,7 +21,7 @@ const PACKAGE_FILTERS = [{ name: "Notebox package (zip)", extensions: ["zip", "i
  *  No-op if the user cancels the save dialog. `password` (optional) encrypts the
  *  archive — the recipient needs it out of band. */
 export async function exportPackageInteractive(password?: string): Promise<void> {
-  const dest = await save({
+  const dest = await ipc.pickExportFile({
     title: t("git.package.exportTitle"),
     // Default OUTSIDE the notebox (home), never the notebox root: writing the
     // handoff package into the very folder being packaged would fold prior

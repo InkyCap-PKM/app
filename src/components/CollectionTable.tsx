@@ -11,7 +11,6 @@ import {
 } from "solid-js";
 import { Portal } from "solid-js/web";
 import { ChevronLeft, ChevronRight, Funnel, PenLine } from "lucide-solid";
-import { save, open } from "@tauri-apps/plugin-dialog";
 import { exportDefault, rememberExportFile, rememberExportDir } from "../lib/dialog-defaults";
 import type {
   PropertyValue,
@@ -812,7 +811,7 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
     const ext = delimiter === "tab" ? "tsv" : "csv";
     const label = delimiter === "tab" ? "TSV" : "CSV";
     try {
-      const outputPath = await save({
+      const outputPath = await ipc.pickExportFile({
         defaultPath: await exportDefault(`${collectionName()}.${ext}`),
         filters: [{ name: label, extensions: [ext] }],
       });
@@ -870,7 +869,7 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
     setShowExportMenu(false);
     let outputDir: string | null;
     try {
-      outputDir = (await open({ directory: true, title: t("collection.export.selectPdfFolder"), defaultPath: await exportDefault() })) as string | null;
+      outputDir = await ipc.pickExportFolder({ title: t("collection.export.selectPdfFolder"), defaultPath: await exportDefault() });
     } catch (e: any) {
       reportExportError(t("collection.export.pdfFailed", { error: errorText(e) }));
       return;
@@ -930,7 +929,7 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
       const cf = collectionFile();
       const titleHint = cf?.book?.title || collectionName();
       const safeName = titleHint.replace(/[\\/:*?"<>|]+/g, "_");
-      const outputPath = await save({
+      const outputPath = await ipc.pickExportFile({
         defaultPath: await exportDefault(`${safeName}.pdf`),
         filters: [{ name: "PDF", extensions: ["pdf"] }],
       });
@@ -1029,7 +1028,7 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
     setShowExportMenu(false);
     let outputDir: string | null;
     try {
-      outputDir = (await open({ directory: true, title: t("collection.export.selectSiteFolder"), defaultPath: await exportDefault() })) as string | null;
+      outputDir = await ipc.pickExportFolder({ title: t("collection.export.selectSiteFolder"), defaultPath: await exportDefault() });
     } catch (e: any) {
       reportExportError(t("collection.export.siteFailed", { error: errorText(e) }));
       return;
@@ -1068,7 +1067,7 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
   async function exportAllMarkdown() {
     setShowExportMenu(false);
     try {
-      const outputDir = await open({ directory: true, title: t("collection.export.selectMarkdownFolder"), defaultPath: await exportDefault() });
+      const outputDir = await ipc.pickExportFolder({ title: t("collection.export.selectMarkdownFolder"), defaultPath: await exportDefault() });
       if (!outputDir) return;
       rememberExportDir(outputDir as string);
       setBusyMessage(t("collection.export.markdownBusy"));

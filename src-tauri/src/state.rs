@@ -106,6 +106,9 @@ pub struct NoteboxSession {
     /// documentation-specific font cascade. Set on every `open_notebox` so it
     /// reflects the currently-open notebox, not a previous one.
     is_documentation: AtomicBool,
+    /// Folders outside the notebox the user chose in a backend save/folder
+    /// dialog; export commands only write inside these.
+    pub export_grants: crate::storage::export_grants::ExportGrants,
 }
 
 impl NoteboxSession {
@@ -129,6 +132,7 @@ impl NoteboxSession {
             last_search_save: AtomicI64::new(0),
             last_corpus_save: AtomicI64::new(0),
             is_documentation: AtomicBool::new(false),
+            export_grants: Default::default(),
         }
     }
 

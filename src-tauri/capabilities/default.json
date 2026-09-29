@@ -8,7 +8,6 @@
     "core:window:allow-create",
     "core:window:allow-set-theme",
     "core:webview:allow-create-webview-window",
-    "shell:allow-open",
     {
       "identifier": "shell:allow-spawn",
       "allow": [
@@ -16,26 +15,12 @@
           "name": "binaries/inkycap-tinymist",
           "cmd": "binaries/inkycap-tinymist",
           "sidecar": true,
-          "args": true
-        }
-      ]
-    },
-    {
-      "identifier": "shell:allow-execute",
-      "allow": [
-        {
-          "name": "binaries/inkycap-tinymist",
-          "cmd": "binaries/inkycap-tinymist",
-          "sidecar": true,
-          "args": true
+          "args": ["lsp"]
         }
       ]
     },
     "shell:allow-stdin-write",
     "shell:allow-kill",
-    "dialog:allow-open",
-    "dialog:allow-save",
-    "dialog:allow-ask",
-    "dialog:allow-message"
+    "dialog:allow-open"
   ]
 }

@@ -583,15 +583,12 @@ pub async fn resolve_embed_path(
 /// Read an embedded image as raw bytes, returned to the webview as an
 /// ArrayBuffer the visual editor wraps in a `blob:` URL.
 ///
-/// The visual-editor image widgets load attachments this way rather than via
-/// `convertFileSrc`: Tauri's custom asset protocol is unreliable across
-/// platforms for embedded files (media silently fails on WebKitGTK — see
-/// [`read_media_bytes`] — and images fail on Windows, where the canonicalized
-/// `\\?\` path is matched against the scope glob and the load is denied). A
-/// blob URL sidesteps the asset protocol, its scope check, and its
-/// separator/verbatim-prefix matching entirely, so it renders identically on
-/// every OS. `target` accepts the same path / bare-filename forms as
-/// [`resolve_embed_path`]; traversal is blocked by `validate_notebox_path`.
+/// Tauri's asset protocol is switched off (it was unreliable for media on
+/// WebKitGTK and for images on Windows), so this command and
+/// [`read_media_bytes`] are the only way notebox files reach the webview. A
+/// blob URL renders identically on every OS. `target` accepts the same path /
+/// bare-filename forms as [`resolve_embed_path`]; `validate_notebox_path`
+/// blocks traversal and symlinks out of the notebox.
 #[tauri::command]
 pub async fn read_embed_bytes(
     target: String,

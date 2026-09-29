@@ -1809,28 +1809,40 @@ pub async fn show_in_explorer(path: String) -> Result<(), InkyCapError> {
 }
 
 /// Open a file with the OS default application (image viewer, PDF reader, etc.).
+///
+/// Two kinds of file need the user's go-ahead first: program files (see
+/// [`crate::system_open::is_program_file`]), which would run instead of being
+/// viewed, and anything outside the open notebox, including symlinks that lead
+/// out of it. For those the command returns `OpenProgramFile` or
+/// `OpenOutsideNotebox` without opening anything; the frontend asks the user and
+/// calls again with `confirmed: true`.
 #[tauri::command]
-pub async fn open_file_externally(path: String) -> Result<(), InkyCapError> {
+pub async fn open_file_externally(
+    path: String,
+    confirmed: Option<bool>,
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<(), InkyCapError> {
     let p = PathBuf::from(&path);
     if !p.exists() {
         return Err(InkyCapError::InvalidPath(format!(
             "File does not exist: {path}"
         )));
     }
-    #[cfg(target_os = "linux")]
-    {
-        std::process::Command::new("xdg-open").arg(&p).spawn()?;
+    if !confirmed.unwrap_or(false) {
+        if crate::system_open::is_program_file(&p) {
+            return Err(InkyCapError::OpenProgramFile(path));
+        }
+        let session = state.session(window.label()).await;
+        let root = session.notebox_root.read().await;
+        let inside = root
+            .as_ref()
+            .is_some_and(|r| validate_notebox_path(r, &p).is_ok());
+        if !inside {
+            return Err(InkyCapError::OpenOutsideNotebox(path));
+        }
     }
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open").arg(&p).spawn()?;
-    }
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("cmd")
-            .args(["/C", "start", "", &p.to_string_lossy()])
-            .spawn()?;
-    }
+    crate::system_open::open_path(&p)?;
     Ok(())
 }
 
@@ -1844,9 +1856,9 @@ pub async fn open_file_externally(path: String) -> Result<(), InkyCapError> {
 /// to a registered handler) are refused, as are `file:` URLs — local files
 /// are opened through [`open_file_externally`] after notebox-root
 /// resolution, never via an unvalidated `file://` from note content.
-/// The URL is passed to the opener as a single argv entry (never through a
-/// shell), so there is no interpolation; a leading `-` is rejected so the
-/// target can't be mistaken for a flag.
+/// The URL is handed to the system as a single value (never through a shell),
+/// so there is no interpolation; a leading `-` is rejected so the target can't
+/// be mistaken for a flag.
 #[tauri::command]
 pub async fn open_url_externally(url: String) -> Result<(), InkyCapError> {
     let trimmed = url.trim();
@@ -1875,22 +1887,7 @@ pub async fn open_url_externally(url: String) -> Result<(), InkyCapError> {
         )));
     }
 
-    #[cfg(target_os = "linux")]
-    {
-        std::process::Command::new("xdg-open")
-            .arg(trimmed)
-            .spawn()?;
-    }
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open").arg(trimmed).spawn()?;
-    }
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("cmd")
-            .args(["/C", "start", "", trimmed])
-            .spawn()?;
-    }
+    crate::system_open::open_url(trimmed)?;
     Ok(())
 }
 

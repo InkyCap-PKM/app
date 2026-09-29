@@ -12,6 +12,10 @@
 //! Interior paths always use forward slashes (the zip spec convention),
 //! so callers building interior names must join with `/`, not the OS
 //! separator.
+//!
+//! Archives can come from other people, so every read of entry contents
+//! goes through an [`ExtractBudget`] that stops archives built to expand
+//! enormously from filling the disk or memory.
 
 use std::io::{Read, Write};
 use std::path::Path;
@@ -167,15 +171,84 @@ pub fn list_entries(archive: &Path) -> Result<Vec<ZipEntryInfo>> {
     Ok(out)
 }
 
+/// How many times its own size an archive may expand to when unpacked.
+/// Notes and attachments compress far less than this; archives built to fill
+/// the disk ("zip bombs") compress far more.
+const MAX_EXPANSION_RATIO: u64 = 100;
+
+/// Every archive may unpack to at least this much, so a small archive of
+/// highly compressible text is never refused.
+const MIN_EXPANSION_ALLOWANCE: u64 = 1024 * 1024 * 1024;
+
+const TOO_LARGE: &str =
+    "the archive unpacks to far more data than expected; it may be damaged or built to fill the disk";
+
+/// A running limit on how much data may be unpacked from one archive. Create
+/// one per archive and pass it to every entry read from that archive.
+#[derive(Debug)]
+pub struct ExtractBudget {
+    remaining: u64,
+}
+
+impl ExtractBudget {
+    /// A budget for the archive file at `archive`, sized from its length.
+    pub fn for_archive(archive: &Path) -> Result<Self> {
+        Ok(Self::for_archive_size(std::fs::metadata(archive)?.len()))
+    }
+
+    /// A budget for an archive that is `archive_size` bytes long.
+    pub fn for_archive_size(archive_size: u64) -> Self {
+        Self {
+            remaining: archive_size
+                .saturating_mul(MAX_EXPANSION_RATIO)
+                .max(MIN_EXPANSION_ALLOWANCE),
+        }
+    }
+
+    /// Wrap one entry's reader. Reading fails once the entry produces more
+    /// than its declared size, or once the archive's budget runs out.
+    pub fn limit<R: Read>(&mut self, reader: R, declared_size: u64) -> LimitedEntry<'_, R> {
+        LimitedEntry {
+            inner: reader,
+            budget: self,
+            entry_left: declared_size,
+        }
+    }
+}
+
+/// An entry reader bounded by an [`ExtractBudget`]; see [`ExtractBudget::limit`].
+pub struct LimitedEntry<'a, R> {
+    inner: R,
+    budget: &'a mut ExtractBudget,
+    entry_left: u64,
+}
+
+impl<R: Read> Read for LimitedEntry<'_, R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        let n64 = n as u64;
+        if n64 > self.entry_left || n64 > self.budget.remaining {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                TOO_LARGE,
+            ));
+        }
+        self.entry_left -= n64;
+        self.budget.remaining -= n64;
+        Ok(n)
+    }
+}
+
 /// Stream one entry into `writer`. With a password, routes through AES
 /// decryption. Returns bytes written.
 pub fn read_entry_to_writer(
     zip: &mut ZipArchive<std::fs::File>,
     name: &str,
     password: Option<&str>,
+    budget: &mut ExtractBudget,
     writer: &mut impl Write,
 ) -> Result<u64> {
-    let mut entry = match password {
+    let entry = match password {
         Some(pw) => zip
             .by_name_decrypt(name, pw.as_bytes())
             .map_err(|e| InkyCapError::ExportFailed(format!("decrypt {name}: {e}")))?,
@@ -183,7 +256,8 @@ pub fn read_entry_to_writer(
             .by_name(name)
             .map_err(|e| InkyCapError::ExportFailed(format!("read {name}: {e}")))?,
     };
-    let n = std::io::copy(&mut entry, writer)?;
+    let declared = entry.size();
+    let n = std::io::copy(&mut budget.limit(entry, declared), writer)?;
     Ok(n)
 }
 
@@ -192,9 +266,10 @@ pub fn read_entry_bytes(
     zip: &mut ZipArchive<std::fs::File>,
     name: &str,
     password: Option<&str>,
+    budget: &mut ExtractBudget,
 ) -> Result<Vec<u8>> {
     let mut buf = Vec::new();
-    read_entry_to_writer(zip, name, password, &mut buf)?;
+    read_entry_to_writer(zip, name, password, budget, &mut buf)?;
     Ok(buf)
 }
 
@@ -222,12 +297,13 @@ mod tests {
         assert!(entries.iter().all(|e| !e.encrypted));
 
         let mut zip = open(&archive).unwrap();
+        let mut budget = ExtractBudget::for_archive(&archive).unwrap();
         assert_eq!(
-            read_entry_bytes(&mut zip, "manifest.json", None).unwrap(),
+            read_entry_bytes(&mut zip, "manifest.json", None, &mut budget).unwrap(),
             b"{\"k\":1}"
         );
         assert_eq!(
-            read_entry_bytes(&mut zip, "notes/note.typ", None).unwrap(),
+            read_entry_bytes(&mut zip, "notes/note.typ", None, &mut budget).unwrap(),
             b"file body"
         );
     }
@@ -249,9 +325,41 @@ mod tests {
 
         // Decryption returns the original bytes.
         let mut zip = open(&archive).unwrap();
+        let mut budget = ExtractBudget::for_archive(&archive).unwrap();
         assert_eq!(
-            read_entry_bytes(&mut zip, "secret.txt", Some(pw)).unwrap(),
+            read_entry_bytes(&mut zip, "secret.txt", Some(pw), &mut budget).unwrap(),
             b"classified"
+        );
+    }
+
+    #[test]
+    fn budget_stops_entries_that_exceed_their_declared_size() {
+        let data = [0u8; 100];
+        let mut budget = ExtractBudget::for_archive_size(1);
+        let mut out = Vec::new();
+        let err = std::io::copy(&mut budget.limit(&data[..], 10), &mut out).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn budget_stops_archives_that_expand_too_far() {
+        let mut budget = ExtractBudget { remaining: 150 };
+        let data = [0u8; 100];
+        std::io::copy(&mut budget.limit(&data[..], 100), &mut std::io::sink()).unwrap();
+        let err =
+            std::io::copy(&mut budget.limit(&data[..], 100), &mut std::io::sink()).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn small_archives_get_the_minimum_allowance() {
+        assert_eq!(
+            ExtractBudget::for_archive_size(10).remaining,
+            MIN_EXPANSION_ALLOWANCE
+        );
+        assert_eq!(
+            ExtractBudget::for_archive_size(100 * MIN_EXPANSION_ALLOWANCE).remaining,
+            100 * MIN_EXPANSION_ALLOWANCE * MAX_EXPANSION_RATIO
         );
     }
 }

@@ -157,6 +157,7 @@ pub fn extract_files(
     })?;
 
     let mut zip = zip_archive::open(archive_path)?;
+    let mut budget = zip_archive::ExtractBudget::for_archive(archive_path)?;
 
     let mut results = Vec::with_capacity(entries.len());
 
@@ -230,7 +231,13 @@ pub fn extract_files(
         // Extract, streaming the (optionally AES-decrypted) entry to disk.
         {
             let mut out_file = std::fs::File::create(&final_dest)?;
-            zip_archive::read_entry_to_writer(&mut zip, interior, password, &mut out_file)?;
+            zip_archive::read_entry_to_writer(
+                &mut zip,
+                interior,
+                password,
+                &mut budget,
+                &mut out_file,
+            )?;
         }
 
         let outcome = if dest == final_dest {

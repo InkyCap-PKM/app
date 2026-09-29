@@ -1703,6 +1703,8 @@ pub async fn git_export_package(
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
 ) -> Result<PackageExportResult> {
+    crate::commands::export::destination::require_export_destination(&state, &window, &dest)
+        .await?;
     let session = state.session(window.label()).await;
     let (root, git) = require_collaborative_with_root(&session).await?;
     let dest_path = PathBuf::from(dest.trim());

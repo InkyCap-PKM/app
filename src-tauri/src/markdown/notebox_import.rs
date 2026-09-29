@@ -8,6 +8,7 @@ use zip::ZipArchive;
 
 use crate::notebox_package;
 use crate::property_types::{builtin_property_type, is_system_property, PropertyType};
+use crate::storage::zip_archive::ExtractBudget;
 use crate::typst_pipeline::path_rebase::rebase_relative_paths;
 
 use super::frontmatter::{parse_frontmatter_fields, sanitize_ident, system_alias};
@@ -392,6 +393,7 @@ pub fn import_from_zip(
         }
     };
 
+    let archive_size = file.metadata().map(|m| m.len()).unwrap_or(0);
     let mut archive = match ZipArchive::new(file) {
         Ok(a) => a,
         Err(e) => {
@@ -412,7 +414,8 @@ pub fn import_from_zip(
     // `![[…]]` embed syntax across all .md entries. Reading entries
     // here advances each entry's read state, so the main pass below
     // re-opens by index to start fresh.
-    let embed_targets = scan_zip_embed_targets(&mut archive);
+    let embed_targets = scan_zip_embed_targets(&mut archive, archive_size);
+    let mut budget = ExtractBudget::for_archive_size(archive_size);
 
     for i in 0..archive.len() {
         let mut entry = match archive.by_index(i) {
@@ -462,7 +465,8 @@ pub fn import_from_zip(
 
         // Read file content.
         let mut content = Vec::new();
-        if let Err(e) = entry.read_to_end(&mut content) {
+        let declared = entry.size();
+        if let Err(e) = budget.limit(&mut entry, declared).read_to_end(&mut content) {
             result
                 .errors
                 .push(format!("Failed to read {}: {}", relative.display(), e));
@@ -496,8 +500,12 @@ pub fn import_from_zip(
 /// `![[…]]` embed syntax across every `.md` entry. Each call to
 /// `archive.by_index(i)` returns a fresh read handle on the entry,
 /// so this is independent of the main pass below.
-fn scan_zip_embed_targets(archive: &mut ZipArchive<fs::File>) -> HashSet<String> {
+fn scan_zip_embed_targets(
+    archive: &mut ZipArchive<fs::File>,
+    archive_size: u64,
+) -> HashSet<String> {
     let mut targets = HashSet::new();
+    let mut budget = ExtractBudget::for_archive_size(archive_size);
     for i in 0..archive.len() {
         let mut entry = match archive.by_index(i) {
             Ok(e) => e,
@@ -511,7 +519,12 @@ fn scan_zip_embed_targets(archive: &mut ZipArchive<fs::File>) -> HashSet<String>
             continue;
         }
         let mut buf = Vec::new();
-        if entry.read_to_end(&mut buf).is_err() {
+        let declared = entry.size();
+        if budget
+            .limit(&mut entry, declared)
+            .read_to_end(&mut buf)
+            .is_err()
+        {
             continue;
         }
         if let Ok(text) = std::str::from_utf8(&buf) {
@@ -1059,6 +1072,7 @@ fn scan_zip_frontmatter(zip_path: &Path) -> Vec<String> {
     let Ok(file) = fs::File::open(zip_path) else {
         return blocks;
     };
+    let mut budget = ExtractBudget::for_archive_size(file.metadata().map(|m| m.len()).unwrap_or(0));
     let Ok(mut archive) = ZipArchive::new(file) else {
         return blocks;
     };
@@ -1082,7 +1096,12 @@ fn scan_zip_frontmatter(zip_path: &Path) -> Vec<String> {
             continue;
         }
         let mut content = String::new();
-        if entry.read_to_string(&mut content).is_ok() {
+        let declared = entry.size();
+        if budget
+            .limit(&mut entry, declared)
+            .read_to_string(&mut content)
+            .is_ok()
+        {
             if let (Some(fm), _) = extract_frontmatter(&content) {
                 blocks.push(fm);
             }

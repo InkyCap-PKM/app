@@ -1228,8 +1228,36 @@ export async function showInExplorer(path: string): Promise<void> {
   return invoke<void>("show_in_explorer", { path });
 }
 
-export async function openFileExternally(path: string): Promise<void> {
-  return invoke<void>("open_file_externally", { path });
+/** Options for the export save/folder dialogs; same shape as the dialog
+ *  plugin's `save()` options. */
+export interface ExportDialogOptions {
+  title?: string;
+  /** A suggested file path, or a folder to start in. */
+  defaultPath?: string;
+  filters?: { name: string; extensions: string[] }[];
+}
+
+/** Ask where to save an export. Resolves with the chosen path, or null if the
+ *  user cancelled. Export commands only write where the user chose through
+ *  this or {@link pickExportFolder}, so use these rather than the dialog
+ *  plugin for every export destination. */
+export async function pickExportFile(options: ExportDialogOptions): Promise<string | null> {
+  return invoke<string | null>("pick_export_file", { options });
+}
+
+/** Ask for a folder to export into. Resolves with the chosen folder, or null
+ *  if the user cancelled. See {@link pickExportFile}. */
+export async function pickExportFolder(options: ExportDialogOptions): Promise<string | null> {
+  return invoke<string | null>("pick_export_folder", { options });
+}
+
+/** Open a file with the system's default application. Without `confirmed`,
+ *  program files and files outside the notebox are refused with the
+ *  `open-program-file` / `open-outside-notebox` error codes so the caller can
+ *  ask the user first. Use `openFileInDefaultApp` (lib/open-link.ts), which
+ *  does that asking, rather than calling this directly. */
+export async function openFileExternally(path: string, confirmed = false): Promise<void> {
+  return invoke<void>("open_file_externally", { path, confirmed });
 }
 
 /**

@@ -57,6 +57,8 @@ pub async fn export_via_pandoc(
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
+    crate::commands::export::destination::require_export_destination(&state, &window, &output_path)
+        .await?;
     let session = state.session(window.label()).await;
     let pandoc_path = detect_pandoc().await?.ok_or_else(|| {
         InkyCapError::ExportFailed(

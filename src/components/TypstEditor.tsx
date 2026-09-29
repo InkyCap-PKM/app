@@ -15,6 +15,7 @@ import {
 import * as ipc from "../lib/ipc";
 import { buildChecker } from "../lib/spellchecker";
 import { loadMediaObjectUrl, revokeBlobUrls } from "../lib/media-src";
+import { sanitizeNoteHtml } from "../lib/safe-html";
 import { t } from "../lib/i18n";
 import { settings } from "../stores/settings";
 import { localeVersion } from "../lib/i18n";
@@ -1480,13 +1481,8 @@ const TypstReadingView: Component<TypstReadingViewProps> = (props) => {
                       height: `${frame.height_pt * PT_TO_CSS_PX * props.zoom}px`,
                     }}
                     ref={(el) => {
-                      const parser = new DOMParser();
-                      const doc = parser.parseFromString(frame.svg, "text/html");
-                      const svg = doc.querySelector("svg");
-                      if (svg) {
-                        svg.querySelectorAll("script").forEach((s) => s.remove());
-                        el.replaceChildren(svg);
-                      }
+                      const svg = sanitizeNoteHtml(frame.svg).querySelector("svg");
+                      if (svg) el.replaceChildren(svg);
                     }}
                   />
                 )}
@@ -1635,17 +1631,10 @@ const TypstHtmlReadingView: Component<TypstHtmlReadingViewProps> = (props) => {
                 class="typst-reading__html-content"
                 style={contentStyle()}
                 ref={(el) => {
-                  const parser = new DOMParser();
-                  const doc = parser.parseFromString(r().html, "text/html");
-                  doc.querySelectorAll("script").forEach((s) => s.remove());
-                  const body = doc.body;
-                  if (body) {
-                    // Release any object URLs from the previous render first.
-                    revokeBlobUrls(el);
-                    while (el.firstChild) el.removeChild(el.firstChild);
-                    while (body.firstChild) el.appendChild(body.firstChild);
-                    void resolveMediaSources(el);
-                  }
+                  // Release any object URLs from the previous render first.
+                  revokeBlobUrls(el);
+                  el.replaceChildren(sanitizeNoteHtml(r().html));
+                  void resolveMediaSources(el);
                 }}
               />
             </Show>

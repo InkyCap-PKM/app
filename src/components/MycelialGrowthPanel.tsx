@@ -27,6 +27,7 @@ import {
 } from "../stores/mycelialGrowthPanel";
 import { requestMycelialReload } from "../stores/mycelial";
 import { toastError } from "../stores/toasts";
+import { openFileInDefaultApp } from "../lib/open-link";
 import * as ipc from "../lib/ipc";
 import { clickOutside } from "../lib/clickOutside";
 import HelpButton from "./HelpButton";
@@ -97,7 +98,7 @@ const MycelialGrowthPanel: Component<MycelialGrowthPanelProps> = (props) => {
   async function openHiddenPagesFile() {
     try {
       const path = await ipc.ensureMycelialHubExclusionsFile();
-      await ipc.openFileExternally(path);
+      await openFileInDefaultApp(path);
     } catch (err) {
       toastError(t("mycelialGrowth.openHiddenFailed"), err);
     }

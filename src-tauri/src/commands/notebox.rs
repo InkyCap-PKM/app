@@ -159,24 +159,6 @@ pub async fn open_notebox(
         .open_notebox_fast(notebox_path.clone(), &global_citations)
         .await?;
 
-    // Narrow the Tauri asset protocol scope to the newly-opened notebox so that
-    // `convertFileSrc()` can only load images/attachments that live inside
-    // the notebox. The static config starts with an empty allow-list; we add
-    // the canonical notebox root here once it's known. (Tauri's scope is
-    // additive across notebox opens — this is a minor leak if the user hops
-    // between noteboxes in a single session, but it never grants anything
-    // outside a legitimately-opened notebox, which is what matters for
-    // untrusted-note defense.)
-    if let Some(canonical_root) = session.notebox_root.read().await.as_ref().cloned() {
-        let scope = app_handle.asset_protocol_scope();
-        if let Err(err) = scope.allow_directory(&canonical_root, true) {
-            log::warn!(
-                "could not extend asset protocol scope to {}: {err}",
-                canonical_root.display()
-            );
-        }
-    }
-
     // Replace the per-notebox health monitor: abort any previous one (from
     // a notebox that's just been closed/reopened) and spawn a fresh monitor
     // for this notebox's canonical root. The monitor handles both

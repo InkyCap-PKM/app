@@ -24,6 +24,8 @@ pub async fn export_collection_static_site(
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
 ) -> Result<super::BatchExportResult, InkyCapError> {
+    crate::commands::export::destination::require_export_destination(&state, &window, &output_dir)
+        .await?;
     let bypass = bypass_errors.unwrap_or(false);
     let session = state.session(window.label()).await;
     let data = crate::commands::collections::get_collection_data_internal(

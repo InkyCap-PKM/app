@@ -24,6 +24,7 @@ import * as ipc from "../lib/ipc";
 import type { ExcludedTerm, MycelialExclusionInfo } from "../lib/types";
 import { requestMycelialReload } from "../stores/mycelial";
 import { toastError } from "../stores/toasts";
+import { openFileInDefaultApp } from "../lib/open-link";
 import { useI18n, tPlural } from "../lib/i18n";
 import { Dropdown } from "./Dropdown";
 import { FilterRowEditor } from "./FilterBuilder";
@@ -158,7 +159,7 @@ const MycelialFilteringPanel: Component<MycelialFilteringPanelProps> = (props) =
   async function openStopwordFile() {
     try {
       const path = await ipc.ensureMycelialStopwordsFile();
-      await ipc.openFileExternally(path);
+      await openFileInDefaultApp(path);
     } catch (err) {
       toastError(t("mycelialFilter.openListFailed"), err);
     }

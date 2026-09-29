@@ -111,6 +111,18 @@ pub enum InkyCapError {
     /// The system clipboard couldn't be read.
     #[error("Couldn't read the clipboard: {0}")]
     Clipboard(String),
+
+    /// A file asked to be opened with its default application would run as a
+    /// program. Carries the path (in `detail`). Not a failure to report: the
+    /// frontend asks the user and retries with confirmation.
+    #[error("This file is a program: {0}")]
+    OpenProgramFile(String),
+
+    /// A file asked to be opened with its default application lies outside the
+    /// open notebox. Carries the path (in `detail`). Not a failure to report:
+    /// the frontend asks the user and retries with confirmation.
+    #[error("This file is outside the notebox: {0}")]
+    OpenOutsideNotebox(String),
 }
 
 impl InkyCapError {
@@ -145,6 +157,8 @@ impl InkyCapError {
             InkyCapError::UpgradeNotVerified(_) => "upgrade-not-verified",
             InkyCapError::UpgradeFailed(_) => "upgrade-failed",
             InkyCapError::Clipboard(_) => "clipboard",
+            InkyCapError::OpenProgramFile(_) => "open-program-file",
+            InkyCapError::OpenOutsideNotebox(_) => "open-outside-notebox",
         }
     }
 
@@ -171,7 +185,9 @@ impl InkyCapError {
             | InkyCapError::UpgradeUnavailable(s)
             | InkyCapError::UpgradeNotVerified(s)
             | InkyCapError::UpgradeFailed(s)
-            | InkyCapError::Clipboard(s) => Some(s.clone()),
+            | InkyCapError::Clipboard(s)
+            | InkyCapError::OpenProgramFile(s)
+            | InkyCapError::OpenOutsideNotebox(s) => Some(s.clone()),
             InkyCapError::NoteboxNotOpen
             | InkyCapError::FilenameRequired
             | InkyCapError::Cancelled

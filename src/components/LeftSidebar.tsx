@@ -64,6 +64,7 @@ import AgendaPanel from "./AgendaPanel";
 import HelpPanel from "./HelpPanel";
 import type { SidebarMode } from "./VerticalToolbar";
 import { toastError } from "../stores/toasts";
+import { openFileInDefaultApp } from "../lib/open-link";
 import { promptText, promptConfirm } from "../stores/prompt";
 import { pickFolder } from "../stores/folderPicker";
 import { triggerCreationRule, creationRules } from "../stores/creation-rules";
@@ -1035,7 +1036,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     // Non-`.typ` files (images, PDFs, `.bib`, data files) aren't edited
     // in-app — hand them to the OS default application.
     if (!isNoteFile(node.name)) {
-      ipc.openFileExternally(node.path);
+      openFileInDefaultApp(node.path).catch((err) => toastError(t("editor.toast.openFailed"), err));
       return;
     }
     // If the note is currently serving as a Journal Scroll's anchor, the
@@ -1069,7 +1070,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
       return;
     }
     if (!isNoteFile(node.name)) {
-      ipc.openFileExternally(node.path);
+      openFileInDefaultApp(node.path).catch((err) => toastError(t("editor.toast.openFailed"), err));
       return;
     }
     openTab(

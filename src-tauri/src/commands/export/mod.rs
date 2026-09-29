@@ -10,6 +10,7 @@
 
 pub(crate) mod assets;
 pub(crate) mod csv;
+pub(crate) mod destination;
 pub(crate) mod helpers;
 pub(crate) mod html;
 pub(crate) mod pandoc;
@@ -22,6 +23,7 @@ pub(crate) mod site;
 
 pub use assets::{export_figures, export_self_contained_typ};
 pub use csv::{export_collection_csv, export_collection_csv_to_file};
+pub use destination::{pick_export_file, pick_export_folder};
 pub use helpers::{resolve_template_path, resolve_template_path_with_root};
 pub use html::export_note_html;
 pub use pandoc::{detect_pandoc, export_via_pandoc};

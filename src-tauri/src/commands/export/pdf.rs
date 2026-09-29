@@ -72,6 +72,8 @@ pub async fn export_note_pdf_to_file(
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
+    crate::commands::export::destination::require_export_destination(&state, &window, &output_path)
+        .await?;
     let session = state.session(window.label()).await;
     let storage = session.get_storage().await?;
     let path_buf = PathBuf::from(&path);
@@ -131,6 +133,8 @@ pub async fn export_collection_note_pdf(
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
+    crate::commands::export::destination::require_export_destination(&state, &window, &output_path)
+        .await?;
     let session = state.session(window.label()).await;
     let storage = session.get_storage().await?;
     let note_path_buf = PathBuf::from(&note_path);
@@ -243,6 +247,8 @@ pub async fn export_collection_batch_pdf(
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
 ) -> Result<super::BatchExportResult, InkyCapError> {
+    crate::commands::export::destination::require_export_destination(&state, &window, &output_dir)
+        .await?;
     let session = state.session(window.label()).await;
     let data = crate::commands::collections::get_collection_data_internal(
         &collection_path,
@@ -440,6 +446,8 @@ pub async fn export_collection_book_pdf(
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
 ) -> Result<BookExportResult, InkyCapError> {
+    crate::commands::export::destination::require_export_destination(&state, &window, &output_path)
+        .await?;
     let session = state.session(window.label()).await;
     use crate::typst_pipeline::book_wrapper::{self, BookExportOptions, BookNote};
     let exclude: std::collections::HashSet<String> =

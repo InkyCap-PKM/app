@@ -14,6 +14,8 @@ pub async fn export_collection_csv_to_file(
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
+    crate::commands::export::destination::require_export_destination(&state, &window, &output_path)
+        .await?;
     let session = state.session(window.label()).await;
     let delim = match delimiter.as_deref() {
         Some("tab") => '\t',

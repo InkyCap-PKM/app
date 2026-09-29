@@ -79,12 +79,9 @@ export async function loadMediaObjectUrl(noteboxPath: string): Promise<string | 
 /**
  * Load a notebox image as a `blob:` object URL, or `null` on failure.
  *
- * The visual editor's `#image` widgets use this instead of `convertFileSrc`:
- * Tauri's asset protocol fails for images on Windows (the canonicalized `\\?\`
- * path is denied by the scope glob), so the element silently errors. Reading the
- * bytes and wrapping them in a correctly-typed blob sidesteps the asset protocol
- * and renders on every platform — the same approach `#video`/`#audio` already
- * use for WebKitGTK. `noteboxPath` accepts the embed forms `resolve_embed_path`
+ * Tauri's asset protocol is switched off, so notebox images reach the webview
+ * only as bytes over IPC, wrapped here in a correctly-typed blob, the same way
+ * as `#video`/`#audio`. `noteboxPath` accepts the embed forms `resolve_embed_path`
  * understands (root-absolute, relative, or bare filename).
  *
  * The caller owns the returned URL and must `URL.revokeObjectURL` it (directly

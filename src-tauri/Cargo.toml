@@ -12,7 +12,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset"] }
+tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
 # In-app updates. commands::updates checks a static release feed (via reqwest);
 # commands::upgrade installs a newer release through the Tauri updater plugin,
@@ -154,15 +154,17 @@ objc2 = "0.6.4"
 objc2-app-kit = "0.3.2"
 objc2-foundation = "0.3.2"
 
-# Native clipboard reader for Windows (CF_HDROP via Win32). Same
-# role as the Linux/macOS deps above.
+# Native clipboard reader for Windows (CF_HDROP via Win32), same role as the
+# Linux/macOS deps above; also used by system_open.rs to open files and URLs.
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm",
+    "Win32_System_Com",
     "Win32_System_DataExchange",
     "Win32_System_Memory",
     "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
 ] }
 
 [dev-dependencies]

@@ -108,6 +108,7 @@ pub fn extract_to_temp(archive: &Path, password: Option<&str>) -> Result<tempfil
     let root = staging.path();
 
     let mut zip = zip_archive::open(archive)?;
+    let mut budget = zip_archive::ExtractBudget::for_archive(archive)?;
     let mut wrote_git = false;
     for info in &entries {
         let name = info.name.as_str();
@@ -131,7 +132,7 @@ pub fn extract_to_temp(archive: &Path, password: Option<&str>) -> Result<tempfil
             std::fs::create_dir_all(parent)?;
         }
         let mut f = std::fs::File::create(&dest)?;
-        zip_archive::read_entry_to_writer(&mut zip, name, password, &mut f)?;
+        zip_archive::read_entry_to_writer(&mut zip, name, password, &mut budget, &mut f)?;
         wrote_git = true;
     }
 

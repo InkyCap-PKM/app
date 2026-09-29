@@ -38,6 +38,7 @@ pub mod settings;
 pub mod sort;
 pub mod state;
 pub mod storage;
+pub mod system_open;
 pub mod tab_sessions;
 pub mod typst_packages;
 pub mod typst_pipeline;
@@ -452,6 +453,8 @@ pub fn run() {
             commands::export::pandoc::export_via_pandoc,
             commands::export::count_note_review_markup,
             commands::export::assets::export_figures,
+            commands::export::destination::pick_export_file,
+            commands::export::destination::pick_export_folder,
             commands::typst::compile_typst_svg,
             commands::typst::compile_typst_html,
             commands::markdown::paste_markdown_as_typst,

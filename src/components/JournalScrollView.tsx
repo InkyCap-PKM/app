@@ -38,6 +38,7 @@ import { useI18n, tPlural } from "../lib/i18n";
 import { onFileChanged } from "../lib/events";
 import { showWikilinkContextMenu } from "../lib/wikilink-nav";
 import { openLink } from "../lib/open-link";
+import { sanitizeNoteHtml } from "../lib/safe-html";
 import {
   consumeScrollNavRequest,
   findOffsetForTarget,
@@ -816,7 +817,7 @@ const JournalScrollEntryView: Component<JournalScrollEntryViewProps> = (
     }),
   );
 
-  // Mount the compiled HTML into the entry's body, stripping <script> tags.
+  // Mount the compiled HTML into the entry's body, filtered for safety.
   createEffect(
     on(result, (r) => {
       if (!bodyRef) return;
@@ -825,12 +826,7 @@ const JournalScrollEntryView: Component<JournalScrollEntryViewProps> = (
       // Render whenever HTML is present — `ok` is false for a recovered
       // (partial) render, but that HTML is still worth showing.
       if (!r.html) return;
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(r.html, "text/html");
-      doc.querySelectorAll("script").forEach((s) => s.remove());
-      const body = doc.body;
-      if (!body) return;
-      while (body.firstChild) bodyRef.appendChild(body.firstChild);
+      bodyRef.appendChild(sanitizeNoteHtml(r.html));
     }),
   );
 

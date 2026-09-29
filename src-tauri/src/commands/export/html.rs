@@ -25,6 +25,8 @@ pub async fn export_note_html(
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
+    crate::commands::export::destination::require_export_destination(&state, &window, &output_path)
+        .await?;
     let session = state.session(window.label()).await;
     let storage = session.get_storage().await?;
     let path_buf = PathBuf::from(&path);
