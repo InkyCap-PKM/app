@@ -12,6 +12,7 @@ use std::path::PathBuf;
 use regex::Regex;
 use tauri::State;
 
+use crate::collection_parser::property_edits;
 use crate::errors::InkyCapError;
 use crate::models::note::PropertyValue;
 use crate::property_types::{coerce_value, is_system_property, PropertyType};
@@ -167,8 +168,11 @@ pub async fn rename_property_key(
         index.property_keys.remove(&old_key);
     }
 
-    // .collection files — textual replacement of whole-word key references.
-    rewrite_collection_files(&session, |text| replace_word(text, &old_key, &new_key)).await?;
+    // .collection files: filters, columns, sorting and summaries that use the key.
+    rewrite_collection_files(&session, |text| {
+        property_edits::rename_property(text, &old_key, &new_key)
+    })
+    .await?;
 
     Ok(())
 }
@@ -213,7 +217,7 @@ pub async fn delete_property_key(
         }
     }
 
-    rewrite_collection_files(&session, |text| strip_word_line(text, &key)).await?;
+    rewrite_collection_files(&session, |text| property_edits::remove_property(text, &key)).await?;
 
     Ok(())
 }
@@ -391,7 +395,10 @@ pub async fn rename_tag(
     // inside quoted strings. Filter expressions like
     // `file.tags.contains("rust")` will be updated; bare references
     // won't, because they'd be indistinguishable from property keys.
-    rewrite_collection_files(&session, |text| replace_quoted(text, &old_tag, &new_tag)).await?;
+    rewrite_collection_files(&session, |text| {
+        Some(replace_quoted(text, &old_tag, &new_tag)).filter(|out| out != text)
+    })
+    .await?;
 
     Ok(())
 }
@@ -442,28 +449,6 @@ fn apply_tags_property_rename(content: &str, current: &[String], old: &str, new:
     note_rewriter::update_note_property(content, "tags", &PropertyValue::List(new_list))
 }
 
-/// Replace whole-word occurrences of `needle` with `replacement`.
-/// Word boundaries are ASCII-only which matches how property keys are
-/// typically spelled in both notes and .collection files.
-fn replace_word(text: &str, needle: &str, replacement: &str) -> String {
-    if needle.is_empty() {
-        return text.to_string();
-    }
-    let pattern = format!(r"\b{}\b", regex::escape(needle));
-    let re = Regex::new(&pattern).unwrap();
-    re.replace_all(text, replacement).into_owned()
-}
-
-/// Delete any line containing `needle` as a whole word. Used to strip
-/// references to a deleted property key from .collection files.
-fn strip_word_line(text: &str, needle: &str) -> String {
-    let re = Regex::new(&format!(r"\b{}\b", regex::escape(needle))).unwrap();
-    text.lines()
-        .filter(|line| !re.is_match(line))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 /// Replace literal occurrences of `needle` *inside* single- or
 /// double-quoted strings. Used for tag rename inside .collection filter
 /// expressions like `file.tags.contains("rust")`.
@@ -489,13 +474,14 @@ fn replace_quoted(text: &str, needle: &str, replacement: &str) -> String {
     out
 }
 
-/// Apply a text transform to every `.collection` file in the notebox.
+/// Apply a text transform to every `.collection` file in the notebox. The
+/// transform returns the new text, or `None` to leave the file as it is.
 async fn rewrite_collection_files<F>(
     session: &NoteboxSession,
     transform: F,
 ) -> Result<(), InkyCapError>
 where
-    F: Fn(&str) -> String,
+    F: Fn(&str) -> Option<String>,
 {
     let storage = session.get_storage().await?;
     let collection_paths: Vec<PathBuf> = session.collection_files.read().await.clone();
@@ -504,8 +490,7 @@ where
             Ok(c) => c,
             Err(_) => continue,
         };
-        let updated = transform(&content);
-        if updated != content {
+        if let Some(updated) = transform(&content) {
             let _ = storage.write_file(&path, &updated).await;
         }
     }

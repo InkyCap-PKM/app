@@ -59,6 +59,16 @@ pub enum Value {
 struct Parser {
     input: Vec<char>,
     pos: usize,
+    /// Where each note-property reference sits in `input`, in parse order.
+    note_refs: Vec<NoteRefSpan>,
+}
+
+/// The position of one note-property reference (`status` or
+/// `note["my key"]`) in a filter expression, in chars, end exclusive.
+struct NoteRefSpan {
+    start: usize,
+    end: usize,
+    key: String,
 }
 
 impl Parser {
@@ -66,6 +76,7 @@ impl Parser {
         Self {
             input: input.chars().collect(),
             pos: 0,
+            note_refs: Vec::new(),
         }
     }
 
@@ -164,6 +175,7 @@ impl Parser {
         }
 
         // Check for note["key"]
+        let start = self.pos;
         if self.starts_with("note[\"") || self.starts_with("note['") {
             self.consume("note[");
             let key = self.parse_string_literal()?;
@@ -172,6 +184,7 @@ impl Parser {
                     "Expected ']' after note[\"key\"".to_string(),
                 ));
             }
+            self.record_note_ref(start, &key);
             return Ok(PropertyRef::Note(key));
         }
 
@@ -183,7 +196,16 @@ impl Parser {
                 self.remaining()
             )));
         }
+        self.record_note_ref(start, &name);
         Ok(PropertyRef::Note(name))
+    }
+
+    fn record_note_ref(&mut self, start: usize, key: &str) {
+        self.note_refs.push(NoteRefSpan {
+            start,
+            end: self.pos,
+            key: key.to_string(),
+        });
     }
 
     fn parse_value(&mut self) -> Result<Value, InkyCapError> {
@@ -330,6 +352,67 @@ pub fn parse_filter_expr(input: &str) -> Result<FilterExpr, InkyCapError> {
     let mut parser = Parser::new(input.trim());
     let expr = parser.parse_expr()?;
     Ok(expr)
+}
+
+/// Parse `input`, returning the parser (holding the note-property references
+/// it found) and the number of leading whitespace chars trimmed before
+/// parsing, or `None` when it doesn't parse.
+fn note_refs(input: &str) -> Option<(Parser, usize)> {
+    let lead = input.len() - input.trim_start().len();
+    let mut parser = Parser::new(input.trim());
+    parser.parse_expr().ok()?;
+    // The parser's positions count chars from the start of the trimmed text.
+    let lead_chars = input[..lead].chars().count();
+    Some((parser, lead_chars))
+}
+
+/// True when the filter expression refers to note property `key` (as a bare
+/// name or `note["key"]`). `file.*` and `this.file.*` fields and string
+/// values never count. An expression that doesn't parse returns `false`.
+pub fn expr_references_property(input: &str, key: &str) -> bool {
+    note_refs(input).is_some_and(|(parser, _)| parser.note_refs.iter().any(|r| r.key == key))
+}
+
+/// Rewrite every reference to note property `old` in a filter expression so
+/// it names `new`, leaving everything else (string values, `file.*` fields,
+/// spacing) exactly as written. `new` is written bare when it is a plain
+/// name and as `note["…"]` otherwise. Returns `None` when the expression
+/// doesn't parse or doesn't mention `old`.
+pub fn rename_property_in_expr(input: &str, old: &str, new: &str) -> Option<String> {
+    let (parser, lead) = note_refs(input)?;
+    let spans: Vec<&NoteRefSpan> = parser.note_refs.iter().filter(|r| r.key == old).collect();
+    if spans.is_empty() {
+        return None;
+    }
+    let is_plain = !new.is_empty()
+        && new
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+        && new != "this"
+        && new != "file"
+        && new != "note"
+        && new != "true"
+        && new != "false"
+        && !new.starts_with(|c: char| c.is_ascii_digit() || c == '-');
+    let replacement = if is_plain {
+        new.to_string()
+    } else {
+        format!(
+            "note[\"{}\"]",
+            new.replace('\\', "\\\\").replace('"', "\\\"")
+        )
+    };
+    let chars: Vec<char> = input.chars().collect();
+    let mut out = String::with_capacity(input.len() + replacement.len());
+    let mut at = 0;
+    for span in spans {
+        let (start, end) = (span.start + lead, span.end + lead);
+        out.extend(&chars[at..start]);
+        out.push_str(&replacement);
+        at = end;
+    }
+    out.extend(&chars[at..]);
+    Some(out)
 }
 
 // ── Evaluator ───────────────────────────────────────────────────────
@@ -1275,5 +1358,34 @@ and:
         let note_next_week = make_note(vec![("due", PropertyValue::String(due_next_week))]);
         assert!(evaluate(&lower, &note_next_week, p));
         assert!(!evaluate(&upper, &note_next_week, p));
+    }
+
+    #[test]
+    fn rename_in_expr_keeps_spacing_values_and_file_fields() {
+        let out = rename_property_in_expr("  !status == \"status\"  ", "status", "state");
+        assert_eq!(out.as_deref(), Some("  !state == \"status\"  "));
+        assert_eq!(
+            rename_property_in_expr("file.name == \"x\"", "name", "title"),
+            None
+        );
+        assert_eq!(
+            rename_property_in_expr("my-status == \"x\"", "status", "y"),
+            None
+        );
+    }
+
+    #[test]
+    fn rename_in_expr_handles_brackets_and_accented_names() {
+        let out = rename_property_in_expr("note[\"état\"].contains(\"é\")", "état", "phase");
+        assert_eq!(out.as_deref(), Some("phase.contains(\"é\")"));
+        let out = rename_property_in_expr("due < note[\"due\"]", "due", "deadline");
+        assert_eq!(out.as_deref(), Some("deadline < deadline"));
+    }
+
+    #[test]
+    fn references_ignore_values_and_unparseable_text() {
+        assert!(expr_references_property("tags.contains(\"x\")", "tags"));
+        assert!(!expr_references_property("title == \"tags\"", "tags"));
+        assert!(!expr_references_property("tags ==", "tags"));
     }
 }
