@@ -173,3 +173,14 @@ tempfile = "3"
 # Backed by `similar` (already a runtime dep). The `glob` feature drives one
 # snapshot set per `.typ` fixture; see documentation/developer/typst-upgrade.md.
 insta = { version = "1", features = ["glob", "json"] }
+
+# Development builds (`cargo test`, `npm run tauri dev`) keep only the line
+# numbers needed for readable error backtraces, and none for third-party
+# crates. Full debugging detail made every test program about 900 MB, and
+# building several of them at once could exhaust the computer's memory.
+# Release builds are unaffected.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
