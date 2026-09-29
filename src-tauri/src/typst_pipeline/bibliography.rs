@@ -651,88 +651,58 @@ fn zotero_type_to_bibtex(zotero_type: &str) -> &str {
     }
 }
 
-/// Extract citation keys from Typst source. Matches both `@key` and
-/// `#cite(<key>)` forms. Skips escaped `\@` and `@` inside backtick
-/// code spans (inline `` `...` `` and fenced `` ```...``` ``).
+/// Extract citation keys from Typst source, in order of first appearance and
+/// without duplicates. Both forms count: the `@key` shorthand and the
+/// `cite(<key>)` function call (in markup or code).
+///
+/// This walks the parsed syntax tree, so anything Typst itself would not read
+/// as a citation is skipped: escaped `\@`, raw/code spans, string literals and
+/// comments. Keys follow Typst's own label rules, so a key starting with a
+/// digit (Zotero item keys such as `5VX4GJ8Q`) is found too. Every `@target`
+/// is returned, including references to labels in the note; callers match the
+/// keys against the bibliography.
 pub fn extract_citations(source: &str) -> Vec<String> {
-    let stripped = strip_code_spans(source);
+    let root = parse(source);
     let mut keys = Vec::new();
-    // @key — the standard Typst citation shorthand
-    for m in at_cite_re().find_iter(&stripped) {
-        let s = m.as_str();
-        keys.push(s[1..].to_string());
-    }
-    // #cite(<key>) — the function form
-    for cap in cite_func_re().captures_iter(&stripped) {
-        if let Some(m) = cap.get(1) {
-            keys.push(m.as_str().to_string());
-        }
-    }
-    // Deduplicate while preserving order
+    collect_citation_keys(&LinkedNode::new(&root), &mut keys);
     let mut seen = std::collections::HashSet::new();
     keys.retain(|k| seen.insert(k.clone()));
     keys
 }
 
-/// Replace code spans, string literals, and escaped `@` with whitespace
-/// so the citation regexes don't match inside them. Handles:
-/// - fenced code blocks (```...```, with any number of backticks ≥ 3)
-/// - inline raw spans (`...`, with any number of backticks)
-/// - Typst string literals ("...")
-/// - escaped at-signs (`\@`)
-fn strip_code_spans(source: &str) -> String {
-    let bytes = source.as_bytes();
-    let len = bytes.len();
-    let mut out = source.to_string().into_bytes();
-    let mut i = 0;
-    while i < len {
-        if bytes[i] == b'\\' && i + 1 < len && bytes[i + 1] == b'@' {
-            out[i] = b' ';
-            out[i + 1] = b' ';
-            i += 2;
-            continue;
-        }
-        // Typst string literals: "..." (with backslash escapes inside)
-        if bytes[i] == b'"' {
-            let start = i;
-            i += 1;
-            while i < len {
-                if bytes[i] == b'\\' && i + 1 < len {
-                    i += 2; // skip escaped character
-                } else if bytes[i] == b'"' {
-                    i += 1;
-                    break;
-                } else {
-                    i += 1;
-                }
+/// Recursively gather citation keys from `@key` references and the first
+/// label argument of `cite(...)` calls.
+fn collect_citation_keys(node: &LinkedNode<'_>, keys: &mut Vec<String>) {
+    match node.kind() {
+        SyntaxKind::Ref => {
+            if let Some(reference) = node.cast::<ast::Ref>() {
+                keys.push(reference.target().to_string());
             }
-            out[start..i.min(len)].fill(b' ');
-            continue;
         }
-        if bytes[i] == b'`' {
-            let tick_start = i;
-            let mut tick_count = 0;
-            while i < len && bytes[i] == b'`' {
-                tick_count += 1;
-                i += 1;
+        SyntaxKind::FuncCall => {
+            if let Some(key) = node.cast::<ast::FuncCall>().and_then(cite_call_key) {
+                keys.push(key);
             }
-            // Find matching closing backtick sequence of the same length
-            let closing = std::str::from_utf8(&bytes[i..]).ok().and_then(|rest| {
-                let needle: String = (0..tick_count).map(|_| '`').collect();
-                rest.find(&needle).map(|pos| pos + i)
-            });
-            if let Some(close_start) = closing {
-                let end = close_start + tick_count;
-                out[tick_start..end.min(len)].fill(b' ');
-                i = end;
-            }
-            // No closing found — the ticks are literal; leave i advanced past them
-            continue;
         }
-        i += 1;
+        _ => {}
     }
-    // Safety: we only replaced ASCII bytes with ASCII spaces
-    String::from_utf8(out).unwrap_or_else(|_| source.to_string())
+    for child in node.children() {
+        collect_citation_keys(&child, keys);
+    }
+}
+
+/// The key of a `cite(<key>, ...)` call, or `None` for any other call.
+fn cite_call_key(call: ast::FuncCall<'_>) -> Option<String> {
+    let ast::Expr::Ident(callee) = call.callee() else {
+        return None;
+    };
+    if callee.get().as_str() != "cite" {
+        return None;
+    }
+    call.args().items().find_map(|arg| match arg {
+        ast::Arg::Pos(ast::Expr::Label(label)) => Some(label.get().to_string()),
+        _ => None,
+    })
 }
 
 /// Escape references whose target resolves to neither a bibliography entry
@@ -856,16 +826,6 @@ fn collect_refs_and_labels(
     for child in node.children() {
         collect_refs_and_labels(&child, labels, refs);
     }
-}
-
-fn at_cite_re() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"@([a-zA-Z][\w:.+-]*)").unwrap())
-}
-
-fn cite_func_re() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"#\s*cite\s*\(\s*<\s*([^>]+)\s*>").unwrap())
 }
 
 // ---------------------------------------------------------------------------
@@ -1322,10 +1282,12 @@ mod tests {
     }
 
     #[test]
-    fn extract_skips_double_backtick_code() {
-        let src = "``@inner`` and @outer";
+    fn extract_follows_typst_raw_rules() {
+        // Two backticks are an empty raw span in Typst, so `@inner` between
+        // them is a real citation; three or more open a raw block.
+        let src = "``@inner`` and ```@block``` and @outer";
         let keys = extract_citations(src);
-        assert_eq!(keys, vec!["outer"]);
+        assert_eq!(keys, vec!["inner", "outer"]);
     }
 
     #[test]
@@ -1340,6 +1302,41 @@ mod tests {
         let src = "@a @b #cite(<c>)";
         let keys = extract_citations(src);
         assert_eq!(keys, vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn extract_finds_digit_first_keys() {
+        let src = "Zotero keys @5VX4GJ8Q and #cite(<2ABCDEF9>) both count.";
+        let keys = extract_citations(src);
+        assert_eq!(keys, vec!["5VX4GJ8Q", "2ABCDEF9"]);
+    }
+
+    #[test]
+    fn extract_skips_strings_and_comments() {
+        let src = "#let s = \"@instring\"\n// @incomment\n/* @inblock */\n@real\n";
+        let keys = extract_citations(src);
+        assert_eq!(keys, vec!["real"]);
+    }
+
+    #[test]
+    fn extract_cite_with_extra_arguments_and_in_code() {
+        let src = "#cite(<smith>, form: \"prose\") and #{ cite(<jones>) }";
+        let keys = extract_citations(src);
+        assert_eq!(keys, vec!["smith", "jones"]);
+    }
+
+    #[test]
+    fn extract_ignores_other_calls_with_labels() {
+        let src = "#ref(<fig>) and #link(<intro>)[Intro]";
+        let keys = extract_citations(src);
+        assert!(keys.is_empty());
+    }
+
+    #[test]
+    fn extract_citation_with_supplement() {
+        let src = "@smith[p. 7] said so.";
+        let keys = extract_citations(src);
+        assert_eq!(keys, vec!["smith"]);
     }
 
     #[test]
