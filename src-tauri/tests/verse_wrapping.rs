@@ -9,7 +9,8 @@
 //! line can still break between words.
 //!
 //! This pins both halves of that invariant: long lines wrap inside the page,
-//! and the preserved indentation / run-spacing survives.
+//! and the preserved indentation / run-spacing survives. Tabs count as four
+//! spaces, the editor's tab width.
 //!
 //! Bundled fonts only (no `ensure_system_fonts()`) so the geometry is the same
 //! on every machine — same rationale as `tests/fidelity.rs`.
@@ -127,4 +128,12 @@ fn verse_preserves_indentation_and_run_spacing() {
         nbsp, 10,
         "verse spacing not preserved: {nbsp} non-breaking spaces in {text:?}"
     );
+}
+
+#[test]
+fn verse_tabs_render_as_four_spaces() {
+    let (_, tabbed) = compile_verse("\tindented\tand\tspaced");
+    let (_, spaced) = compile_verse(SPACED_LINE);
+    let text = |runs: &[Run]| runs.iter().map(|r| r.text.clone()).collect::<String>();
+    assert_eq!(text(&tabbed), text(&spaced));
 }

@@ -957,9 +957,13 @@
 //     ordinary space: identical visual width, exactly one break opportunity
 //     per word gap, and no markup space-collapsing (only ever one plain space
 //     per run reaches `eval`).
+//
+// Each tab first becomes four spaces, the editor's tab width, because Typst
+// markup would otherwise collapse it like any other whitespace.
 #let _verse-preserve-spaces(line) = {
   let nbsp = "\u{00A0}"
-  let out = line.replace(regex("^ +"), m => nbsp * m.text.len())
+  let out = line.replace("\t", "    ")
+  out = out.replace(regex("^ +"), m => nbsp * m.text.len())
   out = out.replace(regex(" +$"), m => nbsp * m.text.len())
   out.replace(regex(" +"), m => nbsp * (m.text.len() - 1) + " ")
 }
