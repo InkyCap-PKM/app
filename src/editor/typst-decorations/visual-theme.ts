@@ -94,7 +94,7 @@ export const visualTheme = EditorView.theme({
     // the bare mark must paint the same yellow the notebox wrapper compiles
     // to (`--hl-yellow`, themed light/dark).
     backgroundColor: "var(--hl-yellow)",
-    borderRadius: "2px",
+    borderRadius: "var(--radius-xs)",
     padding: "0 2px",
     // The five highlight palette colours are intentionally light pastels,
     // chosen so the marking reads as a felt-pen highlight rather than a
@@ -102,7 +102,7 @@ export const visualTheme = EditorView.theme({
     // near-white, which becomes unreadable on those pastels — pin a near-
     // black text colour on highlighted spans so the contrast is right
     // regardless of theme.
-    color: "#1a1a1a",
+    color: "#1a1a1a", // token-exempt: highlight pastels are light in every theme
   },
   // R12 marks for sub/super/underline/overline: visual representation
   // applied directly to the live Typst source so the body stays editable.
@@ -136,7 +136,7 @@ export const visualTheme = EditorView.theme({
     // 0.9em used by the editor's other code surfaces (code blocks, edit mode).
     fontSize: "0.9em",
     backgroundColor: "var(--syntax-mono-bg)",
-    borderRadius: "3px",
+    borderRadius: "var(--radius-sm)",
     padding: "1px 4px",
   },
   // Fenced code block inside a rendered block body (callout / quote /
@@ -146,7 +146,7 @@ export const visualTheme = EditorView.theme({
     fontFamily: "var(--editor-font-mono, monospace)",
     fontSize: "0.9em",
     backgroundColor: "var(--syntax-mono-bg)",
-    borderRadius: "4px",
+    borderRadius: "var(--radius-sm)",
     padding: "8px 10px",
     margin: "0.4em 0",
     whiteSpace: "pre",
@@ -289,7 +289,7 @@ export const visualTheme = EditorView.theme({
   },
   ".cm-typst-callout": {
     borderLeft: "3px solid var(--accent)",
-    borderRadius: "4px",
+    borderRadius: "var(--radius-sm)",
     padding: "var(--callout-pad) var(--callout-inset)",
     margin: "var(--callout-margin) 0",
     display: "block",
@@ -355,7 +355,7 @@ export const visualTheme = EditorView.theme({
     fontSize: "var(--codeblock-font-size)",
     backgroundColor: "var(--bg-secondary)",
     border: "1px solid var(--border-subtle)",
-    borderRadius: "6px",
+    borderRadius: "var(--radius-md)",
     padding: "0",
     margin: "var(--codeblock-margin) 0",
     overflow: "hidden",
@@ -391,7 +391,7 @@ export const visualTheme = EditorView.theme({
     height: "var(--codeblock-row)",
     padding: "0",
     border: "none",
-    borderRadius: "4px",
+    borderRadius: "var(--radius-sm)",
     background: "transparent",
     color: "var(--fg-dim)",
     cursor: "pointer",
@@ -405,7 +405,7 @@ export const visualTheme = EditorView.theme({
     color: "var(--fg-primary)",
   },
   ".cm-typst-codeblock-copy.is-copied": {
-    color: "var(--accent-color, #1D7874)",
+    color: "var(--accent)",
   },
   ".cm-typst-codeblock pre": {
     margin: "0",
@@ -452,11 +452,11 @@ export const visualTheme = EditorView.theme({
   },
   ".cm-typst-codeblock-edit--open": {
     marginTop: "var(--codeblock-margin)",
-    borderRadius: "6px 6px 0 0",
+    borderRadius: "var(--radius-md) var(--radius-md) 0 0",
   },
   ".cm-typst-codeblock-edit--close": {
     marginBottom: "var(--codeblock-margin)",
-    borderRadius: "0 0 6px 6px",
+    borderRadius: "0 0 var(--radius-md) var(--radius-md)",
   },
   ".cm-typst-codeblock-edit--first": {
     paddingTop: "var(--codeblock-body-pad)",
@@ -546,7 +546,7 @@ export const visualTheme = EditorView.theme({
   ".cm-typst-image-img": {
     maxWidth: "100%",
     maxHeight: "400px",
-    borderRadius: "4px",
+    borderRadius: "var(--radius-sm)",
     display: "block",
     margin: "0 auto",
   },
@@ -614,7 +614,7 @@ export const visualTheme = EditorView.theme({
   ".cm-typst-media-video": {
     maxWidth: "100%",
     maxHeight: "50vh",
-    borderRadius: "4px",
+    borderRadius: "var(--radius-sm)",
     display: "block",
     margin: "0 auto",
   },
@@ -628,7 +628,7 @@ export const visualTheme = EditorView.theme({
     gap: "3px",
     backgroundColor: "var(--accent-purple-bg)",
     color: "var(--accent-text)",
-    borderRadius: "3px",
+    borderRadius: "var(--radius-sm)",
     padding: "1px 6px",
     fontSize: "0.85em",
     cursor: "pointer",
@@ -655,7 +655,7 @@ export const visualTheme = EditorView.theme({
   ".cm-typst-task__due": {
     backgroundColor: "var(--accent-purple-bg)",
     color: "var(--accent-text)",
-    borderRadius: "3px",
+    borderRadius: "var(--radius-sm)",
     padding: "0 5px",
     fontSize: "0.8em",
   },
@@ -663,7 +663,7 @@ export const visualTheme = EditorView.theme({
     display: "inline-block",
     backgroundColor: "var(--accent-purple-bg)",
     color: "var(--accent-text)",
-    borderRadius: "3px",
+    borderRadius: "var(--radius-sm)",
     padding: "1px 6px",
     fontSize: "0.85em",
   },
@@ -674,11 +674,11 @@ export const visualTheme = EditorView.theme({
     cursor: "pointer",
   },
   ".cm-suggestion-ins": {
-    color: "#16a34a",
+    color: "#16a34a", // token-exempt: CriticMarkup insertion green
     textDecoration: "underline",
   },
   ".cm-suggestion-del": {
-    color: "#dc2626",
+    color: "#dc2626", // token-exempt: CriticMarkup deletion red
     textDecoration: "line-through",
   },
   ".cm-typst-wikilink": {
@@ -806,12 +806,12 @@ export const visualTheme = EditorView.theme({
   },
   ".cm-typst-callout-line.cm-typst-block-edit-first": {
     marginTop: "var(--callout-margin)",
-    borderRadius: "4px 4px 0 0",
+    borderRadius: "var(--radius-sm) var(--radius-sm) 0 0",
   },
   ".cm-typst-callout-line.cm-typst-block-edit-last": {
     marginBottom: "var(--callout-margin)",
     paddingBottom: "var(--callout-pad)",
-    borderRadius: "0 0 4px 4px",
+    borderRadius: "0 0 var(--radius-sm) var(--radius-sm)",
   },
   // Also carries .cm-typst-block-row, whose inline-block box keeps the
   // heading's bottom margin inside the row.
@@ -834,7 +834,7 @@ export const visualTheme = EditorView.theme({
     gap: "3px",
     backgroundColor: "var(--bg-secondary)",
     border: "1px solid var(--border-subtle)",
-    borderRadius: "12px",
+    borderRadius: "var(--radius-full)",
     padding: "0 6px 0 3px",
     color: "var(--fg-muted)",
     cursor: "pointer",
@@ -873,8 +873,8 @@ export const visualTheme = EditorView.theme({
     width: "1.15em",
     height: "1.15em",
     borderRadius: "50%",
-    backgroundColor: "var(--accent, #1D7874)",
-    color: "var(--pill-fg, #fff)",
+    backgroundColor: "var(--accent)",
+    color: "var(--pill-fg)",
     fontSize: "inherit",
     lineHeight: "0",
     transition: "background-color 0.12s ease",
@@ -993,7 +993,7 @@ export const visualTheme = EditorView.theme({
     color: "var(--fg-primary)",
     backgroundColor: "var(--bg-input, var(--bg-secondary))",
     border: "1px solid var(--border-subtle)",
-    borderRadius: "3px",
+    borderRadius: "var(--radius-sm)",
   },
   ".cm-typst-pill-menu-input:focus": {
     outline: "none",
@@ -1013,7 +1013,7 @@ export const visualTheme = EditorView.theme({
     display: "inline-block",
     backgroundColor: "var(--bg-secondary)",
     color: "var(--syntax-type)",
-    borderRadius: "3px",
+    borderRadius: "var(--radius-sm)",
     padding: "1px 5px",
     fontSize: "0.9em",
     fontFamily: "var(--editor-font-mono, monospace)",
@@ -1025,7 +1025,7 @@ export const visualTheme = EditorView.theme({
     display: "inline-block",
     backgroundColor: "color-mix(in srgb, var(--accent) 12%, transparent)",
     color: "var(--accent)",
-    borderRadius: "3px",
+    borderRadius: "var(--radius-sm)",
     padding: "1px 6px",
     cursor: "pointer",
   },
@@ -1088,10 +1088,10 @@ export const visualTheme = EditorView.theme({
     backgroundColor: "var(--bg-hover-subtle, transparent)",
   },
   ".cm-typst-verse-canvas mark": {
-    backgroundColor: "var(--highlight-bg, #fff3a3)",
+    backgroundColor: "var(--highlight-bg)",
     color: "inherit",
     padding: "0 2px",
-    borderRadius: "2px",
+    borderRadius: "var(--radius-xs)",
   },
   // (Verse alignment popover replaced by the universal pill super-menu.
   // Verse alignment options now live as a section in that menu — see
@@ -1222,7 +1222,7 @@ export const visualTheme = EditorView.theme({
     color: "var(--fg-dim)",
     cursor: "grab",
     userSelect: "none",
-    borderRadius: "2px",
+    borderRadius: "var(--radius-xs)",
   },
   ".cm-table-row-handle": {
     display: "flex",
@@ -1234,7 +1234,7 @@ export const visualTheme = EditorView.theme({
     color: "var(--fg-dim)",
     cursor: "grab",
     userSelect: "none",
-    borderRadius: "2px",
+    borderRadius: "var(--radius-xs)",
   },
   ".cm-table-corner-handle": {
     display: "flex",
@@ -1245,7 +1245,7 @@ export const visualTheme = EditorView.theme({
     color: "var(--fg-dim)",
     cursor: "pointer",
     userSelect: "none",
-    borderRadius: "2px",
+    borderRadius: "var(--radius-xs)",
   },
   ".cm-table-corner-handle .cm-table-handle-grip svg": {
     width: "10px",
@@ -1345,13 +1345,13 @@ export const visualTheme = EditorView.theme({
     width: "1.1em",
     height: "1.1em",
     fontSize: "0.8em",
-    color: "var(--warn-fg, #d97706)",
+    color: "var(--warn-fg)",
     cursor: "pointer",
     verticalAlign: "middle",
     marginRight: "2px",
     userSelect: "none",
-    borderRadius: "3px",
-    backgroundColor: "var(--warn-bg-alpha, color-mix(in srgb, #d97706 12%, transparent))",
+    borderRadius: "var(--radius-sm)",
+    backgroundColor: "var(--warn-bg-alpha)",
   },
 
   // Context menu styles are inline — the menu is appended to document.body

@@ -68,7 +68,7 @@ const searchMatchField = StateField.define<DecorationSet>({
 const matchTheme = EditorView.baseTheme({
   ".cm-search-match-hit": {
     backgroundColor: "var(--bg-search-match)",
-    borderRadius: "2px",
+    borderRadius: "var(--radius-xs)",
   },
 });
 

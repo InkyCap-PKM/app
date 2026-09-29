@@ -1,6 +1,8 @@
-// Design-token enforcement for component stylesheets.
+// Design-token enforcement for component stylesheets and editor themes.
 //
-// Scans every file in `src/styles/layout/` and fails if a rule carries a raw
+// Scans every file in `src/styles/layout/`, and every TypeScript file that
+// defines a CodeMirror theme (`EditorView.theme` / `EditorView.baseTheme`,
+// whose style objects use camelCase keys), and fails if a rule carries a raw
 // hex colour, a raw stacking z-index, a raw px corner radius, or a box-shadow
 // with a colour written into it. Colours belong in `src/styles/themes.css`
 // as named tokens (so every theme and palette resolves them correctly), and
@@ -15,15 +17,17 @@
 // keyframe pulses — pass untouched.
 //
 // A genuinely theme-independent value (e.g. the reading view's white "paper"
-// page) gets a `/* token-exempt: <reason> */` comment on its line or the line
-// above. See documentation/developer/ui-styling.md.
+// page) gets a `/* token-exempt: <reason> */` (or `// token-exempt: <reason>`
+// in TypeScript) comment on its line or the line above. See
+// documentation/developer/ui-styling.md.
 
 /// <reference types="node" />
 import { describe, it, expect } from "vitest";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-const LAYOUT_DIR = join(process.cwd(), "src", "styles", "layout");
+const SRC_DIR = join(process.cwd(), "src");
+const LAYOUT_DIR = join(SRC_DIR, "styles", "layout");
 const EXEMPT_MARKER = "token-exempt:";
 const RAW_HEX = /#[0-9a-fA-F]{3,8}\b/;
 // Raw z-index of 100 or more is a stacking-scale bypass; small local values
@@ -35,6 +39,11 @@ const RAW_RADIUS = /border-radius:[^;]*?\b\d+(?:\.\d+)?px/;
 // A colour written straight into a box-shadow. Hex is already covered by
 // RAW_HEX, so this only needs the functional forms.
 const RAW_SHADOW_COLOUR = /\brgba?\(/;
+// The same rules for a CodeMirror theme object's camelCase keys.
+const RAW_Z_TS = /zIndex:\s*"?(\d{3,})/;
+const RAW_RADIUS_TS = /borderRadius:\s*"[^"]*?\b\d+(?:\.\d+)?px/;
+const RAW_SHADOW_TS = /boxShadow:\s*"[^"]*\brgba?\(/;
+const DEFINES_EDITOR_THEME = /EditorView\.(?:base)?[Tt]heme\(/;
 
 /** Lines of the file with comment text blanked out (so a hex code mentioned
  *  inside a comment doesn't trip the check), plus the raw lines for the
@@ -129,6 +138,57 @@ describe("design-token guard (src/styles/layout)", () => {
           violations.push(
             `${file}:${i + 1} colour written into a box-shadow — use --popup-shadow / --modal-shadow, or a var(--…) colour token`,
           );
+        }
+      });
+      expect(violations, violations.join("\n")).toEqual([]);
+    });
+  }
+});
+
+/** Every `.ts`/`.tsx` file under `dir`, recursively. */
+function sourceFiles(dir: string): string[] {
+  return readdirSync(dir).flatMap((name) => {
+    const path = join(dir, name);
+    if (statSync(path).isDirectory()) return sourceFiles(path);
+    return /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name) ? [path] : [];
+  });
+}
+
+/** `codeLines`, with `//` line comments also blanked (a `//` right after a
+ *  colon is a URL, not a comment). */
+function tsCodeLines(source: string): { code: string[]; raw: string[] } {
+  const { code, raw } = codeLines(source);
+  return { code: code.map((line) => line.replace(/(^|[^:])\/\/.*$/, "$1")), raw };
+}
+
+describe("design-token guard (editor themes)", () => {
+  const files = sourceFiles(SRC_DIR).filter((f) =>
+    DEFINES_EDITOR_THEME.test(readFileSync(f, "utf8")),
+  );
+
+  it("finds the editor theme files", () => {
+    expect(files.length).toBeGreaterThan(0);
+  });
+
+  for (const path of files) {
+    const file = path.slice(SRC_DIR.length + 1);
+    it(`${file} uses tokens, not raw colours, z-indexes, radii or shadows`, () => {
+      const { code, raw } = tsCodeLines(readFileSync(path, "utf8"));
+      const violations: string[] = [];
+      code.forEach((line, i) => {
+        if (isExempt(raw, i)) return;
+        if (RAW_HEX.test(line)) {
+          violations.push(`${file}:${i + 1} raw hex colour — use a var(--…) token from themes.css`);
+        }
+        const z = line.match(RAW_Z_TS);
+        if (z) {
+          violations.push(`${file}:${i + 1} raw z-index ${z[1]} — use the --z-menu/--z-modal/--z-toast scale`);
+        }
+        if (RAW_RADIUS_TS.test(line)) {
+          violations.push(`${file}:${i + 1} raw px borderRadius — use the --radius-* scale`);
+        }
+        if (RAW_SHADOW_TS.test(line)) {
+          violations.push(`${file}:${i + 1} colour written into a boxShadow — use a shadow or colour token`);
         }
       });
       expect(violations, violations.join("\n")).toEqual([]);

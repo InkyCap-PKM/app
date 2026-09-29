@@ -25,7 +25,9 @@ export const CALLOUT_KINDS = [
 export type CalloutKind = (typeof CALLOUT_KINDS)[number];
 
 /** The colour each kind uses when a callout carries no `color:` override.
- *  Must match `_callout-colors` in inkycap-notebox/lib.typ. */
+ *  Must match `_callout-colors` in inkycap-notebox/lib.typ. These are part of
+ *  the document (the compiled note shows them in every Typst tool), not app
+ *  chrome, so they stay literal colours rather than theme tokens. */
 export const CALLOUT_COLORS: Record<string, string> = {
   note: "#448aff",
   tip: "#00bfa5",

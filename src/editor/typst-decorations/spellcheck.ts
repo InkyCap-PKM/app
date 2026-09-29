@@ -289,7 +289,7 @@ const spellcheckTheme = EditorView.baseTheme({
     pointerEvents: "none",
   },
   ".cm-spell-underline": {
-    backgroundColor: "var(--accent-danger, #e06c75)",
+    backgroundColor: "var(--accent-danger)",
     maskImage: WAVE_MASK,
     WebkitMaskImage: WAVE_MASK,
     maskRepeat: "repeat-x",

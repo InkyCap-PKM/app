@@ -352,7 +352,7 @@ const inkycapTheme = EditorView.theme({
   // the match wraps across a line within the canvas.
   ".cm-typst-verse-canvas .cm-verse-search-hit": {
     backgroundColor: "var(--bg-search-match)",
-    borderRadius: "2px",
+    borderRadius: "var(--radius-xs)",
     "-webkit-box-decoration-break": "clone",
     boxDecorationBreak: "clone",
   },
@@ -394,7 +394,7 @@ const inkycapTheme = EditorView.theme({
     // styles/layout/editor-header.css).
     position: "relative",
     zIndex: "2",
-    boxShadow: "0 -4px 6px -4px rgba(0, 0, 0, 0.22)",
+    boxShadow: "0 -4px 6px -4px var(--lip-shadow-status)",
   },
   // In-page find/replace panel (Ctrl+F). InkyCap supplies its own panel DOM
   // (see search-panel.ts); these rules style it with app tokens so it reads
@@ -446,7 +446,7 @@ const inkycapTheme = EditorView.theme({
     background: "var(--bg-input)",
     color: "var(--fg-primary)",
     border: "1px solid var(--border-input)",
-    borderRadius: "4px",
+    borderRadius: "var(--radius-sm)",
     // Right padding leaves room for the clear button.
     padding: "5px 26px 5px 8px",
     fontSize: "var(--text-md)",
@@ -527,7 +527,7 @@ const inkycapTheme = EditorView.theme({
     background: "none",
     backgroundImage: "none",
     border: "1px solid var(--border-primary)",
-    borderRadius: "4px",
+    borderRadius: "var(--radius-sm)",
     color: "var(--fg-muted)",
     cursor: "pointer",
     padding: "4px 10px",
