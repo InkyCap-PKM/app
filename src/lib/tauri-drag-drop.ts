@@ -19,6 +19,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { activeEditorView } from "../stores/editor";
 import { protectedRangesField } from "../editor/typst-decorations/visual-plugin";
 import { getLastDragPos } from "../editor/typst-decorations/drag-drop";
+import { noteBodyStart } from "../editor/typst-decorations/note-header";
 import type { EditorState } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { activeNotePath } from "../stores/tabs";
@@ -38,63 +39,15 @@ function getExtension(name: string): string {
   return dot >= 0 ? name.slice(dot + 1).toLowerCase() : "";
 }
 
-/** Scan the document text to find the end of the prelude (the #import,
- *  #note(...), and #bibliography(...) block at the top). Tracks paren
- *  nesting so that array/dict values inside `#note(...)` arguments
- *  (e.g. `collection: ("Foo",),`) don't fool the scanner into closing
- *  the call early. */
-function findPreludeEnd(state: EditorState): number {
-  let end = 0;
-  const maxLine = Math.min(state.doc.lines, 30);
-  let parenDepth = 0;
-  for (let i = 1; i <= maxLine; i++) {
-    const line = state.doc.line(i);
-    const trimmed = line.text.trimStart();
-
-    if (parenDepth > 0) {
-      // Inside a multi-line #note() / #bibliography() — count parens
-      for (const ch of line.text) {
-        if (ch === "(") parenDepth++;
-        else if (ch === ")") parenDepth--;
-      }
-      end = line.to;
-      if (parenDepth <= 0) { parenDepth = 0; }
-      continue;
-    }
-
-    const isImport = /^#import\s/.test(trimmed);
-    const isNote = trimmed.startsWith("#note(");
-    const isBib = trimmed.startsWith("#bibliography(");
-    if (!isImport && !isNote && !isBib) {
-      if (trimmed === "") { end = line.to; continue; }
-      break;
-    }
-    end = line.to;
-    if (isNote || isBib) {
-      parenDepth = 0;
-      for (const ch of line.text) {
-        if (ch === "(") parenDepth++;
-        else if (ch === ")") parenDepth--;
-      }
-      if (parenDepth <= 0) parenDepth = 0;
-    }
-  }
-  // Include trailing newline after the last prelude line
-  if (end < state.doc.length) end = Math.min(end + 1, state.doc.length);
-  return end;
-}
-
-/// Clamp `pos` past the prelude. Uses the text-based scan as the
-/// authoritative floor, and supplements with the StateField ranges
-/// (which also cover `#bibliography()` at the end of the file).
+/// Clamp `pos` past the note's header (imports, `#note(...)` and other top
+/// matter), then past any range the visual editor locks (such as hidden
+/// comments), so a drop never lands inside hidden source.
 function clampPastProtected(state: EditorState, pos: number): number {
-  // Text-based scan is always available (works in both source and
-  // visual mode) and handles the top-of-file prelude.
-  const preludeEnd = findPreludeEnd(state);
-  let p = pos < preludeEnd ? preludeEnd : pos;
+  // The header scan works in both source and visual mode.
+  const bodyStart = noteBodyStart(state);
+  let p = pos < bodyStart ? bodyStart : pos;
 
-  // StateField ranges may additionally cover #bibliography() at
-  // the bottom of the file or other protected regions.
+  // The visual editor's locked ranges (present only in visual mode).
   const ranges = state.field(protectedRangesField, false);
   if (ranges && ranges.length > 0) {
     let prev = -1;

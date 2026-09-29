@@ -1,137 +1,14 @@
 import { Annotation, EditorSelection, EditorState, StateField } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
 import { expandFunc } from "./effects";
+import { commentHideRange, isCommentClosed } from "./comments";
+import { noteHeaderItems, computePreambleImportRanges } from "./note-header";
 
 export interface ProtectedRange { from: number; to: number }
 
 const CANONICAL_IMPORT_PREFIX = '#import "/.inkycap/notebox.typ"';
 export function isNoteboxImportLine(text: string): boolean {
   return text.trimStart().startsWith(CANONICAL_IMPORT_PREFIX);
-}
-
-/** True for any `#import …` line (the notebox import, a `@preview/…`
- *  package, a local module — anything). The `\b` stops `#important`-style
- *  false matches. */
-export function isImportLine(text: string): boolean {
-  return /^#import\b/.test(text.trimStart());
-}
-
-/**
- * True for a document-language directive line — a `#set text(...)` whose
- * arguments are *exclusively* `lang:` and/or `region:`, e.g.
- * `#set text(lang: "fr", region: "CA")`.
- *
- * This is locale typesetting machinery: a note whose prose is French (German,
- * …) carries it so Typst applies the right hyphenation, punctuation spacing,
- * and smart quotes. It is boilerplate the author rarely edits — analogous to
- * the notebox `#import` — so the visual editor folds it into the hidden,
- * locked leading-preamble block rather than surfacing it as raw source or a
- * "document setup" chip. (It stays fully visible and editable in source mode.)
- *
- * A `#set text(font: …)` — or any other key alongside lang/region — is genuine
- * document setup and deliberately does NOT match: it belongs in the visible
- * setup chip. The leading `#` is optional so this also matches a bare `SetRule`
- * syntax node (whose `#` is a separate token).
- */
-export function isLeadingLocaleDirective(text: string): boolean {
-  const m = /^#?set\s+text\s*\((.*)\)\s*$/.exec(text.trim());
-  if (!m) return false;
-  const parts = m[1].split(",").map((s) => s.trim()).filter((s) => s.length > 0);
-  if (parts.length === 0) return false;
-  return parts.every((arg) => /^(lang|region)\s*:/.test(arg));
-}
-
-/**
- * Byte ranges (line + trailing newline) of the leading run of `#import`
- * lines at the very top of the note — the notebox import plus any package
- * imports a user or a template added, and a leading document-language
- * directive (`#set text(lang: …, region: …)`) when present. Blank lines
- * inside the run are tolerated; the run ends at the first line that is
- * neither blank, an import, nor a locale directive (typically the
- * `#note(...)` properties call or the first body line). These are hidden
- * and locked in the visual editor so the preamble reads as a clean
- * document, while the source editor leaves them fully visible and editable
- * (only the notebox import is also locked in source, via `importLineGuard`).
- */
-export function computePreambleImportRanges(state: EditorState): ProtectedRange[] {
-  const ranges: ProtectedRange[] = [];
-  const docLen = state.doc.length;
-  for (let i = 1; i <= state.doc.lines; i++) {
-    const line = state.doc.line(i);
-    if (line.text.trim() === "") continue; // blank gap within the preamble
-    // The run ends at the first line that is neither an import nor the
-    // document-language directive (`#set text(lang/region)`) — i.e. real
-    // content such as `#note(...)`.
-    if (!isImportLine(line.text) && !isLeadingLocaleDirective(line.text)) break;
-    const to = line.to < docLen ? Math.min(line.to + 1, docLen) : line.to;
-    ranges.push({ from: line.from, to });
-  }
-  return ranges;
-}
-
-/**
- * Whether a comment node has its closing delimiter. Typst's parser is
- * error-tolerant, so an unclosed `/*` opens a BlockComment that runs to the end
- * of the document; hiding and locking that would make the rest of the note
- * vanish the moment those two characters are typed. Line comments end at the
- * line break, so they are always complete.
- *
- * Block comments nest, the way Typst's lexer reads them: every opening
- * delimiter inside one deepens it and every closing delimiter closes one
- * level, so a comment is complete only when the depth returns to zero at its
- * end. Checking just the last two characters would accept an unclosed `/*`
- * typed above a note that already ends with a closed comment.
- */
-export function isCommentClosed(
-  state: EditorState,
-  name: string,
-  from: number,
-  to: number,
-): boolean {
-  if (name !== "BlockComment") return true;
-  const text = state.doc.sliceString(from, to);
-  if (!text.startsWith("/*")) return false;
-  let depth = 0;
-  let i = 0;
-  while (i < text.length) {
-    if (text.startsWith("/*", i)) {
-      depth++;
-      i += 2;
-    } else if (text.startsWith("*/", i)) {
-      depth--;
-      i += 2;
-      if (depth === 0) return i === text.length;
-    } else {
-      i++;
-    }
-  }
-  return false;
-}
-
-/**
- * The range to collapse for a Typst comment node. When the comment is the only
- * thing on its line(s) it swallows the whole line including leading indentation
- * and the trailing newline, so a full-line comment leaves no blank gap in the
- * visual editor; a trailing comment (`code // note`) collapses only the comment
- * span. Used for both hiding (visual-plugin) and locking (here) so the two agree.
- */
-export function commentHideRange(
-  state: EditorState,
-  from: number,
-  to: number,
-): ProtectedRange {
-  const docLen = state.doc.length;
-  const startLine = state.doc.lineAt(from);
-  const endLine = state.doc.lineAt(to);
-  const beforeBlank = state.doc.sliceString(startLine.from, from).trim() === "";
-  const afterBlank = state.doc.sliceString(to, endLine.to).trim() === "";
-  let f = from;
-  let t = to;
-  if (beforeBlank) f = startLine.from;
-  if (beforeBlank && afterBlank) {
-    t = endLine.to < docLen ? Math.min(endLine.to + 1, docLen) : endLine.to;
-  }
-  return { from: f, to: t };
 }
 
 export function computeProtectedRanges(
@@ -145,50 +22,22 @@ export function computeProtectedRanges(
   // imports). Hidden in the visual editor; here it's also made uneditable.
   ranges.push(...computePreambleImportRanges(state));
 
-  const maxScanLine = Math.min(state.doc.lines, 30);
-  for (let i = 1; i <= maxScanLine; i++) {
-    const line = state.doc.line(i);
-    const trimmed = line.text.trimStart();
-
-    const isNote = trimmed.startsWith("#note(");
-    const isBibliography = trimmed.startsWith("#bibliography(");
-
-    if (!isNote && !isBibliography) continue;
-
-    let hideEnd = line.to;
-
-    if (isNote || isBibliography) {
-      let depth = 0;
-      for (const ch of line.text) {
-        if (ch === "(") depth++;
-        else if (ch === ")") depth--;
-      }
-      if (depth > 0) {
-        for (let j = i + 1; j <= Math.min(state.doc.lines, i + 30); j++) {
-          const nextLine = state.doc.line(j);
-          for (const ch of nextLine.text) {
-            if (ch === "(") depth++;
-            else if (ch === ")") depth--;
-          }
-          hideEnd = nextLine.to;
-          if (depth <= 0) break;
-        }
-      }
-    }
-
-    if (hideEnd < docLen) {
-      hideEnd = Math.min(hideEnd + 1, docLen);
-    }
+  // Lock the header's `#note(...)` properties call (edited through the
+  // properties panel) and a header `#bibliography(...)`, each with the line
+  // break and one blank line after it. A bibliography the user has opened for
+  // editing (`expandedPos` inside it) stays editable.
+  for (const item of noteHeaderItems(state)) {
+    if (item.kind !== "note" && item.kind !== "bibliography") continue;
+    const from = state.doc.lineAt(item.from).from;
+    let hideEnd = state.doc.lineAt(item.to).to;
+    if (hideEnd < docLen) hideEnd = Math.min(hideEnd + 1, docLen);
     if (hideEnd < docLen) {
       const nextLine = state.doc.lineAt(hideEnd);
-      if (nextLine.text.trim() === "") {
-        hideEnd = Math.min(nextLine.to + 1, docLen);
-      }
+      if (nextLine.text.trim() === "") hideEnd = Math.min(nextLine.to + 1, docLen);
     }
-    if (isBibliography && expandedPos !== null && expandedPos >= line.from && expandedPos < hideEnd) {
-      continue;
-    }
-    ranges.push({ from: line.from, to: Math.min(hideEnd, docLen) });
+    const isOpen = expandedPos !== null && expandedPos >= from && expandedPos < hideEnd;
+    if (item.kind === "bibliography" && isOpen) continue;
+    ranges.push({ from, to: hideEnd });
   }
 
   syntaxTree(state).iterate({
@@ -204,39 +53,7 @@ export function computeProtectedRanges(
         if (isCommentClosed(state, node.name, node.from, node.to)) {
           ranges.push(commentHideRange(state, node.from, node.to));
         }
-        return;
       }
-      if (node.name !== "FuncCall") return;
-      if (node.from > docLen || node.to > docLen) return;
-      const text = state.doc.sliceString(node.from, node.to);
-      const match = text.match(/^#(\w[\w-]*)/);
-      if (!match) return;
-      const funcName = match[1];
-      if (funcName !== "note" && funcName !== "bibliography") return;
-
-      const alreadyCovered = ranges.some(
-        (r) => node.from >= r.from && node.to <= r.to,
-      );
-      if (alreadyCovered) return;
-
-      let hideEnd = node.to;
-      if (hideEnd < docLen) {
-        const afterLine = state.doc.lineAt(hideEnd);
-        if (hideEnd === afterLine.to) {
-          hideEnd = Math.min(hideEnd + 1, docLen);
-        }
-        if (hideEnd < docLen) {
-          const nextLine = state.doc.lineAt(hideEnd);
-          if (nextLine.text.trim() === "") {
-            hideEnd = Math.min(nextLine.to + 1, docLen);
-          }
-        }
-      }
-      if (funcName === "bibliography" && expandedPos !== null
-          && expandedPos >= node.from && expandedPos < hideEnd) {
-        return;
-      }
-      ranges.push({ from: node.from, to: Math.min(hideEnd, docLen) });
     },
   });
 

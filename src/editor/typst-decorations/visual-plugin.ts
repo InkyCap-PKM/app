@@ -49,7 +49,9 @@ import { FuncPillWidget, FuncChipWidget, BulletWidget, ShorthandWidget, HrWidget
 import { symbolGlyph } from "./symbols";
 import { highlight, buildHighlightMark, widgetHighlightFor, type WidgetHighlight } from "./visual-colors";
 import { visualTheme } from "./visual-theme";
-import { computePreambleImportRanges, isLeadingLocaleDirective, commentHideRange, isCommentClosed, createProtectedRangesField, createProtectedCursorFilter, createProtectedChangeFilter, externalReload } from "./visual-protected";
+import { computePreambleImportRanges, noteHeaderItems } from "./note-header";
+import { commentHideRange, isCommentClosed } from "./comments";
+import { createProtectedRangesField, createProtectedCursorFilter, createProtectedChangeFilter, externalReload } from "./visual-protected";
 import { lineStartCaretFilter } from "./line-start-caret";
 export { externalReload } from "./visual-protected";
 import { linkClickHandler } from "./visual-links";
@@ -472,71 +474,51 @@ function nodeOverlapsRanges(from: number, to: number, ranges: { from: number; to
 
 type StylePreamble = { from: number; to: number; count: number };
 
-// Top-level node names that are transparent while scanning for the style
-// preamble: whitespace, the `#` markers that precede each code expression, and
-// comments. They neither start nor end the run.
-const PREAMBLE_TRANSPARENT_NODES = new Set([
-  "Space", "Parbreak", "Hash", "LineComment", "BlockComment", "Comment",
-]);
-
 /**
- * Locate a contiguous *leading* run of `#set` / `#show` rules — the document
- * style preamble — returning its line-aligned range and rule count, or null
- * when there is none. The notebox import line and the `#note(...)` properties
- * call may precede the run; the first prose or other-content node before any
- * set/show rule means there is nothing to collapse. A `#set` that appears only
- * after content (a deliberate local style change) is intentionally left alone —
- * it never starts a preamble.
+ * Locate a contiguous *leading* run of `#set` / `#show` / `#let` rules — the
+ * document style preamble — returning its line-aligned range and rule count,
+ * or null when there is none. The imports and the `#note(...)` properties
+ * call may precede the run; any other header item or body content before
+ * the first rule means there is nothing to collapse. A `#set` that appears
+ * only after content (a deliberate local style change) is intentionally left
+ * alone — it never starts a preamble. Comments are passed over.
  *
- * Walks the flat top-level node sequence (Markup's children) rather than
- * scanning line by line: the `#note(...)` properties call spans several lines,
- * and a per-line scan misclassifies its inner/closing lines. The top-level
- * walk sees `note` as a single FuncCall node, so the run boundary is exact.
+ * `#let` bindings join the run: they're document setup (helper definitions,
+ * e.g. a doc's `#let demo(...) = …`), not flowing content, so the visual
+ * editor folds them into the same expandable chip rather than showing raw
+ * code. They stay fully visible and editable in the source editor.
  */
 export function findStylePreamble(state: EditorState): StylePreamble | null {
-  const cur = syntaxTree(state).cursor();
-  if (!cur.firstChild()) return null;
   let firstFrom = -1;
   let lastTo = -1;
   let count = 0;
   let sawNote = false;
-  do {
-    const name = cur.name;
-    if (PREAMBLE_TRANSPARENT_NODES.has(name)) continue;
-    // `#let` bindings join `#set`/`#show` in the collapsible setup run: they're
-    // document setup (helper definitions, e.g. a doc's `#let demo(...) = …`),
-    // not flowing content, so the visual editor folds them into the same
-    // expandable chip rather than showing raw code. They stay fully visible and
-    // editable in the source editor.
-    if (name === "SetRule" || name === "ShowRule" || name === "LetBinding") {
-      // A leading document-language directive (`#set text(lang/region)`) before
-      // the `#note(...)` is locale typesetting machinery, not document setup:
-      // it's hidden with the imports (see `computePreambleImportRanges`), so it
-      // must neither start nor join this collapsible chip — otherwise it forms a
-      // lone chip ahead of the note and strands the real setup block that
-      // follows it. After the note (or once a real rule has anchored the run) a
-      // lang change is ordinary setup and folds normally.
-      if (firstFrom < 0 && !sawNote && name === "SetRule"
-          && isLeadingLocaleDirective(state.doc.sliceString(cur.from, cur.to))) {
-        continue;
-      }
-      if (firstFrom < 0) firstFrom = cur.from;
-      lastTo = cur.to;
+  for (const item of noteHeaderItems(state)) {
+    if (item.kind === "comment") continue;
+    const isRule =
+      item.kind === "set" || item.kind === "show" || item.kind === "let" || item.kind === "locale";
+    if (isRule) {
+      // A document-language directive before the `#note(...)` is locale
+      // typesetting machinery, hidden with the imports (see
+      // `computePreambleImportRanges`), so it must neither start nor join this
+      // chip — otherwise it forms a lone chip ahead of the note and strands
+      // the real setup block that follows it. After the note (or once a real
+      // rule has started the run) a language change is ordinary setup.
+      if (firstFrom < 0 && !sawNote && item.kind === "locale") continue;
+      if (firstFrom < 0) firstFrom = item.from;
+      lastTo = item.to;
       count++;
       continue;
     }
-    if (firstFrom < 0) {
-      // Header items allowed before the run.
-      if (name === "ModuleImport") continue;
-      if (name === "FuncCall") {
-        const head = state.doc.sliceString(cur.from, Math.min(cur.from + 8, cur.to));
-        if (/^note\b/.test(head)) { sawNote = true; continue; }
-      }
-      return null; // some other leading construct — no collapsible preamble
+    if (firstFrom >= 0) break; // the run is over
+    if (item.kind === "import") continue;
+    if (item.kind === "note") {
+      sawNote = true;
+      continue;
     }
-    break; // real content ends the run
-  } while (cur.nextSibling());
-  if (firstFrom < 0 || count < 1) return null;
+    return null; // some other leading construct — no collapsible preamble
+  }
+  if (firstFrom < 0) return null;
   return {
     from: state.doc.lineAt(firstFrom).from,
     to: state.doc.lineAt(Math.min(lastTo, state.doc.length)).to,

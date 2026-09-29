@@ -18,11 +18,8 @@ import type { EditorView } from "@codemirror/view";
 import type { Text } from "@codemirror/state";
 import { t } from "../../lib/i18n";
 import { scanDocumentLabels } from "../typst-decorations/document-labels";
-import {
-  findPreambleEnd,
-  linkReference,
-  setRuleForElement,
-} from "../typst-decorations/reference-form";
+import { linkReference, setRuleForElement } from "../typst-decorations/reference-form";
+import { noteBodyStart } from "../typst-decorations/note-header";
 
 // "cannot reference heading without numbering" — the element kind can be
 // numbered, this document just doesn't. Tolerant of surrounding text so a
@@ -57,7 +54,7 @@ export function referenceActions(message: string): Action[] | undefined {
   return undefined;
 }
 
-/** Insert the `#set` rule that numbers `element`, at the end of the preamble. */
+/** Insert the `#set` rule that numbers `element` where the note's body starts. */
 function enableNumberingAction(element: string): Action {
   const name =
     element === "heading"
@@ -69,7 +66,7 @@ function enableNumberingAction(element: string): Action {
   return {
     name,
     apply(view: EditorView) {
-      const at = findPreambleEnd(view.state.doc.toString());
+      const at = noteBodyStart(view.state);
       view.dispatch({
         changes: { from: at, insert: `${setRuleForElement(element)}\n` },
       });

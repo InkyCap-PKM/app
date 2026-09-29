@@ -1,13 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { EditorState } from "@codemirror/state";
-import { isLeadingLocaleDirective, computePreambleImportRanges } from "./visual-protected";
+import { typst } from "codemirror-lang-typst";
+import { isLeadingLocaleDirective, computePreambleImportRanges } from "./note-header";
 
 // A note authored in French (German, …) carries a `#set text(lang: …, region: …)`
 // directive for correct typesetting. The visual editor treats that directive as
 // leading preamble machinery — hidden and locked alongside the `#import` line —
 // so a French note reads identically to an English one (no stray "document
 // setup" chip, no raw source). These pin the line/string-level helpers behind
-// that behaviour; they run without the Typst WASM parser.
+// that behaviour.
 describe("isLeadingLocaleDirective", () => {
   it("matches a pure lang+region directive", () => {
     expect(isLeadingLocaleDirective('#set text(lang: "fr", region: "CA")')).toBe(true);
@@ -42,9 +43,8 @@ describe("isLeadingLocaleDirective", () => {
 });
 
 describe("computePreambleImportRanges", () => {
-  // The leading machinery run is line-based, so it needs no syntax tree.
   const rangesFor = (doc: string) =>
-    computePreambleImportRanges(EditorState.create({ doc }));
+    computePreambleImportRanges(EditorState.create({ doc, extensions: [typst()] }));
 
   it("consumes the import line plus a following locale directive", () => {
     const doc =
