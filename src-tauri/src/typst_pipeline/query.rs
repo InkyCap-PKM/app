@@ -114,21 +114,6 @@ fn is_transcluded(key: Option<PosKey>, boundary: Option<PosKey>) -> bool {
     matches!((key, boundary), (Some(k), Some(b)) if k >= b)
 }
 
-/// Compile a file and extract metadata in one step. Returns
-/// [`QueryResult::default()`] if the file fails to compile — callers that
-/// need a graceful display for broken files (e.g. the property panel)
-/// rely on the scanner's persisted [`MetadataCache`], which keeps the last
-/// successful query result keyed by `(mtime, size)` and short-circuits
-/// this function when the file hasn't changed since it last compiled.
-///
-/// Earlier versions of this module ran a hand-rolled raw-source extractor
-/// when compilation failed; that has been removed because the source-text
-/// fallback duplicated `note_rewriter`'s parsing surface and silently
-/// disagreed with Typst's own evaluation in edge cases (single-element
-/// tuples, `link-ref` round-trips, escape handling). For files that have
-/// truly never compiled, an empty result is the honest answer.
-///
-/// [`MetadataCache`]: crate::cache::MetadataCache
 /// Drop-based timer for the full compile+query path. CLAUDE.md asks for query
 /// instrumentation "from the outset"; logging on drop covers every early
 /// return. `debug` level, file name only (local-first privacy).
@@ -160,12 +145,39 @@ impl Drop for QueryTimer {
     }
 }
 
+/// Styles added to the top of a note for the metadata compile.
+///
+/// Syntax-highlighting a code block makes Typst prepare its grammar for that
+/// language and keep it for the rest of the session, tens of MB per language.
+/// Indexing compiles every note but never looks at the highlighted result, so
+/// it would load every language the notebox uses at startup. With no theme,
+/// Typst skips highlighting entirely (Typst's own `raw(theme: none)`), and the
+/// metadata it reports is otherwise the same. The index keeps no positions
+/// inside the note, so the extra line shifts nothing it records.
+const METADATA_COMPILE_STYLES: &str = "#set raw(theme: none)\n";
+
+/// Compile a file and extract metadata in one step. Returns
+/// [`QueryResult::default()`] if the file fails to compile — callers that
+/// need a graceful display for broken files (e.g. the property panel)
+/// rely on the scanner's persisted [`MetadataCache`], which keeps the last
+/// successful query result keyed by `(mtime, size)` and short-circuits
+/// this function when the file hasn't changed since it last compiled.
+///
+/// Earlier versions of this module ran a hand-rolled raw-source extractor
+/// when compilation failed; that has been removed because the source-text
+/// fallback duplicated `note_rewriter`'s parsing surface and silently
+/// disagreed with Typst's own evaluation in edge cases (single-element
+/// tuples, `link-ref` round-trips, escape handling). For files that have
+/// truly never compiled, an empty result is the honest answer.
+///
+/// [`MetadataCache`]: crate::cache::MetadataCache
 pub fn compile_and_query(
     compiler: &mut TypstCompiler,
     abs_path: &Path,
     source: String,
 ) -> QueryResult {
     let _t = QueryTimer::start(abs_path);
+    let styled_source = format!("{METADATA_COMPILE_STYLES}{source}");
     // First try compiling the full file *with recovery*. A clean file compiles
     // on the first pass; a file with a localized error (a stray token, a broken
     // `#include`) has just those spans dropped and recompiles, so body-derived
@@ -175,7 +187,7 @@ pub fn compile_and_query(
     // below, which recovers document-level `#note(...)` properties but loses
     // every inline marker (the bug where adding a `#task`/`#due` to a note with
     // an unrelated body error never reached the Agenda).
-    if let Some(document) = compiler.compile_document_recovering(abs_path, source.clone()) {
+    if let Some(document) = compiler.compile_document_recovering(abs_path, styled_source) {
         return query_document(&document);
     }
     // Recovery couldn't make progress (error budget exhausted, or a non-

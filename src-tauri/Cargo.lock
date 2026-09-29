@@ -2873,6 +2873,7 @@ dependencies = [
  "include_dir",
  "insta",
  "keyring",
+ "libc",
  "log",
  "memmap2",
  "notify",

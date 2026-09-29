@@ -145,6 +145,11 @@ ashpd = { version = "0.9", default-features = false, features = ["tokio"] }
 # transitively via `url`; declared directly so the fallback owns its dependency.
 percent-encoding = "2"
 
+# `malloc_trim`, to hand freed heap memory back to the system after an index
+# build (see src/memory.rs). Already in the tree transitively; declared
+# directly for that one call.
+libc = "0.2"
+
 # Native clipboard reader for macOS (NSPasteboard via Objective-C
 # runtime). Used by read_clipboard_file_paths to get file URIs the
 # webview can't see because of WebKit's cross-origin clipboard

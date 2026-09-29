@@ -123,8 +123,7 @@ impl SourceCache {
         }
     }
 
-    /// Wipe the entire cache. Used on full notebox reload.
-    #[allow(dead_code)]
+    /// Wipe the entire cache. See [`NoteboxWorld::forget_cached_files`].
     fn clear(&self) {
         if let Ok(mut cache) = self.inner.lock() {
             cache.clear();
@@ -164,6 +163,13 @@ impl FileCache {
     fn invalidate(&self, id: FileId) {
         if let Ok(mut cache) = self.inner.lock() {
             cache.remove(&id);
+        }
+    }
+
+    /// Wipe the entire cache. See [`NoteboxWorld::forget_cached_files`].
+    fn clear(&self) {
+        if let Ok(mut cache) = self.inner.lock() {
+            cache.clear();
         }
     }
 }
@@ -309,6 +315,16 @@ impl NoteboxWorld {
             *now = None;
         }
         Ok(id)
+    }
+
+    /// Empty the source and binary-file caches. Call after compiling many
+    /// unrelated notes in a row (the index build compiles every note): the
+    /// caches are then full of files the next compiles are unlikely to need,
+    /// such as images from the last notes scanned, and emptying them only
+    /// costs a re-read later.
+    pub fn forget_cached_files(&self) {
+        self.sources.clear();
+        self.files.clear();
     }
 
     /// Drop a single file from both source and binary caches. Hook for the

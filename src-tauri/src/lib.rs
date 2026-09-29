@@ -26,6 +26,7 @@ pub mod html;
 pub mod id_migration;
 pub mod link_index;
 pub mod markdown;
+pub mod memory;
 pub mod models;
 pub mod notebox_health;
 pub mod notebox_package;

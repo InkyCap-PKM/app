@@ -288,6 +288,9 @@ impl NoteboxSession {
             .unwrap_or_default();
         self.replay_changed_notes(changed).await;
         self.index_ready.store(true, Ordering::Relaxed);
+        // The build frees far more than it keeps (every note's compile, the
+        // scan's copies of note text); give that memory back.
+        crate::memory::return_free_memory();
         result
     }
 
@@ -430,6 +433,10 @@ impl NoteboxSession {
             (s, None)
         };
 
+        // The scan compiled every note, leaving the compiler's file caches
+        // full of sources and images from the last notes scanned; interactive
+        // compiles start better from empty caches.
+        compiler.forget_cached_files();
         // Release the compiler before the index-swap section, which
         // acquires other locks. No nesting hazard.
         drop(compiler_guard);

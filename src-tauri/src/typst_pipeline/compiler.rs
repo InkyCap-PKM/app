@@ -235,6 +235,12 @@ impl TypstCompiler {
         self.world.notebox_root()
     }
 
+    /// Empty the compiler's file caches once a pass over many notes is done.
+    /// See [`NoteboxWorld::forget_cached_files`].
+    pub fn forget_cached_files(&self) {
+        self.world.forget_cached_files();
+    }
+
     /// Borrow the underlying World. Used by on-demand package resolution
     /// ([`crate::typst_pipeline::package_fetch`]) to drain the set of packages
     /// a compile pass failed to resolve, so they can be downloaded and the
