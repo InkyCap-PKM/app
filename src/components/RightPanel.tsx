@@ -92,6 +92,7 @@ import {
 import { rescanHeadings } from "../editor/typst-decorations/heading-tracker";
 import { listen } from "@tauri-apps/api/event";
 import { listenWhileMounted } from "../lib/listen-while-mounted";
+import { thisWindowOnly } from "../lib/events";
 import { flushEditorsAt } from "../stores/editor-writes";
 import { anchorPanelMenu } from "../lib/uiMenu";
 import { clickOutside, dismissOnEscape } from "../lib/clickOutside";
@@ -496,10 +497,14 @@ const RightPanel: Component = () => {
   onCleanup(() => document.removeEventListener("inkycap:note-saved", onNoteSaved));
 
   listenWhileMounted(
-    listen("notebox:index-updated", () => {
-      refetchMetadata();
-      refreshAllLinks();
-    }),
+    listen(
+      "notebox:index-updated",
+      () => {
+        refetchMetadata();
+        refreshAllLinks();
+      },
+      thisWindowOnly(),
+    ),
   );
 
   const [backlinks, { refetch: refetchBacklinks }] = createResource(

@@ -188,6 +188,7 @@ async function ensureIndexEventListeners() {
         console.warn("Notebox root vanished:", event.payload.path);
         setNoteboxLost(event.payload.path);
       },
+      thisWindowOnly(),
     );
   }
   // File system watcher events → refresh the sidebar tree and the
@@ -235,8 +236,10 @@ async function ensureIndexEventListeners() {
   // including notes brought in by a collaboration import — appears without
   // needing a notebox reopen.
   if (indexUpdatedUnlisten === null) {
-    indexUpdatedUnlisten = await listen("notebox:index-updated", () =>
-      scheduleCollectionRefresh(),
+    indexUpdatedUnlisten = await listen(
+      "notebox:index-updated",
+      () => scheduleCollectionRefresh(),
+      thisWindowOnly(),
     );
   }
 }

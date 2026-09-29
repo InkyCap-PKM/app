@@ -1,7 +1,8 @@
-use tauri::{Emitter, Manager, State};
+use tauri::{Manager, State};
 
 use crate::config;
 use crate::errors::InkyCapError;
+use crate::events::{publish, AppEvent, Audience};
 use crate::models::notebox::NoteboxInfo;
 use crate::state::AppState;
 use crate::storage::to_frontend_string;
@@ -170,6 +171,7 @@ pub async fn open_notebox(
         }
         *slot = Some(crate::notebox_health::spawn(
             app_handle.clone(),
+            label.clone(),
             canonical_root,
         ));
     }
@@ -307,19 +309,16 @@ pub(crate) fn spawn_index_rebuild(
     let task = tauri::async_runtime::spawn({
         let session = session.clone();
         async move {
-            match session.build_indexes().await {
-                Ok(stats) => {
-                    let _ = app_handle.emit_to(owner.as_str(), "notebox:index-ready", &stats);
-                }
+            let event = match session.build_indexes().await {
+                Ok(stats) => AppEvent::IndexReady(stats),
                 Err(err) => {
                     log::error!("Background index rebuild failed: {err}");
-                    let _ = app_handle.emit_to(
-                        owner.as_str(),
-                        "notebox:index-error",
-                        serde_json::json!({ "error": err.to_string() }),
-                    );
+                    AppEvent::IndexError {
+                        error: err.to_string(),
+                    }
                 }
-            }
+            };
+            publish(&app_handle, Audience::Window(&owner), event);
         }
     });
     // Cancels a build still running from before: this one covers its work.
@@ -343,11 +342,16 @@ pub async fn rebuild_notebox_indexes(
 ) -> Result<crate::state::IndexStats, InkyCapError> {
     let session = state.session(window.label()).await;
     let stats = session.rebuild_indexes_from_disk().await?;
-    let _ = window.emit_to(window.label(), "notebox:index-ready", &stats);
-    let _ = window.emit_to(
-        window.label(),
-        "notebox:index-updated",
-        serde_json::json!({ "rebuilt": true }),
+    let audience = Audience::Window(window.label());
+    publish(
+        window.app_handle(),
+        audience,
+        AppEvent::IndexReady(stats.clone()),
+    );
+    publish(
+        window.app_handle(),
+        audience,
+        AppEvent::IndexesRebuiltFromDisk,
     );
     Ok(stats)
 }
@@ -412,14 +416,14 @@ fn surface_git_status(
                 );
                 // Scoped to the opening window: another window showing a
                 // different notebox must not adopt this one's git status.
-                let _ = handle.emit_to(
-                    owner_label.as_str(),
-                    "notebox:git-status",
-                    serde_json::json!({
-                        "remote": git_cfg.remote,
-                        "branch": git_cfg.branch,
-                        "status": status,
-                    }),
+                publish(
+                    &handle,
+                    Audience::Window(&owner_label),
+                    AppEvent::GitStatus {
+                        remote: git_cfg.remote,
+                        branch: git_cfg.branch,
+                        status,
+                    },
                 );
             }
             Err(err) => log::warn!("notebox git: status failed: {err}"),
@@ -461,10 +465,10 @@ fn surface_reconnectable_git(
             .map(|(b, _)| b)
             .unwrap_or_else(|| "main".to_string());
         log::info!("notebox git: reconnectable repo (origin set, no collaboration config)");
-        let _ = handle.emit_to(
-            owner_label.as_str(),
-            "notebox:git-reconnectable",
-            serde_json::json!({ "remote": remote, "branch": branch }),
+        publish(
+            &handle,
+            Audience::Window(&owner_label),
+            AppEvent::GitReconnectable { remote, branch },
         );
     });
 }
@@ -485,7 +489,6 @@ fn dispatch_watcher_batch(
     owner: &str,
     events: Vec<crate::events::AppEvent>,
 ) {
-    use crate::events::{AppEvent, ChangeKind};
     use std::collections::HashSet;
     use std::path::PathBuf;
 
@@ -496,35 +499,20 @@ fn dispatch_watcher_batch(
 
     for event in &events {
         match event {
-            AppEvent::FileChanged { path, change } => {
-                let _ = handle.emit(
-                    "notebox:file-changed",
-                    serde_json::json!({
-                        "path": to_frontend_string(path),
-                        "change": match change {
-                            ChangeKind::Content => "Content",
-                            ChangeKind::Metadata => "Metadata",
-                        }
-                    }),
-                );
+            AppEvent::FileChanged { path, .. } => {
+                publish(handle, Audience::Window(owner), event.clone());
                 if is_note(path) && reindex_set.insert(path.clone()) {
                     reindex_order.push(path.clone());
                 }
             }
             AppEvent::FileCreated { path } => {
-                let _ = handle.emit(
-                    "notebox:file-created",
-                    serde_json::json!({ "path": to_frontend_string(path) }),
-                );
+                publish(handle, Audience::Window(owner), event.clone());
                 if is_note(path) && reindex_set.insert(path.clone()) {
                     reindex_order.push(path.clone());
                 }
             }
             AppEvent::FileDeleted { path } => {
-                let _ = handle.emit(
-                    "notebox:file-deleted",
-                    serde_json::json!({ "path": to_frontend_string(path) }),
-                );
+                publish(handle, Audience::Window(owner), event.clone());
                 // If this file was changed earlier in the same window, drop it
                 // from the reindex set — the delete wins.
                 reindex_set.remove(path);
@@ -534,21 +522,14 @@ fn dispatch_watcher_batch(
                 // Fire delete+create so the tree refreshes the same way it
                 // always has, plus the dedicated rename event for listeners
                 // that follow the move (e.g. an open editor tab).
-                let _ = handle.emit(
-                    "notebox:file-deleted",
-                    serde_json::json!({ "path": to_frontend_string(from) }),
+                let audience = Audience::Window(owner);
+                publish(
+                    handle,
+                    audience,
+                    AppEvent::FileDeleted { path: from.clone() },
                 );
-                let _ = handle.emit(
-                    "notebox:file-created",
-                    serde_json::json!({ "path": to_frontend_string(to) }),
-                );
-                let _ = handle.emit(
-                    "notebox:file-renamed",
-                    serde_json::json!({
-                        "from": to_frontend_string(from),
-                        "to": to_frontend_string(to)
-                    }),
-                );
+                publish(handle, audience, AppEvent::FileCreated { path: to.clone() });
+                publish(handle, audience, event.clone());
                 // The rename helper reindexes `to` itself; drop both endpoints
                 // from the batch.
                 reindex_set.remove(from);
@@ -654,10 +635,11 @@ async fn reindex_changed_notes(
     // UI that mirrors the in-memory indices (e.g. the backlinks pane).
     let updated: Vec<std::path::PathBuf> = batch.iter().map(|(p, _)| p.clone()).collect();
     session.reindex_notes(batch).await;
-    for path in &updated {
-        let _ = handle.emit(
-            "notebox:index-updated",
-            serde_json::json!({ "path": to_frontend_string(path) }),
+    for path in updated {
+        publish(
+            handle,
+            Audience::Window(&session.owner_label),
+            AppEvent::NoteIndexUpdated { path },
         );
     }
 }
@@ -729,12 +711,10 @@ async fn follow_renamed_note(
         }
     }
 
-    let _ = handle.emit(
-        "notebox:index-updated",
-        serde_json::json!({
-            "from": to_frontend_string(&from),
-            "to": to_frontend_string(&to),
-        }),
+    publish(
+        handle,
+        Audience::Window(&session.owner_label),
+        AppEvent::NoteRenameIndexed { from, to },
     );
 }
 
@@ -749,9 +729,10 @@ async fn drop_deleted_note(
         return;
     }
     session.remove_from_indices(&path).await;
-    let _ = handle.emit(
-        "notebox:index-updated",
-        serde_json::json!({ "path": to_frontend_string(&path) }),
+    publish(
+        handle,
+        Audience::Window(&session.owner_label),
+        AppEvent::NoteIndexUpdated { path },
     );
 }
 

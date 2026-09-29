@@ -190,9 +190,7 @@ async fn run_one_tick(app: &AppHandle) {
             // Tell any open UI to refresh the "Last backup" line. The
             // settings panel listens for this event; if no UI is open
             // the event is a harmless broadcast.
-            if let Err(e) = emit_state_changed(app) {
-                log::debug!("scheduled backup: state-changed emit failed (UI may be closed): {e}");
-            }
+            emit_state_changed(app);
         }
         Ok(Ok(None)) => {
             log::debug!("scheduled backup skipped (no changes since last run)");
@@ -207,7 +205,7 @@ async fn run_one_tick(app: &AppHandle) {
         Ok(Err(e)) => {
             log::warn!("scheduled backup failed: {e}");
             runner::record_failure(&notebox_root_for_record, &e.to_string());
-            let _ = emit_state_changed(app);
+            emit_state_changed(app);
         }
         Err(e) => {
             log::warn!("scheduled backup task panicked: {e}");
@@ -216,9 +214,12 @@ async fn run_one_tick(app: &AppHandle) {
     }
 }
 
-fn emit_state_changed(app: &AppHandle) -> tauri::Result<()> {
-    use tauri::Emitter;
-    app.emit("backup:state-changed", ())
+fn emit_state_changed(app: &AppHandle) {
+    crate::events::publish(
+        app,
+        crate::events::Audience::AllWindows,
+        crate::events::AppEvent::BackupStateChanged,
+    );
 }
 
 /// Fire the wake notifier so the running scheduler reruns its

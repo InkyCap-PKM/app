@@ -14,9 +14,10 @@
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
-use tauri::{Emitter, State};
+use tauri::State;
 
 use crate::errors::{InkyCapError, Result};
+use crate::events::{publish, AppEvent, Audience};
 use crate::git::auth::{self, GitIdentity};
 use crate::git::backend::{
     ensure_collaboration_gitignore, ChangeStatus, ChangedPath, CommitInfo, FileVersion, GitBackend,
@@ -941,7 +942,11 @@ pub async fn git_sync(
 ) -> Result<SyncOutcome> {
     let session = state.session(window.label()).await;
     let (root, git) = require_collaborative_with_root(&session).await?;
-    emit_git(&app_handle, window.label(), "notebox:git-fetch-started", ());
+    publish(
+        &app_handle,
+        Audience::Window(window.label()),
+        AppEvent::GitFetchStarted,
+    );
     let result = tokio::task::spawn_blocking(move || run_sync(&root, &git, true))
         .await
         .map_err(|e| InkyCapError::Git(format!("sync task failed: {e}")))?;
@@ -970,25 +975,29 @@ pub async fn git_check_updates(
 ) -> Result<CheckResult> {
     let session = state.session(window.label()).await;
     let (root, git) = require_collaborative_with_root(&session).await?;
-    emit_git(&app_handle, window.label(), "notebox:git-fetch-started", ());
+    publish(
+        &app_handle,
+        Audience::Window(window.label()),
+        AppEvent::GitFetchStarted,
+    );
     let result = tokio::task::spawn_blocking(move || run_check(&root, &git))
         .await
         .map_err(|e| InkyCapError::Git(format!("check task failed: {e}")))?;
     match &result {
         Ok(_) => {
-            emit_git(
+            publish(
                 &app_handle,
-                window.label(),
-                "notebox:git-fetch-completed",
-                (),
+                Audience::Window(window.label()),
+                AppEvent::GitFetchCompleted,
             );
         }
         Err(err) => {
-            emit_git(
+            publish(
                 &app_handle,
-                window.label(),
-                "notebox:git-error",
-                err.to_string(),
+                Audience::Window(window.label()),
+                AppEvent::GitError {
+                    message: err.to_string(),
+                },
             );
         }
     }
@@ -1043,38 +1052,40 @@ fn run_check(root: &Path, git: &NoteboxGitConfig) -> Result<CheckResult> {
 /// listens on (completion + a friendly error on rejection/failure). Scoped to
 /// the `window` that ran the gesture — these events carry no notebox path, so
 /// other windows can't self-scope them; broadcasting would make a sync in one
-/// window light up every other window's status. See [`emit_git`].
+/// window light up every other window's status. See [`publish`].
 fn emit_sync_events(app_handle: &tauri::AppHandle, window: &str, result: &Result<SyncOutcome>) {
     match result {
         Ok(r) if r.rejected => {
-            emit_git(
+            publish(
                 app_handle,
-                window,
-                "notebox:git-error",
-                "the remote moved while syncing — sync again",
+                Audience::Window(window),
+                AppEvent::GitError {
+                    message: "the remote moved while syncing — sync again".to_string(),
+                },
             );
         }
         Ok(_) => {
-            emit_git(app_handle, window, "notebox:git-fetch-completed", ());
-            emit_git(app_handle, window, "notebox:git-push-completed", ());
+            publish(
+                app_handle,
+                Audience::Window(window),
+                AppEvent::GitFetchCompleted,
+            );
+            publish(
+                app_handle,
+                Audience::Window(window),
+                AppEvent::GitPushCompleted,
+            );
         }
         Err(err) => {
-            emit_git(app_handle, window, "notebox:git-error", err.to_string());
+            publish(
+                app_handle,
+                Audience::Window(window),
+                AppEvent::GitError {
+                    message: err.to_string(),
+                },
+            );
         }
     }
-}
-
-/// Emit a `notebox:git-*` event to a single window's webview. Git status/spinner
-/// events are per-notebox and carry no path the frontend could filter on, so
-/// they must target the owning window rather than broadcast to all of them
-/// (otherwise syncing in one open notebox visibly drives every other one).
-fn emit_git<S: serde::Serialize + Clone>(
-    app_handle: &tauri::AppHandle,
-    window: &str,
-    event: &str,
-    payload: S,
-) {
-    let _ = app_handle.emit_to(window, event, payload);
 }
 
 // ──────────────── Structured settings.json merge (used by run_sync) ─────────
@@ -1776,7 +1787,11 @@ pub async fn git_import_package(
         return Err(InkyCapError::BadRequest("package file is required".into()));
     }
     let password = password.filter(|p| !p.is_empty());
-    emit_git(&app_handle, window.label(), "notebox:git-fetch-started", ());
+    publish(
+        &app_handle,
+        Audience::Window(window.label()),
+        AppEvent::GitFetchStarted,
+    );
 
     let result = tokio::task::spawn_blocking(move || -> Result<SyncOutcome> {
         let staging = package::extract_to_temp(&archive_path, password.as_deref())?;

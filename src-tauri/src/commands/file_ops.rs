@@ -3,7 +3,9 @@
 
 use std::path::PathBuf;
 
-use tauri::{Emitter, Manager, State};
+use tauri::{Manager, State};
+
+use crate::events::{publish, AppEvent, Audience};
 
 use crate::commands::file_placement::{incoming_folder, IncomingPlacement};
 use crate::errors::InkyCapError;
@@ -831,10 +833,12 @@ async fn convert_markdown_into_notebox(
 
     // The file watcher indexes new `.typ` files, but emit explicitly so the
     // tree updates immediately — same reasoning as `write_incoming_file`.
-    let abs = root.join(&rel);
-    let _ = app.emit(
-        "notebox:file-created",
-        serde_json::json!({ "path": to_frontend_string(&abs) }),
+    publish(
+        app,
+        Audience::Window(&session.owner_label),
+        AppEvent::FileCreated {
+            path: root.join(&rel),
+        },
     );
     Ok(rel)
 }
@@ -916,9 +920,12 @@ async fn write_into_notebox_subfolder(
     // The file watcher only tracks .typ/.collection files, so attachment
     // writes (images, PDFs, etc.) won't trigger a tree refresh on their
     // own. Emit the event directly so the frontend file tree updates.
-    let _ = app.emit(
-        "notebox:file-created",
-        serde_json::json!({ "path": to_frontend_string(&target) }),
+    publish(
+        app,
+        Audience::Window(&session.owner_label),
+        AppEvent::FileCreated {
+            path: target.clone(),
+        },
     );
 
     // Return the notebox-root-relative path (e.g. `assets/Screenshot.png`)
@@ -1039,7 +1046,11 @@ async fn rebase_bookmarks_for_rename(
         log::warn!("failed to persist bookmarks after rename: {e}");
     }
     drop(bookmarks);
-    let _ = window.emit("notebox:bookmarks-changed", ());
+    publish(
+        window.app_handle(),
+        Audience::AllWindows,
+        AppEvent::BookmarksChanged,
+    );
 }
 
 /// Rename a file (simple rename, no link updates).

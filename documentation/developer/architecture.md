@@ -123,7 +123,7 @@ attach here rather than threading through callers:
 | Seam | Where | What it hides |
 |---|---|---|
 | **`NoteboxStorage`** trait | `storage/` | All file I/O. The only sanctioned way to read/write/rename/delete notebox files. A future sync or encrypted backend implements this trait; callers don't change. **Never call `std::fs` directly on notebox content.** |
-| **Event bus** (`AppEvent`) | `events/` | Significant state changes (file created/changed/renamed, index rebuilt, git progress). Emitted to a specific window via Tauri's `emit_to`. The seam a plugin host would subscribe to. |
+| **Event bus** (`AppEvent`) | `events/` | Significant state changes (file created/changed/renamed, index built or updated, git progress, bookmarks, backups). `events::publish` is the only way they reach the frontend: it sends each to its window (or to all windows for app-wide state) under a fixed event name and payload. `tests/event_bus_guard.rs` fails if anything else emits. The seam a plugin host would subscribe to. |
 | **`LinkIndex`** | `link_index/` | Forward links and backlinks. Wikilink strings come from `typst query` (Typst's job); resolving them to file paths is InkyCap's job and lives here. |
 | **Extension enums** | `creation_rules/`, `property_types.rs`, … | Shapes defined as enums *before* a runtime plugin loader exists, so future variants slot in additively. |
 
@@ -160,7 +160,7 @@ The backend is organized by responsibility, one concern per top-level module:
 | `markdown/` | Markdown ↔ Typst import/export, frontmatter parsing + property mapping. |
 | `backup/` | ZIP (optionally AES-256) archive build, schedule, retention, restore. |
 | `models/` | Serde types crossing IPC (`NoteMetadata`, `NoteboxInfo`, collection rows, …). |
-| `events/` | The `AppEvent` enum and emission helpers. |
+| `events/` | The `AppEvent` enum and `publish`, the single point where events leave for the frontend. |
 | `collection_parser/` | Parser for collection filter expressions. |
 | `creation_rules/`, `scaffolds/` | Templates and rules for new notes. |
 | `notebox_package.rs` | Embeds `inkycap-notebox`, defines the query labels and on-disk format version, scaffolds `.inkycap/`. |

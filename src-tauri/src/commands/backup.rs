@@ -19,7 +19,9 @@
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, State};
+
+use crate::events::{publish, AppEvent, Audience};
 
 use crate::backup::{password, restore, runner, state};
 use crate::errors::{InkyCapError, Result};
@@ -96,7 +98,7 @@ pub async fn backup_now(
     // Tell the UI to refresh its "Last backup" line. Fires on both
     // success and failure — either way the persisted state changed.
     // Emit best-effort: a closed UI just drops the event harmlessly.
-    let _ = app.emit("backup:state-changed", ());
+    publish(&app, Audience::AllWindows, AppEvent::BackupStateChanged);
 
     result
 }

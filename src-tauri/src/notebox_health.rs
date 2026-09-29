@@ -23,7 +23,9 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
+
+use crate::events::{publish, AppEvent, Audience};
 use tokio::task::AbortHandle;
 
 /// How often the monitor wakes to check the notebox. 5 s is fast enough that
@@ -32,20 +34,16 @@ use tokio::task::AbortHandle;
 /// negligible.
 pub const HEALTH_TICK_INTERVAL: Duration = Duration::from_secs(5);
 
-/// Frontend event name fired when the notebox root no longer exists on
-/// disk. Payload: `{ "path": "<notebox root>" }`.
-pub const NOTEBOX_LOST_EVENT: &str = "notebox:lost";
-
 /// Spawn a fresh monitor for the given notebox root and return its abort
 /// handle. The caller is responsible for storing the handle (typically on
 /// `AppState::health_monitor`) and aborting it before opening another
 /// notebox — otherwise the previous monitor would race the new one.
-pub fn spawn(app: AppHandle, notebox_root: PathBuf) -> AbortHandle {
-    let handle = tokio::spawn(run(app, notebox_root));
+pub fn spawn(app: AppHandle, owner_label: String, notebox_root: PathBuf) -> AbortHandle {
+    let handle = tokio::spawn(run(app, owner_label, notebox_root));
     handle.abort_handle()
 }
 
-async fn run(app: AppHandle, notebox_root: PathBuf) {
+async fn run(app: AppHandle, owner_label: String, notebox_root: PathBuf) {
     let lib_path = crate::notebox_package::library_path(&notebox_root);
     loop {
         tokio::time::sleep(HEALTH_TICK_INTERVAL).await;
@@ -56,13 +54,15 @@ async fn run(app: AppHandle, notebox_root: PathBuf) {
         // still display (and the user can copy from) their content.
         if !notebox_root.exists() {
             log::warn!(
-                "notebox health: root vanished at {}; emitting {}",
+                "notebox health: root vanished at {}; telling its window",
                 notebox_root.display(),
-                NOTEBOX_LOST_EVENT
             );
-            let _ = app.emit(
-                NOTEBOX_LOST_EVENT,
-                serde_json::json!({ "path": crate::storage::to_frontend_string(&notebox_root) }),
+            publish(
+                &app,
+                Audience::Window(&owner_label),
+                AppEvent::NoteboxLost {
+                    path: notebox_root.clone(),
+                },
             );
             return;
         }

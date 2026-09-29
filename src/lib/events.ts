@@ -10,7 +10,7 @@ import type { GitStatusSummary } from "./types";
 // indexing in one open notebox would reach every other window too. Passing
 // these options scopes a listener to the current window's label, so it ignores
 // events emitted to other windows while still receiving this window's.
-// (File-watcher events are deliberately broadcast and self-scoped by path.)
+// (File-watcher events need no scoping: listeners already filter by path.)
 //
 // Resolved lazily (per subscribe) and guarded: `getCurrentWebviewWindow()`
 // throws outside a Tauri webview (e.g. the Vitest/jsdom env), where falling
