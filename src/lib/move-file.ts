@@ -5,6 +5,7 @@
 
 import { getActiveTab, closeTab, openTab } from "../stores/tabs";
 import { pickFolder } from "../stores/folderPicker";
+import { flushEditorsAt } from "../stores/editor-writes";
 import * as ipc from "./ipc";
 import { t } from "./i18n";
 import { toastError } from "../stores/toasts";
@@ -25,6 +26,7 @@ export async function moveActiveFileInteractive(): Promise<void> {
       currentParent,
     });
     if (dest == null) return;
+    await flushEditorsAt(tab.path);
     const newPath = await ipc.moveFile(tab.path, dest);
     const name = newPath.split("/").pop()?.replace(/\.[^.]+$/, "") ?? tab.title;
     closeTab(tab.id);

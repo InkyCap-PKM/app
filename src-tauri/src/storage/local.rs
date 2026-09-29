@@ -485,8 +485,10 @@ static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// same behaviour there.
 ///
 /// The tmp filename uses a `.tmp` extension so the watcher's
-/// `is_editor_scratch_file` filter ignores it; reindex doesn't fire on
-/// every save.
+/// `is_editor_scratch_file` filter ignores the tmp file itself. The final
+/// rename still reaches the watcher: it reports the destination as a
+/// created file, so the note is reindexed and open editors see a
+/// `notebox:file-created` event for it after each save.
 async fn atomic_write(target: &Path, content: &[u8]) -> std::io::Result<()> {
     let parent = target.parent().ok_or_else(|| {
         std::io::Error::new(

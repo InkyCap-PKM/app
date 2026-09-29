@@ -46,6 +46,7 @@ import { settings, updateSetting, noteboxSettings } from "../stores/settings";
 import type { FileSortMode } from "../lib/types";
 import { noteboxInfo, noteboxUiKey, fileTreeVersion, propertyVersion, bumpPropertyVersion } from "../stores/notebox";
 import { openTab, openCreatedNote, closeTab, tabs, getActiveTab, activeNotePath } from "../stores/tabs";
+import { flushEditorsAt } from "../stores/editor-writes";
 import {
   isEnabled as isScrollEnabled,
   updateAnchor as updateScrollAnchor,
@@ -1162,6 +1163,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
         continue;
       }
       try {
+        await flushEditorsAt(src.path);
         if (src.is_dir) {
           await ipc.moveFolder(src.path, destRel);
         } else {
@@ -1340,6 +1342,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     if (!oldPath || !newName) return;
 
     try {
+      await flushEditorsAt(oldPath);
       const settings = await ipc.getSettings();
       if (settings.files.auto_update_links_on_rename) {
         await ipc.renameAndUpdateLinks(oldPath, newName);

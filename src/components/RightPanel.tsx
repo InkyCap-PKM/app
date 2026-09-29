@@ -90,7 +90,9 @@ import {
   type CollectionPanelTab,
 } from "../stores/layout";
 import { rescanHeadings } from "../editor/typst-decorations/heading-tracker";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { listen } from "@tauri-apps/api/event";
+import { listenWhileMounted } from "../lib/listen-while-mounted";
+import { flushEditorsAt } from "../stores/editor-writes";
 import { anchorPanelMenu } from "../lib/uiMenu";
 import { clickOutside, dismissOnEscape } from "../lib/clickOutside";
 import { activeEditorView } from "../stores/editor";
@@ -404,14 +406,7 @@ const RightPanel: Component = () => {
     const tab = activeFileTab();
     if (!tab) return;
     try {
-      await new Promise<void>((resolve) => {
-        const timeout = setTimeout(resolve, 200);
-        document.dispatchEvent(
-          new CustomEvent("inkycap:flush-editor", {
-            detail: { path: tab.path, done: () => { clearTimeout(timeout); resolve(); } },
-          }),
-        );
-      });
+      await flushEditorsAt(tab.path);
       await ipc.reorderProperties(tab.path, newOrder);
       await refetchPropertyOrder();
       await refetchMetadata();
@@ -500,26 +495,12 @@ const RightPanel: Component = () => {
   document.addEventListener("inkycap:note-saved", onNoteSaved);
   onCleanup(() => document.removeEventListener("inkycap:note-saved", onNoteSaved));
 
-  let indexUpdatedUnlisten: UnlistenFn | null = null;
-  let indexListenerDisposed = false;
-  onMount(async () => {
-    const unlisten = await listen("notebox:index-updated", () => {
+  listenWhileMounted(
+    listen("notebox:index-updated", () => {
       refetchMetadata();
       refreshAllLinks();
-    });
-    // If the component disposed while `listen` was still pending, the cleanup
-    // below already ran against a null handle — unlisten immediately so we
-    // don't leak a subscription that fires after teardown.
-    if (indexListenerDisposed) {
-      unlisten();
-    } else {
-      indexUpdatedUnlisten = unlisten;
-    }
-  });
-  onCleanup(() => {
-    indexListenerDisposed = true;
-    indexUpdatedUnlisten?.();
-  });
+    }),
+  );
 
   const [backlinks, { refetch: refetchBacklinks }] = createResource(
     () => activeFileTab()?.path,
@@ -876,14 +857,7 @@ const RightPanel: Component = () => {
     try {
       // Flush any pending editor save so the disk is up-to-date before
       // the backend reads and rewrites the file.
-      await new Promise<void>((resolve) => {
-        const timeout = setTimeout(resolve, 200);
-        document.dispatchEvent(
-          new CustomEvent("inkycap:flush-editor", {
-            detail: { path: tab.path, done: () => { clearTimeout(timeout); resolve(); } },
-          }),
-        );
-      });
+      await flushEditorsAt(tab.path);
 
       await ipc.updateProperty(tab.path, key, value);
       await refetchMetadata();
@@ -913,14 +887,7 @@ const RightPanel: Component = () => {
         try {
           // Flush pending editor writes first, mirroring handlePropertySave —
           // the backend reads and rewrites the file.
-          await new Promise<void>((resolve) => {
-            const timeout = setTimeout(resolve, 200);
-            document.dispatchEvent(
-              new CustomEvent("inkycap:flush-editor", {
-                detail: { path: tab.path, done: () => { clearTimeout(timeout); resolve(); } },
-              }),
-            );
-          });
+          await flushEditorsAt(tab.path);
 
           await ipc.setNoteRecurrence(tab.path, recurrence);
           await refetchMetadata();
@@ -948,14 +915,7 @@ const RightPanel: Component = () => {
     if (!tab) return;
     closeRowMenu();
     try {
-      await new Promise<void>((resolve) => {
-        const timeout = setTimeout(resolve, 200);
-        document.dispatchEvent(
-          new CustomEvent("inkycap:flush-editor", {
-            detail: { path: tab.path, done: () => { clearTimeout(timeout); resolve(); } },
-          }),
-        );
-      });
+      await flushEditorsAt(tab.path);
       await ipc.removePropertyFromFile(tab.path, key);
       await refetchMetadata();
       await refetchPropertyOrder();
@@ -1167,6 +1127,7 @@ const RightPanel: Component = () => {
     });
     if (!newName || newName === oldName) return;
     try {
+      await flushEditorsAt(tab.path);
       const newPath = await ipc.renameAndUpdateLinks(tab.path, newName);
       closeTab(tab.id);
       openTab({ type: "file", title: newName, path: newPath }, { forceNewTab: true });

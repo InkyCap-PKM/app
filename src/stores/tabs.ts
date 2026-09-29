@@ -2,6 +2,7 @@ import { createSignal } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import type { StateEffect } from "@codemirror/state";
 import { pathEquals } from "../lib/paths";
+import { moveOpenEditors } from "./editor-writes";
 import { t } from "../lib/i18n";
 import { settings } from "./settings";
 import {
@@ -759,6 +760,10 @@ export function renameTabPath(from: string, to: string) {
   if (pathEquals(from, to)) return;
 
   const newTitle = to.split("/").pop() ?? to;
+
+  // Open editors take the new path before their tabs switch to it, so the
+  // save they make while being rebuilt lands in the renamed file.
+  moveOpenEditors(from, to);
 
   setTabs(
     (t) => pathEquals(t.path, from),

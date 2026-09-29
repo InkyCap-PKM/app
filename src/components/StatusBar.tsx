@@ -18,6 +18,7 @@ import { openNoteboxWindow } from "../lib/new-window";
 import { wordCountStats } from "../editor/typst-decorations/word-count";
 import { cursorPosition } from "../editor/typst-decorations/cursor-position";
 import { getActiveTab, renameTabPath } from "../stores/tabs";
+import { flushEditorsAt } from "../stores/editor-writes";
 import * as ipc from "../lib/ipc";
 import { normalizePath, pathEquals } from "../lib/paths";
 import { toastError } from "../stores/toasts";
@@ -256,6 +257,7 @@ const StatusBar: Component = () => {
     if (!newName || newName === oldName) return;
     try {
       const oldPath = tab.path;
+      await flushEditorsAt(oldPath);
       const newPath = await ipc.renameAndUpdateLinks(oldPath, newName);
       // `renameTabPath` updates the active tab's path + title in place
       // and migrates the cached editor state and history. The previous

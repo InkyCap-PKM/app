@@ -47,8 +47,9 @@ import { navigateWikilink, showWikilinkContextMenu } from "../lib/wikilink-nav";
 import { openLink } from "../lib/open-link";
 import { isDocumentationWindow } from "../lib/docs-window";
 import { searchHighlights } from "../stores/search";
-import { pathEquals } from "../lib/paths";
-import { onFileChanged } from "../lib/events";
+import { pathEquals, pathStartsWith } from "../lib/paths";
+import { onFileChanged, onFileCreated } from "../lib/events";
+import { listenWhileMounted } from "../lib/listen-while-mounted";
 import type { TypstCompileResult, TypstHtmlResult, TypstDiagnostic } from "../lib/types";
 import { EditorView } from "@codemirror/view";
 import { createTypstEditor, type TypstEditorHandle } from "../editor/typst-editor";
@@ -57,7 +58,12 @@ import { getLspClient, lspReady } from "../stores/lsp";
 import { filePathToUri, createLspDiagnosticsUpdater } from "../editor/lsp";
 import { noteboxInfo } from "../stores/notebox";
 import { registerEditorView, unregisterEditorView } from "../stores/editor";
-import { trackWrite, awaitPendingWrite } from "../stores/editor-writes";
+import {
+  trackWrite,
+  awaitPendingWrite,
+  FLUSH_EDITOR_EVENT,
+  EDITOR_PATH_MOVED_EVENT,
+} from "../stores/editor-writes";
 import { resolveTextFontSync } from "../lib/fontResolver";
 import { toastError } from "../stores/toasts";
 import {
@@ -264,71 +270,66 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
     }
   }
 
-  async function flushSave(): Promise<void> {
-    if (saveTimer === null) return;
-    cancelPendingSave();
-    if (!currentPath) return;
-    const text = docText();
-    if (text === lastSaved) {
-      setDirty(false);
-      return;
-    }
+  // Every write from this editor waits for the previous one, so writes land
+  // on disk in the order they were made and `lastSaved` always matches disk.
+  let writeQueue: Promise<void> = Promise.resolve();
+
+  /** Queue a write of the current buffer to the note's current path. The
+   *  returned promise settles once every write queued so far has landed. */
+  function writeBuffer(failureToastKey: string): Promise<void> {
     const targetPath = currentPath;
-    const writePromise = (async () => {
+    const text = docText();
+    if (!targetPath || text === lastSaved) return writeQueue;
+    const write = writeQueue.then(async () => {
       try {
         await ipc.writeFileContent(targetPath, text);
-        if (targetPath === currentPath) {
-          lastSaved = text;
-          setDirty(false);
-        }
         document.dispatchEvent(
           new CustomEvent("inkycap:note-saved", { detail: { path: targetPath } }),
         );
+        if (!currentPath || !pathEquals(targetPath, currentPath)) return;
+        lastSaved = text;
+        // The user may have kept typing while this write was on its way.
+        // Only a buffer that still matches the written text is saved.
+        if (docText() === text) {
+          setDirty(false);
+        } else if (saveTimer === null) {
+          scheduleSave();
+        }
       } catch (err) {
-        console.error("[TypstEditor] flush save failed:", err);
-        toastError(t("editor.toast.saveFailed"), err);
+        console.error("[TypstEditor] save failed:", err);
+        toastError(t(failureToastKey), err);
       }
-    })();
-    trackWrite(targetPath, writePromise);
-    await writePromise;
+    });
+    writeQueue = write;
+    trackWrite(targetPath, write);
+    return write;
   }
 
-  function scheduleSave(text: string) {
-    if (text === lastSaved) {
-      setDirty(false);
-      return;
-    }
+  /** Save now instead of waiting for the autosave delay. Resolves once the
+   *  buffer (and any earlier write) is on disk. */
+  function flushSave(): Promise<void> {
     cancelPendingSave();
-    const targetPath = currentPath;
+    return writeBuffer("editor.toast.saveFailed");
+  }
+
+  function scheduleSave() {
+    cancelPendingSave();
     saveTimer = setTimeout(() => {
       saveTimer = null;
-      if (!targetPath || targetPath !== currentPath) return;
-      const writePromise = (async () => {
-        try {
-          await ipc.writeFileContent(targetPath, text);
-          if (targetPath === currentPath) {
-            lastSaved = text;
-            setDirty(false);
-          }
-          // Notify the sidebar that metadata may have changed (reindex
-          // happens inside writeFileContent on the backend).
-          document.dispatchEvent(
-            new CustomEvent("inkycap:note-saved", { detail: { path: targetPath } }),
-          );
-        } catch (err) {
-          toastError(t("editor.toast.autoSaveFailed"), err);
-        }
-      })();
-      trackWrite(targetPath, writePromise);
+      void writeBuffer("editor.toast.autoSaveFailed");
     }, AUTOSAVE_DEBOUNCE_MS);
   }
 
   function onDocUpdate(text: string) {
     if (suppressChange) return;
     setDocText(text);
-    if (text !== lastSaved) {
+    if (text === lastSaved) {
+      // Typed back to what is on disk: nothing left to save.
+      cancelPendingSave();
+      setDirty(false);
+    } else {
       setDirty(true);
-      scheduleSave(text);
+      scheduleSave();
     }
   }
 
@@ -482,7 +483,9 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
     // registers the write in `pendingWrites` keyed by path, so a
     // subsequent mount of the same path (via createResource below)
     // awaits this completion before reading — preventing the
-    // stale-read-then-overwrite race that loses in-progress edits.
+    // stale-read-then-overwrite race that loses in-progress edits. If the
+    // note was just renamed or moved, `currentPath` already names its new
+    // location (see onPathMoved), so this save lands there.
     void flushSave();
     cleanupDiagnostics?.();
     lspCloseDocument();
@@ -851,35 +854,35 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
     }),
   );
 
-  // ── Flush-on-demand for sidebar property edits ─────────
-  // The sidebar dispatches this before calling updateProperty so that
-  // the disk content is current with the editor buffer. The event detail
-  // carries a `done` promise resolver so the caller can await completion.
+  // ── Save on request ─────────────────────────────────────
+  // `flushEditorsAt` (a rename, move or property edit about to touch this
+  // note on disk) and `flushAllEditors` (before the app stops) ask for an
+  // immediate save. The write registers with `trackWrite` synchronously, so
+  // the caller's wait covers it.
   const onFlushRequest = (e: Event) => {
-    const detail = (e as CustomEvent).detail;
-    if (detail?.path !== currentPath) { detail?.done?.(); return; }
-    cancelPendingSave();
-    const text = docText();
-    if (text !== lastSaved && currentPath) {
-      ipc.writeFileContent(currentPath, text).then(() => {
-        lastSaved = text;
-        setDirty(false);
-        detail?.done?.();
-      }).catch((err) => {
-        console.error("[TypstEditor] flush for property edit failed:", err);
-        detail?.done?.();
-      });
-    } else {
-      detail?.done?.();
-    }
+    const path = (e as CustomEvent<{ path: string }>).detail?.path;
+    if (!path || !currentPath || !pathStartsWith(currentPath, path)) return;
+    void flushSave();
   };
-  document.addEventListener("inkycap:flush-editor", onFlushRequest);
-  onCleanup(() => document.removeEventListener("inkycap:flush-editor", onFlushRequest));
+  document.addEventListener(FLUSH_EDITOR_EVENT, onFlushRequest);
+  onCleanup(() => document.removeEventListener(FLUSH_EDITOR_EVENT, onFlushRequest));
 
-  // Save now, skipping the autosave delay (see flushAllEditors).
   const onFlushAll = () => void flushSave();
   document.addEventListener("inkycap:flush-all-editors", onFlushAll);
   onCleanup(() => document.removeEventListener("inkycap:flush-all-editors", onFlushAll));
+
+  // ── Follow a renamed or moved note ──────────────────────
+  // The tab is about to switch to the note's new path, which rebuilds this
+  // editor. Take the new path first, so the save made on teardown (and the
+  // cached editor state) go to the note's new location rather than
+  // recreating the old file.
+  const onPathMoved = (e: Event) => {
+    const detail = (e as CustomEvent<{ from: string; to: string }>).detail;
+    if (!detail || !currentPath || !pathEquals(currentPath, detail.from)) return;
+    currentPath = detail.to;
+  };
+  document.addEventListener(EDITOR_PATH_MOVED_EVENT, onPathMoved);
+  onCleanup(() => document.removeEventListener(EDITOR_PATH_MOVED_EVENT, onPathMoved));
 
   // Re-read the open file from disk and replace the CM6 buffer when it differs.
   // Shared by the sidebar property-edit reload and the post-sync reload. The
@@ -887,12 +890,18 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
   // whose content didn't actually move never churns the editor).
   async function reloadFromDisk() {
     if (!currentPath) return;
+    const path = currentPath;
+    // Compare against the actual editor buffer (not the cached docText
+    // signal) — otherwise transient signal updates can make the early-return
+    // fire when the buffer is still stale.
+    const readBuffer = () => editorHandle?.getText() ?? docText();
+    const bufferBeforeRead = readBuffer();
     try {
-      const freshContent = await ipc.readFileContent(currentPath);
-      // Compare against the actual editor buffer (not the cached docText
-      // signal) — otherwise transient signal updates can make the early-return
-      // fire when the buffer is still stale.
-      const bufferText = editorHandle?.getText() ?? docText();
+      const freshContent = await ipc.readFileContent(path);
+      const bufferText = readBuffer();
+      // Typing (or a move to another path) while the file was being read
+      // wins: replacing the buffer now would throw that typing away.
+      if (bufferText !== bufferBeforeRead || dirty || !pathEquals(path, currentPath)) return;
       if (freshContent === bufferText) {
         // Buffer is already current; just settle the dirty flag / lastSaved.
         lastSaved = freshContent;
@@ -953,21 +962,21 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
 
   // ── External file change (another window / external editor) ─────
   // The same note can be open in another window, or edited by an external
-  // tool. The notebox file watcher emits `notebox:file-changed` (targeted at
-  // this window). Reload the buffer so it doesn't go stale — but only when
-  // it's clean: a dirty buffer holds unsaved edits we must not clobber (this
-  // window keeps them; they win on its next save). The buffer-equality guard
-  // inside reloadFromDisk makes this editor's *own* save a cheap no-op.
-  let fileChangedUnlisten: (() => void) | undefined;
-  void onFileChanged((payload) => {
+  // tool. The notebox file watcher reports it as `notebox:file-changed`, or as
+  // `notebox:file-created` when the tool saves by writing a new file and
+  // renaming it over the note. Reload the buffer so it doesn't go stale — but
+  // only when it's clean: a dirty buffer holds unsaved edits we must not
+  // clobber (this window keeps them; they win on its next save). The
+  // buffer-equality guard inside reloadFromDisk makes this editor's *own*
+  // save a cheap no-op.
+  const onNoteReplacedOnDisk = (payload: { path: string }) => {
     if (!currentPath || dirty) return;
     if (!pathEquals(payload.path, currentPath)) return;
     cancelPendingSave();
     void reloadFromDisk();
-  }).then((un) => {
-    fileChangedUnlisten = un;
-  });
-  onCleanup(() => fileChangedUnlisten?.());
+  };
+  listenWhileMounted(onFileChanged(onNoteReplacedOnDisk));
+  listenWhileMounted(onFileCreated(onNoteReplacedOnDisk));
 
   // ── Wikilink click-to-navigate ────────────────────────
   const onWikilinkNav = (e: Event) => {
