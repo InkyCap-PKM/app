@@ -11,12 +11,12 @@ use rusqlite::{Connection, OpenFlags};
 
 use super::bibliography::BibEntry;
 
-/// Open a Zotero database in read-only immutable mode. The `immutable=1` URI
-/// parameter tells SQLite to skip all locking, so reads succeed even while
-/// Zotero holds an exclusive lock on the database. The trade-off is that we
+/// Open a Zotero (or Better BibTeX) database in read-only immutable mode. The
+/// `immutable=1` URI parameter tells SQLite to skip all locking, so reads
+/// succeed even while Zotero holds an exclusive lock on the database. The trade-off is that we
 /// may see slightly stale data if Zotero has uncommitted WAL transactions,
 /// which is acceptable for bibliography lookups.
-fn open_zotero_readonly(db_path: &Path) -> Result<Connection, String> {
+fn open_sqlite_readonly(db_path: &Path) -> Result<Connection, String> {
     let uri = format!("file:{}?immutable=1", db_path.to_string_lossy());
     Connection::open_with_flags(
         &uri,
@@ -117,7 +117,7 @@ pub fn read_entries(db_path: &Path) -> Result<Vec<BibEntry>, String> {
 
 /// Uncached read of all library items from a Zotero SQLite database.
 fn read_entries_uncached(db_path: &Path) -> Result<Vec<BibEntry>, String> {
-    let conn = open_zotero_readonly(db_path)?;
+    let conn = open_sqlite_readonly(db_path)?;
 
     let mut entries = Vec::new();
 
@@ -154,24 +154,7 @@ fn read_entries_uncached(db_path: &Path) -> Result<Vec<BibEntry>, String> {
         )
         .map_err(|e| format!("Failed to prepare creator query: {e}"))?;
 
-    // Check if the citationKey field exists (Better BibTeX plugin)
-    let has_citation_key = conn
-        .prepare("SELECT 1 FROM fields WHERE fieldName = 'citationKey' LIMIT 1")
-        .and_then(|mut s| s.exists([]))
-        .unwrap_or(false);
-
-    // Also check for the extra field which Better BibTeX uses
-    let mut extra_cite_key_stmt = if has_citation_key {
-        None
-    } else {
-        conn.prepare(
-            "SELECT idv.value FROM itemData id
-             JOIN fields f ON id.fieldID = f.fieldID
-             JOIN itemDataValues idv ON id.valueID = idv.valueID
-             WHERE id.itemID = ? AND f.fieldName = 'extra'",
-        )
-        .ok()
-    };
+    let legacy_keys = read_legacy_better_bibtex_keys(db_path);
 
     let items: Vec<(i64, String, String)> = item_stmt
         .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
@@ -201,7 +184,8 @@ fn read_entries_uncached(db_path: &Path) -> Result<Vec<BibEntry>, String> {
     for (item_id, type_name, zotero_key) in items {
         let mut title = String::new();
         let mut date = None;
-        let mut citation_key = None;
+        let mut native_key = None;
+        let mut extra = None;
         let mut extra_fields = std::collections::HashMap::new();
 
         // Read item data fields
@@ -212,7 +196,8 @@ fn read_entries_uncached(db_path: &Path) -> Result<Vec<BibEntry>, String> {
                 match row.0.as_str() {
                     "title" => title = row.1,
                     "date" => date = Some(extract_year(&row.1)),
-                    "citationKey" => citation_key = Some(row.1),
+                    "citationKey" => native_key = Some(row.1),
+                    "extra" => extra = Some(row.1),
                     "publicationTitle" => {
                         extra_fields.insert("journal".to_string(), row.1);
                     }
@@ -267,23 +252,12 @@ fn read_entries_uncached(db_path: &Path) -> Result<Vec<BibEntry>, String> {
             }
         }
 
-        // If no citationKey field, try extracting from the "extra" field
-        // (Better BibTeX stores "Citation Key: xyz" there)
-        if citation_key.is_none() {
-            if let Some(ref mut stmt) = extra_cite_key_stmt {
-                if let Ok(extra) = stmt.query_row([item_id], |row| row.get::<_, String>(0)) {
-                    for line in extra.lines() {
-                        if let Some(key) = line.strip_prefix("Citation Key: ") {
-                            citation_key = Some(key.trim().to_string());
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Fall back to Zotero's internal key
-        let key = citation_key.unwrap_or_else(|| zotero_key.clone());
+        let key = choose_citation_key(
+            native_key.as_deref(),
+            extra.as_deref(),
+            legacy_keys.get(&item_id).map(String::as_str),
+            &zotero_key,
+        );
 
         // Read creators
         let mut authors = Vec::new();
@@ -324,15 +298,76 @@ fn read_entries_uncached(db_path: &Path) -> Result<Vec<BibEntry>, String> {
         });
     }
 
-    // Dedup by citation key. Better BibTeX assigns keys per-library, so an
-    // item present in both "My Library" and a group library appears twice
-    // here with identical keys but distinct `zotero_item_key`s. Keep the
+    // Dedup by citation key. An item present in both "My Library" and a group
+    // library appears twice here with identical citation keys but distinct
+    // `zotero_item_key`s. Keep the
     // first occurrence (ORDER BY itemID puts older entries first, which
     // typically means the canonical/personal copy).
     let mut seen = std::collections::HashSet::new();
     entries.retain(|e| seen.insert(e.key.clone()));
 
     Ok(entries)
+}
+
+/// Pick an item's citation key, first non-empty source wins:
+///
+/// 1. Zotero's native `citationKey` field. Zotero 7 has it built in, and
+///    Better BibTeX writes its keys there once it has migrated.
+/// 2. A `Citation Key: <key>` line in the item's Extra field, the older way
+///    to pin a key (Better BibTeX and Zotero both read it).
+/// 3. The key from an unmigrated Better BibTeX database, if one exists.
+/// 4. Zotero's own item ID (e.g. `5VX4GJ8Q`), which every item has.
+fn choose_citation_key(
+    native: Option<&str>,
+    extra: Option<&str>,
+    legacy: Option<&str>,
+    zotero_key: &str,
+) -> String {
+    fn non_empty(key: Option<&str>) -> Option<&str> {
+        key.map(str::trim).filter(|k| !k.is_empty())
+    }
+    non_empty(native)
+        .or_else(|| extra.and_then(pinned_key_from_extra))
+        .or_else(|| non_empty(legacy))
+        .unwrap_or(zotero_key)
+        .to_string()
+}
+
+/// The key from a `Citation Key: <key>` line in a Zotero Extra field. The
+/// label is matched without regard to case, as Zotero does.
+fn pinned_key_from_extra(extra: &str) -> Option<&str> {
+    const LABEL: &str = "citation key:";
+    extra.lines().find_map(|line| {
+        let line = line.trim_start();
+        let label = line.get(..LABEL.len())?;
+        if !label.eq_ignore_ascii_case(LABEL) {
+            return None;
+        }
+        Some(line[LABEL.len()..].trim()).filter(|k| !k.is_empty())
+    })
+}
+
+/// Citation keys by Zotero item ID from Better BibTeX's own database
+/// (`better-bibtex.sqlite` beside `zotero.sqlite`). Current Better BibTeX
+/// moves its keys into Zotero's native field and renames this file, so it only
+/// exists for setups that haven't migrated. Missing or unreadable means empty.
+fn read_legacy_better_bibtex_keys(zotero_db: &Path) -> std::collections::HashMap<i64, String> {
+    let Some(path) = zotero_db
+        .parent()
+        .map(|dir| dir.join("better-bibtex.sqlite"))
+        .filter(|p| p.is_file())
+    else {
+        return std::collections::HashMap::new();
+    };
+    let Ok(conn) = open_sqlite_readonly(&path) else {
+        return std::collections::HashMap::new();
+    };
+    let read = || -> rusqlite::Result<std::collections::HashMap<i64, String>> {
+        let mut stmt = conn.prepare("SELECT itemID, citationKey FROM citationkey")?;
+        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    };
+    read().unwrap_or_default()
 }
 
 /// Extract a 4-digit year from a Zotero date string.
@@ -353,7 +388,7 @@ fn extract_year(date_str: &str) -> String {
 
 /// Read user notes from a Zotero database for a given citation key.
 pub fn read_notes(db_path: &Path, item_key: &str) -> Result<Vec<String>, String> {
-    let conn = open_zotero_readonly(db_path)?;
+    let conn = open_sqlite_readonly(db_path)?;
 
     let mut stmt = conn
         .prepare(
@@ -370,4 +405,45 @@ pub fn read_notes(db_path: &Path, item_key: &str) -> Result<Vec<String>, String>
         .collect();
 
     Ok(notes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn native_key_wins() {
+        let extra = "Citation Key: pinned2020";
+        let key = choose_citation_key(Some("native2020"), Some(extra), Some("old"), "ABCD1234");
+        assert_eq!(key, "native2020");
+    }
+
+    #[test]
+    fn empty_native_key_falls_back_to_extra() {
+        let extra = "tex.note: x\nCitation Key: pinned2020";
+        let key = choose_citation_key(Some(""), Some(extra), Some("old"), "ABCD1234");
+        assert_eq!(key, "pinned2020");
+    }
+
+    #[test]
+    fn legacy_database_before_item_id() {
+        let key = choose_citation_key(None, Some("unrelated"), Some("old2019"), "ABCD1234");
+        assert_eq!(key, "old2019");
+    }
+
+    #[test]
+    fn item_id_is_last_resort() {
+        let key = choose_citation_key(Some("  "), None, None, "5VX4GJ8Q");
+        assert_eq!(key, "5VX4GJ8Q");
+    }
+
+    #[test]
+    fn pinned_key_label_ignores_case_and_blank_values() {
+        assert_eq!(
+            pinned_key_from_extra("citation key:  smith "),
+            Some("smith")
+        );
+        assert_eq!(pinned_key_from_extra("Citation Key:"), None);
+        assert_eq!(pinned_key_from_extra("Original: Citation Key: x"), None);
+    }
 }

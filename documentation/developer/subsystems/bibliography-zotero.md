@@ -69,7 +69,8 @@ invalidate when the file changes.
 
 InkyCap reads the Zotero SQLite database **directly and read-only**:
 
-- `open_zotero_readonly()` opens `zotero.sqlite` with `SQLITE_OPEN_READ_ONLY` and
+- `open_sqlite_readonly()` opens `zotero.sqlite` (and Better BibTeX's old
+  database, when present) with `SQLITE_OPEN_READ_ONLY` and
   the `immutable=1` URI flag, which skips locking so InkyCap can read while Zotero
   is running. The tradeoff is possibly-stale data if Zotero has uncommitted WAL
   writes, which is acceptable for bibliography.
@@ -77,8 +78,10 @@ InkyCap reads the Zotero SQLite database **directly and read-only**:
   Linux Zotero snap path).
 - `read_entries()` (cached on mtime+size) queries real items (excluding deleted,
   attachments, notes, annotations), pulling title, date/year, creators, and the
-  citation key. The key prefers a **Better BibTeX** `citationKey`, then an
-  "extra" field, then Zotero's internal item key. `read_notes()` fetches an
+  citation key. The key is the first non-empty of: Zotero's native
+  `citationKey` field (where current Better BibTeX writes its keys), a
+  `Citation Key:` line in the Extra field, an unmigrated Better BibTeX
+  `better-bibtex.sqlite`, then Zotero's internal item key. `read_notes()` fetches an
   item's child notes as HTML.
 
 When the notebox's citation source is Zotero, entries are **materialized to
