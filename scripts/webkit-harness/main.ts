@@ -261,4 +261,26 @@ async function pasteBackspaceType(opts: {
   return { doc: v.state.doc.toString(), head: v.state.selection.main.head, log: log.slice(), trs: trLog.slice() };
 }
 
-(window as any).h = { tableNavKey, tableKey, reset, snap, scenario, appReset, pasteBackspaceType, get view() { return view; }, cursorLineUp, cursorCharLeft, cursorLineDown, cursorCharRight, log, pillBoundaryNav };
+/** Press a real Backspace `count` times against the app editor and record,
+ *  after each press, the document, the caret, and the caret line's visible
+ *  widgets. For tracing what deleting into a pill does. */
+async function backspaceTrace(opts: { doc: string; anchor: number; count: number; settleMs?: number }) {
+  const settle = opts.settleMs ?? 250;
+  const v = await appReset(opts.doc, opts.anchor);
+  await sleep(settle);
+  const step = (label: string) => {
+    const line = v.state.doc.lineAt(v.state.selection.main.head);
+    const lineEl = v.domAtPos(line.from).node;
+    const el = (lineEl.nodeType === 3 ? lineEl.parentElement : lineEl as Element)?.closest(".cm-line");
+    return { label, doc: v.state.doc.toString(), head: v.state.selection.main.head, lineHtml: el?.innerHTML ?? null };
+  };
+  const steps = [step("start")];
+  for (let i = 0; i < opts.count; i++) {
+    await realKey("BackSpace");
+    await sleep(settle);
+    steps.push(step(`bs${i + 1}`));
+  }
+  return { steps, trs: trLog.slice() };
+}
+
+(window as any).h = { tableNavKey, tableKey, reset, snap, scenario, appReset, pasteBackspaceType, backspaceTrace, get view() { return view; }, cursorLineUp, cursorCharLeft, cursorLineDown, cursorCharRight, log, pillBoundaryNav };

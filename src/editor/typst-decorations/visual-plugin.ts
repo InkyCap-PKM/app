@@ -2711,26 +2711,20 @@ function rebuildRanges(
     let inDirty = false;
     for (const r of merged) {
       // Range decorations: standard half-open overlap.
-      // Point decorations (Decoration.line lives at line.from, from === to):
-      // a strict overlap test would judge one sitting exactly at the dirty
-      // range's start (iter.to === r.from) as "not dirty" and keep it. That
-      // strands a stale block-element line style — e.g. a callout/quote whose
-      // call begins at column 0, so its first line decoration sits at the very
-      // start of the expanded element range — behind the freshly rendered
-      // widget, producing a doubled bar. Treat a point at [r.from, r.to) as
-      // dirty so it is dropped and rebuilt with the rest of the element.
+      // Point decorations (from === to) count as dirty anywhere in
+      // [r.from, r.to], both ends included. Dirty ranges are whole lines, so a
+      // point at either end belongs to a dirty line. A strict overlap test
+      // would keep points sitting exactly on a boundary, stranding stale
+      // copies next to the rebuilt ones:
+      //   • a line style at the start of a callout/quote (doubled bar);
+      //   • an expanded image/embed preview anchored at the element's end
+      //     (doubled preview);
+      //   • a pill whose call was just deleted, which collapses to the end of
+      //     its line, or onto an empty line, and would otherwise stay on
+      //     screen with nothing behind it.
       const overlaps = iter.from < r.to && iter.to > r.from;
-      const pointInRange = iter.from === iter.to && iter.from >= r.from && iter.from < r.to;
-      // The symmetric end-boundary case: an expanded block element (image,
-      // embed) renders its preview as a `side: 1` block widget anchored at the
-      // element's *end* — a point sitting exactly at r.to, which the half-open
-      // tests above exclude. Left in place, the stale widget survives while
-      // buildDecorations re-emits a fresh copy at the same spot, doubling the
-      // preview. Treat a block-widget point at r.to as dirty so it is rebuilt
-      // (its FuncCall node still overlaps the range, so the rebuild re-adds it).
-      const blockWidgetAtEnd =
-        iter.from === iter.to && iter.from === r.to && iter.value.spec?.block === true;
-      if (overlaps || pointInRange || blockWidgetAtEnd) {
+      const pointInRange = iter.from === iter.to && iter.from >= r.from && iter.from <= r.to;
+      if (overlaps || pointInRange) {
         inDirty = true;
         break;
       }
@@ -2770,7 +2764,10 @@ export function rebuildDirtyLines(
   return rebuildRanges(existing, state, dirtyRanges);
 }
 
-function rebuildDocChange(
+/** Incremental rebuild for a document edit: the changed lines and the caret
+ *  lines are rebuilt, everything else is mapped through the change. Exported
+ *  so tests can pin that its result matches a full rebuild. */
+export function rebuildDocChange(
   existing: DecorationSet,
   tr: { state: EditorState; changes: ChangeSet },
 ): DecorationSet {

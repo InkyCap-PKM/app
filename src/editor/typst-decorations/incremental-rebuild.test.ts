@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { EditorState } from "@codemirror/state";
 import type { DecorationSet } from "@codemirror/view";
 import { typst } from "codemirror-lang-typst";
-import { buildDecorations, rebuildDirtyLines } from "./visual-plugin";
+import { buildDecorations, rebuildDirtyLines, rebuildDocChange } from "./visual-plugin";
 
 // A cursor move rebuilds only the lines the caret left and arrived on, grown
 // to cover whole block elements. The result has to match a full rebuild: any
@@ -101,6 +101,25 @@ describe("cursor-move rebuild matches a full rebuild", () => {
         expect(kinds.some((k) => k.includes("widget:CodeBlockWidget"))).toBe(true);
         expect(kinds.filter((k) => k.includes("codeblock-edit"))).toEqual([]);
       });
+    });
+  }
+});
+
+// Deleting a whole call with Backspace collapses its pill (a zero-width
+// widget at the call's start) onto the end of the line, or onto a line left
+// empty. The rebuild must drop it rather than keep it on screen with no call
+// behind it.
+describe("document-edit rebuild drops the pill of a deleted call", () => {
+  for (const line of ['#due("2026-10-01")', '- #due("2026-10-01")', 'Words #due("2026-10-01")']) {
+    it(`deleting the call in \`${line}\``, () => {
+      const doc = `Intro line.\n${line}` + TAIL;
+      const callFrom = doc.indexOf("#due");
+      const callTo = doc.indexOf(")", callFrom) + 1;
+      const before = state(doc, callTo);
+      const tr = before.update({ changes: { from: callFrom, to: callTo }, selection: { anchor: callFrom } });
+      const incremental = rebuildDocChange(buildDecorations(before), tr);
+      expect(serialize(incremental)).toEqual(serialize(buildDecorations(tr.state)));
+      expect(serialize(incremental).some((d) => d.includes("FuncPillWidget"))).toBe(false);
     });
   }
 });

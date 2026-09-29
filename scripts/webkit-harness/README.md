@@ -38,4 +38,9 @@ caret unconditionally for. Example:
 scripts/webkit-harness/run.sh "h.pasteBackspaceType({ doc: '\`\`', anchor: 1, paste: 'abcdef', deletes: 2, type: 'XY', realBackspace: true })"
 ```
 
+`h.backspaceTrace({ doc, anchor, count })` builds the same app editor, presses
+a real Backspace `count` times, and records the document, caret, and the caret
+line's rendered HTML after each press. It is how a pill left on screen after
+its call was deleted was traced.
+
 Rebuild the page after changing editor code; the built page is ignored by git.
