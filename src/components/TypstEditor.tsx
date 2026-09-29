@@ -1640,10 +1640,16 @@ const TypstHtmlReadingView: Component<TypstHtmlReadingViewProps> = (props) => {
                 class="typst-reading__html-content"
                 style={contentStyle()}
                 ref={(el) => {
-                  // Release any object URLs from the previous render first.
-                  revokeBlobUrls(el);
-                  el.replaceChildren(sanitizeNoteHtml(r().html));
-                  void resolveMediaSources(el);
+                  // This element is kept across recompiles (a new result
+                  // doesn't recreate it), so refill it whenever the HTML
+                  // changes rather than only once when it is created.
+                  createEffect(() => {
+                    const html = r().html;
+                    // Release any object URLs from the previous render first.
+                    revokeBlobUrls(el);
+                    el.replaceChildren(sanitizeNoteHtml(html));
+                    void resolveMediaSources(el);
+                  });
                 }}
               />
             </Show>
