@@ -109,6 +109,18 @@ pub struct NoteboxSession {
     /// Folders outside the notebox the user chose in a backend save/folder
     /// dialog; export commands only write inside these.
     pub export_grants: crate::storage::export_grants::ExportGrants,
+    /// Held for the whole of an index build, so builds run one at a time.
+    index_build_lock: Mutex<()>,
+    /// The background index build currently running, if any. A newer build,
+    /// or opening another notebox in this window, cancels it.
+    index_build_task: StdMutex<Option<tokio::task::AbortHandle>>,
+    /// Notes changed while an index build runs; `None` when no build runs.
+    /// A build reads every note first and swaps its results in at the end, so
+    /// an update applied in between would be overwritten by an older reading.
+    /// Updates are therefore only recorded here during a build and replayed
+    /// from disk once its results are in place. This also keeps saves from
+    /// waiting behind the build's long hold on the compiler.
+    changed_during_build: StdMutex<Option<Vec<PathBuf>>>,
 }
 
 impl NoteboxSession {
@@ -133,6 +145,9 @@ impl NoteboxSession {
             last_corpus_save: AtomicI64::new(0),
             is_documentation: AtomicBool::new(false),
             export_grants: Default::default(),
+            index_build_lock: Mutex::new(()),
+            index_build_task: StdMutex::new(None),
+            changed_during_build: StdMutex::new(None),
         }
     }
 
@@ -193,6 +208,12 @@ impl NoteboxSession {
         };
         let note_count = note_files.len();
 
+        // A build still running for the previous notebox would swap that
+        // notebox's indexes in after this reset, and its record of changed
+        // notes belongs to that notebox too.
+        self.cancel_index_build();
+        *lock_ignoring_poison(&self.changed_during_build) = None;
+
         // Reset stale state from any previously open notebox before swapping in
         // the new notebox root. Empty indexes are fine — UI features that depend
         // on them should show a loading state until `notebox:index-ready` fires.
@@ -249,9 +270,95 @@ impl NoteboxSession {
     /// so reads stop answering from the cache and fall back to on-demand
     /// parsing for anything the indexes do not know.
     pub async fn build_indexes(&self) -> crate::errors::Result<IndexStats> {
+        let _one_build_at_a_time = self.index_build_lock.lock().await;
+        self.build_indexes_locked().await
+    }
+
+    /// Body of [`build_indexes`]; the caller holds `index_build_lock`.
+    async fn build_indexes_locked(&self) -> crate::errors::Result<IndexStats> {
+        // Start recording changed notes. A cancelled build may have left
+        // entries behind; they still need replaying, so keep them.
+        lock_ignoring_poison(&self.changed_during_build).get_or_insert_with(Vec::new);
         let result = self.build_indexes_inner().await;
+        // Stop recording (updates from here on apply directly), then bring the
+        // notes changed during the build up to date. Also on failure: the
+        // updates were held back and would otherwise be lost.
+        let changed = lock_ignoring_poison(&self.changed_during_build)
+            .take()
+            .unwrap_or_default();
+        self.replay_changed_notes(changed).await;
         self.index_ready.store(true, Ordering::Relaxed);
         result
+    }
+
+    /// Remember `task` as this session's background index build, cancelling
+    /// the one it replaces (the new build covers the same work).
+    pub fn replace_index_build(&self, task: tokio::task::AbortHandle) {
+        if let Some(previous) = lock_ignoring_poison(&self.index_build_task).replace(task) {
+            previous.abort();
+        }
+    }
+
+    /// Cancel the background index build, if one is running.
+    pub fn cancel_index_build(&self) {
+        if let Some(task) = lock_ignoring_poison(&self.index_build_task).take() {
+            task.abort();
+        }
+    }
+
+    /// Record `paths` for replay when an index build is running. Returns
+    /// `true` when recorded, meaning the caller must not update the indexes
+    /// now (see `changed_during_build`).
+    fn defer_while_building<'a>(&self, paths: impl IntoIterator<Item = &'a Path>) -> bool {
+        let mut changed = lock_ignoring_poison(&self.changed_during_build);
+        match changed.as_mut() {
+            Some(list) => {
+                list.extend(paths.into_iter().map(Path::to_path_buf));
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Re-read each note recorded during a build and update the indexes from
+    /// what is on disk now: reindex the ones that exist, drop the ones that
+    /// don't. Also reloads the stopword lists, which may have been edited
+    /// after the build read them.
+    async fn replay_changed_notes(&self, changed: Vec<PathBuf>) {
+        let mut seen = HashSet::new();
+        let changed: Vec<PathBuf> = changed
+            .into_iter()
+            .filter(|p| seen.insert(p.clone()))
+            .collect();
+        let Ok(storage) = self.get_storage().await else {
+            return;
+        };
+        let root = storage.canonical_root().to_path_buf();
+        self.corpus_stats
+            .write()
+            .await
+            .reload_stopwords(Some(&root));
+        if changed.is_empty() {
+            return;
+        }
+        let mut batch = Vec::new();
+        for path in changed {
+            let Ok(rel) = path.strip_prefix(&root) else {
+                continue;
+            };
+            match storage.read_file(rel).await {
+                Ok(content) => batch.push((path, content)),
+                Err(_) => self.remove_from_indices_inner(&path).await,
+            }
+        }
+        log::info!(
+            "index build: replaying {} note(s) changed during the build",
+            batch.len()
+        );
+        for (path, content) in &batch {
+            self.reindex_note_inner(path, content).await;
+        }
+        self.resolve_all_backlinks().await;
     }
 
     /// True once the index build for the open notebox has finished.
@@ -520,6 +627,9 @@ impl NoteboxSession {
     /// link, property, search, and corpus indexes. This re-parses the whole
     /// notebox (the slow path), so callers should treat it as a long operation.
     pub async fn rebuild_indexes_from_disk(&self) -> crate::errors::Result<IndexStats> {
+        // Wait for any running build first: clearing its caches mid-scan would
+        // leave that build reconciling against files that no longer exist.
+        let _one_build_at_a_time = self.index_build_lock.lock().await;
         let notebox_root = self
             .notebox_root
             .read()
@@ -542,7 +652,7 @@ impl NoteboxSession {
         let _ = std::fs::remove_file(search_index_path(&notebox_root));
         let _ = std::fs::remove_file(corpus_stats_path(&notebox_root));
 
-        self.build_indexes().await
+        self.build_indexes_locked().await
     }
 
     /// Write a freshly re-parsed note through to the persistent metadata
@@ -651,7 +761,13 @@ impl NoteboxSession {
     ///   3. search_engine (write)
     ///   4. metadata cache (via `cache_upsert_note`, acquires its own guard)
     ///   5. property_index (write, last — consumes the parsed note)
+    ///
+    /// While an index build runs, the update is only recorded and is applied
+    /// when the build finishes (see `changed_during_build`).
     pub async fn reindex_note(&self, path: &std::path::Path, content: &str) {
+        if self.defer_while_building([path]) {
+            return;
+        }
         self.reindex_note_inner(path, content).await;
         // Resolve once after the per-note update. For a single note the prop
         // index now contains it (the inner step updates it before we get here),
@@ -670,7 +786,7 @@ impl NoteboxSession {
     /// doing an O(N) StemIndex rebuild (O(N²) total, all contending on the
     /// single compiler mutex) into one sequential pass plus one resolve.
     pub async fn reindex_notes(&self, batch: Vec<(std::path::PathBuf, String)>) {
-        if batch.is_empty() {
+        if batch.is_empty() || self.defer_while_building(batch.iter().map(|(p, _)| p.as_path())) {
             return;
         }
         for (path, content) in &batch {
@@ -790,6 +906,9 @@ impl NoteboxSession {
     /// Remove a note from every index AND from the persistent metadata cache.
     /// Companion to [`reindex_note`].
     pub async fn remove_from_indices(&self, path: &std::path::Path) {
+        if self.defer_while_building([path]) {
+            return;
+        }
         self.remove_from_indices_inner(path).await;
         self.resolve_all_backlinks().await;
         self.maybe_save_search_index().await;
@@ -871,6 +990,15 @@ impl NoteboxSession {
         PersistedCorpusStats::save_borrowed(&stats, now, &path);
         self.last_corpus_save.store(now, Ordering::Relaxed);
     }
+}
+
+/// Lock a std mutex, carrying on with the data if a panicking thread
+/// poisoned it. The guarded values here are plain bookkeeping that stays
+/// consistent even if a holder panicked.
+fn lock_ignoring_poison<T>(mutex: &StdMutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// Global application state, managed by Tauri. Holds the genuinely app-wide
@@ -1172,5 +1300,103 @@ pub fn configure_bibliography(
             }
         }
         _ => notebox.bibliography_path.clone(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::note::PropertyValue;
+
+    fn note_source(title: &str) -> String {
+        format!(
+            "{}\n#note(title: \"{title}\")\nBody text.\n",
+            crate::notebox_package::import_line()
+        )
+    }
+
+    /// Open `dir` as a notebox holding `a.typ` and `b.typ`, fully indexed.
+    async fn indexed_session(dir: &Path) -> (NoteboxSession, PathBuf, PathBuf) {
+        std::fs::write(dir.join("a.typ"), note_source("One")).unwrap();
+        std::fs::write(dir.join("b.typ"), note_source("Other")).unwrap();
+        let session = NoteboxSession::new("main".into(), None);
+        session
+            .open_notebox_fast(dir.to_path_buf(), &CitationSettings::default())
+            .await
+            .unwrap();
+        session.build_indexes().await.unwrap();
+        let root = session
+            .get_storage()
+            .await
+            .unwrap()
+            .canonical_root()
+            .to_path_buf();
+        (session, root.join("a.typ"), root.join("b.typ"))
+    }
+
+    async fn indexed_title(session: &NoteboxSession, path: &Path) -> Option<String> {
+        let index = session.property_index.read().await;
+        match index
+            .notes
+            .get(&path.to_path_buf())?
+            .properties
+            .get("title")
+        {
+            Some(PropertyValue::String(s)) => Some(s.clone()),
+            _ => None,
+        }
+    }
+
+    fn start_recording(session: &NoteboxSession) {
+        *session.changed_during_build.lock().unwrap() = Some(Vec::new());
+    }
+
+    #[tokio::test]
+    async fn edit_during_a_build_is_held_back_then_replayed() {
+        // `tempdir()` names start with a dot: a notebox folder with a hidden
+        // name must still be scanned.
+        let dir = tempfile::tempdir().unwrap();
+        let (session, a, _) = indexed_session(dir.path()).await;
+        assert_eq!(indexed_title(&session, &a).await.as_deref(), Some("One"));
+
+        start_recording(&session);
+        let edited = note_source("Two");
+        std::fs::write(&a, &edited).unwrap();
+        session.reindex_note(&a, &edited).await;
+        // Held back: the build's swap would have overwritten it.
+        assert_eq!(indexed_title(&session, &a).await.as_deref(), Some("One"));
+
+        let recorded = session.changed_during_build.lock().unwrap().take().unwrap();
+        session.replay_changed_notes(recorded).await;
+        assert_eq!(indexed_title(&session, &a).await.as_deref(), Some("Two"));
+    }
+
+    #[tokio::test]
+    async fn deletion_during_a_build_is_replayed_as_a_removal() {
+        let dir = tempfile::tempdir().unwrap();
+        let (session, _, b) = indexed_session(dir.path()).await;
+
+        start_recording(&session);
+        std::fs::remove_file(&b).unwrap();
+        session.remove_from_indices(&b).await;
+        assert!(indexed_title(&session, &b).await.is_some());
+
+        let recorded = session.changed_during_build.lock().unwrap().take().unwrap();
+        session.replay_changed_notes(recorded).await;
+        assert!(indexed_title(&session, &b).await.is_none());
+        assert!(!session.search_engine.read().await.contains_path(&b));
+    }
+
+    #[tokio::test]
+    async fn a_build_stops_recording_when_it_finishes() {
+        let dir = tempfile::tempdir().unwrap();
+        let (session, a, _) = indexed_session(dir.path()).await;
+        assert!(session.changed_during_build.lock().unwrap().is_none());
+
+        // Updates after the build apply straight away.
+        let edited = note_source("Three");
+        std::fs::write(&a, &edited).unwrap();
+        session.reindex_note(&a, &edited).await;
+        assert_eq!(indexed_title(&session, &a).await.as_deref(), Some("Three"));
     }
 }

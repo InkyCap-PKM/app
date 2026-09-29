@@ -2,20 +2,20 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { GitStatusSummary } from "./types";
 
-// Git events are per-notebox, i.e. per-window, and carry no path the frontend
-// could filter on, so the backend targets each at its owning window via
-// `emit_to(window_label, …)`. But `listen()` defaults to a catch-all (target
-// `Any`) that receives events emitted to ANY target — including a *different*
-// window's — so without scoping, syncing in one open notebox would light up the
-// status/spinner of every other one. Scoping these listeners to the current
-// window's label makes them ignore events emitted to other windows while still
-// receiving this window's. Used only for the git events (file-watcher events
-// are deliberately broadcast and self-scoped by path).
+// Some events belong to one window's notebox and carry no path the frontend
+// could filter on (git status, index build results), so the backend targets
+// each at its owning window via `emit_to(window_label, …)`. But `listen()`
+// defaults to a catch-all (target `Any`) that receives events emitted to ANY
+// target — including a *different* window's — so without scoping, syncing or
+// indexing in one open notebox would reach every other window too. Passing
+// these options scopes a listener to the current window's label, so it ignores
+// events emitted to other windows while still receiving this window's.
+// (File-watcher events are deliberately broadcast and self-scoped by path.)
 //
 // Resolved lazily (per subscribe) and guarded: `getCurrentWebviewWindow()`
 // throws outside a Tauri webview (e.g. the Vitest/jsdom env), where falling
 // back to the default target is harmless.
-function gitEventOptions(): { target: string } | undefined {
+export function thisWindowOnly(): { target: string } | undefined {
   try {
     return { target: getCurrentWebviewWindow().label };
   } catch {
@@ -118,7 +118,7 @@ export function onGitReconnectable(
 ): Promise<() => void> {
   return listen<GitReconnectablePayload>("notebox:git-reconnectable", (event) => {
     callback(event.payload);
-  }, gitEventOptions()).then((unlisten) => unlisten);
+  }, thisWindowOnly()).then((unlisten) => unlisten);
 }
 
 export function onGitStatus(
@@ -126,29 +126,29 @@ export function onGitStatus(
 ): Promise<() => void> {
   return listen<GitStatusEventPayload>("notebox:git-status", (event) => {
     callback(event.payload);
-  }, gitEventOptions()).then((unlisten) => unlisten);
+  }, thisWindowOnly()).then((unlisten) => unlisten);
 }
 
 export function onGitFetchStarted(callback: () => void): Promise<() => void> {
-  return listen("notebox:git-fetch-started", () => callback(), gitEventOptions()).then(
+  return listen("notebox:git-fetch-started", () => callback(), thisWindowOnly()).then(
     (unlisten) => unlisten,
   );
 }
 
 export function onGitFetchCompleted(callback: () => void): Promise<() => void> {
-  return listen("notebox:git-fetch-completed", () => callback(), gitEventOptions()).then(
+  return listen("notebox:git-fetch-completed", () => callback(), thisWindowOnly()).then(
     (unlisten) => unlisten,
   );
 }
 
 export function onGitPushStarted(callback: () => void): Promise<() => void> {
-  return listen("notebox:git-push-started", () => callback(), gitEventOptions()).then(
+  return listen("notebox:git-push-started", () => callback(), thisWindowOnly()).then(
     (unlisten) => unlisten,
   );
 }
 
 export function onGitPushCompleted(callback: () => void): Promise<() => void> {
-  return listen("notebox:git-push-completed", () => callback(), gitEventOptions()).then(
+  return listen("notebox:git-push-completed", () => callback(), thisWindowOnly()).then(
     (unlisten) => unlisten,
   );
 }
@@ -160,5 +160,5 @@ export function onGitError(
 ): Promise<() => void> {
   return listen<string>("notebox:git-error", (event) => {
     callback(event.payload);
-  }, gitEventOptions()).then((unlisten) => unlisten);
+  }, thisWindowOnly()).then((unlisten) => unlisten);
 }

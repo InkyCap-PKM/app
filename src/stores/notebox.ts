@@ -13,6 +13,7 @@ import {
   onFileCreated,
   onFileDeleted,
   onFileRenamed,
+  thisWindowOnly,
 } from "../lib/events";
 import { renameTabPath, closeAllTabs, openTab, createEmptyTab, tabs } from "./tabs";
 import {
@@ -165,6 +166,7 @@ async function ensureIndexEventListeners() {
         setIndexReady(true);
         refreshAliases().catch(console.error);
       },
+      thisWindowOnly(),
     );
   }
   if (indexErrorUnlisten === null) {
@@ -176,6 +178,7 @@ async function ensureIndexEventListeners() {
         // the indexes will simply be empty until the next successful rebuild.
         setIndexReady(true);
       },
+      thisWindowOnly(),
     );
   }
   if (noteboxLostUnlisten === null) {

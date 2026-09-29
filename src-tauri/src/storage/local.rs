@@ -80,8 +80,9 @@ impl NoteboxStorage for LocalNoteboxStorage {
 
         for entry in WalkDir::new(&full_dir).into_iter().filter_entry(|e| {
             let name = e.file_name().to_string_lossy();
-            // Skip hidden dirs
-            if e.file_type().is_dir() {
+            // Skip hidden dirs below the starting folder (which is itself
+            // allowed to have a hidden name).
+            if e.file_type().is_dir() && e.depth() > 0 {
                 !name.starts_with('.') && name != "node_modules"
             } else {
                 true
@@ -399,8 +400,10 @@ fn build_file_tree(root: &Path) -> Result<Vec<FileTreeNode>> {
         })
         .into_iter()
         .filter_entry(|e| {
+            // The notebox root itself may have a hidden name; skip hidden
+            // entries below it.
             let name = e.file_name().to_string_lossy();
-            !name.starts_with('.') && name != "node_modules"
+            e.depth() == 0 || (!name.starts_with('.') && name != "node_modules")
         });
 
     for entry in walker {

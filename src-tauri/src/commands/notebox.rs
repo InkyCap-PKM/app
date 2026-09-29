@@ -303,20 +303,27 @@ pub(crate) fn spawn_index_rebuild(
     app_handle: tauri::AppHandle,
     session: std::sync::Arc<crate::state::NoteboxSession>,
 ) {
-    tauri::async_runtime::spawn(async move {
-        match session.build_indexes().await {
-            Ok(stats) => {
-                let _ = app_handle.emit("notebox:index-ready", &stats);
-            }
-            Err(err) => {
-                log::error!("Background index rebuild failed: {err}");
-                let _ = app_handle.emit(
-                    "notebox:index-error",
-                    serde_json::json!({ "error": err.to_string() }),
-                );
+    let owner = session.owner_label.clone();
+    let task = tauri::async_runtime::spawn({
+        let session = session.clone();
+        async move {
+            match session.build_indexes().await {
+                Ok(stats) => {
+                    let _ = app_handle.emit_to(owner.as_str(), "notebox:index-ready", &stats);
+                }
+                Err(err) => {
+                    log::error!("Background index rebuild failed: {err}");
+                    let _ = app_handle.emit_to(
+                        owner.as_str(),
+                        "notebox:index-error",
+                        serde_json::json!({ "error": err.to_string() }),
+                    );
+                }
             }
         }
     });
+    // Cancels a build still running from before: this one covers its work.
+    session.replace_index_build(task.inner().abort_handle());
 }
 
 /// User-initiated "Rebuild cache" recovery action (Settings → Files & Links).
@@ -485,6 +492,7 @@ fn dispatch_watcher_batch(
     let is_note = |p: &std::path::Path| p.extension().and_then(|e| e.to_str()) == Some("typ");
     let mut reindex_order: Vec<PathBuf> = Vec::new();
     let mut reindex_set: HashSet<PathBuf> = HashSet::new();
+    let mut removals_and_renames: Vec<WatcherIndexStep> = Vec::new();
 
     for event in &events {
         match event {
@@ -520,7 +528,7 @@ fn dispatch_watcher_batch(
                 // If this file was changed earlier in the same window, drop it
                 // from the reindex set — the delete wins.
                 reindex_set.remove(path);
-                sync_cache_for_deleted_file(handle, owner.to_string(), path.clone());
+                removals_and_renames.push(WatcherIndexStep::Remove(path.clone()));
             }
             AppEvent::FileRenamed { from, to } => {
                 // Fire delete+create so the tree refreshes the same way it
@@ -545,7 +553,7 @@ fn dispatch_watcher_batch(
                 // from the batch.
                 reindex_set.remove(from);
                 reindex_set.remove(to);
-                sync_cache_for_renamed_file(handle, owner.to_string(), from.clone(), to.clone());
+                removals_and_renames.push(WatcherIndexStep::Rename(from.clone(), to.clone()));
             }
             _ => {}
         }
@@ -554,68 +562,104 @@ fn dispatch_watcher_batch(
     // Drop any path that ended the window deleted/renamed (still present in
     // `reindex_order` but removed from the set).
     reindex_order.retain(|p| reindex_set.contains(p));
-    if !reindex_order.is_empty() {
-        spawn_batch_reindex(handle, owner.to_string(), reindex_order);
+
+    // Apply the index work here, on the watcher thread, before the next batch
+    // is read: removals and renames in the order they happened, then the
+    // reindex of what was changed. Separate background tasks could run in any
+    // order and, say, drop a note after its re-creation had been indexed.
+    if !removals_and_renames.is_empty() || !reindex_order.is_empty() {
+        tauri::async_runtime::block_on(apply_watcher_index_work(
+            handle,
+            owner,
+            removals_and_renames,
+            reindex_order,
+        ));
+    }
+}
+
+/// Index work for one removed or renamed file, in watcher order.
+enum WatcherIndexStep {
+    Remove(std::path::PathBuf),
+    Rename(std::path::PathBuf, std::path::PathBuf),
+}
+
+/// Bring the indexes up to date with one watcher batch. See
+/// [`dispatch_watcher_batch`].
+async fn apply_watcher_index_work(
+    handle: &tauri::AppHandle,
+    owner: &str,
+    removals_and_renames: Vec<WatcherIndexStep>,
+    reindex: Vec<std::path::PathBuf>,
+) {
+    let state = handle.state::<AppState>();
+    let session = state.session(owner).await;
+    for step in removals_and_renames {
+        match step {
+            WatcherIndexStep::Remove(path) => drop_deleted_note(handle, &session, path).await,
+            WatcherIndexStep::Rename(from, to) => {
+                follow_renamed_note(handle, &session, from, to).await
+            }
+        }
+    }
+    if !reindex.is_empty() {
+        reindex_changed_notes(handle, &session, reindex).await;
     }
 }
 
 /// Re-parse a coalesced set of changed/created notes and push them through
-/// [`AppState::reindex_notes`] — a single notebox-wide backlink resolution for
-/// the whole batch. Each path is re-validated against the canonical notebox
-/// root (defense in depth for symlinked watcher events) and read through the
-/// validated storage pipeline. Spawns a short-lived async task because the
-/// watcher dispatcher runs on a blocking thread.
-fn spawn_batch_reindex(handle: &tauri::AppHandle, owner: String, paths: Vec<std::path::PathBuf>) {
-    let handle = handle.clone();
-    tauri::async_runtime::spawn(async move {
-        let state = handle.state::<AppState>();
-        let session = state.session(&owner).await;
+/// [`NoteboxSession::reindex_notes`] — a single notebox-wide backlink
+/// resolution for the whole batch. Each path is re-validated against the
+/// canonical notebox root (defense in depth for symlinked watcher events) and
+/// read through the validated storage pipeline.
+///
+/// [`NoteboxSession::reindex_notes`]: crate::state::NoteboxSession::reindex_notes
+async fn reindex_changed_notes(
+    handle: &tauri::AppHandle,
+    session: &crate::state::NoteboxSession,
+    paths: Vec<std::path::PathBuf>,
+) {
+    // Need both notebox_root and storage. If either is missing the notebox
+    // has been closed, so bail out silently.
+    let Some(notebox_root) = session.notebox_root.read().await.clone() else {
+        return;
+    };
+    let Some(storage) = session.storage.read().await.clone() else {
+        return;
+    };
 
-        // Need both notebox_root and storage. If either is missing the notebox
-        // has been closed, so bail out silently.
-        let notebox_root = match session.notebox_root.read().await.clone() {
-            Some(r) => r,
-            None => return,
+    let mut batch: Vec<(std::path::PathBuf, String)> = Vec::with_capacity(paths.len());
+    for path in paths {
+        // Skip files outside the canonical notebox root — watcher events
+        // for symlinked files resolve to their real paths, so an out-of-
+        // root path is an escape attempt and we refuse to index it.
+        let rel = match path.strip_prefix(&notebox_root) {
+            Ok(rel) => rel.to_path_buf(),
+            Err(_) => continue,
         };
-        let storage = match session.storage.read().await.clone() {
-            Some(s) => s,
-            None => return,
-        };
-
-        let mut batch: Vec<(std::path::PathBuf, String)> = Vec::with_capacity(paths.len());
-        for path in paths {
-            // Skip files outside the canonical notebox root — watcher events
-            // for symlinked files resolve to their real paths, so an out-of-
-            // root path is an escape attempt and we refuse to index it.
-            let rel = match path.strip_prefix(&notebox_root) {
-                Ok(rel) => rel.to_path_buf(),
-                Err(_) => continue,
-            };
-            match storage.read_file(&rel).await {
-                Ok(content) => batch.push((path, content)),
-                Err(err) => {
-                    // File may have been deleted between the change event and
-                    // the re-parse — the next FileDeleted event will clean up.
-                    log::warn!("watcher reindex failed for {}: {err}", path.display());
-                }
+        match storage.read_file(&rel).await {
+            Ok(content) => batch.push((path, content)),
+            Err(err) => {
+                // File may have been deleted between the change event and
+                // the re-parse — the next FileDeleted event will clean up.
+                log::warn!("watcher reindex failed for {}: {err}", path.display());
             }
         }
+    }
 
-        if batch.is_empty() {
-            return;
-        }
+    if batch.is_empty() {
+        return;
+    }
 
-        // Reindex the whole batch with one backlink resolution, then notify
-        // UI that mirrors the in-memory indices (e.g. the backlinks pane).
-        let updated: Vec<std::path::PathBuf> = batch.iter().map(|(p, _)| p.clone()).collect();
-        session.reindex_notes(batch).await;
-        for path in &updated {
-            let _ = handle.emit(
-                "notebox:index-updated",
-                serde_json::json!({ "path": to_frontend_string(path) }),
-            );
-        }
-    });
+    // Reindex the whole batch with one backlink resolution, then notify
+    // UI that mirrors the in-memory indices (e.g. the backlinks pane).
+    let updated: Vec<std::path::PathBuf> = batch.iter().map(|(p, _)| p.clone()).collect();
+    session.reindex_notes(batch).await;
+    for path in &updated {
+        let _ = handle.emit(
+            "notebox:index-updated",
+            serde_json::json!({ "path": to_frontend_string(path) }),
+        );
+    }
 }
 
 /// Handle an externally-observed rename: rewrite wikilinks in every note
@@ -624,9 +668,9 @@ fn spawn_batch_reindex(handle: &tauri::AppHandle, owner: String, paths: Vec<std:
 /// orphan `[[Old Name]]` / `#wikilink("Old Name")` references behind,
 /// since the watcher's split delete+create events provide no way to
 /// correlate the two sides.
-fn sync_cache_for_renamed_file(
+async fn follow_renamed_note(
     handle: &tauri::AppHandle,
-    owner: String,
+    session: &crate::state::NoteboxSession,
     from: std::path::PathBuf,
     to: std::path::PathBuf,
 ) {
@@ -638,88 +682,77 @@ fn sync_cache_for_renamed_file(
         return;
     }
 
-    let handle = handle.clone();
-    tauri::async_runtime::spawn(async move {
-        let state = handle.state::<AppState>();
-        let session = state.session(&owner).await;
+    let Some(notebox_root) = session.notebox_root.read().await.clone() else {
+        return;
+    };
+    let Some(storage) = session.storage.read().await.clone() else {
+        return;
+    };
 
-        let notebox_root = match session.notebox_root.read().await.clone() {
-            Some(r) => r,
-            None => return,
-        };
-        let storage = match session.storage.read().await.clone() {
-            Some(s) => s,
-            None => return,
-        };
+    // Symlink-escape defence: both endpoints must live under the
+    // canonical notebox root. Watcher events for symlinked paths
+    // resolve to their real targets, so an out-of-root path here
+    // is an escape attempt.
+    if from.strip_prefix(&notebox_root).is_err() || to.strip_prefix(&notebox_root).is_err() {
+        return;
+    }
 
-        // Symlink-escape defence: both endpoints must live under the
-        // canonical notebox root. Watcher events for symlinked paths
-        // resolve to their real targets, so an out-of-root path here
-        // is an escape attempt.
-        if from.strip_prefix(&notebox_root).is_err() || to.strip_prefix(&notebox_root).is_err() {
-            return;
+    // Rewrite wikilinks in every backlink of the old path. Errors
+    // are logged but non-fatal — a partial rewrite is still better
+    // than no rewrite, and the user can re-save manually if needed.
+    if let Err(err) =
+        crate::commands::file_ops::rewrite_backlinks_for_rename(&from, &to, &storage, session).await
+    {
+        log::warn!(
+            "wikilink rewrite failed during external rename {} → {}: {err}",
+            from.display(),
+            to.display()
+        );
+    }
+
+    // Drop the old path from every index, then index the new path.
+    session.remove_from_indices(&from).await;
+
+    let rel = to
+        .strip_prefix(&notebox_root)
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|_| to.clone());
+    match storage.read_file(&rel).await {
+        Ok(content) => {
+            session.reindex_note(&to, &content).await;
         }
-
-        // Rewrite wikilinks in every backlink of the old path. Errors
-        // are logged but non-fatal — a partial rewrite is still better
-        // than no rewrite, and the user can re-save manually if needed.
-        if let Err(err) =
-            crate::commands::file_ops::rewrite_backlinks_for_rename(&from, &to, &storage, &session)
-                .await
-        {
+        Err(err) => {
             log::warn!(
-                "wikilink rewrite failed during external rename {} → {}: {err}",
-                from.display(),
+                "watcher reindex failed for renamed file {}: {err}",
                 to.display()
             );
         }
+    }
 
-        // Drop the old path from every index, then index the new path.
-        session.remove_from_indices(&from).await;
-
-        let rel = to
-            .strip_prefix(&notebox_root)
-            .map(|p| p.to_path_buf())
-            .unwrap_or_else(|_| to.clone());
-        match storage.read_file(&rel).await {
-            Ok(content) => {
-                session.reindex_note(&to, &content).await;
-            }
-            Err(err) => {
-                log::warn!(
-                    "watcher reindex failed for renamed file {}: {err}",
-                    to.display()
-                );
-            }
-        }
-
-        let _ = handle.emit(
-            "notebox:index-updated",
-            serde_json::json!({
-                "from": to_frontend_string(&from),
-                "to": to_frontend_string(&to),
-            }),
-        );
-    });
+    let _ = handle.emit(
+        "notebox:index-updated",
+        serde_json::json!({
+            "from": to_frontend_string(&from),
+            "to": to_frontend_string(&to),
+        }),
+    );
 }
 
 /// Drop a deleted file from every in-memory index and the persistent
 /// metadata cache.
-fn sync_cache_for_deleted_file(handle: &tauri::AppHandle, owner: String, path: std::path::PathBuf) {
+async fn drop_deleted_note(
+    handle: &tauri::AppHandle,
+    session: &crate::state::NoteboxSession,
+    path: std::path::PathBuf,
+) {
     if path.extension().and_then(|e| e.to_str()) != Some("typ") {
         return;
     }
-    let handle = handle.clone();
-    tauri::async_runtime::spawn(async move {
-        let state = handle.state::<AppState>();
-        let session = state.session(&owner).await;
-        session.remove_from_indices(&path).await;
-        use tauri::Emitter;
-        let _ = handle.emit(
-            "notebox:index-updated",
-            serde_json::json!({ "path": to_frontend_string(&path) }),
-        );
-    });
+    session.remove_from_indices(&path).await;
+    let _ = handle.emit(
+        "notebox:index-updated",
+        serde_json::json!({ "path": to_frontend_string(&path) }),
+    );
 }
 
 /// Return summary info (name, file count, property keys) for the currently open notebox, or `None` if no notebox is open.
