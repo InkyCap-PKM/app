@@ -181,6 +181,19 @@ describe("#task reveals raw source when the caret enters it (issue #23)", () => 
     expect(widgets[0]).toBeInstanceOf(FuncPillWidget);
   });
 
+  it("freshly inserted (expanded) task shows its pill straight away", () => {
+    // The slash menu, palette and `- [ ]` shortcut insert the task expanded,
+    // so the pill must not wait for the caret to leave and come back.
+    const caret = CALL.indexOf('"') + 1;
+    const state = EditorState.create({ doc: CALL });
+    const decos: Range<Decoration>[] = [];
+    handleFuncCall(state, 0, CALL.length, decos, true, new Set([caret]), false, /* expandedPos */ 0);
+    expect(fullRangeReplace(decos)).toBeUndefined();
+    const widgets = widgetsIn(decos);
+    expect(widgets).toHaveLength(1);
+    expect(widgets[0]).toBeInstanceOf(FuncPillWidget);
+  });
+
   it("caret adjacent at the call end → still reveals raw source", () => {
     const { decos } = decorate(CALL, [CALL.length]);
     expect(fullRangeReplace(decos)).toBeUndefined();

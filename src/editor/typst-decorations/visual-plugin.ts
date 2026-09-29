@@ -1525,6 +1525,10 @@ export function handleFuncCall(
     // inside owns the editing experience. Focus routing on insertion
     // is handled inside the widget's toDOM (auto-focus the canvas
     // when CM selection is inside the widget's body range).
+  } else if (funcName === "task") {
+    // A task reveals its raw source in its case below while keeping its pill,
+    // so the done/due/label menu is reachable straight after insertion (the
+    // slash menu, palette and `- [ ]` shortcut all insert it expanded).
   } else {
     const isExpanded = expandedPos === from;
     if (isExpanded || (autoExpand && onCursor)) return false;
@@ -1766,7 +1770,10 @@ export function handleFuncCall(
         // footnote and wikilink use. The pill above stays available for the
         // done/due/label menu; moving the caret away collapses the source back
         // to the checkbox widget below.
-        if (isCursorAdjacentOrInside(state, from, to, cursors)) return false;
+        const revealSource = expandedPos === from
+          || (autoExpand && onCursor)
+          || isCursorAdjacentOrInside(state, from, to, cursors);
+        if (revealSource) return false;
         decos.push(
           Decoration.replace({
             widget: new TaskWidget(body, done, due, from),
