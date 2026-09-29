@@ -44,6 +44,20 @@
   overflow: hidden;
 }
 
+/* A pane's writing surface draws a quiet hairline down each side (see
+   .main-content__body). Where that side faces a split handle, the handle is
+   already the seam, so the hairline is dropped; otherwise the two neighbours'
+   hairlines flank the handle and widen it to a 3px band below the tab strip.
+   Every pane inside a later slot has a handle on its left (this split's, or a
+   nested one's), and every pane inside an earlier slot has one on its right. */
+.pane-split--row > .pane-split__slot:not(:first-child) .main-content__body {
+  border-left: 0;
+}
+
+.pane-split--row > .pane-split__slot:not(:last-child) .main-content__body {
+  border-right: 0;
+}
+
 /* Drag handle between two split children. Thin, with a wider invisible hit
    area via padding-box vs. the visible line, and a hover/active accent. */
 .pane-resizer {

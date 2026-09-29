@@ -313,6 +313,10 @@
      .pane-toolbar::after uses at the other end. */
   bottom: 1px;
   height: var(--lip-height);
+  /* Above the split-pane handles (z-index 1), so a handle runs under the
+     shadow like the column's side hairlines instead of cutting through it.
+     Coming later in the document, it wins the tie. */
+  z-index: 1;
   pointer-events: none;
   background: linear-gradient(to top, var(--lip-shadow-status), transparent);
   /* Ends taper out across the gutters on either side of the text column, so
