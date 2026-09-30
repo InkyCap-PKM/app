@@ -12,6 +12,85 @@ each tagged release, newest first, grouping entries under **Added**, **Changed**
 **Fixed**, **Removed**, **Security**, or **Deprecated** as needed.
 
 
+## [26.9.15] - 2026-09-30 (beta)
+
+A beta release with a lot inside: links that open notes from other apps,
+Paste from HTML, a colourblind-friendly colours option, protection against
+untrusted notes, and fixes for lost writing on rename and for the note index.
+The AppImage is back, and there are now ARM builds for Linux. Please report anything that misbehaves.
+
+### Added
+
+- **InkyCap links.** An `inkycap://` link opens a note or collection in
+  InkyCap from anywhere on your computer: a calendar entry, an email, a task
+  manager, or a script. Right-click a note or collection and choose **Copy
+  InkyCap link** (in the file tree, the Collections list, and the Tab options
+  menu), or right-click a heading in the Outline to link straight to it. If
+  the note's notebox is open, its window comes forward; if not, InkyCap asks
+  before opening it in a new window; if InkyCap is closed, it starts with the
+  note open. Links can also name a note by its `zid`, or run a search. Pasted
+  into a `#link(...)` in a note, they link between noteboxes, which wikilinks
+  can't do. See *Linking from Other Apps* in the user manual.
+- **Paste from HTML** converts what a browser (or Google Docs) puts on the
+  clipboard into Typst: headings, lists, checklists, quotes, tables, links and
+  formatting. Images on the web become links; nothing is downloaded.
+- A **colourblind-friendly colours** switch in Settings, Appearance, based on
+  the Okabe-Ito palette.
+- Quick Open (Ctrl+O) also finds notes by their title or `zid` property.
+- **AppImage** downloads are back, built so they run on current distributions
+  (and on musl systems such as Alpine), and they can upgrade themselves.
+- **ARM Linux** downloads: `.deb`, `.rpm` and AppImage.
+
+### Changed
+
+- Starting InkyCap while it is already running brings the open window to the
+  front instead of starting a second copy.
+- Opening a `.typ` file from another tool that lacks the InkyCap import line
+  adds it, or asks first if Settings, Import/Export, "Import Typst files" is
+  off. Files copied, dropped or pasted into the notebox get the same check.
+- Files dropped on a folder in the file tree go into that folder. The "Current
+  folder" choice for new notes now works.
+- Colour is no longer the only way the app shows meaning: problems are
+  underlined by kind, callouts show an icon for their kind, version compare
+  marks added and removed text, and the Agenda, Mycelial View and search
+  results gain shapes or icons.
+- Indexing a large notebox leaves about half as much memory in use.
+- Tabs in `#verse` keep their width (four spaces) in the reading view and
+  exports.
+- Unwritten notes in the Journal Scroll's Connections list use the same dashed
+  page icon as the Links tab.
+
+### Fixed
+
+- Renaming or moving a note could lose the latest typing, or bring the old
+  file back.
+- Notes saved while the index was being built could be indexed with their
+  older contents.
+- Renaming or removing a property in a collection no longer changes other
+  names that contain it, or breaks the collection file.
+- Zotero citation keys that start with a digit were missed by the References
+  panel and bibliography copy, and some Zotero items got a blank key.
+- The HTML reading view didn't update after the note was recompiled.
+- Deleting a note failed in the Flatpak.
+- Right-click menus near the bottom or right edge of the window were cut off.
+- The "notebox lost" warning appeared in every window instead of the affected
+  one.
+- A deleted `#due(...)` left its pill on screen; a newly inserted task showed
+  no pill until the caret left the line.
+
+### Security
+
+- Compiled notes are filtered before the reading views show them, so a note
+  from someone else can't run a script in the app. The app no longer loads
+  anything from the internet into its window.
+- Opening a program file, or a file outside the notebox, asks first.
+- Backups, collaboration packages and Markdown zip imports stop unpacking an
+  archive that expands far beyond its size.
+- An `inkycap://` link only ever opens a note or collection, or runs a
+  search, and only in a notebox you have already added. It never creates,
+  changes or deletes anything.
+
+
 ## [26.9.14] - 2026-09-23
 
 InkyCap can now upgrade itself (in most cases): when a new version is available, an Upgrade
