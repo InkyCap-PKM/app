@@ -2557,5 +2557,16 @@
   "pill.copy.title": "Copier l'appel de fonction dans le presse-papiers",
   "pill.duplicate.title": "Insérer une copie de cet appel après l'actuel",
   "pill.delete.title": "Retirer cet appel et son contenu du document",
-  "pill.removeStyle.title": "Retirer l'enrobage de la fonction mais conserver le contenu"
+  "pill.removeStyle.title": "Retirer l'enrobage de la fonction mais conserver le contenu",
+  "deepLink.copyLink": "Copier le lien InkyCap",
+  "deepLink.copyHeadingLink": "Copier le lien InkyCap vers ce titre",
+  "deepLink.copied": "Lien InkyCap copié.",
+  "deepLink.copyFailed": "Le lien n'a pas pu être copié.",
+  "deepLink.unregistered": "Les liens ne peuvent mener qu'aux boîtes de notes listées sous Gérer les boîtes de notes.",
+  "deepLink.invalid": "Ce lien InkyCap n'est pas valide.",
+  "deepLink.notFound.notebox": "Aucune boîte de notes nommée « {name} » n'est listée sous Gérer les boîtes de notes.",
+  "deepLink.notFound.note": "La note liée « {name} » est introuvable.",
+  "deepLink.openNotebox.title": "Ouvrir « {name} »?",
+  "deepLink.openNotebox.message": "Un lien demande d'ouvrir une note dans la boîte de notes « {name} », qui n'est pas ouverte. L'ouvrir dans une nouvelle fenêtre?",
+  "deepLink.openNotebox.confirm": "Ouvrir dans une nouvelle fenêtre"
 }

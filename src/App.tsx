@@ -65,6 +65,9 @@ import { activeEditorView } from "./stores/editor";
 import { applyUiScale } from "./lib/ui-scale";
 import { loadCreationRules, triggerCreationRule } from "./stores/creation-rules";
 import { useI18n } from "./lib/i18n";
+import { followDelivery, followInOpenNotebox, listenForDeepLinks } from "./lib/deep-link";
+import * as ipc from "./lib/ipc";
+import type { DeepLink } from "./lib/types";
 
 const App: Component = () => {
   const t = useI18n();
@@ -242,9 +245,16 @@ const App: Component = () => {
     const params = new URLSearchParams(window.location.search);
     const noteboxParam = params.get("notebox");
     const fileParam = params.get("path");
+    // A window opened to follow an inkycap:// link carries the link, already
+    // checked by the backend, in `?link=` (see lib/new-window.ts).
+    const linkParam = params.get("link");
+    // Subscribe before the main window asks for its startup link below, so a
+    // link arriving in between is not missed.
+    await listenForDeepLinks();
     if (noteboxParam) {
       try {
-        await openNotebox(noteboxParam);
+        const opened = await openNotebox(noteboxParam);
+        if (opened && linkParam) void followInOpenNotebox(JSON.parse(linkParam) as DeepLink);
         // A secondary window may also name a file to open within that notebox
         // (the "open in a new window" actions pass both notebox + path).
         if (fileParam) {
@@ -266,7 +276,13 @@ const App: Component = () => {
       // auto-restoring the saved notebox, so the user opens what they want here.
       await showNoteboxPicker();
     } else {
-      await initNotebox();
+      // A link InkyCap was started with opens its notebox in place of the
+      // one restored from last time, without asking.
+      const startupLink = await ipc.deepLinkReady().catch(() => null);
+      await initNotebox(
+        startupLink?.kind === "openNotebox" ? startupLink.link.notebox.path : undefined,
+      );
+      if (startupLink) void followDelivery(startupLink);
     }
     // Register every built-in command with the registry. The global
     // keyboard dispatcher (initKeyboard, called below) reads keybindings

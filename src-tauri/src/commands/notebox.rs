@@ -771,7 +771,7 @@ pub async fn get_notebox_info(
 /// whose name is (or is prefixed by) `InkyCap-Documentation`. This recognizes
 /// every shipped manual, not just the English one, so the special-case
 /// behaviour (ephemeral edits, docs fonts) applies to the localized docs too.
-fn is_docs_notebox(path: &str) -> bool {
+pub(crate) fn is_docs_notebox(path: &str) -> bool {
     let candidate = std::path::PathBuf::from(path);
     let canon = std::fs::canonicalize(&candidate).unwrap_or(candidate);
     let config_dir = crate::app_paths::config_dir();

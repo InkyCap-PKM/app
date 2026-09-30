@@ -13,6 +13,10 @@ import {
 } from "../editor/typst-decorations/heading-tracker";
 import { activeEditorView } from "../stores/editor";
 import { useI18n } from "../lib/i18n";
+import { showContextMenu } from "../lib/context-menu";
+import { copyInkycapLink } from "../lib/copy-inkycap-link";
+import { headingLinkValue } from "../lib/inkycap-url";
+import { activeNotePath } from "../stores/tabs";
 import { EditorView } from "@codemirror/view";
 import {
   ChevronRight,
@@ -158,12 +162,27 @@ const OutlinePanel: Component = () => {
   );
 };
 
+/** Right-click menu on a heading: copy an `inkycap://` link that opens the
+ *  note scrolled to it. */
+function showHeadingMenu(x: number, y: number, heading: Heading, label: string) {
+  const path = activeNotePath();
+  const view = activeEditorView()?.view;
+  if (!path || !view) return;
+  const pos = Math.min(heading.pos, view.state.doc.length);
+  const value = headingLinkValue(view.state.doc.lineAt(pos).text);
+  if (!value) return;
+  showContextMenu(x, y, [
+    { label, run: () => void copyInkycapLink(path, value) },
+  ]);
+}
+
 const OutlineTree: Component<{
   nodes: HeadingNode[];
   expandedKeys: () => Set<number>;
   onToggle: (pos: number) => void;
   onScroll: (h: Heading) => void;
 }> = (props) => {
+  const t = useI18n();
   return (
     <For each={props.nodes}>
       {(node) => {
@@ -197,6 +216,15 @@ const OutlineTree: Component<{
               <span
                 class="outline-panel__label"
                 onClick={() => props.onScroll(node.heading)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  showHeadingMenu(
+                    e.clientX,
+                    e.clientY,
+                    node.heading,
+                    t("deepLink.copyHeadingLink"),
+                  );
+                }}
               >
                 {node.heading.text}
               </span>

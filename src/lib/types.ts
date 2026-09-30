@@ -1318,3 +1318,29 @@ export interface TypstHtmlResult {
   html: string;
   diagnostics: TypstDiagnostic[];
 }
+
+// ── inkycap:// links (src-tauri/src/deep_link.rs) ─────────────────────────
+
+/** A link resolved and checked by the backend. `notebox.path` is the path the
+ *  notebox list holds (what `openNotebox` takes); a `file` target is known to
+ *  exist inside that notebox. */
+export type DeepLink = {
+  notebox: { path: string; name: string };
+} & (
+  | {
+      verb: "open";
+      target: { kind: "file"; path: string } | { kind: "zid"; zid: string };
+      heading: string | null;
+    }
+  | { verb: "search"; query: string }
+);
+
+/** What the backend asks this window to do with a link (`app:deep-link`). */
+export type DeepLinkDelivery =
+  /** This window has the link's notebox open. */
+  | { kind: "open"; link: DeepLink }
+  /** The notebox is open nowhere: ask, then open it in a new window; or,
+   *  without `ask`, this window has no notebox and opens it itself. */
+  | { kind: "openNotebox"; link: DeepLink; ask: boolean }
+  /** The named notebox or note does not exist. */
+  | { kind: "notFound"; what: "notebox" | "note"; name: string };

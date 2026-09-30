@@ -283,7 +283,8 @@ merge churn. See [`subsystems/collaboration-git.md`](subsystems/collaboration-gi
   [Agenda](subsystems/agenda.md) ·
   [Bibliography & Zotero](subsystems/bibliography-zotero.md) ·
   [Collaboration / git](subsystems/collaboration-git.md) ·
-  [Import, export & backup](subsystems/import-export-backup.md).
+  [Import, export & backup](subsystems/import-export-backup.md) ·
+  [`inkycap://` links](subsystems/deep-links.md).
 - **The editor:** [visual-editor/pill-system.md](visual-editor/pill-system.md).
 - **Extending without forking:** [extending/README.md](extending/README.md).
 - **UI design system:** [ui-styling.md](ui-styling.md).

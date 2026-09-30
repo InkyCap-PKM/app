@@ -16,6 +16,7 @@ pub mod commands;
 pub mod config;
 pub mod corpus_stats;
 pub mod creation_rules;
+pub mod deep_link;
 pub mod docs_manual;
 pub mod errors;
 pub mod events;
@@ -43,6 +44,7 @@ pub mod system_open;
 pub mod tab_sessions;
 pub mod typst_packages;
 pub mod typst_pipeline;
+pub mod uri_scheme;
 pub mod watcher;
 pub mod window_state;
 
@@ -189,7 +191,20 @@ pub fn run() {
 
     use tauri::Manager;
 
-    tauri::Builder::default()
+    // Single-instance must be the first plugin: when InkyCap is already
+    // running, it hands this launch's arguments (such as an inkycap:// link)
+    // to the running copy and exits before anything else starts.
+    let builder = tauri::Builder::default();
+    let builder = if single_instance_supported() {
+        builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            deep_link::on_second_launch(app, &args)
+        }))
+    } else {
+        builder
+    };
+
+    builder
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -236,6 +251,8 @@ pub fn run() {
             // settings-change wake) so safe to always-on.
             backup::schedule::spawn(handle.clone());
 
+            deep_link::setup(&handle);
+
             Ok(())
         })
         .on_page_load(|webview, payload| {
@@ -249,6 +266,7 @@ pub fn run() {
         .manage(state::AppState::new())
         .manage(commands::upgrade::PendingUpgrade::default())
         .manage(id_migration)
+        .manage(deep_link::Inbox::default())
         .invoke_handler(tauri::generate_handler![
             commands::about::read_third_party_notices,
             commands::about::app_version,
@@ -341,6 +359,9 @@ pub fn run() {
             commands::files::get_outbound_links,
             commands::files::get_all_aliases,
             commands::files::get_note_identifiers,
+            commands::files::find_note_by_zid,
+            commands::deep_link::deep_link_ready,
+            commands::deep_link::open_inkycap_url,
             commands::settings::get_settings,
             commands::settings::update_settings,
             commands::plugins::read_plugin_manifests,
@@ -526,4 +547,21 @@ pub fn run() {
                 });
             }
         });
+}
+
+/// Whether the single-instance plugin can run here. On Linux it claims a name
+/// on the D-Bus session bus and cannot start without one (as under a bare SSH
+/// session or in some containers); InkyCap then runs as separate copies, and
+/// links from other apps open a new copy instead of reaching the running one.
+fn single_instance_supported() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        std::env::var_os("DBUS_SESSION_BUS_ADDRESS").is_some_and(|a| !a.is_empty())
+            || std::env::var_os("XDG_RUNTIME_DIR")
+                .is_some_and(|dir| std::path::Path::new(&dir).join("bus").exists())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        true
+    }
 }

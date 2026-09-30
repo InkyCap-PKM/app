@@ -121,6 +121,9 @@ pub enum AppEvent {
     GitError {
         message: String,
     },
+
+    /// An `inkycap://` link for this window to follow (see `crate::deep_link`).
+    DeepLink(crate::deep_link::Delivery),
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -224,6 +227,7 @@ impl AppEvent {
             ),
             // The frontend receives the message itself as the payload.
             AppEvent::GitError { message } => ("notebox:git-error", json!(message)),
+            AppEvent::DeepLink(delivery) => ("app:deep-link", json!(delivery)),
         }
     }
 }

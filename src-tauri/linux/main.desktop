@@ -8,6 +8,11 @@
 # more Comment[<code>] line: desktop environments fall back from a regional
 # code to the plain language, so Comment[fr] covers fr_CA and fr_FR alike.
 #
+# Exec also differs from Tauri's template: when the entry declares a MimeType
+# (the inkycap:// scheme, from plugins.deep-link in tauri.conf.json), `%u`
+# makes the desktop pass the clicked link to InkyCap. Tauri's own template
+# leaves it out, so links would start InkyCap without saying what to open.
+#
 # When upgrading Tauri, compare the fields below with its own template at
 # crates/tauri-bundler/src/bundle/linux/freedesktop/main.desktop. A field
 # added there and missed here is a field missing from the installed entry.
@@ -17,7 +22,7 @@ Categories={{categories}}
 Comment={{comment}}
 Comment[fr]=PKM basé sur Typst, avec notes liées, pour l'écriture et la recherche académiques
 {{/if}}
-Exec={{exec}}
+Exec={{exec}}{{#if mime_type}} %u{{/if}}
 StartupWMClass={{exec}}
 Icon={{icon}}
 Name={{name}}

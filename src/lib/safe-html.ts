@@ -14,6 +14,13 @@ import DOMPurify from "dompurify";
 /// change how the page resolves or loads resources.
 const FORBID_TAGS = ["style", "form", "base", "link", "meta"];
 
+/// Links into other desktop apps (`inkycap://`, `zotero://`, `obsidian://`…)
+/// are kept, as they are in the editor. DOMPurify otherwise keeps only a few
+/// well-known schemes; with this it still drops `javascript:`, `vbscript:` and
+/// `data:` links. A click on any link goes through `openLink`
+/// (lib/open-link.ts), where the backend refuses dangerous schemes again.
+const ALLOW_UNKNOWN_PROTOCOLS = true;
+
 /// typst-svg draws glyphs in frames as `<use xlink:href="#glyph-id">`. DOMPurify
 /// drops `<use>` by default because it can also load an outside document, so we
 /// allow it back and strip any reference that doesn't point inside the page.
@@ -41,5 +48,6 @@ export function sanitizeNoteHtml(html: string): DocumentFragment {
     RETURN_DOM_FRAGMENT: true,
     FORBID_TAGS,
     ADD_TAGS,
+    ALLOW_UNKNOWN_PROTOCOLS,
   });
 }

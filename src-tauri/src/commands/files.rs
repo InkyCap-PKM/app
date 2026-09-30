@@ -1015,6 +1015,37 @@ pub async fn get_note_identifiers(
         .collect())
 }
 
+/// The note whose `zid` property is `zid`, for `inkycap://` links that name a
+/// note by zid. When several notes share a zid, the one with the fewest path
+/// components wins, as for wikilinks. `None` when no note has it, including
+/// while the index is still being built, so callers wait for the index first.
+#[tauri::command]
+pub async fn find_note_by_zid(
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+    zid: String,
+) -> Result<Option<String>, InkyCapError> {
+    let session = state.session(window.label()).await;
+    let index = session.property_index.read().await;
+    let matches = index
+        .notes
+        .iter()
+        .filter(|(_, meta)| meta.zid().as_deref() == Some(zid.as_str()))
+        .map(|(path, _)| path);
+    Ok(preferred_path(matches).map(|p| to_frontend_string(p)))
+}
+
+/// Of several notes matching one name or zid, the one with the fewest path
+/// components; ties go to the path that sorts first, so the choice is stable.
+fn preferred_path<'a>(paths: impl Iterator<Item = &'a PathBuf>) -> Option<&'a PathBuf> {
+    paths.min_by(|a, b| {
+        a.components()
+            .count()
+            .cmp(&b.components().count())
+            .then_with(|| a.cmp(b))
+    })
+}
+
 /// Multi-line excerpt of a backlink. `line` is the line that mentions the
 /// target; `context_before` / `context_after` carry up to 2 surrounding
 /// lines each so the Links pane can show extra context when the user
@@ -1306,5 +1337,24 @@ mod heading_tests {
             insert_heading_label(content, heading, "intro"),
             "```\n= Intro\n```\n\n= Intro <intro>\n"
         );
+    }
+}
+
+#[cfg(test)]
+mod zid_tests {
+    use super::*;
+
+    #[test]
+    fn preferred_path_takes_the_fewest_components_then_sorts() {
+        let paths = [
+            PathBuf::from("/nb/deep/folder/a.typ"),
+            PathBuf::from("/nb/z.typ"),
+            PathBuf::from("/nb/b.typ"),
+        ];
+        assert_eq!(
+            preferred_path(paths.iter()),
+            Some(&PathBuf::from("/nb/b.typ"))
+        );
+        assert_eq!(preferred_path(std::iter::empty()), None);
     }
 }

@@ -2,6 +2,8 @@ import * as ipc from "./ipc";
 import { errorCode } from "./errors";
 import { t } from "./i18n";
 import { promptConfirm } from "../stores/prompt";
+import { showToast } from "../stores/toasts";
+import { isInkycapUrl } from "./inkycap-url";
 
 /** A URI scheme prefix: `http:`, `mailto:`, `zotero:`, `obsidian://`, … */
 const URI_SCHEME = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
@@ -11,6 +13,9 @@ const WINDOWS_DRIVE = /^[a-zA-Z]:[\\/]/;
 /**
  * Open a link target authored in a note.
  *
+ * - **InkyCap links** — `inkycap://` links are followed inside InkyCap
+ *   directly, which also works where the scheme is not registered with the
+ *   system (a development build, for example).
  * - **URLs** — anything carrying a URI scheme (`http(s)`, `mailto`, and
  *   custom app schemes like `zotero://` / `obsidian://`) are handed to the
  *   OS default handler so notes can link into other desktop apps.
@@ -27,6 +32,15 @@ export async function openLink(target: string): Promise<void> {
 
   const isUrl =
     !url.startsWith("/") && !WINDOWS_DRIVE.test(url) && URI_SCHEME.test(url);
+
+  if (isUrl && isInkycapUrl(url)) {
+    try {
+      await ipc.openInkycapUrl(url);
+    } catch {
+      showToast("warning", t("deepLink.invalid"));
+    }
+    return;
+  }
 
   if (isUrl) {
     try {

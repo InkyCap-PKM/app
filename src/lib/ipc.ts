@@ -1,6 +1,7 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { assertNoteboxWritable } from "../stores/notebox";
 import type {
+  DeepLinkDelivery,
   NoteboxInfo,
   NoteboxRegistryEntry,
   NoteboxMoveResult,
@@ -586,6 +587,12 @@ export interface NoteIdentifiers {
  *  index has finished building. */
 export async function getNoteIdentifiers(): Promise<NoteIdentifiers[]> {
   return invoke<NoteIdentifiers[]>("get_note_identifiers");
+}
+
+/** The note whose `zid` property is `zid` (fewest path components wins when
+ *  several share it), or `null`. Always `null` until the index is built. */
+export async function findNoteByZid(zid: string): Promise<string | null> {
+  return invoke<string | null>("find_note_by_zid", { zid });
 }
 
 // Settings
@@ -1267,6 +1274,24 @@ export async function openFileExternally(path: string, confirmed = false): Promi
  */
 export async function openUrlExternally(url: string): Promise<void> {
   return invoke<void>("open_url_externally", { url });
+}
+
+/**
+ * Follow an `inkycap://` link clicked inside InkyCap, as if another app had
+ * sent it: the backend checks it and sends the right window an
+ * `app:deep-link` event. Fails with `bad-request` for a malformed link.
+ */
+export async function openInkycapUrl(url: string): Promise<void> {
+  return invoke<void>("open_inkycap_url", { url });
+}
+
+/**
+ * Called once by the main window at startup, before it restores a notebox:
+ * returns the `inkycap://` link InkyCap was started with, if any. Links that
+ * arrive later come as `app:deep-link` events. Other windows get `null`.
+ */
+export async function deepLinkReady(): Promise<DeepLinkDelivery | null> {
+  return invoke<DeepLinkDelivery | null>("deep_link_ready");
 }
 
 /**

@@ -2557,5 +2557,16 @@
   "pill.copy.title": "Copy the function call to the clipboard",
   "pill.duplicate.title": "Insert a copy of this call after the current one",
   "pill.delete.title": "Remove this call and its content from the document",
-  "pill.removeStyle.title": "Remove the function wrapper but keep the content"
+  "pill.removeStyle.title": "Remove the function wrapper but keep the content",
+  "deepLink.copyLink": "Copy InkyCap link",
+  "deepLink.copyHeadingLink": "Copy InkyCap link to this heading",
+  "deepLink.copied": "InkyCap link copied.",
+  "deepLink.copyFailed": "The link couldn't be copied.",
+  "deepLink.unregistered": "Links can only point into noteboxes listed under Manage noteboxes.",
+  "deepLink.invalid": "This InkyCap link isn't valid.",
+  "deepLink.notFound.notebox": "No notebox called “{name}” is listed under Manage noteboxes.",
+  "deepLink.notFound.note": "The linked note “{name}” wasn't found.",
+  "deepLink.openNotebox.title": "Open “{name}”?",
+  "deepLink.openNotebox.message": "A link asks to open a note in the notebox “{name}”, which isn't open. Open it in a new window?",
+  "deepLink.openNotebox.confirm": "Open in new window"
 }

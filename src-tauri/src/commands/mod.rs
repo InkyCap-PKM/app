@@ -6,6 +6,7 @@ pub mod bibliography;
 pub mod bookmarks;
 pub mod collections;
 pub mod creation_rules;
+pub mod deep_link;
 pub mod export;
 pub mod file_ops;
 pub mod file_placement;

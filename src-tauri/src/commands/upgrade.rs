@@ -325,6 +325,10 @@ pub async fn upgrade_install(pending: State<'_, PendingUpgrade>) -> Result<(), I
 /// Restart InkyCap so the newly installed version runs.
 #[tauri::command]
 pub fn upgrade_restart(app: AppHandle) {
+    // Release the single-instance claim first. The new copy starts while this
+    // one is still running, and would otherwise hand itself over to this copy
+    // and exit, leaving InkyCap closed after the upgrade.
+    tauri_plugin_single_instance::destroy(&app);
     app.restart()
 }
 

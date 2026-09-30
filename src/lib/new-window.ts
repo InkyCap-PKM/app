@@ -1,5 +1,6 @@
 import { pathEquals } from "./paths";
 import * as ipc from "./ipc";
+import type { DeepLink } from "./types";
 
 // Opening additional InkyCap windows.
 //
@@ -13,21 +14,24 @@ import * as ipc from "./ipc";
 
 /**
  * Open a new InkyCap window. Pass a notebox root to open it directly;
- * omit it to open an empty window that shows the notebox picker.
+ * omit it to open an empty window that shows the notebox picker. With `link`
+ * (an `inkycap://` link already checked by the backend, for that notebox),
+ * the window follows it once the notebox is open.
  *
  * The WebviewWindow API is lazy-imported so it stays out of the initial
  * bundle for sessions that never open a second window.
  */
-export function openNoteboxWindow(notebox?: string): void {
+export function openNoteboxWindow(notebox?: string, link?: DeepLink): void {
   void (async () => {
     // A notebox lives in at most one window. If it's already open, focus that
     // window instead of opening a duplicate.
     if (notebox && (await focusNoteboxWindow(notebox, false))) return;
     const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
     const label = `note-win-${Date.now()}`;
-    const url = notebox
+    let url = notebox
       ? `index.html?notebox=${encodeURIComponent(notebox)}`
       : "index.html?new=1";
+    if (notebox && link) url += `&link=${encodeURIComponent(JSON.stringify(link))}`;
     const win = new WebviewWindow(label, { url, width: 1100, height: 800 });
     win.once("tauri://error", (e) => {
       console.error("Failed to open new window:", e);

@@ -99,4 +99,18 @@ describe("sanitizeNoteHtml keeps what InkyCap and typst-html emit", () => {
     const host = render(`<math display="block"><mfrac><mi>a</mi><mn>2</mn></mfrac></math>`);
     expect(host.querySelector("math mfrac mi")?.textContent).toBe("a");
   });
+
+  it("keeps links into other apps, including InkyCap's own", () => {
+    const host = render(
+      `<a href="inkycap://open?notebox=N&amp;file=a.typ">a</a>` +
+        `<a href="zotero://select/items/ABC">z</a>` +
+        `<a href="https://typst.app">t</a>`,
+    );
+    const hrefs = [...host.querySelectorAll("a")].map((a) => a.getAttribute("href"));
+    expect(hrefs).toEqual([
+      "inkycap://open?notebox=N&file=a.typ",
+      "zotero://select/items/ABC",
+      "https://typst.app",
+    ]);
+  });
 });

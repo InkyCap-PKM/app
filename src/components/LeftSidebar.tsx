@@ -66,6 +66,7 @@ import HelpPanel from "./HelpPanel";
 import type { SidebarMode } from "./VerticalToolbar";
 import { toastError } from "../stores/toasts";
 import { openFileInDefaultApp } from "../lib/open-link";
+import { copyInkycapLink } from "../lib/copy-inkycap-link";
 import { promptText, promptConfirm } from "../stores/prompt";
 import { pickFolder } from "../stores/folderPicker";
 import { triggerCreationRule, creationRules } from "../stores/creation-rules";
@@ -2254,6 +2255,16 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
             </button>
             <button
               class="context-menu__item"
+              onClick={() => {
+                const col = menu().collection;
+                setContextMenu(null);
+                void copyInkycapLink(col.path);
+              }}
+            >
+              {t("deepLink.copyLink")}
+            </button>
+            <button
+              class="context-menu__item"
               onClick={() => startRename(menu().collection)}
             >
               {t("common.rename")}
@@ -2436,6 +2447,17 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                   }}
                 >
                   {t("leftSidebar.bookmark")}
+                </button>
+              </Show>
+              <Show when={!node.is_dir && (isNoteFile(node.name) || isCollectionFile(node.name))}>
+                <button
+                  class="context-menu__item"
+                  onClick={() => {
+                    setFileContextMenu(null);
+                    void copyInkycapLink(node.path);
+                  }}
+                >
+                  {t("deepLink.copyLink")}
                 </button>
               </Show>
               <div class="context-menu__separator" />

@@ -38,6 +38,9 @@ Subsystem deep-dives:
 - [Import, export, and backup](developer/subsystems/import-export-backup.md):
   Markdown import with property mapping, the export matrix (PDF/A and PDF/UA,
   HTML, Pandoc-via-HTML, merged book export), and encrypted ZIP backups.
+- [`inkycap://` links](developer/subsystems/deep-links.md): how links from
+  other apps are checked and routed to a window, single-instance behaviour, and
+  how each package format registers the scheme.
 
 Editor, UI, and extension surfaces:
 

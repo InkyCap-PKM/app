@@ -20,6 +20,12 @@ tauri-plugin-shell = "2"
 # run only when the user clicks, or on startup if they opt in (local-first, no
 # telemetry); installing always needs a click.
 tauri-plugin-updater = "2"
+# inkycap:// links from other apps (uri_scheme.rs, deep_link.rs). On Linux and
+# Windows the OS starts a second copy of InkyCap with the link as an argument;
+# single-instance hands that argument to the running copy (its `deep-link`
+# feature forwards it to the deep-link plugin) and exits the new one.
+tauri-plugin-deep-link = "2"
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # serde_yaml 0.9 is the final release — the crate is archived/unmaintained

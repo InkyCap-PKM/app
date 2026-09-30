@@ -451,9 +451,12 @@ export async function pickAndOpenNotebox(): Promise<NoteboxInfo | null> {
   return openNotebox(selected);
 }
 
-export async function initNotebox(): Promise<void> {
+/** Open the notebox this window starts with: `preferredPath` when given (the
+ *  notebox of the `inkycap://` link InkyCap was started with), otherwise the
+ *  one open when InkyCap last closed. */
+export async function initNotebox(preferredPath?: string): Promise<void> {
   await loadNoteboxRegistry();
-  const savedPath = await ipc.getSavedNoteboxPath();
+  const savedPath = preferredPath ?? (await ipc.getSavedNoteboxPath());
   if (savedPath) {
     try {
       await openNotebox(savedPath);
