@@ -92,6 +92,7 @@ describe("release feeds", () => {
   it("never gives Linux or Windows a plain platform key", () => {
     const keys = ARTIFACTS.flatMap((a) => a.platforms);
     expect(keys).not.toContain("linux-x86_64");
+    expect(keys).not.toContain("linux-aarch64");
     expect(keys).not.toContain("windows-x86_64");
   });
 

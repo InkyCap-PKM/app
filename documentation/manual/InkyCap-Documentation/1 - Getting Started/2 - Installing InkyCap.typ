@@ -27,8 +27,9 @@ On Linux you'll have a choice of package formats:
 - A *.deb* package, for Debian- and Ubuntu-based systems, installed through your usual package tools.
 - An *.rpm* package, for Fedora- and openSUSE-based systems.
 - A *Flatpak* bundle, which runs on most distributions. You install the downloaded `.flatpak` file directly (it isn't on Flathub); it then appears in your application menu.
+- An *AppImage*, a single file that carries everything InkyCap needs and runs on almost any distribution, including ones the other formats don't cover, such as Arch or Alpine. Nothing is installed: make the file executable (in your file manager's file properties, or with `chmod +x`) and open it.
 
-All three work through your system's package tools and follow your desktop's native appearance. InkyCap can tell you when a new version is available but you must download and install it yourself.
+The `.deb`, `.rpm` and AppImage come for both x86_64 (most PCs) and ARM computers; the Flatpak is for x86_64. The `.deb`, `.rpm` and Flatpak work through your system's package tools, and all four follow your desktop's native appearance. Except for the Flatpak, InkyCap can update itself; see "How updates work" below.
 
 #callout("note", title: "For Typst users")[The `.deb` package installs InkyCap's bundled language server under the name `inkycap-tinymist`, so it never collides with a Tinymist you may have installed separately. The Flatpak is built on the GNOME 50 runtime. ]
 
@@ -42,7 +43,7 @@ InkyCap's macOS builds are not signed or notarized by Apple. The first time you 
 
 === Windows
 
-On Windows you can choose between a `-setup.exe` installer, which walks you through the on-screen steps, and an `.msi` package, which suits organizations that install software centrally. Either way, once installed, InkyCap behaves like other Windows applications. It does not update itself; see below for how updates work.
+On Windows you can choose between a `-setup.exe` installer, which walks you through the on-screen steps, and an `.msi` package, which suits organizations that install software centrally. Either way, once installed, InkyCap behaves like other Windows applications. See below for how updates work.
 
 == Opening InkyCap for the first time
 
@@ -52,7 +53,7 @@ For a guided walk-through of that first session (creating a notebox, writing you
 
 == How updates work
 
-InkyCap can tell you when a new version is available but it does not install anything itself. You must download and install new versions yourself. InkyCap is built to respect your privacy: *InkyCap does not contact the network unless you ask it to*.
+InkyCap can tell you when a new version is available and, for most ways of installing it, install that version for you. InkyCap is built to respect your privacy: *InkyCap does not contact the network unless you ask it to*, and it never installs anything until you click to do so.
 
 You'll find everything related to updates in #wikilink("2 - Settings"), under the *Overview* and *Behaviour* areas.
 
@@ -66,14 +67,37 @@ If you're current, you'll see "You're running the latest version."
 
 === When a new version is available
 
-If something newer exists, InkyCap reports "Version X is available to download." and offers three buttons:
+If something newer exists, InkyCap reports "Version X is available." and offers these buttons:
 
-- *Download* opens the download page at inkycap.org in your browser.
+- *Upgrade* downloads the new version and installs it for you (see below). It appears only when your copy of InkyCap can update itself.
+- *Download* opens the download page at inkycap.org in your browser, so you can install the new version by hand. It is always offered.
 - *View releases* opens the releases page on CodeFloe, where you can read what changed.
 - *Check again* repeats the check.
 
+When Upgrade isn't offered, the message reads "Version X is available to download." instead.
+
+=== Upgrading from inside InkyCap
+
+Upgrade works for copies installed from InkyCap's own downloads: the `.deb`, `.rpm` or AppImage on Linux, the `-setup.exe` or `.msi` on Windows, and the app from the `.dmg` on macOS.
+
+1. Click *Upgrade*. InkyCap downloads the new version and shows its progress.
+2. InkyCap checks that the download really comes from the InkyCap project. Every release is signed, and a download whose signature doesn't match is refused.
+3. InkyCap saves your open notes and installs the new version:
+  - For the `.deb` or `.rpm`, your system asks for your password, as it does for any software installation.
+  - For the AppImage, the file is replaced with the new version, with no password needed. This works when the AppImage is in a folder you can change, such as one in your home folder; otherwise Upgrade isn't offered.
+  - On Windows, the installer runs, closes InkyCap, and opens it again when it has finished.
+  - On macOS, the app in your Applications folder is replaced.
+4. Click *Restart now* to start using the new version. (On Windows, InkyCap has already restarted.)
+
+If anything goes wrong along the way, such as a lost connection or a cancelled password prompt, nothing is changed: your current version keeps running, and you can use *Download* instead.
+
+Two kinds of installation are updated by hand, with *Download*:
+
+- *The Flatpak.* A Flatpak installed from a downloaded file can't update itself; InkyCap says so beside the buttons. Download the new `.flatpak` file and install it the same way as the first.
+- *Copies InkyCap didn't install itself*, such as a package made by your Linux distribution or its community, or a copy built from the source code. Update these the same way you installed them.
+
 #callout("note")[
-The check reads a file from inkycap.org that lists the latest version number. It does not send any information about you, your computer, or your notebox.
+The check reads a file from inkycap.org that lists the latest version number, and Upgrade downloads the new version from InkyCap's releases page. Neither sends any information about you, your computer, or your notebox.
 ]
 
 === Checking automatically at startup

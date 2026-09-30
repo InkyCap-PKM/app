@@ -4,7 +4,8 @@
 //! installer per platform, picks the one matching how this copy was installed,
 //! refuses any download not signed with the public key in tauri.conf.json, and
 //! runs the system installer (`pkexec dpkg`/`rpm` on Linux, the NSIS or MSI
-//! installer on Windows, replacing the `.app` on macOS). This module decides
+//! installer on Windows, replacing the `.app` on macOS), or replaces the
+//! AppImage file with the new one. This module decides
 //! whether this copy may upgrade itself at all, points the plugin at the right
 //! feed, reports download progress, and restarts the app afterwards.
 //!
@@ -20,9 +21,14 @@
 //! - **Repackaged or self-built copies** (NixOS, other distributions, `cargo
 //!   build`): these may still report `.deb` (nixpkgs builds a `.deb` and
 //!   unpacks it) or no installer at all, in which case the plugin would
-//!   overwrite the running program as if it were an AppImage. So a Linux copy
-//!   upgrades itself only when the system's package manager confirms it owns
-//!   the running program.
+//!   overwrite the running program as if it were an AppImage. So a `.deb` or
+//!   `.rpm` copy upgrades itself only when the system's package manager
+//!   confirms it owns the running program.
+//! - **AppImages it can't replace:** the plugin swaps the AppImage file named
+//!   by `APPIMAGE` for the new one, so an AppImage upgrades itself only when
+//!   that file exists and InkyCap may write to its folder. Only InkyCap's own
+//!   AppImage build reports the AppImage bundle type
+//!   (`scripts/build-appimage.sh` sets it).
 //!
 //! ## Where the feed comes from
 //!
@@ -37,7 +43,7 @@
 //! Per CLAUDE.md security: only GETs to the feed and the download it names;
 //! no note content or paths leave the device. Nothing runs without a click.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use serde::Serialize;
@@ -66,23 +72,27 @@ pub enum UpgradeSupport {
     Unsupported,
 }
 
-/// Decide whether this copy may upgrade itself. `owned_by_package` asks the
-/// Linux package manager whether it installed the running program.
+/// Decide whether this copy may upgrade itself. `program` is what an upgrade
+/// replaces: the AppImage file for an AppImage, otherwise the running
+/// program. `confirm_linux_install` checks a Linux install with the system
+/// (see [`linux_install_confirmed`]).
 fn detect_support(
     in_flatpak: bool,
     bundle: Option<BundleType>,
-    exe: &Path,
-    owned_by_package: impl Fn(BundleType, &Path) -> bool,
+    program: &Path,
+    confirm_linux_install: impl Fn(BundleType, &Path) -> bool,
 ) -> UpgradeSupport {
     if in_flatpak {
         return UpgradeSupport::Flatpak;
     }
     let ok = match bundle {
-        Some(kind @ (BundleType::Deb | BundleType::Rpm)) => owned_by_package(kind, exe),
+        Some(kind @ (BundleType::Deb | BundleType::Rpm | BundleType::AppImage)) => {
+            confirm_linux_install(kind, program)
+        }
         Some(BundleType::Nsis | BundleType::Msi) => true,
         // Also reported for a bare macOS build, so require the program to be
         // inside an application bundle, which is what the updater replaces.
-        Some(BundleType::App) => is_inside_app_bundle(exe),
+        Some(BundleType::App) => is_inside_app_bundle(program),
         _ => false,
     };
     if ok {
@@ -128,19 +138,59 @@ fn package_manager_owns(kind: BundleType, exe: &Path) -> bool {
     }
 }
 
+/// Check a Linux install with the system: dpkg or rpm must own a `.deb` or
+/// `.rpm` program, and an AppImage must be a file InkyCap may replace.
+fn linux_install_confirmed(kind: BundleType, program: &Path) -> bool {
+    match kind {
+        BundleType::Deb | BundleType::Rpm => package_manager_owns(kind, program),
+        BundleType::AppImage => appimage_is_replaceable(program),
+        _ => false,
+    }
+}
+
+/// Whether the updater can swap `appimage` for the new version: it moves the
+/// old file aside and writes the new one in its place, so `appimage` must be
+/// a file in a folder this user may write to.
+#[cfg(target_os = "linux")]
+fn appimage_is_replaceable(appimage: &Path) -> bool {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    let Some(folder) = appimage.parent() else {
+        return false;
+    };
+    let Ok(folder) = CString::new(folder.as_os_str().as_bytes()) else {
+        return false;
+    };
+    // SAFETY: `folder` is a NUL-terminated path that access() only reads.
+    appimage.is_file() && unsafe { libc::access(folder.as_ptr(), libc::W_OK) } == 0
+}
+
+#[cfg(not(target_os = "linux"))]
+fn appimage_is_replaceable(_appimage: &Path) -> bool {
+    false
+}
+
 /// Whether this copy can upgrade itself. The frontend shows the Upgrade button
 /// only for `available`; the Download button is shown in every case.
 #[tauri::command]
 pub fn upgrade_support() -> UpgradeSupport {
-    let exe = match std::env::current_exe() {
-        Ok(exe) => exe,
-        Err(_) => return UpgradeSupport::Unsupported,
+    let bundle = tauri::utils::platform::bundle_type();
+    // An AppImage runs from a temporary mount. What an upgrade replaces is the
+    // AppImage file itself, which the AppImage runtime names in `APPIMAGE`.
+    let program = if matches!(bundle, Some(BundleType::AppImage)) {
+        std::env::var_os("APPIMAGE").map(PathBuf::from)
+    } else {
+        std::env::current_exe().ok()
+    };
+    let Some(program) = program else {
+        return UpgradeSupport::Unsupported;
     };
     detect_support(
         std::env::var_os("FLATPAK_ID").is_some(),
-        tauri::utils::platform::bundle_type(),
-        &exe,
-        package_manager_owns,
+        bundle,
+        &program,
+        linux_install_confirmed,
     )
 }
 
@@ -281,7 +331,6 @@ pub fn upgrade_restart(app: AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     fn support(
         flatpak: bool,
@@ -328,15 +377,30 @@ mod tests {
             support(false, None, "/home/me/InkyCap/target/release/inkycap", true),
             UpgradeSupport::Unsupported
         );
+    }
+
+    #[test]
+    fn appimages_upgrade_only_when_the_file_can_be_replaced() {
+        let appimage = "/home/me/Applications/InkyCap.AppImage";
         assert_eq!(
-            support(
-                false,
-                Some(BundleType::AppImage),
-                "/tmp/InkyCap.AppImage",
-                true
-            ),
+            support(false, Some(BundleType::AppImage), appimage, true),
+            UpgradeSupport::Available
+        );
+        assert_eq!(
+            support(false, Some(BundleType::AppImage), appimage, false),
             UpgradeSupport::Unsupported
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn an_appimage_is_replaceable_only_as_a_file_in_a_writable_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let appimage = dir.path().join("InkyCap.AppImage");
+        assert!(!appimage_is_replaceable(&appimage), "missing file");
+        std::fs::write(&appimage, b"").unwrap();
+        assert!(appimage_is_replaceable(&appimage));
+        assert!(!appimage_is_replaceable(dir.path()), "a folder, not a file");
     }
 
     #[test]

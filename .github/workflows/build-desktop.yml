@@ -1,21 +1,23 @@
-# macOS and Windows installer builds for InkyCap.
+# Installer builds for InkyCap on every platform.
 #
 # WHY THIS LIVES ON GITHUB
 # ------------------------
 # The project's home is codefloe.com/InkyCap/app. CodeFloe has no macOS or
 # Windows runners, so this repository is a *build mirror*: a push-only copy of
-# `main` that exists to produce the two artifacts the CodeFloe release flow
-# can't build for itself. Issues, pull requests and published releases stay on
-# CodeFloe. This workflow deliberately does NOT create a GitHub release.
+# `main` that exists to produce the installers. The Linux packages are built
+# here too, on native x86_64 and ARM runners, so one run produces a whole
+# release; they use the same scripts as a local build (scripts/build-*.sh),
+# so building them on your own computer still works and gives the same files.
+# Issues, pull requests and published releases stay on CodeFloe. This
+# workflow deliberately does NOT create a GitHub release.
 #
 # HOW IT FITS THE RELEASE RUNBOOK
 # -------------------------------
-# The release process builds the Linux packages locally, then
-# attaches everything to a CodeFloe *draft* and publishes by hand — and
-# publishing the draft is what creates the git tag. So at build time the tag
-# does not exist yet, which is why this runs only on `workflow_dispatch` (you
-# press the button) and never on a push. Download the artifacts from the run
-# summary and attach them to the draft alongside the .deb/.rpm/Flatpak.
+# The release process attaches the installers to a CodeFloe *draft* and
+# publishes by hand — and publishing the draft is what creates the git tag.
+# So at build time the tag does not exist yet, which is why this runs only on
+# `workflow_dispatch` (you press the button) and never on a push. Download the
+# artifacts from the run summary and attach them to the draft.
 #
 # For an after-the-fact rebuild, press the button and give the `ref` input the
 # release tag once it has been mirrored across. There is deliberately no tag
@@ -27,6 +29,8 @@
 #   inkycap-macos-aarch64   .dmg + .app.tar.gz   (Apple silicon)
 #   inkycap-macos-x86_64    .dmg + .app.tar.gz   (Intel, cross-compiled)
 #   inkycap-windows-x86_64  *-setup.exe + .msi
+#   inkycap-linux-x86_64    .deb + .rpm + .AppImage + .flatpak
+#   inkycap-linux-aarch64   .deb + .rpm + .AppImage
 #
 # The .app.tar.gz is what the in-app Upgrade button installs on macOS. None of
 # these files are signed for the updater here; that happens on the
@@ -177,3 +181,69 @@ jobs:
             src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz
             src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*-setup.exe
             src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi
+
+  # The Linux packages, built with the same scripts as a local build, each on
+  # a runner of its own architecture. The ARM runner builds natively (no
+  # emulation); it skips the Flatpak, which is published for x86_64 only.
+  linux:
+    name: Linux (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            flatpak: true
+          - arch: aarch64
+            os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            flatpak: false
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.ref }}
+
+      # The Rust build, the two build containers and the AppImage's working
+      # copy need more room than the runner leaves free. These preinstalled
+      # SDKs are unused here.
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
+      # Builds in the Ubuntu 22.04 container (Dockerfile.build), so the
+      # packages run on every distribution from that one on, and checks that
+      # the program reports the version in tauri.conf.json.
+      - name: Build the .deb and .rpm
+        run: ./scripts/build-linux-docker.sh --target ${{ matrix.target }} --bundles deb,rpm
+
+      # Repackages the .deb just built; the script also starts the result on a
+      # virtual display and fails if it doesn't keep running.
+      - name: Build the AppImage
+        run: ./scripts/build-appimage.sh
+
+      - name: Install the Flatpak tools
+        if: matrix.flatpak
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+          # Ubuntu 24.04 blocks the unprivileged user namespaces that
+          # flatpak-builder's sandbox is made of.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Build the Flatpak
+        if: matrix.flatpak
+        run: ./scripts/build-flatpak.sh
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v7
+        with:
+          name: inkycap-linux-${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            dist-linux/*.deb
+            dist-linux/*.rpm
+            dist-linux/*.AppImage
+            dist-linux/*.flatpak

@@ -48,6 +48,10 @@ export const updaterFeedUrl = (channel) => `${FEED_BASE_URL}/updater/${channel}.
 export const ARTIFACTS = [
   { label: "Linux .deb", file: (v) => `InkyCap_${v}_amd64.deb`, platforms: ["linux-x86_64-deb"] },
   { label: "Linux .rpm", file: (v) => `InkyCap-${v}-1.x86_64.rpm`, platforms: ["linux-x86_64-rpm"] },
+  { label: "Linux AppImage", file: (v) => `InkyCap_${v}_amd64.AppImage`, platforms: ["linux-x86_64-appimage"] },
+  { label: "Linux ARM .deb", file: (v) => `InkyCap_${v}_arm64.deb`, platforms: ["linux-aarch64-deb"] },
+  { label: "Linux ARM .rpm", file: (v) => `InkyCap-${v}-1.aarch64.rpm`, platforms: ["linux-aarch64-rpm"] },
+  { label: "Linux ARM AppImage", file: (v) => `InkyCap_${v}_aarch64.AppImage`, platforms: ["linux-aarch64-appimage"] },
   { label: "Windows installer (.exe)", file: (v) => `InkyCap_${v}_x64-setup.exe`, platforms: ["windows-x86_64-nsis"] },
   { label: "Windows installer (.msi)", file: (v) => `InkyCap_${v}_x64_en-US.msi`, platforms: ["windows-x86_64-msi"] },
   {

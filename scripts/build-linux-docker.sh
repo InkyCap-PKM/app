@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build portable InkyCap Linux artifacts (deb/AppImage/rpm) inside an Ubuntu
+# Build portable InkyCap Linux packages (deb/rpm) inside an Ubuntu
 # 22.04 container, so the binaries link against an old glibc (2.35) and run on
 # Ubuntu 22.04+ / Debian 12+ and every newer distro. Building on the host's
 # bleeding-edge glibc instead silently produces binaries that install but then
@@ -12,18 +12,17 @@
 # Usage:
 #   scripts/build-linux-docker.sh                    # deb + rpm, amd64
 #   scripts/build-linux-docker.sh --bundles deb      # just the deb
-#   scripts/build-linux-docker.sh --bundles appimage # AppImage (best-effort; see note)
 #   scripts/build-linux-docker.sh --rebuild-image    # force toolchain rebuild
 #   scripts/build-linux-docker.sh --target aarch64-unknown-linux-gnu
 #
-# Note on bundles: deb + rpm use the host's WebKitGTK and are the reliable
-# native targets. The AppImage bundles GUI/GPU libs and is fragile on hosts
-# much newer than the 22.04 build base — Flatpak (scripts/build-flatpak.sh) is
-# the robust "runs anywhere" option, so AppImage is no longer built by default.
+# Note on bundles: deb + rpm use the host's WebKitGTK. The AppImage and the
+# Flatpak are made from the deb afterwards by scripts/build-appimage.sh and
+# scripts/build-flatpak.sh. (Tauri's own `appimage` bundle is not used: it
+# mixes 22.04's libraries with the host's and breaks on newer distributions.)
 #
-# Artifacts are copied to ./dist-linux/. Cross-arch (aarch64) requires an
-# arm64-capable Docker (native arm host, or `docker buildx` with QEMU) — on an
-# amd64-only setup the default amd64 target is what works.
+# Artifacts are copied to ./dist-linux/. The build runs natively, so the
+# aarch64 target needs an ARM machine (--target only picks the matching
+# Tinymist download); on an x86_64 machine the default target is what works.
 set -euo pipefail
 
 IMAGE="inkycap-builder"
