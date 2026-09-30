@@ -13,27 +13,27 @@
   padding: 0;
 }
 
+/* Rows take their height, hover highlight and type from the shared
+   `.sidebar-item`, so they match the file tree. The heading level sets the
+   left indent inline. */
 .outline-panel__item {
-  display: flex;
-  align-items: center;
-  padding: 3px 12px;
-  font-size: var(--text-md);
-  color: var(--fg-secondary);
-  border-radius: var(--radius-sm);
-  margin: 1px 4px;
+  margin: 0 var(--space-2);
+}
+
+.outline-panel__item:hover {
+  color: var(--fg-primary);
 }
 
 .outline-panel__caret {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  min-width: 16px;
-  height: 16px;
+  flex-shrink: 0;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
   cursor: pointer;
   color: var(--fg-muted);
   border-radius: 50%;
-  margin-right: var(--space-1);
 }
 
 .outline-panel__caret:hover {
@@ -41,12 +41,7 @@
   background: var(--bg-hover);
 }
 
-.outline-panel__caret--leaf {
-  cursor: default;
-}
-
 .outline-panel__caret--leaf:hover {
-  color: var(--fg-muted);
   background: none;
 }
 
@@ -56,19 +51,4 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  cursor: pointer;
-  border-radius: var(--radius-sm);
-  padding: 1px 4px;
 }
-
-.outline-panel__label:hover {
-  background: var(--bg-hover);
-  color: var(--fg-primary);
-}
-
-.outline-panel__item--active {
-  background: var(--bg-selection);
-  color: var(--fg-primary);
-}
-
-

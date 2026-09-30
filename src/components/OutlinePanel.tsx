@@ -192,16 +192,27 @@ const OutlineTree: Component<{
         return (
           <>
             <div
-              class="outline-panel__item"
+              class="sidebar-item outline-panel__item"
               style={{
                 "padding-left": `${(node.heading.level - 1) * 16 + 12}px`,
+              }}
+              onClick={() => props.onScroll(node.heading)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                showHeadingMenu(
+                  e.clientX,
+                  e.clientY,
+                  node.heading,
+                  t("deepLink.copyHeadingLink"),
+                );
               }}
             >
               <span
                 class={`outline-panel__caret${hasChildren() ? "" : " outline-panel__caret--leaf"}`}
                 onClick={(e) => {
+                  if (!hasChildren()) return;
                   e.stopPropagation();
-                  if (hasChildren()) props.onToggle(node.heading.pos);
+                  props.onToggle(node.heading.pos);
                 }}
               >
                 <Show when={hasChildren()}>
@@ -213,19 +224,7 @@ const OutlineTree: Component<{
                   </Show>
                 </Show>
               </span>
-              <span
-                class="outline-panel__label"
-                onClick={() => props.onScroll(node.heading)}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  showHeadingMenu(
-                    e.clientX,
-                    e.clientY,
-                    node.heading,
-                    t("deepLink.copyHeadingLink"),
-                  );
-                }}
-              >
+              <span class="outline-panel__label">
                 {node.heading.text}
               </span>
             </div>
