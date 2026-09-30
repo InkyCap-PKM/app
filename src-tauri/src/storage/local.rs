@@ -250,8 +250,9 @@ fn is_flatpak() -> bool {
 /// fix (GHSA-rqr9-jwwf-wxgj) compares the file's mount id as seen inside the
 /// sandbox against the host mount id, which never match under flatpak's bind
 /// mounts, so the portal rejects *every* sandboxed trash request with a generic
-/// "Failed to trash file" (xdg-desktop-portal#1972; fixed in 1.21.2 / 1.22.0 via
-/// PR #1982). When the portal fails, fall back to a spec-compliant move into the
+/// "Failed to trash file" (xdg-desktop-portal#1972, PR #1982). The same generic
+/// failure is still seen on 1.22.1 hosts, so the fallback is not just for old
+/// portals. When the portal fails, fall back to a spec-compliant move into the
 /// user's home trash — reachable because the flatpak holds `--filesystem=host`,
 /// so `~/.local/share/Trash` is the real host trash and shares a filesystem with
 /// any notebox under `$HOME`.
@@ -288,7 +289,8 @@ async fn trash_via_portal(full: &Path) -> Result<()> {
 }
 
 /// Move a path into the user's home trash, following the FreeDesktop.org Trash
-/// specification (`$XDG_DATA_HOME/Trash`, default `~/.local/share/Trash`).
+/// specification (the host's `$XDG_DATA_HOME/Trash`, default
+/// `~/.local/share/Trash`). Only called from inside the flatpak sandbox.
 ///
 /// This reimplements the small slice of the trash spec we need because the two
 /// off-the-shelf paths both fail inside the sandbox: the `trash` crate mis-detects
@@ -331,13 +333,17 @@ fn trash_into_home_trash(full: &Path) -> Result<()> {
         InkyCapError::Io(std::io::Error::other(format!("home-trash: {ctx}: {e}")))
     };
 
-    let data_home = std::env::var_os("XDG_DATA_HOME")
+    // Flatpak points `XDG_DATA_HOME` at the app's private
+    // `~/.var/app/<id>/data`, which is its own mount inside the sandbox (so
+    // `rename` into it fails with EXDEV) and not a trash the desktop shows.
+    // The host's value, when it set one, is passed as `HOST_XDG_DATA_HOME`.
+    let data_home = std::env::var_os("HOST_XDG_DATA_HOME")
         .map(PathBuf::from)
         .filter(|p| p.is_absolute())
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
         .ok_or_else(|| {
             InkyCapError::Io(std::io::Error::other(
-                "home-trash: neither XDG_DATA_HOME nor HOME is set",
+                "home-trash: neither HOST_XDG_DATA_HOME nor HOME is set",
             ))
         })?;
 
