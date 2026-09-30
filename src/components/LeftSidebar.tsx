@@ -835,16 +835,10 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     );
   }
 
-  // Approximate menu size. The submenu adds another ~200x220 to the
-  // right, but we only need to keep the top-level menu inside the
-  // viewport — the submenu reflows naturally once its parent fits.
+  // Approximate width of the property menu and its type submenu, used to
+  // decide which side the submenu opens on. Keeping the menus themselves
+  // on screen is handled for every menu by lib/menu-placement.ts.
   const MENU_W = 180;
-  const MENU_H = 160;
-  function clampMenuPos(x: number, y: number) {
-    const maxX = Math.max(8, window.innerWidth - MENU_W - 8);
-    const maxY = Math.max(8, window.innerHeight - MENU_H - 8);
-    return { x: Math.min(x, maxX), y: Math.min(y, maxY) };
-  }
 
   function handleTagContext(e: MouseEvent, tag: string) {
     e.preventDefault();
@@ -852,7 +846,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     setContextMenu(null);
     setFileContextMenu(null);
     setPropMenu(null);
-    const { x, y } = clampMenuPos(e.clientX, e.clientY);
+    const { clientX: x, clientY: y } = e;
     setTagMenu({ x, y, tag });
   }
 
@@ -862,7 +856,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     setContextMenu(null);
     setFileContextMenu(null);
     setTagMenu(null);
-    const { x, y } = clampMenuPos(e.clientX, e.clientY);
+    const { clientX: x, clientY: y } = e;
     const SUBMENU_W = 180;
     const openLeft = x + MENU_W + SUBMENU_W > window.innerWidth - 8;
     setPropMenu({ x, y, key, typeSubmenuOpen: false, openLeft });
@@ -1241,8 +1235,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
 
   function handleCollectionContext(e: MouseEvent, col: CollectionInfo) {
     e.preventDefault();
-    // clampMenuPos is defined below; forward-reference is fine in JS.
-    const { x, y } = clampMenuPos(e.clientX, e.clientY);
+    const { clientX: x, clientY: y } = e;
     setContextMenu({ x, y, collection: col });
   }
 
@@ -1265,7 +1258,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     setContextMenu(null);
     // Keep the keyboard cursor on the row the menu acts on.
     setFocusedTreePath(node.path);
-    const { x, y } = clampMenuPos(e.clientX, e.clientY);
+    const { clientX: x, clientY: y } = e;
     setFileContextMenu({ x, y, node });
   }
 

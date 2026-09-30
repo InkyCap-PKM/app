@@ -825,11 +825,7 @@ const RightPanel: Component = () => {
       cleanupLinkRowMenu();
       cleanupLinkRowMenu = undefined;
     }
-    const MENU_W = 200;
-    const MENU_H = 80;
-    const x = Math.min(e.clientX, window.innerWidth - MENU_W - 8);
-    const y = Math.min(e.clientY, window.innerHeight - MENU_H - 8);
-    setLinkRowMenu({ x, y, path, name });
+    setLinkRowMenu({ x: e.clientX, y: e.clientY, path, name });
     setTimeout(() => {
       const onDocClick = () => {
         setLinkRowMenu(null);

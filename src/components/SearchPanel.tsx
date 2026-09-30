@@ -555,12 +555,7 @@ const SearchPanel: Component = () => {
   function handleResultContext(e: MouseEvent, result: SearchResult) {
     e.preventDefault();
     e.stopPropagation();
-    // Clamp inside viewport so the menu is always fully visible.
-    const MENU_W = 200;
-    const MENU_H = 100;
-    const x = Math.min(e.clientX, window.innerWidth - MENU_W - 8);
-    const y = Math.min(e.clientY, window.innerHeight - MENU_H - 8);
-    setResultContextMenu({ x, y, result });
+    setResultContextMenu({ x: e.clientX, y: e.clientY, result });
   }
 
 

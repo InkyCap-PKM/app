@@ -64,6 +64,10 @@ const MENU_SURFACES: ReadonlyArray<{ menu: string; item: string }> = [
   { menu: ".mycelial-context-menu", item: ".mycelial-context-menu__item" },
 ];
 
+/** Matches the container of any menu surface above. lib/menu-placement.ts
+ *  uses it to keep the same menus on screen. */
+export const MENU_SELECTOR = MENU_SURFACES.map((s) => s.menu).join(", ");
+
 /** A menu can opt out with `data-menu-nav="off"` when it drives its own keys. */
 const OPT_OUT = '[data-menu-nav="off"]';
 

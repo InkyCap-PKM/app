@@ -5,8 +5,8 @@
 // media) and the odd Solid component that wants the same menu as a widget.
 // This module builds the menu once, from a list of entries, so every caller
 // gets the same markup (`.context-menu` / `.context-menu__item`, which is also
-// what gives it keyboard control via lib/menu-nav.ts), the same viewport
-// clamping, and the same dismissal rules: outside click, Escape, scroll, or
+// what gives it keyboard control via lib/menu-nav.ts and keeps it on screen via
+// lib/menu-placement.ts), and the same dismissal rules: outside click, Escape, scroll, or
 // running an item.
 
 /** An actionable row. `label` is already translated. */
@@ -25,9 +25,6 @@ export interface ContextMenuHint {
 
 /** A visual divider between groups of items. */
 export type ContextMenuEntry = ContextMenuItem | ContextMenuHint | "separator";
-
-/** Gap kept between the menu and the viewport edge when clamping. */
-const VIEWPORT_MARGIN = 8;
 
 /** Closes the menu currently open, if any. Only one is open at a time. */
 let closeOpenMenu: (() => void) | null = null;
@@ -89,20 +86,11 @@ export function showContextMenu(x: number, y: number, entries: ContextMenuEntry[
     }
   };
 
-  // Position at the cursor, then clamp into the viewport once measured.
+  // Placed at the cursor; lib/menu-placement.ts keeps it inside the window.
   menu.style.left = `${x}px`;
   menu.style.top = `${y}px`;
-  menu.style.visibility = "hidden";
   document.body.appendChild(menu);
   requestAnimationFrame(() => {
-    const r = menu.getBoundingClientRect();
-    if (r.right > window.innerWidth - VIEWPORT_MARGIN) {
-      menu.style.left = `${Math.max(VIEWPORT_MARGIN, window.innerWidth - VIEWPORT_MARGIN - r.width)}px`;
-    }
-    if (r.bottom > window.innerHeight - VIEWPORT_MARGIN) {
-      menu.style.top = `${Math.max(VIEWPORT_MARGIN, y - r.height)}px`;
-    }
-    menu.style.visibility = "";
     menu.querySelector<HTMLElement>(".context-menu__item")?.focus();
   });
 
