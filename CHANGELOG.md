@@ -12,37 +12,56 @@ each tagged release, newest first, grouping entries under **Added**, **Changed**
 **Fixed**, **Removed**, **Security**, or **Deprecated** as needed.
 
 
-## [26.9.15] - 2026-09-30 (beta)
+## [26.10.2] - 2026-10-01
 
-A beta release with a lot inside: links that open notes from other apps,
-Paste from HTML, a colourblind-friendly colours option, protection against
-untrusted notes, and fixes for lost writing on rename and for the note index.
-The AppImage is back, and there are now ARM builds for Linux. Please report anything that misbehaves.
+Notes can now be opened from other apps with `inkycap://` links. Web
+addresses for other apps, e-mail addresses and citations are easier to type,
+annotations and Typst comments tidy into pills in the visual editor, and the
+app is hardened against notes and noteboxes from other people. Renaming a
+note is improved to prevent the risk of losing something just typed. By request, I'm trying to re-introduce AppImages, with ARM builds for Linux--we'll see if it's maintainable.
 
 ### Added
 
 - **InkyCap links.** An `inkycap://` link opens a note or collection in
   InkyCap from anywhere on your computer: a calendar entry, an email, a task
-  manager, or a script. Right-click a note or collection and choose **Copy
-  InkyCap link** (in the file tree, the Collections list, and the Tab options
-  menu), or right-click a heading in the Outline to link straight to it. If
-  the note's notebox is open, its window comes forward; if not, InkyCap asks
-  before opening it in a new window; if InkyCap is closed, it starts with the
-  note open. Links can also name a note by its `zid`, or run a search. Pasted
-  into a `#link(...)` in a note, they link between noteboxes, which wikilinks
-  can't do. See *Linking from Other Apps* in the user manual.
+  manager, or a script. Choose **Copy InkyCap link** from a note's or
+  collection's right-click menu in the file tree or the Collections list, or
+  from the File actions menu in the right panel; right-click a heading in the
+  Outline to link straight to it. If the note's notebox is open, its window
+  comes forward; if not, InkyCap asks before opening it in a new window; if
+  InkyCap is closed, it starts with the note open. Links can also name a note
+  by its `zid`, or run a search. Pasted into a `#link(...)` in a note, they
+  link between noteboxes, which wikilinks can't do. See *Linking from Other
+  Apps* in the user manual.
+- A **colourblind-friendly colours** switch in Settings, Appearance, based on
+  the Okabe-Ito palette. Also, many areas that relied solely on colour now have icons or other graphical identifiers.
+- **Links to other apps and e-mail addresses as you type or paste.** Typst
+  reads only `http://` and `https://` addresses as links: after any other
+  scheme, such as `zotero://` or `inkycap://`, the `//` starts a comment and
+  the rest of the address disappeared. Typing or pasting such an address, a
+  `mailto:` address or an e-mail address now makes a `#link(...)` for it.
+  A social media handle such as a fediverse `@person@mastodon.social` can remain as plain text.
 - **Paste from HTML** converts what a browser (or Google Docs) puts on the
   clipboard into Typst: headings, lists, checklists, quotes, tables, links and
   formatting. Images on the web become links; nothing is downloaded.
-- A **colourblind-friendly colours** switch in Settings, Appearance, based on
-  the Okabe-Ito palette.
 - Quick Open (Ctrl+O) also finds notes by their title or `zid` property.
 - **AppImage** downloads are back, built so they run on current distributions
-  (and on musl systems such as Alpine), and they can upgrade themselves.
+  (and on musl systems such as Alpine), and they can upgrade themselves. They
+  are too large to store on our main CodeFloe repository, so the release notes link to them on GitHub.
 - **ARM Linux** downloads: `.deb`, `.rpm` and AppImage.
 
 ### Changed
 
+- In the visual editor, **annotations** show as pills: hover to read the
+  comment, click to open it in Changes & History. The reading view leaves
+  annotations out; exports still show them.
+- In the visual editor, **Typst comments** collapse into Comment pills
+  (consecutive comment lines share one), instead of being hidden while the
+  caret moved through them. Hover to read, click to edit.
+- A citation can sit straight against a word (`results@smith2020`), as
+  footnote styles want. An `@` is decided when the word ends: an email address
+  becomes a link, a reference to a bibliography entry or label stays a
+  citation. The `@` menu also offers *E-mail address* and *Plain text*.
 - Starting InkyCap while it is already running brings the open window to the
   front instead of starting a second copy.
 - Opening a `.typ` file from another tool that lacks the InkyCap import line
@@ -57,6 +76,8 @@ The AppImage is back, and there are now ARM builds for Linux. Please report anyt
 - Indexing a large notebox leaves about half as much memory in use.
 - Tabs in `#verse` keep their width (four spaces) in the reading view and
   exports.
+- Outline rows highlight across their whole width, at the file tree's row
+  height.
 - Unwritten notes in the Journal Scroll's Connections list use the same dashed
   page icon as the Links tab.
 
