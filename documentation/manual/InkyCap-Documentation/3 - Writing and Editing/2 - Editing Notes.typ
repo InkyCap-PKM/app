@@ -45,7 +45,9 @@ So that you're not staring at code, anything more involved than plain formatting
 
 A few elements are always shown as their finished selves rather than as pills, because that's friendlier: wikilinks, tags, links, and tasks render inline and stay interactive (you can even tick a `#task` checkbox right inside a callout). Callout and quote bodies are real, editable text; you type into them as you would anywhere else.
 
-#callout("tip", title: "For developers or advanced users")[ Visual mode is a CodeMirror 6 decoration layer ("Tier 1 / Live Preview"). Typst comments (`//` and `/* */`) are hidden and locked in visual mode; switch to source mode to read or edit them. Code-completion suggestions are suppressed in Visual mode and kept in Source. If you'd rather have markup reveal itself automatically as your cursor enters a pill, turn on #wikilink("2 - Settings") → *"Auto-expand markup"* (off by default). ]
+Two kinds of pill stay in view even when your cursor is elsewhere, because they mark something that would otherwise be invisible. An *annotation* (a reviewer's comment) shows only as its pill, so it never interrupts your writing: hover over the pill to read the comment, or click it to edit the comment and open it in the *Changes & History* panel. Typst *comments* (`//` and `/* */`) show as a *Comment* pill too, with one pill for several comment lines in a row. They never appear in your output, but they are still text your cursor moves around, so the pill tells you where they are. Hover over it to read the comment, or click it to edit.
+
+#callout("tip", title: "For developers or advanced users")[ Visual mode is a CodeMirror 6 decoration layer ("Tier 1 / Live Preview"). Code-completion suggestions are suppressed in Visual mode and kept in Source. If you'd rather have markup reveal itself automatically as your cursor enters a pill, turn on #wikilink("2 - Settings") → *"Auto-expand markup"* (off by default). ]
 
 === Reading mode: see the finished page
 

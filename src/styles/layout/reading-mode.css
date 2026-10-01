@@ -358,8 +358,8 @@
   height: auto;
 }
 
-/* Admonition callouts (#callout) and annotations (#annotation). The notebox
-   package emits these as <div class="inkycap-callout …"> on the HTML target
+/* Admonition callouts (#callout). The notebox package emits these as
+   <div class="inkycap-callout …"> on the HTML target
    (typst-html can't carry the paged `block` box styling), passing the resolved
    kind colour through the --inkycap-callout-color custom property. Mirrors the
    paged/SVG and visual-editor look: a left border + faint tint + coloured
@@ -379,30 +379,13 @@
   margin-bottom: 0.25em;
 }
 
-.typst-reading__html-content .inkycap-annotation {
-  border-left: 2px solid var(--annotation-accent);
-  background: color-mix(in srgb, var(--annotation-accent) 6%, transparent);
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  padding: 6px 10px;
-  margin: 1em 0;
-}
-
-.typst-reading__html-content .inkycap-annotation__title {
-  font-weight: 600;
-  color: var(--annotation-accent);
-  font-size: 0.8em;
-  margin-bottom: 0.25em;
-}
-
 /* The body's first/last block (a <p> Typst wraps text in) shouldn't add
    margin past the callout padding. */
-.typst-reading__html-content .inkycap-callout__body > :first-child,
-.typst-reading__html-content .inkycap-annotation__body > :first-child {
+.typst-reading__html-content .inkycap-callout__body > :first-child {
   margin-top: 0;
 }
 
-.typst-reading__html-content .inkycap-callout__body > :last-child,
-.typst-reading__html-content .inkycap-annotation__body > :last-child {
+.typst-reading__html-content .inkycap-callout__body > :last-child {
   margin-bottom: 0;
 }
 

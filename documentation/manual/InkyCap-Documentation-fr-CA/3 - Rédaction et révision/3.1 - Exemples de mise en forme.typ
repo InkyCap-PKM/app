@@ -450,7 +450,7 @@ Les *tâches* sont des cases à cocher en ligne qui se rassemblent aussi dans l'
 
 Les *dates* attachent un rappel à votre prose et apparaissent dans l'Agenda : `#due(datetime(year: 2026, month: 6, day: 30), label: "Échéance de la subvention")`. Voir #wikilink("3 - Agenda, tâches et dates").
 
-Les *annotations* sont des commentaires en marge qui restent visibles en mode lecture sans devenir du texte de corps :
+Les *annotations* sont des commentaires sur votre texte qui ne deviennent jamais du texte de corps. L'éditeur visuel affiche une annotation sous forme de pastille (survolez-la pour la lire, cliquez pour la modifier et la voir dans *Modifications et historique*), et le mode lecture l'omet. Les documents exportés l'affichent dans un encadré teinté, sauf si vous acceptez ou rejetez le balisage de révision à l'exportation :
 
 ```typ
 #annotation([Revérifier ce chiffre avant la soumission.], by: "JC", on: datetime(year: 2026, month: 6, day: 7))

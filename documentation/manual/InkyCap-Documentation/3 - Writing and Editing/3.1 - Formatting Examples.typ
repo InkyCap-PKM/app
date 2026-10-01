@@ -444,7 +444,7 @@ These are InkyCap's own elements. They are queryable pieces that power the Agend
 
 *Dates* attach a reminder to your prose and surface in the Agenda — `#due(datetime(year: 2026, month: 6, day: 30), label: "Grant deadline")`. See #wikilink("3 - Agenda, Tasks, and Dates").
 
-*Annotations* are margin-style comments that stay visible in the reading view without becoming body text:
+*Annotations* are comments on your writing that never become body text. The visual editor shows an annotation as a pill (hover to read it, click to edit it and see it in *Changes & History*), and the reading view leaves it out. Exported documents show it as a tinted box, unless you accept or reject review markup when exporting:
 
 ```typ
 #annotation([Double-check this figure before submitting.], by: "JC", on: datetime(year: 2026, month: 6, day: 7))

@@ -64,7 +64,7 @@ export const visualTheme = EditorView.theme({
     "--quote-inset-end": "16px",
     "--quote-mark-size": "3.5em",
     "--quote-line-height": "1.6",
-    // Callout (and annotation, which reuses the callout frame).
+    // Callout.
     "--callout-margin": "10px",
     "--callout-pad": "8px",
     "--callout-inset": "12px",
@@ -139,8 +139,8 @@ export const visualTheme = EditorView.theme({
     borderRadius: "var(--radius-sm)",
     padding: "1px 4px",
   },
-  // Fenced code block inside a rendered block body (callout / quote /
-  // annotation widget). Same monospace size as inline raw, laid out as a
+  // Fenced code block inside a rendered block body (callout / quote
+  // widget). Same monospace size as inline raw, laid out as a
   // multi-line preformatted block.
   ".cm-typst-raw-block": {
     fontFamily: "var(--editor-font-mono, monospace)",
@@ -491,9 +491,9 @@ export const visualTheme = EditorView.theme({
     padding: "0",
     zIndex: "1",
   },
-  // Collapsed document-style preamble chip: reuses the standard pill chrome
-  // (.cm-typst-pill); only the trailing rule-count needs its own muted style.
-  ".cm-typst-style-preamble-count": {
+  // Muted count trailing a pill's label (the document-style preamble's rule
+  // count, a comment pill's line count). The pill itself is standard chrome.
+  ".cm-typst-pill-count": {
     color: "var(--fg-dim)",
     fontSize: "0.92em",
     marginLeft: "1px",

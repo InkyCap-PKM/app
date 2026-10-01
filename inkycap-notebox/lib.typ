@@ -219,6 +219,9 @@
 
 #let _show-inline-tags = state("inkycap-show-inline-tags", true)
 #let _show-inline-wikilinks = state("inkycap-show-inline-wikilinks", true)
+// Whether `annotation` draws its comment. On by default so exports and other
+// Typst tools show annotations; InkyCap's reading view turns it off.
+#let _show-annotations = state("inkycap-show-annotations", true)
 // Verse font override. When set (via `set-notebox(verse-font: "...")`), all
 // verse() calls without an explicit `font:` argument render in this font.
 // `none` means inherit the document body font.
@@ -244,6 +247,7 @@
 #let set-notebox(
   show-inline-tags: none,
   show-inline-wikilinks: none,
+  show-annotations: none,
   verse-font: none,
 ) = {
   if show-inline-tags != none {
@@ -253,6 +257,10 @@
   if show-inline-wikilinks != none {
     assert(type(show-inline-wikilinks) == bool, message: "set-notebox: show-inline-wikilinks must be bool")
     _show-inline-wikilinks.update(show-inline-wikilinks)
+  }
+  if show-annotations != none {
+    assert(type(show-annotations) == bool, message: "set-notebox: show-annotations must be bool")
+    _show-annotations.update(show-annotations)
   }
   if verse-font != none {
     assert(type(verse-font) == str, message: "set-notebox: verse-font must be a string")
@@ -745,10 +753,12 @@
 // annotation.
 //
 // `#annotation[comment]` marks a reader's or collaborator's remark on note
-// content — a tinted block that stays visible in the reading view but reads as
-// a distinct margin note, not body text. (Distinct from the *collaboration
-// change-review* workflow: that reviews a collaborator's incoming edits as a
-// whole-file diff; an annotation is a comment that lives in the note.)
+// content — a tinted block that reads as a distinct note, not body text.
+// `set-notebox(show-annotations: false)` leaves only the metadata, which is
+// how InkyCap's reading view keeps annotations out of the way. (Distinct from
+// the *collaboration change-review* workflow: that reviews a collaborator's
+// incoming edits as a whole-file diff; an annotation is a comment that lives in
+// the note.)
 //
 // Emits queryable metadata (`<inkycap-annotation>`). `by` is a collaborator
 // handle or display name; `on` accepts a datetime or a date string (normalized
@@ -774,7 +784,9 @@
   // Same HTML-target treatment as `callout`: a styled `block` collapses to bare
   // text under `typst-html`, so emit a semantic `<div>` for the stylesheet.
   context {
-    if target() == "html" {
+    if not _show-annotations.get() {
+      // Hidden: the metadata above still records the annotation.
+    } else if target() == "html" {
       html.elem(
         "div",
         attrs: (

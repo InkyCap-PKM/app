@@ -1,5 +1,5 @@
-// Pure parser for the body string of a rendered block element (callout, quote,
-// annotation). It splits the text into plain runs and recognized inline notebox
+// Pure parser for the body string of a rendered block element (callout,
+// quote). It splits the text into plain runs and recognized inline notebox
 // primitives so the (cursor-away, read-only) block widget can render a task as a
 // checkbox, a tag as a pill, etc., instead of dumping raw Typst source.
 //

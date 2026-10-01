@@ -20,6 +20,10 @@ import {
   insertAnnotationMarkup,
   type InsertKind,
 } from "../editor/typst-decorations/annotation-insert";
+import {
+  annotationRevealRequest,
+  clearAnnotationRevealRequest,
+} from "../editor/typst-decorations/annotation-reveal";
 import { openSuggestionMenu } from "../editor/typst-decorations/widgets";
 import { applyCallTransform } from "../editor/typst-decorations/pill";
 import { activeEditorView } from "../stores/editor";
@@ -306,6 +310,28 @@ const AnnotationsPanel: Component = () => {
     rescanAnnotations(activeEditorView()?.view);
   });
 
+  // The row last jumped to or asked for by an annotation pill, by its call's
+  // source offset. Highlighted so the reader can tell which comment the pill
+  // stands for.
+  const [selectedFrom, setSelectedFrom] = createSignal<number | null>(null);
+  let listEl: HTMLDivElement | undefined;
+
+  // An annotation pill in the visual editor was clicked: show its row. The
+  // filter is cleared so the row can't be filtered out of sight.
+  createEffect(() => {
+    const req = annotationRevealRequest();
+    if (!req) return;
+    clearAnnotationRevealRequest();
+    setView("changes");
+    setFilter("");
+    setSelectedFrom(req.from);
+    requestAnimationFrame(() => {
+      listEl
+        ?.querySelector(`[data-annotation-from="${req.from}"]`)
+        ?.scrollIntoView({ block: "nearest" });
+    });
+  });
+
   const visible = createMemo(() => {
     const q = filter().trim().toLowerCase();
     const all = noteAnnotations();
@@ -339,6 +365,7 @@ const AnnotationsPanel: Component = () => {
    *  tracked change (Accept / Reject / Comment) is a separate, explicit action
    *  via the row's menu button ([`openMenu`]), so it doesn't obscure the list. */
   function activate(a: AnnotationEntry) {
+    setSelectedFrom(a.from);
     const handle = activeEditorView();
     if (!handle) return;
     const view = handle.view;
@@ -441,7 +468,14 @@ const AnnotationsPanel: Component = () => {
         <p class="annotations-panel__list-heading">{t("annotations.changesRequireDecision")}</p>
       </Show>
 
-      <div class="annotations-panel__list" ref={attachListNav} aria-label={t("annotations.title")}>
+      <div
+        class="annotations-panel__list"
+        ref={(el) => {
+          listEl = el;
+          attachListNav(el);
+        }}
+        aria-label={t("annotations.title")}
+      >
         <Show
           when={visible().length > 0}
           fallback={<p class="sidebar-hint">{t("annotations.empty")}</p>}
@@ -450,7 +484,12 @@ const AnnotationsPanel: Component = () => {
             {(a) => (
               <div
                 data-list-item
+                data-annotation-from={a.from}
                 class="sidebar-item annotations-panel__item"
+                classList={{
+                  "sidebar-item--active": selectedFrom() === a.from,
+                  "annotations-panel__item--comment": a.kind === "annotation",
+                }}
                 onClick={() => activate(a)}
                 title={primary(a)}
               >

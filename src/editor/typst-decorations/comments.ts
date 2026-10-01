@@ -1,9 +1,11 @@
 // Typst comments in the visual editor: whether a comment is complete, and the
-// span to hide for it. Shared by the decorations (which hide comments), the
-// protected ranges (which lock them) and the note header scan.
+// run of comments one pill stands for. Shared by the decorations (which show
+// the pill), the protected ranges (which lock the comments behind it) and the
+// note header scan.
 
 import type { EditorState } from "@codemirror/state";
-import type { ProtectedRange } from "./visual-protected";
+import { syntaxTree } from "@codemirror/language";
+import type { SyntaxNode } from "@lezer/common";
 
 /**
  * Whether a comment node has its closing delimiter. Typst's parser is
@@ -44,28 +46,124 @@ export function isCommentClosed(
   return false;
 }
 
+interface CommentSpan {
+  from: number;
+  to: number;
+}
+
 /**
- * The range to collapse for a Typst comment node. When the comment is the only
- * thing on its line(s) it swallows the whole line including leading indentation
- * and the trailing newline, so a full-line comment leaves no blank gap in the
- * visual editor; a trailing comment (`code // note`) collapses only the comment
- * span. Used for both hiding (visual-plugin) and locking (here) so the two agree.
+ * A run of Typst comments the visual editor shows as one pill. Comments that
+ * each fill their own line(s) and sit on consecutive lines form one run, so a
+ * comment block written as several `//` lines is a single pill. A comment
+ * sharing its line with other text is a run of its own.
  */
-export function commentHideRange(
-  state: EditorState,
-  from: number,
-  to: number,
-): ProtectedRange {
-  const docLen = state.doc.length;
-  const startLine = state.doc.lineAt(from);
-  const endLine = state.doc.lineAt(to);
-  const beforeBlank = state.doc.sliceString(startLine.from, from).trim() === "";
-  const afterBlank = state.doc.sliceString(to, endLine.to).trim() === "";
-  let f = from;
-  let t = to;
-  if (beforeBlank) f = startLine.from;
-  if (beforeBlank && afterBlank) {
-    t = endLine.to < docLen ? Math.min(endLine.to + 1, docLen) : endLine.to;
+export interface CommentRun {
+  /** Start of the first comment: where the pill's source begins and the
+   *  position `expandFunc` uses to reveal the run for editing. */
+  from: number;
+  /** End of the last comment. */
+  to: number;
+  /** The span the pill replaces: whole lines for a run that stands alone,
+   *  otherwise just the comment. */
+  replaceFrom: number;
+  replaceTo: number;
+  /** End of the span locked against editing while the run is collapsed. For a
+   *  run that stands alone it takes the line break after it too, so the caret
+   *  can't sit beside the pill on the pill's own line. So does a `//` comment
+   *  after text: it runs to the end of the line, so anything typed there would
+   *  join the comment. */
+  lockTo: number;
+  /** The caret may sit right before the run, and text typed there goes ahead
+   *  of it. True for a comment that shares its line with other text. */
+  caretBefore: boolean;
+  /** Number of document lines the run covers. */
+  lines: number;
+}
+
+function isCommentNode(name: string): boolean {
+  return name === "LineComment" || name === "BlockComment";
+}
+
+/** The complete comment touching `pos` on the given side, if any. */
+function closedCommentAt(state: EditorState, pos: number, side: -1 | 1): CommentSpan | null {
+  for (let n: SyntaxNode | null = syntaxTree(state).resolveInner(pos, side); n; n = n.parent) {
+    if (isCommentNode(n.name)) {
+      return isCommentClosed(state, n.name, n.from, n.to) ? { from: n.from, to: n.to } : null;
+    }
   }
-  return { from: f, to: t };
+  return null;
+}
+
+/** Whether a comment is the only thing on the line(s) it covers. */
+function standsAlone(state: EditorState, c: CommentSpan): boolean {
+  const startLine = state.doc.lineAt(c.from);
+  const endLine = state.doc.lineAt(c.to);
+  return state.doc.sliceString(startLine.from, c.from).trim() === ""
+    && state.doc.sliceString(c.to, endLine.to).trim() === "";
+}
+
+/**
+ * The run containing the complete comment `from..to`. Walks outward over
+ * neighbouring lines that hold nothing but a complete comment; a blank line or
+ * any other text ends the run.
+ */
+export function commentRunAt(state: EditorState, from: number, to: number): CommentRun {
+  const doc = state.doc;
+  const own: CommentSpan = { from, to };
+  if (!standsAlone(state, own)) {
+    const endsLine = doc.sliceString(from, from + 2) === "//" && to < doc.length;
+    return {
+      from, to, replaceFrom: from, replaceTo: to,
+      lockTo: endsLine ? to + 1 : to,
+      caretBefore: true,
+      lines: 1,
+    };
+  }
+
+  let first = own;
+  for (let ln = doc.lineAt(first.from).number - 1; ln >= 1;) {
+    const line = doc.line(ln);
+    const end = line.from + line.text.trimEnd().length;
+    if (end === line.from) break;
+    const c = closedCommentAt(state, end, -1);
+    if (!c || c.to !== end || !standsAlone(state, c)) break;
+    first = c;
+    ln = doc.lineAt(c.from).number - 1;
+  }
+
+  let last = own;
+  for (let ln = doc.lineAt(last.to).number + 1; ln <= doc.lines;) {
+    const line = doc.line(ln);
+    const start = line.from + (line.text.length - line.text.trimStart().length);
+    if (start === line.to) break;
+    const c = closedCommentAt(state, start, 1);
+    if (!c || c.from !== start || !standsAlone(state, c)) break;
+    last = c;
+    ln = doc.lineAt(c.to).number + 1;
+  }
+
+  const startLine = doc.lineAt(first.from);
+  const endLine = doc.lineAt(last.to);
+  return {
+    from: first.from,
+    to: last.to,
+    replaceFrom: startLine.from,
+    replaceTo: endLine.to,
+    lockTo: endLine.to < doc.length ? endLine.to + 1 : endLine.to,
+    caretBefore: false,
+    lines: endLine.number - startLine.number + 1,
+  };
+}
+
+/** The run whose first comment starts exactly at `pos`, or null. Lets the
+ *  expanded-call tracking treat a revealed run as one multi-line unit. */
+export function commentRunStartingAt(state: EditorState, pos: number): CommentRun | null {
+  const c = closedCommentAt(state, pos, 1);
+  if (!c || c.from !== pos) return null;
+  return commentRunAt(state, c.from, c.to);
+}
+
+/** Whether `expandedPos` (the call revealed for editing) falls within a run. */
+export function isCommentRunExpanded(run: CommentRun, expandedPos: number | null): boolean {
+  return expandedPos !== null && expandedPos >= run.from && expandedPos <= run.to;
 }

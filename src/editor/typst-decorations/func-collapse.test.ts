@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { EditorState, type Range } from "@codemirror/state";
 import type { Decoration } from "@codemirror/view";
 import { handleFuncCall } from "./visual-plugin";
-import { FuncChipWidget, FuncPillWidget } from "./visual-widgets";
+import { AnnotationPillWidget, FuncChipWidget, FuncPillWidget } from "./visual-widgets";
 
 // Collapse rules for a generic `#func(...)` call in the visual editor.
 //
@@ -209,5 +209,29 @@ describe("#task reveals raw source when the caret enters it (issue #23)", () => 
     expect(widgets[0]).toBeInstanceOf(FuncPillWidget);
     // No checkbox widget replaces the (empty) call.
     expect(decos.find((d) => d.from === 0 && d.to === EMPTY.length)).toBeUndefined();
+  });
+});
+
+// An annotation is a remark on the writing, so the visual editor shows only a
+// pill in its place; the comment itself reads in the Changes & History pane.
+describe("annotation", () => {
+  const doc = '#annotation(by: "alice")[Check this source.]';
+
+  it("collapses the whole call to a pill carrying the comment for its tooltip", () => {
+    const { decos, traverse } = decorate(doc, [doc.length + 1]);
+    expect(traverse).toBe(false);
+    expect(decos).toHaveLength(1);
+    expect(decos[0].from).toBe(0);
+    expect(decos[0].to).toBe(doc.length);
+    const widget = decos[0].value.spec.widget;
+    expect(widget).toBeInstanceOf(AnnotationPillWidget);
+    expect((widget as AnnotationPillWidget).summary).toBe("alice\nCheck this source.");
+  });
+
+  it("shows the raw source once the pill is clicked open", () => {
+    const state = EditorState.create({ doc });
+    const decos: Range<Decoration>[] = [];
+    handleFuncCall(state, 0, doc.length, decos, true, new Set([1]), false, /* expandedPos */ 0);
+    expect(decos).toEqual([]);
   });
 });

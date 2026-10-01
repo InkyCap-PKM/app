@@ -61,7 +61,7 @@ pub async fn compile_typst_svg(
     // style-cascade steps shift existing line numbers. The bibliography step
     // appends at the end, below all user content, so it never does.
     let original_lines = source.lines().count();
-    let source = maybe_inject_set_notebox(&source, &state).await;
+    let source = maybe_inject_set_notebox(&source, &state, CompilePurpose::ReadingView).await;
     let source = inject_style_cascade(&source, &path_arg, &state).await;
     let injected_line_offset = source.lines().count().saturating_sub(original_lines);
     let source = maybe_inject_preview_bibliography(&source, &state, &session).await;
@@ -264,7 +264,7 @@ pub async fn compile_typst_html(
     let source = storage.read_file(&path_arg).await?;
 
     let original_lines = source.lines().count();
-    let source = maybe_inject_set_notebox(&source, &state).await;
+    let source = maybe_inject_set_notebox(&source, &state, CompilePurpose::ReadingView).await;
     let source = inject_style_cascade(&source, &path_arg, &state).await;
     // Tag citations with `data-cite-key` so the Scroll Context panel can
     // locate and highlight them. HTML render path only — see
@@ -325,9 +325,21 @@ pub(crate) async fn inject_style_cascade(
     )
 }
 
-/// Inject `#set-notebox(...)` after the `#import` line when the user has toggled
-/// show-inline-tags or show-inline-wikilinks off. Defaults are `true` in the
-/// Typst package, so we only inject when overriding.
+/// What a compile is for. The reading view and exports render a note the same
+/// way except for annotations: the reading view leaves them out (the visual
+/// editor's pills and the Changes & History pane show them instead), while an
+/// export keeps them so a reviewer's remarks reach the shared copy.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CompilePurpose {
+    ReadingView,
+    Export,
+}
+
+/// Inject `#set-notebox(...)` after the `#import` line when a rendering toggle
+/// differs from the Typst package's default: the user has turned
+/// show-inline-tags or show-inline-wikilinks off, or the compile is for the
+/// reading view (which hides annotations). Defaults are `true` in the package,
+/// so nothing is injected for an export with both toggles on.
 ///
 /// Note: the verse font is intentionally NOT auto-injected here. It's an
 /// editor-only preference (preview affordance via `--verse-font` in CSS); a
@@ -335,21 +347,38 @@ pub(crate) async fn inject_style_cascade(
 /// for Typst-native control — `#set-notebox(verse-font: ...)`, the `font:`
 /// argument on `#verse(...)`, or a document-level show-rule on the verse
 /// element. Auto-injecting would silently override those choices.
-pub(crate) async fn maybe_inject_set_notebox(source: &str, state: &AppState) -> String {
+pub(crate) async fn maybe_inject_set_notebox(
+    source: &str,
+    state: &AppState,
+    purpose: CompilePurpose,
+) -> String {
     let settings = state.settings.read().await;
-    let show_tags = settings.editor.show_inline_tags;
-    let show_wikilinks = settings.editor.show_inline_wikilinks;
+    inject_set_notebox(
+        source,
+        settings.editor.show_inline_tags,
+        settings.editor.show_inline_wikilinks,
+        purpose,
+    )
+}
 
-    if show_tags && show_wikilinks {
-        return source.to_string();
-    }
-
-    let mut args: Vec<String> = Vec::new();
+fn inject_set_notebox(
+    source: &str,
+    show_tags: bool,
+    show_wikilinks: bool,
+    purpose: CompilePurpose,
+) -> String {
+    let mut args: Vec<&str> = Vec::new();
     if !show_tags {
-        args.push("show-inline-tags: false".to_string());
+        args.push("show-inline-tags: false");
     }
     if !show_wikilinks {
-        args.push("show-inline-wikilinks: false".to_string());
+        args.push("show-inline-wikilinks: false");
+    }
+    if purpose == CompilePurpose::ReadingView {
+        args.push("show-annotations: false");
+    }
+    if args.is_empty() {
+        return source.to_string();
     }
     let directive = format!("#set-notebox({})", args.join(", "));
 
@@ -410,5 +439,39 @@ async fn resolve_preview_bib_path(session: &NoteboxSession) -> Option<String> {
                 None
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{inject_set_notebox, CompilePurpose};
+
+    const NOTE: &str = "#import \"/.inkycap/notebox.typ\": *\n= Body\n";
+
+    #[test]
+    fn export_with_default_toggles_is_unchanged() {
+        assert_eq!(
+            inject_set_notebox(NOTE, true, true, CompilePurpose::Export),
+            NOTE
+        );
+    }
+
+    #[test]
+    fn reading_view_hides_annotations_after_the_import() {
+        let out = inject_set_notebox(NOTE, true, true, CompilePurpose::ReadingView);
+        assert_eq!(
+            out,
+            "#import \"/.inkycap/notebox.typ\": *\n#set-notebox(show-annotations: false)\n= Body\n"
+        );
+    }
+
+    #[test]
+    fn toggles_share_one_directive() {
+        let out = inject_set_notebox(NOTE, false, true, CompilePurpose::ReadingView);
+        assert!(out.contains("#set-notebox(show-inline-tags: false, show-annotations: false)\n"));
+        let out = inject_set_notebox(NOTE, false, false, CompilePurpose::Export);
+        assert!(
+            out.contains("#set-notebox(show-inline-tags: false, show-inline-wikilinks: false)\n")
+        );
     }
 }

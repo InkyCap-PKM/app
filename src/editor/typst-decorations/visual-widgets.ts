@@ -1,6 +1,9 @@
 import { EditorView, WidgetType } from "@codemirror/view";
 import { buildPillButton, findCallEnd } from "./pill";
 import { getPillOptions } from "./pill-options";
+import { expandFunc } from "./effects";
+import { revealAnnotation } from "./annotation-reveal";
+import type { CommentRun } from "./comments";
 import { t, tPlural } from "../../lib/i18n";
 
 export class FuncPillWidget extends WidgetType {
@@ -61,7 +64,7 @@ export class StylePreambleWidget extends WidgetType {
     row.className = "cm-typst-block-pill-row cm-typst-style-preamble";
 
     const count = document.createElement("span");
-    count.className = "cm-typst-style-preamble-count";
+    count.className = "cm-typst-pill-count";
     count.textContent = tPlural("editor.stylePreamble.count", this.count);
 
     const btn = buildPillButton(
@@ -81,6 +84,90 @@ export class StylePreambleWidget extends WidgetType {
     );
     row.appendChild(btn);
     return row;
+  }
+  ignoreEvent() { return true; }
+}
+
+/** Longest stretch of source a pill's hover tooltip shows. */
+const PILL_TOOLTIP_MAX = 400;
+
+function tooltipText(text: string): string {
+  const trimmed = text.trim();
+  return trimmed.length > PILL_TOOLTIP_MAX ? `${trimmed.slice(0, PILL_TOOLTIP_MAX)}…` : trimmed;
+}
+
+/**
+ * An annotation (`#annotation[…]`) in the visual editor. A reviewer's remark
+ * isn't part of the writing, so only a pill marks where it sits; hovering shows
+ * the comment, and clicking reveals its source and opens the Changes & History
+ * pane on it. `summary` is the comment text (with attribution) for the tooltip.
+ */
+export class AnnotationPillWidget extends WidgetType {
+  constructor(readonly pos: number, readonly summary: string) { super(); }
+  eq(other: AnnotationPillWidget) {
+    return this.pos === other.pos && this.summary === other.summary;
+  }
+  toDOM(view: EditorView) {
+    return buildPillButton(
+      "annotation",
+      view,
+      () => {
+        const callTo = findCallEnd(view, this.pos);
+        return {
+          funcName: "annotation",
+          callFrom: this.pos,
+          callTo,
+          optionSections: getPillOptions("annotation", view, this.pos, callTo),
+          alwaysExpandOnClick: true,
+          onEditSource: (v) => {
+            v.dispatch({ effects: expandFunc.of(this.pos), selection: { anchor: this.pos + 1 } });
+            v.focus();
+            revealAnnotation(this.pos);
+          },
+        };
+      },
+      { title: tooltipText(this.summary) },
+    );
+  }
+  ignoreEvent() { return true; }
+}
+
+/**
+ * A run of Typst comments (line or block comments) in the visual editor. Comments
+ * don't appear in the compiled note, but they are still text the caret has to
+ * move around, so a pill marks each run rather than hiding it outright.
+ * Hovering shows the comment; clicking reveals it for editing, with the caret
+ * at its end. A run over several lines carries its line count.
+ */
+export class CommentPillWidget extends WidgetType {
+  constructor(readonly run: CommentRun, readonly raw: string) { super(); }
+  eq(other: CommentPillWidget) {
+    return this.run.from === other.run.from && this.run.to === other.run.to
+      && this.run.lines === other.run.lines && this.raw === other.raw;
+  }
+  toDOM(view: EditorView) {
+    let accessory: HTMLElement | undefined;
+    if (this.run.lines > 1) {
+      accessory = document.createElement("span");
+      accessory.className = "cm-typst-pill-count";
+      accessory.textContent = tPlural("editor.comment.lines", this.run.lines);
+    }
+    const label = t("editor.comment.label");
+    return buildPillButton(
+      label,
+      view,
+      () => ({
+        funcName: label,
+        callFrom: this.run.from,
+        callTo: this.run.to,
+        alwaysExpandOnClick: true,
+        onEditSource: (v) => {
+          v.dispatch({ effects: expandFunc.of(this.run.from), selection: { anchor: this.run.to } });
+          v.focus();
+        },
+      }),
+      { label, title: tooltipText(this.raw), accessory },
+    );
   }
   ignoreEvent() { return true; }
 }

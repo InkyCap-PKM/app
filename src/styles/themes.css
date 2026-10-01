@@ -436,9 +436,6 @@
   /* Text sitting on an accent-filled surface (primary buttons, active
      chips, pills). White works against every accent the picker allows. */
   --fg-on-accent: #ffffff;
-  /* Collaboration annotations/suggestions — a purple kept distinct from
-     every status hue and from the accent. */
-  --annotation-accent: #8b5cf6;
 
   /* Mycelial View (light) */
   --mycelial-emergent-bg: color-mix(in srgb, var(--mycelial-emergent) 8%, var(--bg-primary));
@@ -730,8 +727,6 @@ html[data-input-modality="pointer"] {
   --accent-success: #5a9a6e;
   --accent-info: #448aff;
   --fg-on-accent: #ffffff;
-  /* Lighter than the light-theme purple so it stays legible on dark. */
-  --annotation-accent: #a78bfa;
 
   /* Mycelial View (dark) */
   --mycelial-tendril: #c4a882;

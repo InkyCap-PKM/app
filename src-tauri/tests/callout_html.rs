@@ -100,3 +100,37 @@ fn callout_and_annotation_emit_semantic_html() {
         "annotation body text missing:\n{html}"
     );
 }
+
+/// The reading view compiles with `#set-notebox(show-annotations: false)`: the
+/// annotation draws nothing, while the callout beside it is untouched.
+#[test]
+fn hidden_annotation_renders_nothing() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let notebox_root = canonicalize_root(dir.path()).expect("canonicalize tempdir");
+    inkycap_lib::notebox_package::scaffold(&notebox_root);
+
+    let source = NOTE.replacen("*\n", "*\n#set-notebox(show-annotations: false)\n", 1);
+    let note_path = notebox_root.join("callout-host.typ");
+    std::fs::write(&note_path, &source).expect("write note");
+
+    let mut compiler = TypstCompiler::new(notebox_root.clone());
+    compiler.ensure_system_fonts();
+    let result = compiler
+        .compile_html(&note_path, source)
+        .expect("note compiles to HTML");
+
+    assert!(
+        result.ok,
+        "HTML compile reported failure: {:?}",
+        result.diagnostics
+    );
+    let html = &result.html;
+    assert!(
+        !html.contains("inkycap-annotation") && !html.contains("A reviewer remark."),
+        "hidden annotation still rendered:\n{html}"
+    );
+    assert!(
+        html.contains("inkycap-callout--note"),
+        "callout missing:\n{html}"
+    );
+}

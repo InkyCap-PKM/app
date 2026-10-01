@@ -160,7 +160,7 @@ function attachImageResize(
 // classifier (multi-line / multi-paragraph callouts are the common
 // case). Other block-row pills (image, figure) stick to the
 // default simple→expand / complex→menu split.
-const ALWAYS_EXPAND_PILLS = new Set(["callout", "quote", "annotation"]);
+const ALWAYS_EXPAND_PILLS = new Set(["callout", "quote"]);
 
 /** The pill for a block-level call, wired to that call's option menu. */
 function makeBlockPill(funcName: string, pos: number, view: EditorView): HTMLElement {
@@ -187,7 +187,7 @@ function makeBlockPillOverlay(funcName: string, pos: number, view: EditorView): 
   return row;
 }
 
-/** The heading row shared by the rendered callout/annotation widgets and the
+/** The heading row shared by the rendered callout widget and the
  *  callout's edit-state head row. `pill` (edit state only) sits before the
  *  label, then the callout kind's `icon`; the row's fixed minimum height keeps
  *  it the same size either way. */
@@ -344,7 +344,7 @@ function buildTaskSpan(
   return wrap;
 }
 
-/** Render a block body string (callout / quote / annotation preview), turning
+/** Render a block body string (callout / quote preview), turning
  *  recognized inline notebox primitives into their semantic elements while
  *  leaving everything else as plain text. Parsing lives in block-body-parse.ts;
  *  here we only build DOM, reusing the same classes as the standalone inline
@@ -426,7 +426,7 @@ function appendBodySegments(segs: BodySegment[], parent: HTMLElement, ctx?: Bloc
   }
 }
 
-/** Shared `ignoreEvent` for rendered block bodies (callout / quote / annotation).
+/** Shared `ignoreEvent` for rendered block bodies (callout / quote).
  *  A mousedown on an interactive child — a wikilink or a task checkbox — is
  *  handled by that child, so CM must ignore it (return true) and not also place
  *  the cursor inside the block, which would drop it into source-edit mode. Any
@@ -466,10 +466,6 @@ function stripMetadata(source: string): string {
   }
   return result.join("\n");
 }
-
-// Annotation accent. Mirrors `_annotation-color` in the notebox package's
-// lib.typ so the visual-editor block and the compiled output read the same.
-const ANNOTATION_COLOR = "#8b5cf6";
 
 /** Rendered fenced code block: header strip, code area, footer strip. The
  *  strips exist so the edit state's opening and closing fence lines have a
@@ -2199,72 +2195,6 @@ export class CalloutBlockWidget extends BlockBodyElementWidget {
       color,
       { icon: calloutIcon(this.kind) },
     ));
-
-    if (this.bodyText) {
-      const body = document.createElement("div");
-      body.className = "cm-typst-callout-body";
-      renderTypstBody(this.bodyText, body, { view, bodyFrom: this.bodyFrom, blockFrom: this.pos });
-      inner.appendChild(body);
-    }
-
-    wrap.appendChild(inner);
-  }
-
-  ignoreEvent(e: Event) {
-    return blockBodyIgnoreEvent(e);
-  }
-}
-
-// An annotation (`#annotation[…]`). Renders as a tinted block — the
-// visual-editor sibling of CalloutBlockWidget — so an annotation stays
-// visually distinct from body text even when the cursor is away, matching how
-// lib.typ renders it in the reading view. Reuses the callout block CSS with
-// the annotation accent set inline. With the caret on the call (`withPill`)
-// the pill sits inside the heading row, so the block stays the same height.
-export class AnnotationBlockWidget extends WidgetType {
-  constructor(
-    readonly bodyText: string,
-    readonly by: string,
-    readonly on: string,
-    readonly pos: number,
-    readonly withPill: boolean,
-    readonly bodyFrom: number,
-  ) {
-    super();
-  }
-
-  eq(other: AnnotationBlockWidget) {
-    return this.bodyText === other.bodyText && this.by === other.by
-      && this.on === other.on && this.pos === other.pos
-      && this.withPill === other.withPill && this.bodyFrom === other.bodyFrom;
-  }
-
-  toDOM(view: EditorView) {
-    const wrap = document.createElement("div");
-    wrap.className = "cm-typst-callout-block cm-typst-block-row";
-    wrap.style.overflow = "hidden";
-    this.renderContent(wrap, view);
-    return wrap;
-  }
-
-  updateDOM(dom: HTMLElement, view: EditorView): boolean {
-    dom.innerHTML = "";
-    this.renderContent(dom, view);
-    return true;
-  }
-
-  private renderContent(wrap: HTMLElement, view: EditorView) {
-    const inner = document.createElement("div");
-    inner.className = "cm-typst-callout";
-    inner.style.borderLeftColor = ANNOTATION_COLOR;
-    inner.style.backgroundColor = `color-mix(in srgb, ${ANNOTATION_COLOR} 8%, transparent)`;
-
-    const attribution = [this.by, this.on].filter(Boolean).join(" · ");
-    const label = attribution
-      ? t("widget.annotation.labelBy", { name: attribution })
-      : t("widget.annotation.label");
-    const pill = this.withPill ? makeBlockPill("annotation", this.pos, view) : undefined;
-    inner.appendChild(buildCalloutHeading(label, ANNOTATION_COLOR, { pill }));
 
     if (this.bodyText) {
       const body = document.createElement("div");

@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use tauri::State;
 
+use crate::commands::typst::CompilePurpose;
 use crate::errors::InkyCapError;
 use crate::state::AppState;
 use crate::storage::traits::NoteboxStorage;
@@ -33,7 +34,9 @@ pub async fn export_note_pdf(
     let content = crate::notebox_package::ensure_import(&content);
 
     let source = super::super::typst::inject_style_cascade(&content, &path_buf, &state).await;
-    let source = super::super::typst::maybe_inject_set_notebox(&source, &state).await;
+    let source =
+        super::super::typst::maybe_inject_set_notebox(&source, &state, CompilePurpose::Export)
+            .await;
     let source = prepare_bibliography(
         source,
         None,
@@ -88,7 +91,9 @@ pub async fn export_note_pdf_to_file(
     };
 
     let source = super::super::typst::inject_style_cascade(&source, &path_buf, &state).await;
-    let source = super::super::typst::maybe_inject_set_notebox(&source, &state).await;
+    let source =
+        super::super::typst::maybe_inject_set_notebox(&source, &state, CompilePurpose::Export)
+            .await;
     let source = prepare_bibliography(
         source,
         None,
@@ -168,7 +173,9 @@ pub async fn export_collection_note_pdf(
             .as_deref()
             .filter(|c| !c.trim().is_empty()),
     );
-    let source = super::super::typst::maybe_inject_set_notebox(&source, &state).await;
+    let source =
+        super::super::typst::maybe_inject_set_notebox(&source, &state, CompilePurpose::Export)
+            .await;
 
     let notebox_root = session.notebox_root.read().await;
     let notebox_root_ref = notebox_root.as_deref();
@@ -317,7 +324,9 @@ pub async fn export_collection_batch_pdf(
                 .as_deref()
                 .filter(|c| !c.trim().is_empty()),
         );
-        let source = super::super::typst::maybe_inject_set_notebox(&source, &state).await;
+        let source =
+            super::super::typst::maybe_inject_set_notebox(&source, &state, CompilePurpose::Export)
+                .await;
         let source = prepare_bibliography(
             source,
             base.bibliography_file.as_deref(),
@@ -732,7 +741,9 @@ pub async fn export_collection_book_pdf(
     if let Some(ref style) = base.bibliography_style {
         compiler.set_bibliography_style(Some(style.clone()));
     }
-    let source = super::super::typst::maybe_inject_set_notebox(&source, &state).await;
+    let source =
+        super::super::typst::maybe_inject_set_notebox(&source, &state, CompilePurpose::Export)
+            .await;
     // Escape stray `@` (emails like `athena@inkycap.org`) inlined from the
     // member notes. Book export builds its own merged source rather than going
     // through `prepare_bibliography`, so it needs the same escape step here or a

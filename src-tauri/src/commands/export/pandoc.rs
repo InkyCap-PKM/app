@@ -2,6 +2,7 @@ use std::path::Path;
 
 use tauri::State;
 
+use crate::commands::typst::CompilePurpose;
 use crate::errors::InkyCapError;
 use crate::state::AppState;
 use crate::storage::traits::NoteboxStorage;
@@ -91,7 +92,9 @@ pub async fn export_via_pandoc(
     // an unknown identifier or module method.
     let content = crate::notebox_package::ensure_import(&content);
     let source = super::super::typst::inject_style_cascade(&content, &path_buf, &state).await;
-    let source = super::super::typst::maybe_inject_set_notebox(&source, &state).await;
+    let source =
+        super::super::typst::maybe_inject_set_notebox(&source, &state, CompilePurpose::Export)
+            .await;
     let source = prepare_bibliography(source, None, None, true, &state, &session).await;
 
     let html = {

@@ -16,8 +16,10 @@ There are three kinds. They are a **behavioural taxonomy**, not a declared type 
 | Kind | Where the pill sits | Visibility | Examples |
 |---|---|---|---|
 | **inline** | Inline in source flow, alongside formatted content | Shown when the cursor is on the call's line; hidden when cursor leaves | `strike`, `highlight`, `emph`, `strong`, `underline`, `overline`, `sub`, `super`, inline `quote`, `cite`, `task`, `due`, generic `#fn[…]` |
-| **block-row** | A row of its own, above the rendered block | Shown when the cursor is on the call's line; hidden when cursor leaves | `image`, `video`, `audio`, `callout`, block `quote`, `annotation` |
+| **block-row** | A row of its own, above the rendered block | Shown when the cursor is on the call's line; hidden when cursor leaves | `image`, `video`, `audio`, `callout`, block `quote` |
 | **embedded** | Part of a permanent widget's chrome (e.g. corner of a canvas) | Always visible — the pill belongs to the widget, not to the cursor | `verse`, `bibliography` |
+
+Two inline pills stay visible with the cursor away, because the pill is the only visible form of what it stands for: `annotation` (`AnnotationPillWidget` — the comment reads in the Changes & History pane, which the pill's click opens via [annotation-reveal.ts](../../../src/editor/typst-decorations/annotation-reveal.ts)) and Typst comments (`CommentPillWidget` — one pill per run of consecutive full-line comments, see [comments.ts](../../../src/editor/typst-decorations/comments.ts)).
 
 `line` is a special inline case: it renders as an `<hr>` when the cursor is away and surfaces a pill (`FuncChipWidget`) on its line. Interactive functions (`wikilink`, `tag`, `link`, `suggestion`), `table`, and `footnote` are full widgets with **no pill** (see "When NOT to add a pill").
 
@@ -37,7 +39,8 @@ This table is the audit reference. Use it to verify any change preserves the int
 | `video`, `audio` | pill overlaid on the block's top-left corner | cursor on line | cursor away | yes | simple → edit source; else menu | generic named-args | yes (player) |
 | `callout` | pill inside the heading row of the in-place edit frame | cursor on line | cursor away | yes | click pill → expand source | kind | body editable in place |
 | block `quote` | pill inline at the start of the first body line | cursor on line | cursor away | yes | click pill → expand source | style, attribution | body editable in place |
-| `annotation` | pill inside the rendered block's heading row | cursor on line | cursor away | yes | simple → edit source; else menu | generic named-args | rendered widget |
+| `annotation` | inline, replacing the whole call | always | expanded | yes | expand source + open Changes & History | generic named-args | no (tooltip; pane) |
+| Typst comment run (`//`, `/* */`) | inline, replacing the run's lines | always | expanded | yes | expand source, caret at the end | none | no (tooltip) |
 | `line` (HR) | pill overlaid on the rule's left end | cursor on line | cursor away | n/a | simple → edit source; else menu | length, stroke | yes (the rule stays) |
 | `figure` | inline wrapper | cursor on line | cursor away | yes | simple → edit source; else menu | caption | wrapped content |
 | `align` | inline wrapper | cursor on line | cursor away | yes | simple → edit source; else menu | left/center/right | wrapped content |
@@ -162,7 +165,7 @@ There is **no single `PILL_REGISTRY`**. A pill's behavior comes from two places:
 
 1. **Kind / rendering** — the `handleFuncCall()` switch in [visual-plugin.ts](../../../src/editor/typst-decorations/visual-plugin.ts), gated by three sets:
    - `INTERACTIVE_FUNCS` = `wikilink`, `tag`, `link`, `suggestion` — full widgets, no pill.
-   - `BLOCK_WIDGET_FUNCS` = `image`, `video`, `audio` — block widget that gains an overlaid pill on the cursor line. `annotation` (and the aligned-image special case) share this branch; `callout` and block `quote` have their own in-place edit branches (see R13).
+   - `BLOCK_WIDGET_FUNCS` = `image`, `video`, `audio` — block widget that gains an overlaid pill on the cursor line. The aligned-image special case shares this branch; `callout` and block `quote` have their own in-place edit branches (see R13).
    - `BLOCK_FUNCS` = `callout`, `quote`, `verse`, `note`, `bibliography`, `table` — block-level rendering.
    - Anything else with `#fn[…]` / `#fn(…)` falls through to the generic inline `FuncPillWidget`.
 2. **Menu options** — the `REGISTRY` map in [pill-options.ts](../../../src/editor/typst-decorations/pill-options.ts) maps a function name to a `PillOptionsBuilder`; `getPillOptions()` returns its sections, or `genericArgsOptions()` for anything unlisted (see R7).
@@ -197,7 +200,7 @@ Display math has no block state at all: `.cm-typst-math-display` is a colour, fo
 
 One sharp edge for any always-on line styling: CodeMirror measures each line's box but not the vertical margins between top-level lines, so a `margin-top`/`margin-bottom` on a line decoration shifts where clicks and arrow-key moves land, and the error grows with every such line above the caret. The edit-line margins on quotes, callouts and code blocks carry this drift for the one block being edited; a frame applied to every block of a kind must use padding for its outer gap instead. One sharp edge for any frame that is always on: CodeMirror measures each line's box but not the vertical margins between top-level lines, so a `margin-top`/`margin-bottom` on a line decoration shifts where clicks and arrow-key moves land, and the error grows with every such line above the caret. The equation frame therefore uses padding for its outer gap and paints the frame with a `::before` pseudo-element inset by that gap. The edit-line margins on quotes, callouts and code blocks carry the same drift, but only for the one block being edited.
 
-Blocks that only gain a pill on the cursor line (`image`, `video`, `audio`, `annotation`, `line`) place it inside or over their existing box (overlay or heading row) rather than in a row above it, for the same reason.
+Blocks that only gain a pill on the cursor line (`image`, `video`, `audio`, `line`) place it inside or over their existing box (overlay or heading row) rather than in a row above it, for the same reason.
 
 Call-only forms with no body bracket (`image`, `line`, `figure`, `cite`, `task`, `due`, …) should expose every meaningful argument as a menu input (R7) so "Edit source" stays a rare path. Image's positional `path` counts: it's a menu input, not a hidden field. The friction R12 fights ("click pill → click Edit source → edit") usually means a missing menu option — reach for R7 before live-edit.
 

@@ -15,7 +15,6 @@ import type { SyntaxNode } from "@lezer/common";
 import { caretLineErrorMute } from "./caret-line-errors";
 import {
   CalloutBlockWidget,
-  AnnotationBlockWidget,
   CodeBlockWidget,
   ImageBlockWidget,
   MediaBlockWidget,
@@ -45,13 +44,13 @@ import { fileList } from "../../stores/filelist";
 import { getCachedBibKeys, activeReferenceSearchAt } from "./reference-suggest";
 import { isEmailLikeAt } from "./reference-form";
 import { scanDocumentLabels, type DocLabel } from "./document-labels";
-import { FuncPillWidget, FuncChipWidget, BulletWidget, ShorthandWidget, HrWidget, AngleBracketWarningWidget, ANGLE_BRACKET_TAGS, StylePreambleWidget, SetRuleWidget, SymWidget } from "./visual-widgets";
+import { FuncPillWidget, FuncChipWidget, BulletWidget, ShorthandWidget, HrWidget, AngleBracketWarningWidget, ANGLE_BRACKET_TAGS, StylePreambleWidget, SetRuleWidget, SymWidget, AnnotationPillWidget, CommentPillWidget } from "./visual-widgets";
 import { symbolGlyph } from "./symbols";
 import { highlight, buildHighlightMark, widgetHighlightFor, type WidgetHighlight } from "./visual-colors";
 import { visualTheme } from "./visual-theme";
 import { computePreambleImportRanges, noteHeaderItems } from "./note-header";
 import { urlTyping } from "./url-typing";
-import { commentHideRange, isCommentClosed } from "./comments";
+import { commentRunAt, commentRunStartingAt, isCommentClosed, isCommentRunExpanded } from "./comments";
 import { createProtectedRangesField, createProtectedCursorFilter, createProtectedChangeFilter, externalReload } from "./visual-protected";
 import { lineStartCaretFilter } from "./line-start-caret";
 export { externalReload } from "./visual-protected";
@@ -889,14 +888,21 @@ export function buildDecorations(
         switch (node.name) {
           case "LineComment":
           case "BlockComment": {
-            // Typst comments are source-only — collapse them away entirely in
-            // the visual editor (the `hide` decoration is auto-atomic, and the
-            // protected-range machinery locks + skips the cursor past them).
-            // An unclosed `/*` runs to the end of the document, so it stays
-            // visible until its closing delimiter exists.
+            // Typst comments collapse to a pill — one per run of comment
+            // lines — so the writer knows they are there; the protected-range
+            // machinery locks them and moves the caret past. Clicking the
+            // pill reveals the run for editing. An unclosed `/*` runs to the
+            // end of the document, so it stays visible until its closing
+            // delimiter exists.
             if (!isCommentClosed(state, node.name, node.from, node.to)) return false;
-            const r = commentHideRange(state, node.from, node.to);
-            decos.push(hide.range(r.from, r.to));
+            const run = commentRunAt(state, node.from, node.to);
+            consumedUntil = Math.max(consumedUntil, run.replaceTo);
+            if (isCommentRunExpanded(run, expandedPos)) return false;
+            decos.push(
+              Decoration.replace({
+                widget: new CommentPillWidget(run, state.doc.sliceString(run.from, run.to)),
+              }).range(run.replaceFrom, run.replaceTo),
+            );
             return false;
           }
           // Direct formatting (`*bold*`, `_italic_`): the `*` / `_` delimiters
@@ -1469,7 +1475,7 @@ const BLOCK_WIDGET_FUNCS = new Set(["image", "video", "audio"]);
 
 /** Calls that produce block-level widgets, left as raw markup in inline-only
  *  mode (`inlineOnlyFacet`). */
-const BLOCK_LEVEL_FUNCS = new Set([...BLOCK_FUNCS, ...BLOCK_WIDGET_FUNCS, "annotation"]);
+const BLOCK_LEVEL_FUNCS = new Set([...BLOCK_FUNCS, ...BLOCK_WIDGET_FUNCS]);
 
 /**
  * Decorate a single `#func(...)` / `#func[...]` call, pushing its decorations
@@ -1514,8 +1520,8 @@ export function handleFuncCall(
     // `[[Name]]` form on cursor instead of dropping to raw `#wikilink(...)`
     // source — handled in its case below, so it must not early-return here.
     if (funcName !== "wikilink" && isCursorAdjacentOrInside(state, from, to, cursors)) return false;
-  } else if (BLOCK_WIDGET_FUNCS.has(funcName) || funcName === "callout" || funcName === "quote" || funcName === "annotation" || alignedImage) {
-    // image, callout, quote, annotation use the pill-above-element pattern:
+  } else if (BLOCK_WIDGET_FUNCS.has(funcName) || funcName === "callout" || funcName === "quote" || alignedImage) {
+    // image, callout, quote use the pill-above-element pattern:
     // the element stays rendered; a pill is shown above it on cursor
     // entry; clicking the pill exposes the raw markup for editing while
     // the element re-renders as a block widget below. All handled in
@@ -1699,26 +1705,17 @@ export function handleFuncCall(
       return false;
     }
     case "annotation": {
-      const bodyText = extractBracketContent(text);
-      if (bodyText === null) return false;
-      const by = extractNamedStringArg(text, "by");
-      const on = extractNamedStringArg(text, "on");
-      // Absolute offset where the `[…]` body begins, so an inline task's
-      // checkbox can resolve its own call position (see renderTypstBody ctx).
-      const bracketIdx = text.indexOf("[");
-      const annBodyFrom = bracketIdx >= 0 ? from + bracketIdx + 1 : from;
-      // Unlike callout/quote, a comment has nothing to preview while you edit
-      // it, so we don't use the side:1 "source + preview" pattern (which would
-      // show the annotation twice while editing). Expanded ⇒ raw source only;
-      // collapsed ⇒ a single block widget (with a pill on the cursor line).
-      const isExpanded = expandedPos === from || (autoExpand && onCursor);
-      if (!isExpanded) {
-        decos.push(
-          Decoration.replace({
-            widget: new AnnotationBlockWidget(bodyText, by ?? "", on ?? "", from, onCursor, annBodyFrom),
-          }).range(from, to),
-        );
-      }
+      // An annotation is a remark on the writing, not part of it: a pill marks
+      // its place and the comment reads in the Changes & History pane (the
+      // pill's click opens it there). When expanded, the raw source shows
+      // instead (the generic expanded check above returned before this).
+      const attribution = [extractNamedStringArg(text, "by"), extractNamedStringArg(text, "on")]
+        .filter(Boolean).join(" · ");
+      const body = extractBracketContent(text) ?? "";
+      const summary = attribution ? `${attribution}\n${body}` : body;
+      decos.push(
+        Decoration.replace({ widget: new AnnotationPillWidget(from, summary) }).range(from, to),
+      );
       return false;
     }
     case "image": {
@@ -2547,7 +2544,10 @@ const expandedFuncField = StateField.define<number | null>({
       // "nearby" so editing the body doesn't auto-collapse the
       // expansion. findCallEnd walks the doc directly here — we don't
       // have a view in this StateField update fn.
-      const callEnd = findCallEnd({ doc: tr.state.doc }, next);
+      // A revealed comment run spans its own lines (a call's end can't be
+      // found by bracket matching), so it is looked up from the syntax tree.
+      const callEnd = commentRunStartingAt(tr.state, next)?.to
+        ?? findCallEnd({ doc: tr.state.doc }, next);
       const startLine = tr.state.doc.lineAt(next).number;
       const endLine = tr.state.doc.lineAt(Math.min(callEnd, tr.state.doc.length)).number;
       let cursorNearby = false;
@@ -2620,6 +2620,14 @@ function expandRangesToBlockElements(
     const growCall = (n: { name: string; from: number; to: number }) => {
       if (n.name === "Raw" || n.name === "RawBlock") {
         grow(n.from, n.to);
+        return;
+      }
+      // A comment run is one pill over several lines; rebuild it whole.
+      if (n.name === "LineComment" || n.name === "BlockComment") {
+        if (isCommentClosed(state, n.name, n.from, n.to)) {
+          const run = commentRunAt(state, n.from, n.to);
+          grow(run.replaceFrom, run.lockTo);
+        }
         return;
       }
       if (n.name !== "FuncCall") return;

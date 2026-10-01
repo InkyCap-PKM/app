@@ -79,7 +79,7 @@ describe("highlightInlineStyle", () => {
   });
 });
 
-// Callouts, block quotes and annotations render their body with a second,
+// Callouts and block quotes render their body with a second,
 // simpler renderer while the caret is away. It paints formatting from a CSS
 // class, which alone would show every highlight in the default yellow.
 

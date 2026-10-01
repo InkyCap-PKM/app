@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use tauri::State;
 
+use crate::commands::typst::CompilePurpose;
 use crate::errors::InkyCapError;
 use crate::state::AppState;
 use crate::storage::traits::NoteboxStorage;
@@ -94,7 +95,9 @@ pub async fn export_collection_static_site(
                 .as_deref()
                 .filter(|c| !c.trim().is_empty()),
         );
-        let content = super::super::typst::maybe_inject_set_notebox(&content, &state).await;
+        let content =
+            super::super::typst::maybe_inject_set_notebox(&content, &state, CompilePurpose::Export)
+                .await;
         // Re-emit `align()` blocks as styled <div>s (typst-html drops them) so
         // centred/right-aligned images survive in the exported site.
         let content = style_injection::inject_html_align_shim(&content);

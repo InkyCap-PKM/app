@@ -15,7 +15,8 @@ import { computeProtectedRanges } from "./visual-protected";
 
 const TAIL = "\ntrailing text";
 
-/** Every decoration in the visual build, as `class[from,to]` strings. */
+/** Every decoration in the visual build, as `class[from,to]` strings (a
+ *  widget is named by its class; a plain hide is `hide`). */
 function decorations(doc: string, caret: number): string[] {
   const state = EditorState.create({
     doc,
@@ -25,7 +26,8 @@ function decorations(doc: string, caret: number): string[] {
   const out: string[] = [];
   const iter = buildDecorations(state).iter();
   while (iter.value) {
-    const cls = iter.value.spec?.class ?? "hide";
+    const spec = iter.value.spec;
+    const cls = spec?.class ?? (spec?.widget ? spec.widget.constructor.name : "hide");
     out.push(`${cls}[${iter.from},${iter.to}]`);
     iter.next();
   }
@@ -180,16 +182,16 @@ describe("half-typed block comments stay visible", () => {
     expect(computeProtectedRanges(state, null)).toEqual([]);
   });
 
-  it("still hides and locks a closed block comment", () => {
+  it("still collapses and locks a closed block comment", () => {
     const doc = `/* ok */${TAIL}`;
     const state = EditorState.create({ doc, extensions: [typst()] });
-    expect(decorations(doc, doc.length)).toEqual(["hide[0,9]"]);
-    expect(computeProtectedRanges(state, null)).toEqual([{ from: 0, to: 9 }]);
+    expect(decorations(doc, doc.length)).toEqual(["CommentPillWidget[0,8]"]);
+    expect(computeProtectedRanges(state, null)).toEqual([{ from: 0, to: 9, caretBefore: false }]);
   });
 
-  it("still hides a line comment", () => {
+  it("still collapses a line comment", () => {
     const doc = `// ok${TAIL}`;
-    expect(decorations(doc, doc.length)).toEqual(["hide[0,6]"]);
+    expect(decorations(doc, doc.length)).toEqual(["CommentPillWidget[0,5]"]);
   });
 
   it("does not hide or lock after `/*` typed above a note that ends in a closed comment", () => {
@@ -201,10 +203,10 @@ describe("half-typed block comments stay visible", () => {
     expect(computeProtectedRanges(state, null)).toEqual([]);
   });
 
-  it("still hides a closed comment with another nested inside it", () => {
+  it("still collapses a closed comment with another nested inside it", () => {
     const doc = `/* a /* b */ c */${TAIL}`;
     const state = EditorState.create({ doc, extensions: [typst()] });
-    expect(decorations(doc, doc.length)).toEqual(["hide[0,18]"]);
-    expect(computeProtectedRanges(state, null)).toEqual([{ from: 0, to: 18 }]);
+    expect(decorations(doc, doc.length)).toEqual(["CommentPillWidget[0,17]"]);
+    expect(computeProtectedRanges(state, null)).toEqual([{ from: 0, to: 18, caretBefore: false }]);
   });
 });

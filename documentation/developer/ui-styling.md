@@ -40,7 +40,6 @@ warm palettes automatically.
 | **Stacking** | `--z-menu` < `--z-modal` < `--z-toast` (+ `--z-menu-over-modal`) | the only z-index values |
 | **Status** | `--accent-danger`, `--accent-warn`, `--accent-success`, `--accent-info` | any UI communicating a state — one hue per meaning, app-wide |
 | **On-accent text** | `--fg-on-accent` | text on an accent-filled surface (primary buttons, active chips) |
-| **Annotations** | `--annotation-accent` | collaboration annotations/suggestions (purple, distinct from every status hue) |
 
 `--radius-control` is the small-control radius and resolves to `--radius-sm`
 (4px): icon buttons, small pills/toggles, `.btn--sm`, chips. Larger surfaces

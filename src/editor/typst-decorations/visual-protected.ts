@@ -1,10 +1,16 @@
 import { Annotation, EditorSelection, EditorState, StateField } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
 import { expandFunc } from "./effects";
-import { commentHideRange, isCommentClosed } from "./comments";
+import { commentRunAt, isCommentClosed, isCommentRunExpanded } from "./comments";
 import { noteHeaderItems, computePreambleImportRanges } from "./note-header";
 
-export interface ProtectedRange { from: number; to: number }
+export interface ProtectedRange {
+  from: number;
+  to: number;
+  /** The caret may sit at `from`, and text typed there lands before the range
+   *  (a comment after text on the same line). Otherwise `from` is locked too. */
+  caretBefore?: boolean;
+}
 
 const CANONICAL_IMPORT_PREFIX = '#import "/.inkycap/notebox.typ"';
 export function isNoteboxImportLine(text: string): boolean {
@@ -40,19 +46,23 @@ export function computeProtectedRanges(
     ranges.push({ from, to: hideEnd });
   }
 
+  // Typst comments sit behind a pill in the visual editor and are locked
+  // until the pill is clicked to reveal them. (These protected-range
+  // extensions are visual-mode-only, so the source editor still shows and
+  // edits comments normally.) Syntax-tree based, so a `//` line inside a
+  // raw/code block — not a comment node — stays visible as example content.
+  let runEnd = -1;
   syntaxTree(state).iterate({
     from: 0,
     to: docLen,
     enter(node) {
-      // Typst comments are source-only — hidden and locked in the visual
-      // editor. (These protected-range extensions are visual-mode-only, so the
-      // source editor still shows and edits comments normally.) Syntax-tree
-      // based, so a `//` line inside a raw/code block — not a comment node —
-      // stays visible as example content.
-      if (node.name === "LineComment" || node.name === "BlockComment") {
-        if (isCommentClosed(state, node.name, node.from, node.to)) {
-          ranges.push(commentHideRange(state, node.from, node.to));
-        }
+      if (node.name !== "LineComment" && node.name !== "BlockComment") return;
+      if (node.from < runEnd) return;
+      if (!isCommentClosed(state, node.name, node.from, node.to)) return;
+      const run = commentRunAt(state, node.from, node.to);
+      runEnd = run.lockTo;
+      if (!isCommentRunExpanded(run, expandedPos)) {
+        ranges.push({ from: run.replaceFrom, to: run.lockTo, caretBefore: run.caretBefore });
       }
     },
   });
@@ -60,18 +70,38 @@ export function computeProtectedRanges(
   return ranges;
 }
 
-export function isInProtectedRange(pos: number, ranges: ProtectedRange[]): boolean {
-  for (const r of ranges) {
-    if (pos >= r.from && pos < r.to) return true;
-  }
-  return false;
+/** Whether a range forbids the caret (or an insertion) at `pos`. */
+function locksPosition(r: ProtectedRange, pos: number): boolean {
+  return pos < r.to && (r.caretBefore ? pos > r.from : pos >= r.from);
 }
 
-export function pushOutOfProtected(pos: number, ranges: ProtectedRange[]): number {
-  for (const r of ranges) {
-    if (pos >= r.from && pos < r.to) {
-      return r.to;
+export function isInProtectedRange(pos: number, ranges: ProtectedRange[]): boolean {
+  return ranges.some((r) => locksPosition(r, pos));
+}
+
+/**
+ * Move `pos` out of the protected range it falls in, in the direction the
+ * caret was travelling (`dir`: -1 backward, 1 forward). Backward lands on the
+ * position just before the range (or on `from` itself when the caret may sit
+ * there); forward, or backward when nothing comes before, lands on the range's
+ * end. Pushing the caret the way it came would leave it stuck: arrowing left
+ * from below a range steps onto the range's last line, and a forward push puts
+ * it straight back. Repeats in case the new position falls in a neighbouring
+ * range.
+ */
+export function pushOutOfProtected(pos: number, ranges: ProtectedRange[], dir: -1 | 1 = 1): number {
+  for (let step = 0; step <= ranges.length; step++) {
+    const r = ranges.find((range) => locksPosition(range, pos));
+    if (!r) return pos;
+    if (dir < 0) {
+      const before = r.caretBefore ? r.from : r.from - 1;
+      if (before >= 0) {
+        pos = before;
+        continue;
+      }
+      dir = 1;
     }
+    pos = r.to;
   }
   return pos;
 }
@@ -114,7 +144,7 @@ export function createProtectedChangeFilter(
       for (const r of ranges) {
         const isPureInsert = fromA === toA && inserted.length > 0;
         const overlaps = isPureInsert
-          ? (fromA >= r.from && fromA < r.to)
+          ? locksPosition(r, fromA)
           : (fromA < r.to && toA > r.from);
         if (overlaps) {
           hasOverlap = true;
@@ -160,13 +190,15 @@ export function createProtectedCursorFilter(
     const expandedPos = tr.startState.field(expandedFuncField, false) ?? null;
 
     let needsUpdate = false;
-    const newRanges = tr.selection.ranges.map((range) => {
+    const newRanges = tr.selection.ranges.map((range, i) => {
       let newHead = range.head;
       let newAnchor = range.anchor;
 
       if (ranges && ranges.length > 0 && !hasExpandEffect) {
-        newHead = pushOutOfProtected(newHead, ranges);
-        newAnchor = range.empty ? newHead : pushOutOfProtected(newAnchor, ranges);
+        const prevHead = tr.startState.selection.ranges[i]?.head ?? range.head;
+        const dir = range.head < prevHead ? -1 : 1;
+        newHead = pushOutOfProtected(newHead, ranges, dir);
+        newAnchor = range.empty ? newHead : pushOutOfProtected(newAnchor, ranges, dir);
       }
 
       if (!hasExpandEffect) {
