@@ -8,7 +8,8 @@ import { urlTyping } from "./url-typing";
 // Typst reads `//` after any scheme but http(s) as a comment, so a typed
 // `zotero://…` would vanish. The visual editor turns it into a `#link("…")`
 // call as the `//` is typed, and `mailto:` likewise (its `@` would otherwise be
-// read as a reference). Raw blocks, strings and code are left alone.
+// read as a reference). An email address is linked, and a fediverse handle
+// escaped, when the word ends. Raw blocks, strings and code are left alone.
 
 function mk(doc: string, anchor = doc.length) {
   return new EditorView({
@@ -66,32 +67,61 @@ describe("typing a URL in the visual editor", () => {
     v.destroy();
   });
 
-  it("turns an email address into a mailto: link as the @ is typed", () => {
+  it("links an email address when the word ends with a space", () => {
     const v = mk("Write to ");
-    type(v, "joshua.c+notes@phydeau.org");
-    expect(doc(v)).toBe('Write to #link("mailto:joshua.c+notes@phydeau.org")');
+    type(v, "joshua.c+notes@phydeau.org now");
+    expect(doc(v)).toBe('Write to #link("mailto:joshua.c+notes@phydeau.org") now');
+    v.destroy();
+  });
+
+  it("links an email address before Enter, leaving sentence punctuation outside", () => {
+    const v = mk("Write to (");
+    type(v, "joshua@phydeau.org).");
+    pressEnter(v);
+    expect(doc(v)).toBe('Write to (#link("mailto:joshua@phydeau.org")).\n');
     v.destroy();
   });
 
   it("undoes an email link to the escaped plain address", () => {
     const v = mk("Write to ");
-    type(v, "joshua@");
+    type(v, "joshua@phydeau.org ");
     undo(v);
-    expect(doc(v)).toBe("Write to joshua\\@");
-    type(v, "phydeau.org");
-    expect(doc(v)).toBe("Write to joshua\\@phydeau.org");
+    expect(doc(v)).toBe("Write to joshua\\@phydeau.org ");
+    v.destroy();
+  });
+
+  it("escapes a fediverse handle instead of linking it", () => {
+    const v = mk("Find me at ");
+    type(v, "@person@mastodon.social today");
+    expect(doc(v)).toBe("Find me at \\@person\\@mastodon.social today");
     v.destroy();
   });
 
   it.each([
-    ["a citation after a space", "see @smith2020", "see @smith2020"],
-    ["an @ at the start of a word", "@intro", "@intro"],
-    ["an escaped @", "joshua\\@x", "joshua\\@x"],
-    ["a citation after a CJK word", "参见@smith2020", "参见@smith2020"],
+    ["a citation straight after a word", "results@smith2020 ", "results@smith2020 "],
+    ["a citation after a space", "see @smith2020 ", "see @smith2020 "],
+    ["a lone handle, which reads as a citation", "@person ", "@person "],
+    ["an escaped @", "joshua\\@phydeau.org ", "joshua\\@phydeau.org "],
+    ["a citation after a CJK word", "参见@smith2020 ", "参见@smith2020 "],
+    ["an address still being typed", "joshua@phydeau", "joshua@phydeau"],
   ])("leaves %s alone", (_name, typed, expected) => {
     const v = mk("");
     type(v, typed);
     expect(doc(v)).toBe(expected);
+    v.destroy();
+  });
+
+  it("leaves a reference to a label in the note alone, even one shaped like a domain", () => {
+    const v = mk("= Data <data.raw>\n\n");
+    type(v, "table@data.raw ");
+    expect(doc(v)).toBe("= Data <data.raw>\n\ntable@data.raw ");
+    v.destroy();
+  });
+
+  it("leaves an address in inline raw text alone", () => {
+    const v = mk("``", 1);
+    type(v, "joshua@phydeau.org ");
+    expect(doc(v)).toBe("`joshua@phydeau.org `");
     v.destroy();
   });
 

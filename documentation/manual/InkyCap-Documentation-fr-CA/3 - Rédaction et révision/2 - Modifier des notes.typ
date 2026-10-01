@@ -81,7 +81,7 @@ Il existe aussi quelques *raccourcis de frappe* qui se déploient à mesure que 
 - [x] fait →  une tâche terminée
 zotero://  →  un lien vers cette adresse (tout schéma sauf http et https)
 mailto:    →  un lien vers une adresse de courriel
-nom@       →  un lien vers cette adresse de courriel
+nom@domaine.org␣ →  un lien vers cette adresse de courriel (à la frappe de l'espace)
 ```
 
 Les raccourcis de tâche conservent le marqueur de liste : `- [ ]` devient donc un élément de liste contenant une tâche (`- #task("")`), que vous pouvez imbriquer ou déplacer comme n'importe quel autre élément.

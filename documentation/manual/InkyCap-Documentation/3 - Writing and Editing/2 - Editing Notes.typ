@@ -80,7 +80,7 @@ There are also a few *typing shortcuts* that expand as you write in the Visual e
 - [x] done →  a completed task
 zotero://  →  a link to that address (any scheme but http and https)
 mailto:    →  a link to an e-mail address
-name@      →  a link to that e-mail address
+name@domain.org␣ →  a link to that e-mail address (when you type the space)
 ```
 
 The task shortcuts keep the list marker, so `- [ ]` becomes a list item holding a task (`- #task("")`) and you can nest it or move it like any other item.

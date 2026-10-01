@@ -108,7 +108,9 @@ Les citations de style Typst acceptent aussi une page ou un autre complément :
 @otlet1934[p. 64]
 ```
 
-Si jamais vous devez écrire l'arobase (`@`) au début d'un mot, échappez-la d'abord avec une barre oblique inverse `\` pour qu'InkyCap ne la prenne pas pour une citation. InkyCap détecte les adresses de courriel. Quand le `@` est collé à la fin d'un mot, comme dans `user@domain.com`, InkyCap le lit comme une partie d'une adresse : le menu surgissant reste fermé et, dans l'éditeur visuel, l'adresse devient un lien de courriel pendant que vous la tapez (annulez pour du texte brut; voir #wikilink("4 - Liens et rétroliens")). Une adresse écrite telle quelle dans l'éditeur source n'est pas signalée comme une référence brisée et InkyCap compile toujours la note, mais les autres outils Typst ont besoin qu'elle soit liée ou écrite `user\@domain.com`.
+Une citation peut être collée au mot qui la précède, sans espace, comme le veulent souvent les styles à notes de bas de page (`résultats@otlet1934`). Le menu surgissant s'ouvre là aussi.
+
+Si jamais vous devez écrire l'arobase (`@`) au début d'un mot, échappez-la d'abord avec une barre oblique inverse `\` pour qu'InkyCap ne la prenne pas pour une citation, ou choisissez *Texte brut* au bas du menu surgissant. InkyCap détecte les adresses de courriel. Quand vous terminez un mot comme `user@domain.com` et que ce qui suit le `@` n'est ni l'une de vos clés de citation ni une étiquette, l'éditeur visuel le transforme en lien de courriel (annulez pour du texte brut; voir #wikilink("4 - Liens et rétroliens")). Une adresse écrite telle quelle dans l'éditeur source n'est pas signalée comme une référence brisée et InkyCap compile toujours la note, mais les autres outils Typst ont besoin qu'elle soit liée ou écrite `user\@domain.com`.
 
 ```typ
 \@notacitation

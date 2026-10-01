@@ -2,43 +2,47 @@
 //
 // Typst reads bare `http://` and `https://` text as a link, but after any other
 // scheme (`zotero://`, `ftp://`, `inkycap://`, …) the `//` starts a comment and
-// the rest of the address vanishes from the note, and the `@` of an email
-// address starts a reference. So in ordinary text these become a `#link("…")`
-// call, with the caret inside the address, as soon as they are recognizable:
+// the rest of the address vanishes from the note. So in ordinary text, typing
+// the second `/` of `<scheme>://`, or the `:` of `mailto:`, turns what was
+// typed into a `#link("…")` call with the caret inside the address. (A bare
+// `mailto:` address has no `//`, but its `@` would be read as a reference.)
 //
-//   - the second `/` of `<scheme>://`
-//   - the `:` of `mailto:`
-//   - an `@` straight after a word (`joshua@` → `#link("mailto:joshua@")`),
-//     the shape InkyCap reads as an email address (see `isEmailLikeAt`)
-//
-// Typst shows a `mailto:` link without its prefix, so the linked address reads
-// as the plain address.
+// An `@` can't be decided when it is typed: `joshua@` may become an email
+// address or a citation placed straight after a word. So email addresses and
+// fediverse handles are rewritten when the word ends, with a space or Enter,
+// by what Typst's parser made of the whole word (see address-markup.ts):
+// `joshua@phydeau.org` becomes a `mailto:` link, `@person@mastodon.social`
+// becomes plain text with its `@`s escaped, and a reference to a bibliography
+// key or a label in the note is left alone. The `@` menu offers the same
+// choices explicitly (see reference-suggest.ts).
 //
 // A space or Enter typed at the end of a link's address steps out of the call
-// first, since an address cannot contain either. Undo turns the call back into
-// the text as it was before the last keystroke; for an email address that is
-// the escaped `joshua\@`, Typst's plain-text form of an address.
+// first, since an address cannot contain either. Undo turns a link back into
+// the text as it was before; for an email address that is the escaped
+// `joshua\@phydeau.org`, Typst's plain-text form of an address.
 //
 // Visual mode only: the source editor stays plain Typst.
 
 import { EditorView, keymap } from "@codemirror/view";
 import { Prec, type EditorState, type Extension } from "@codemirror/state";
-import { isolateHistory } from "@codemirror/commands";
 import { syntaxTree } from "@codemirror/language";
 import { dispatchVisible } from "./dispatch-visible";
-import { isEmailLikeAt } from "./reference-form";
+import {
+  LINK_CLOSE,
+  addressEndingAt,
+  escapeAts,
+  linkEmail,
+  replaceWithLink,
+} from "./address-markup";
+import { getCachedBibKeys } from "./reference-suggest";
+import { scanDocumentLabels } from "./document-labels";
 
 /** A scheme and `:/` just before the caret, starting a word. */
 const SCHEME_AND_SLASH = /(?:^|[^a-zA-Z0-9+.-])([a-zA-Z][a-zA-Z0-9+.-]*):\/$/;
 /** `mailto` just before the caret, starting a word. */
 const MAILTO = /(?:^|[^a-zA-Z0-9+.-])(mailto)$/i;
-/** An email address's local part just before the caret. */
-const EMAIL_LOCAL_PART = /[A-Za-z0-9._+-]+$/;
 /** Schemes Typst already reads as a link when written bare. */
 const BARE_LINK_SCHEMES = new Set(["http", "https"]);
-
-const LINK_OPEN = '#link("';
-const LINK_CLOSE = '")';
 
 /** Whether `pos` sits in ordinary markup text — not in a raw block, a string,
  *  code, maths or a comment. */
@@ -51,20 +55,8 @@ function inMarkupText(state: EditorState, pos: number): boolean {
  *  `address`, leaving the caret at the end of the address. */
 function convertToLink(view: EditorView, from: number, to: number, address: string): boolean {
   if (!inMarkupText(view.state, from)) return false;
-  dispatchLink(view, from, to, address);
+  replaceWithLink(view, from, to, address, true);
   return true;
-}
-
-function dispatchLink(view: EditorView, from: number, to: number, address: string): void {
-  const insert = `${LINK_OPEN}${address}${LINK_CLOSE}`;
-  dispatchVisible(view, {
-    changes: { from, to, insert },
-    selection: { anchor: from + LINK_OPEN.length + address.length },
-    // Its own undo step: undo leaves the text as typed so far, and typing the
-    // rest of the address doesn't join this step.
-    annotations: isolateHistory.of("full"),
-    userEvent: "input.type",
-  });
 }
 
 function handleSlash(view: EditorView, pos: number): boolean {
@@ -83,21 +75,26 @@ function handleColon(view: EditorView, pos: number): boolean {
   return convertToLink(view, pos - m[1].length, pos, `${m[1]}:`);
 }
 
-function handleAt(view: EditorView, pos: number): boolean {
-  const line = view.state.doc.lineAt(pos);
-  const before = view.state.doc.sliceString(line.from, pos);
-  if (!isEmailLikeAt(before.slice(-1))) return false;
-  const local = EMAIL_LOCAL_PART.exec(before)![0];
-  const start = pos - local.length;
-  if (!inMarkupText(view.state, start)) return false;
-  // The escaped address goes in first, as typed text, so undoing the link
-  // leaves `joshua\@` rather than a bare `@` that Typst reads as a reference.
-  view.dispatch({
-    changes: { from: pos, insert: "\\@" },
-    selection: { anchor: pos + 2 },
-    userEvent: "input.type",
-  });
-  dispatchLink(view, start, pos + 2, `mailto:${local}@`);
+/** Whether `name` is a bibliography key or a label in the note. */
+function isKnownTarget(state: EditorState, name: string): boolean {
+  return getCachedBibKeys().has(name) || scanDocumentLabels(state).some((l) => l.name === name);
+}
+
+/**
+ * Rewrite an email address or handle that ends at `pos`, inserting `typed`
+ * (the keystroke that ended it) after it. Returns false when the word before
+ * `pos` is neither.
+ */
+function finishAddress(view: EditorView, pos: number, typed: string): boolean {
+  const state = view.state;
+  const address = addressEndingAt(state, pos, (name) => isKnownTarget(state, name));
+  if (!address) return false;
+  const extra = typed ? { from: pos, insert: typed } : undefined;
+  if (address.kind === "email") {
+    linkEmail(view, address, { extra, caretAfter: pos + 1 + typed.length });
+  } else {
+    escapeAts(view, address.ats, { extra, caretAfter: pos + address.ats.length + typed.length });
+  }
   return true;
 }
 
@@ -117,10 +114,9 @@ const urlTypingInput = EditorView.inputHandler.of((view, from, to, text) => {
   if (from !== to) return false;
   if (text === "/") return handleSlash(view, from);
   if (text === ":") return handleColon(view, from);
-  if (text === "@") return handleAt(view, from);
   if (text === " ") {
     const end = linkAddressEnd(view.state, from);
-    if (end === null) return false;
+    if (end === null) return finishAddress(view, from, " ");
     dispatchVisible(view, {
       changes: { from: end, insert: " " },
       selection: { anchor: end + 1 },
@@ -131,8 +127,9 @@ const urlTypingInput = EditorView.inputHandler.of((view, from, to, text) => {
   return false;
 });
 
-// Enter moves the caret out of the call and then lets the usual Enter run, so
-// list continuation and line breaks behave as at the end of any other text.
+// Enter finishes an address, or moves the caret out of a link call, and then
+// lets the usual Enter run, so list continuation and line breaks behave as at
+// the end of any other text.
 const urlTypingKeymap = Prec.high(
   keymap.of([
     {
@@ -142,12 +139,13 @@ const urlTypingKeymap = Prec.high(
         if (!sel.empty) return false;
         const end = linkAddressEnd(view.state, sel.head);
         if (end !== null) view.dispatch({ selection: { anchor: end } });
+        else finishAddress(view, sel.head, "");
         return false;
       },
     },
   ]),
 );
 
-/** Turns typed non-web URLs and email addresses into `#link` calls in the
- *  visual editor. */
+/** Turns typed non-web URLs and email addresses into `#link` calls, and
+ *  escapes the `@`s of fediverse handles, in the visual editor. */
 export const urlTyping: Extension = [urlTypingInput, urlTypingKeymap];

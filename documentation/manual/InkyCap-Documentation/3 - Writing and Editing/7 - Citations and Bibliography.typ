@@ -107,7 +107,9 @@ Typst-style citations also accept a page or other supplement:
 @otlet1934[p. 64]
 ```
 
-If you ever need to write the at-sign (`@`) at the start of a word, escape it with a backslash `\` first so that InkyCap does not mistake it for a citation. InkyCap will detect e-mail addresses. When the `@` is glued to the end of a word, as in `user@domain.com`, InkyCap reads it as part of an address: the popup stays closed, and in the Visual editor the address becomes an e-mail link as you type it (undo for plain text; see #wikilink("4 - Links and Backlinks")). An address written bare in the Source editor isn't flagged as a broken reference, and InkyCap still compiles the note, though other Typst tools need it linked or written as `user\@domain.com`. 
+A citation can sit right against the preceding word, with no space, as footnote styles often want (`results@otlet1934`). The popup opens there too.
+
+If you ever need to write the at-sign (`@`) at the start of a word, escape it with a backslash `\` first so that InkyCap does not mistake it for a citation, or pick *Plain text* at the bottom of the popup. InkyCap will detect e-mail addresses. When you finish a word like `user@domain.com` and what follows the `@` isn't one of your citation keys or labels, the Visual editor turns it into an e-mail link (undo for plain text; see #wikilink("4 - Links and Backlinks")). An address written bare in the Source editor isn't flagged as a broken reference, and InkyCap still compiles the note, though other Typst tools need it linked or written as `user\@domain.com`. 
 
 ```typ
 \@notacitation

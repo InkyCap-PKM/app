@@ -12,6 +12,7 @@ import {
   isEmailLikeAt,
   linkReference,
 } from "./reference-form";
+import { escapeAts, inMarkupAt, linkEmail } from "./address-markup";
 
 // The `@` popup. In Typst `@` is the *universal reference* operator — it points
 // at any `<label>` (heading, figure, equation, table) as well as bibliography
@@ -27,6 +28,15 @@ import {
 // same rule: `@` while the document numbers them, a link while it doesn't
 // (turning numbering on is the "Heading numbering" palette command's job, not
 // this popup's). The rules live in [reference-form.ts](./reference-form.ts).
+//
+// An `@` straight after a word (`results@smith2020`, `joshua@phydeau.org`) may be
+// a citation placed against the text, as a footnote style wants, or an email
+// address, so the popup opens there too. Below the matches it always offers two
+// rows that write something other than a reference: *E-mail address* (after a
+// word only) turns the address into a `mailto:` link, and *Plain text* escapes
+// the `@`. They are never selected by default; when nothing matches, nothing is
+// selected and Enter passes through, so the word is decided when it ends (see
+// url-typing.ts).
 
 interface SuggestState {
   active: boolean;
@@ -36,10 +46,16 @@ interface SuggestState {
 
 const EMPTY: SuggestState = { active: false, from: 0, query: "" };
 
-/** A single selectable row: a bibliography citation or a document label. */
+/** A single selectable row: a bibliography citation, a document label, or one
+ *  of the rows that write the `@` as something other than a reference. */
 type RefItem =
   | { type: "citation"; entry: BibEntry }
-  | { type: "label"; label: DocLabel; form: InsertForm };
+  | { type: "label"; label: DocLabel; form: InsertForm }
+  | { type: "email" }
+  | { type: "plain" };
+
+/** The local part of an email address just before its `@`. */
+const EMAIL_LOCAL_PART = /[A-Za-z0-9._+-]+$/;
 
 /** Which cross-reference syntax a label row writes. */
 type InsertForm = "ref" | "link";
@@ -235,7 +251,10 @@ function detectReferenceContext(view: EditorView): SuggestState {
   // stays closed while an address is being typed. See `isEmailLikeAt`.
   const charBefore = atIdx > 0 ? textBefore[atIdx - 1] : "";
   if (charBefore === "\\") return EMPTY;
-  if (isEmailLikeAt(charBefore)) return EMPTY;
+  // An `@` glued to a word may be a citation or an email address; the popup
+  // offers both. Only in markup, though, so an address inside a `#link("…")`
+  // string doesn't reopen it.
+  if (isEmailLikeAt(charBefore) && !inMarkupAt(view.state, line.from + atIdx)) return EMPTY;
 
   return { active: true, from: line.from + atIdx, query };
 }
@@ -253,8 +272,17 @@ function searchText(item: RefItem): string {
     const e = item.entry;
     return `${e.key} ${e.title} ${e.authors.join(" ")} ${e.year ?? ""}`;
   }
-  const l = item.label;
-  return `${l.name} ${l.display}`;
+  if (item.type === "label") return `${item.label.name} ${item.label.display}`;
+  return "";
+}
+
+/** The rows that write the `@` as something other than a reference: an email
+ *  link when the `@` follows a word and no space has been typed, and plain
+ *  text always. */
+function nonReferenceItems(view: EditorView, state: SuggestState): RefItem[] {
+  const charBefore = state.from > 0 ? view.state.doc.sliceString(state.from - 1, state.from) : "";
+  const canBeEmail = isEmailLikeAt(charBefore) && !/\s/.test(state.query);
+  return canBeEmail ? [{ type: "email" }, { type: "plain" }] : [{ type: "plain" }];
 }
 
 /** Localized header for a group; bibliography is keyed separately. */
@@ -326,71 +354,62 @@ async function showPopup(view: EditorView, state: SuggestState) {
   const entries = await getEntries();
   const labels = scanDocumentLabels(view.state);
 
-  if (entries.length === 0 && labels.length === 0) {
-    el.innerHTML = "";
-    el.classList.remove("has-preview");
-    const empty = document.createElement("div");
-    empty.className = "wikilink-suggest__empty";
-    empty.textContent = t("refSuggest.empty");
-    el.appendChild(empty);
-    getPreview().style.display = "none";
-    positionPopup(view, state, el);
-    return;
-  }
-
   const groups = buildGroups(
     entries,
     labels,
     state.query,
     documentNumbersHeadings(view.state.doc.toString()),
   );
-  filteredItems = groups.flatMap((g) => g.items);
+  const matches = groups.flatMap((g) => g.items);
 
-  if (filteredItems.length === 0) {
-    // A multi-word query that matches nothing means the writer has typed past
-    // the citation into ordinary prose ("@note this is just text") — close
-    // silently rather than nag with a "no results" box. A single-token miss
-    // ("@zzz", no space yet) is still an active search the writer may be mid-
-    // typing or about to correct, so the box stays up.
-    if (/\s/.test(state.query)) {
-      hidePopup();
-      return;
-    }
-    el.innerHTML = "";
-    el.classList.remove("has-preview");
-    const empty = document.createElement("div");
-    empty.className = "wikilink-suggest__empty";
-    empty.textContent = t("refSuggest.noResults");
-    el.appendChild(empty);
-    getPreview().style.display = "none";
-    positionPopup(view, state, el);
+  // A multi-word query that matches nothing means the writer has typed past
+  // the citation into ordinary prose ("@note this is just text") — close
+  // silently rather than nag with a "no results" box. A single-token miss
+  // ("@zzz", no space yet) is still an active search the writer may be mid-
+  // typing or about to correct, so the box stays up.
+  if (matches.length === 0 && /\s/.test(state.query)) {
+    hidePopup();
     return;
   }
 
-  selectedIndex = 0;
+  const others = nonReferenceItems(view, state);
+  filteredItems = [...matches, ...others];
+  // The non-reference rows are only ever picked on purpose: with no match,
+  // nothing is selected and Enter passes through to the editor.
+  selectedIndex = matches.length > 0 ? 0 : -1;
   el.innerHTML = "";
+  el.classList.remove("has-preview");
+
+  if (matches.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "wikilink-suggest__empty";
+    empty.textContent =
+      entries.length === 0 && labels.length === 0 ? t("refSuggest.empty") : t("refSuggest.noResults");
+    el.appendChild(empty);
+  }
 
   let flatIndex = 0;
-  for (const group of groups) {
+  const renderGroup = (title: string, items: RefItem[]) => {
     const header = document.createElement("div");
     header.className = "wikilink-suggest__group";
-    header.textContent = group.title;
+    header.textContent = title;
     el.appendChild(header);
-
-    for (const item of group.items) {
+    for (const item of items) {
       el.appendChild(renderRow(view, state, item, flatIndex));
       flatIndex++;
     }
-  }
+  };
+  for (const group of groups) renderGroup(group.title, group.items);
+  renderGroup(t("refSuggest.groupNotReference"), others);
 
   positionPopup(view, state, el);
-  updatePreview(filteredItems[0]);
+  updatePreview(filteredItems[selectedIndex]);
 }
 
 function renderRow(view: EditorView, state: SuggestState, item: RefItem, index: number): HTMLElement {
   const row = document.createElement("div");
   row.className = "wikilink-suggest__item";
-  if (index === 0) row.classList.add("is-selected");
+  if (index === selectedIndex) row.classList.add("is-selected");
 
   const nameSpan = document.createElement("span");
   nameSpan.className = "wikilink-suggest__name";
@@ -398,7 +417,13 @@ function renderRow(view: EditorView, state: SuggestState, item: RefItem, index: 
   const metaSpan = document.createElement("span");
   metaSpan.className = "wikilink-suggest__folder";
 
-  if (item.type === "citation") {
+  if (item.type === "email") {
+    nameSpan.textContent = t("refSuggest.asEmail");
+    metaSpan.textContent = "mailto:";
+  } else if (item.type === "plain") {
+    nameSpan.textContent = t("refSuggest.asPlainText");
+    metaSpan.textContent = "\\@";
+  } else if (item.type === "citation") {
     const entry = item.entry;
     nameSpan.textContent = entry.title.length > 60 ? entry.title.slice(0, 57) + "..." : entry.title;
     const authors = formatAuthors(entry.authors);
@@ -434,6 +459,10 @@ function positionPopup(view: EditorView, state: SuggestState, el: HTMLElement) {
 
 function acceptItem(view: EditorView, state: SuggestState, item: RefItem) {
   const cursor = view.state.selection.main.from;
+  if (item.type === "email" || item.type === "plain") {
+    acceptNonReference(view, state, item.type, cursor);
+    return;
+  }
   // A prose label has no number for `@` to render, so it is inserted as a link
   // whose display text starts out as the label name and lands selected, ready
   // to be typed over.
@@ -457,9 +486,37 @@ function acceptItem(view: EditorView, state: SuggestState, item: RefItem) {
   hidePopup();
 }
 
+/**
+ * Write the `@` at `state.from` as an email address (a `mailto:` link of the
+ * address typed so far, with the caret at its end to finish it) or as plain
+ * text (an escaped `\@`, caret unmoved).
+ */
+function acceptNonReference(
+  view: EditorView,
+  state: SuggestState,
+  kind: "email" | "plain",
+  cursor: number,
+) {
+  hidePopup();
+  if (kind === "plain") {
+    escapeAts(view, [state.from], { caretAfter: cursor + 1 });
+    return;
+  }
+  const line = view.state.doc.lineAt(state.from);
+  const local = EMAIL_LOCAL_PART.exec(view.state.doc.sliceString(line.from, state.from));
+  if (!local) return;
+  linkEmail(
+    view,
+    { from: state.from - local[0].length, to: cursor, at: state.from },
+    { caretInAddress: true },
+  );
+}
+
 /** The name that `@…` inserts for a given item. */
 function itemName(item: RefItem): string {
-  return item.type === "citation" ? item.entry.key : item.label.name;
+  if (item.type === "citation") return item.entry.key;
+  if (item.type === "label") return item.label.name;
+  return "";
 }
 
 function updateSelection(delta: number) {
@@ -468,10 +525,26 @@ function updateSelection(delta: number) {
   if (items.length === 0) return;
 
   items[selectedIndex]?.classList.remove("is-selected");
-  selectedIndex = (selectedIndex + delta + filteredItems.length) % filteredItems.length;
+  const n = filteredItems.length;
+  selectedIndex = selectedIndex < 0
+    ? (delta > 0 ? 0 : n - 1)
+    : (selectedIndex + delta + n) % n;
   items[selectedIndex]?.classList.add("is-selected");
   (items[selectedIndex] as HTMLElement)?.scrollIntoView({ block: "nearest" });
   updatePreview(filteredItems[selectedIndex]);
+}
+
+/** Accept the selected row. With none selected, the popup closes and the key
+ *  goes on to the editor. */
+function acceptSelected(view: EditorView): boolean {
+  if (!isPopupVisible()) return false;
+  const item = filteredItems[selectedIndex];
+  if (!item) {
+    hidePopup();
+    return false;
+  }
+  acceptItem(view, currentState, item);
+  return true;
 }
 
 const suggestKeyHandler = Prec.highest(keymap.of([
@@ -485,21 +558,11 @@ const suggestKeyHandler = Prec.highest(keymap.of([
   },
   {
     key: "Enter",
-    run: (view) => {
-      if (!isPopupVisible()) return false;
-      const item = filteredItems[selectedIndex];
-      if (item) acceptItem(view, currentState, item);
-      return true;
-    },
+    run: (view) => acceptSelected(view),
   },
   {
     key: "Tab",
-    run: (view) => {
-      if (!isPopupVisible()) return false;
-      const item = filteredItems[selectedIndex];
-      if (item) acceptItem(view, currentState, item);
-      return true;
-    },
+    run: (view) => acceptSelected(view),
   },
   {
     key: "Escape",
