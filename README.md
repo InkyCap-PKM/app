@@ -14,8 +14,9 @@
 > **[CodeFloe](https://codefloe.com/InkyCap/app)**. That is where the issue
 > tracker, pull requests and releases are. The
 > [GitHub repository](https://github.com/InkyCap-PKM/app) is a read-only mirror
-> that exists only to build the macOS and Windows installers, since CodeFloe
-> has no runners for those platforms. **Issues and pull requests opened on
+> that exists to build the installers, since CodeFloe has no runners for macOS
+> and Windows, and to host the few installers too large for CodeFloe (such as
+> the AppImages), which each CodeFloe release links to. **Issues and pull requests opened on
 > GitHub will not be seen.** Please use CodeFloe.
 >
 > The project moved from Codeberg in September 2026. The
@@ -62,7 +63,7 @@ Pre-built packages are published on the
 [releases page](https://codefloe.com/InkyCap/app/releases) and listed on the
 [download page](https://inkycap.org/download). Pick the artifact for your platform:
 
-- **Linux:** `.deb` / `.rpm` / Flatpak (download and install from the Flatpak file, not currently available on FlatHub).
+- **Linux:** `.deb` / `.rpm` / AppImage / Flatpak (download and install from the Flatpak file, not currently available on FlatHub). The AppImages are too large for CodeFloe, so the release notes link to them on GitHub.
 - **Windows:** the `*-setup.exe` installer or the `.msi` package.
 - **macOS:** the `.dmg` disk image (separate builds for Apple silicon and Intel Macs). These builds are not code-signed or notarized yet, so the first launch shows an "unidentified developer" warning: right-click the app and choose **Open** once, and macOS remembers the choice.
 

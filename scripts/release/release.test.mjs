@@ -4,7 +4,7 @@ import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ARTIFACTS, channelOf } from "./config.mjs";
+import { ARTIFACTS, CODEFLOE_MAX_FILE_BYTES, assetUrl, channelOf } from "./config.mjs";
 import { buildLatestFeed, buildUpdaterFeed, findArtifacts, updaterChannelsFor } from "./feeds.mjs";
 import { parsePublicKey, verifySignature } from "./minisign.mjs";
 
@@ -110,5 +110,21 @@ describe("release feeds", () => {
     const { found, missing } = findArtifacts(dir, "26.10.2");
     expect(found.map((f) => f.artifact.platforms[0]).sort()).toEqual(["linux-x86_64-deb", "windows-x86_64-nsis"]);
     expect(missing).toHaveLength(ARTIFACTS.length - 2);
+  });
+});
+
+describe("download links", () => {
+  it("keeps installers CodeFloe accepts on CodeFloe", () => {
+    expect(assetUrl("26.9.15", "InkyCap_26.9.15_amd64.deb", 94 * 1024 * 1024)).toBe(
+      "https://codefloe.com/InkyCap/app/releases/download/v26.9.15/InkyCap_26.9.15_amd64.deb",
+    );
+    expect(assetUrl("26.9.15", "a.deb", CODEFLOE_MAX_FILE_BYTES)).toMatch(/^https:\/\/codefloe\.com\//);
+  });
+
+  it("puts installers over CodeFloe's limit on the GitHub release", () => {
+    expect(assetUrl("26.9.15", "InkyCap_26.9.15_amd64.AppImage", 251 * 1024 * 1024)).toBe(
+      "https://github.com/InkyCap-PKM/app/releases/download/v26.9.15/InkyCap_26.9.15_amd64.AppImage",
+    );
+    expect(assetUrl("26.9.15", "a.deb", CODEFLOE_MAX_FILE_BYTES + 1)).toMatch(/^https:\/\/github\.com\//);
   });
 });

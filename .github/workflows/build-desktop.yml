@@ -8,8 +8,11 @@
 # here too, on native x86_64 and ARM runners, so one run produces a whole
 # release; they use the same scripts as a local build (scripts/build-*.sh),
 # so building them on your own computer still works and gives the same files.
-# Issues, pull requests and published releases stay on CodeFloe. This
-# workflow deliberately does NOT create a GitHub release.
+# Issues, pull requests and published releases stay on CodeFloe. The one
+# exception: an installer larger than CodeFloe accepts as an attachment goes
+# on a GitHub release with the same tag, created by hand (the release feeds
+# script, scripts/release-feeds.mjs, lists which files). This workflow
+# deliberately does NOT create a GitHub release.
 #
 # HOW IT FITS THE RELEASE RUNBOOK
 # -------------------------------

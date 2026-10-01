@@ -6,7 +6,7 @@
 //   npm run release:feeds -- --in FILE    merge into FILE instead of the live latest.json
 //   npm run release:feeds -- --test-base https://inkycap.org/releases/test
 //                                         private test: feeds whose downloads point at
-//                                         <base>/files/ instead of CodeFloe, written to
+//                                         <base>/files/ instead of the releases, written to
 //                                         feeds-test/; point a test copy at it with the
 //                                         `updates.feed_url` setting
 //   npm run release:feeds -- --verify-with OLD.pub
@@ -21,9 +21,11 @@
 // release-artifacts/<version>/, plus release-artifacts/<version>/RELEASE-NOTES.md
 // (plain text, shown in the in-app update notice).
 // Output: release-artifacts/<version>/feeds/, to upload into releases/ on
-// inkycap.org. Run it while the CodeFloe release is still a draft. Signing
-// leaves the installers unchanged, so the files attached to the draft stay
-// valid as long as they are these same files.
+// inkycap.org. Run it while the release is still a draft. Signing leaves the
+// installers unchanged, so the files attached to the draft stay valid as long
+// as they are these same files. Installers too large for CodeFloe go on a
+// GitHub release with the same tag (see LARGE_FILE_RELEASES_URL in
+// release/config.mjs); the closing instructions list which file goes where.
 //
 // The private signing key lives outside the repository, at
 // ~/.config/inkycap-release/updater.key on each computer used for releases;
@@ -36,12 +38,15 @@ import { spawnSync } from "node:child_process";
 import {
   ARTIFACTS,
   KEY_FILE,
+  LARGE_FILE_RELEASES_URL,
   LATEST_FEED_URL,
+  RELEASES_URL,
   ROOT,
   TAURI_CLI,
   artifactsDir,
   assetUrl,
   channelOf,
+  isLargeFile,
   readUpdaterPubkey,
   readVersion,
   updaterFeedUrl,
@@ -198,7 +203,7 @@ async function makeFeeds(args, version, channel) {
       fail(`${artifact.label}: the signature records version ${check.signedVersion}, but this release is ${version}.`);
     }
     const file = artifact.file(version);
-    const url = testBase === null ? assetUrl(version, file) : `${testBase}/files/${file}`;
+    const url = testBase === null ? assetUrl(version, file, statSync(path).size) : `${testBase}/files/${file}`;
     entries.push({ artifact, path, signature, url });
     console.log(`  ok   ${artifact.label}`);
   }
@@ -251,11 +256,25 @@ Delete the ${folder}/ folder when the test is done.`);
   }
 
   const shown = relative(ROOT, outDir);
+  const large = entries.filter(({ path }) => isLargeFile(statSync(path).size));
+  const regular = entries.filter((e) => !large.includes(e));
+  const listFiles = (list) => list.map(({ path }) => `       ${relative(ROOT, path)}`).join("\n");
+  const largeSteps = large.length === 0 ? "" : `
+     Too large for CodeFloe, so on GitHub instead. Publishing on CodeFloe
+     creates the tag; copy it to the mirror with
+       git fetch origin tag v${version} && git push github v${version}
+     then create a release for that tag at ${LARGE_FILE_RELEASES_URL}${channel === "beta" ? "\n     (marked as a pre-release)" : ""}, attach these, and publish it:
+${listFiles(large)}
+     and link them from the CodeFloe release notes:
+${large.map(({ url }) => `       ${url}`).join("\n")}
+`;
   console.log(`
 Signed and written. Next:
 
-  1. Make sure the files attached to the CodeFloe draft are exactly the ones
-     signed above (from ${relative(ROOT, dir)}/), then publish the release.
+  1. Attach exactly the files signed above to the releases, then publish.
+     On the CodeFloe draft (${RELEASES_URL}):
+${listFiles(regular)}
+${largeSteps}
   2. Upload these files through cPanel's File Manager, replacing the old ones:
 
      ${`${shown}/latest.json`.padEnd(`${shown}/latest.json`.length + 10)}  ->  releases/latest.json
@@ -275,7 +294,7 @@ async function checkLive(version, channel) {
   // release folder; a different file (for example a rebuild attached by
   // mistake) would fail the signature check on users' computers. From a
   // computer without that folder, the links are only checked to exist.
-  console.log("Download links on CodeFloe:");
+  console.log("Download links:");
   const dir = artifactsDir(version);
   const local = existsSync(dir) ? findArtifacts(dir, version).found : [];
   let links = local.map(({ artifact, path }) => ({ artifact, size: statSync(path).size }));
@@ -284,14 +303,25 @@ async function checkLive(version, channel) {
     links = ARTIFACTS.map((artifact) => ({ artifact, size: null }));
   }
   for (const { artifact, size } of links) {
-    const url = assetUrl(version, artifact.file(version));
-    const served = await remoteSize(url);
+    const file = artifact.file(version);
+    // Without the local file its host is unknown, so either host will do.
+    const urls =
+      size === null
+        ? [assetUrl(version, file, 0), assetUrl(version, file, Infinity)]
+        : [assetUrl(version, file, size)];
+    let served;
+    let url;
+    for (url of urls) {
+      served = await remoteSize(url);
+      if (typeof served === "number") break;
+    }
     const ok = size === null ? typeof served === "number" : served === size;
-    console.log(`  ${ok ? "ok  " : "FIX "} ${artifact.label}`);
+    const host = new URL(url).hostname;
+    console.log(`  ${ok ? "ok  " : "FIX "} ${artifact.label} (${host})`);
     if (ok) continue;
     const why =
       typeof served === "number"
-        ? `the file on CodeFloe (${served} bytes) is not the one that was signed (${size} bytes)`
+        ? `the file on ${host} (${served} bytes) is not the one that was signed (${size} bytes)`
         : `${url} ${served}`;
     problems.push(`${artifact.label}: ${why}`);
   }
@@ -318,7 +348,8 @@ async function checkLive(version, channel) {
     fail(
       "Not finished yet:\n  " +
         problems.join("\n  ") +
-        "\n\nDownload links: publish the release, with the signed files attached.\n" +
+        "\n\nDownload links: publish the releases, with the signed files attached\n" +
+        "(installers over CodeFloe's size limit on the GitHub release).\n" +
         "Feeds: upload the files from release-artifacts/<version>/feeds/ into releases/ on inkycap.org.\n" +
         "Until this passes, the Upgrade button may fail; the Download button still works.",
     );

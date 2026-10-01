@@ -23,9 +23,24 @@ export const artifactsDir = (version) => join(ROOT, "release-artifacts", version
 
 // Where releases live today. Change these, regenerate the feeds, upload, and
 // every installed copy follows without an app release.
+//
+// Each release is on CodeFloe, with its notes and installers. CodeFloe refuses
+// attachments over a size limit, so any installer larger than that goes on a
+// release with the same tag on the GitHub build mirror instead.
 export const RELEASES_URL = "https://codefloe.com/InkyCap/app/releases";
+export const LARGE_FILE_RELEASES_URL = "https://github.com/InkyCap-PKM/app/releases";
 export const releaseTagUrl = (version) => `${RELEASES_URL}/tag/v${version}`;
-export const assetUrl = (version, file) => `${RELEASES_URL}/download/v${version}/${file}`;
+
+/** The largest attachment CodeFloe accepts: 100 MB, read as decimal megabytes
+ *  (the smaller reading), so a file near the limit is never refused. */
+export const CODEFLOE_MAX_FILE_BYTES = 100_000_000;
+
+/** Whether an installer of `sizeBytes` is too large for CodeFloe. */
+export const isLargeFile = (sizeBytes) => sizeBytes > CODEFLOE_MAX_FILE_BYTES;
+
+/** Download link for an installer: CodeFloe, or GitHub when too large for it. */
+export const assetUrl = (version, file, sizeBytes) =>
+  `${isLargeFile(sizeBytes) ? LARGE_FILE_RELEASES_URL : RELEASES_URL}/download/v${version}/${file}`;
 export const DOWNLOAD_URL = "https://inkycap.org/download";
 
 // Published feeds. `latest.json` is read by the notify-only check
