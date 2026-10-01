@@ -14,7 +14,7 @@ each tagged release, newest first, grouping entries under **Added**, **Changed**
 
 ## [26.10.2] - 2026-10-01
 
-Notes can now be opened from other apps with `inkycap://` links. Web
+InkyCap can now be opened with a note or collection from other apps with `inkycap://` links. Web
 addresses for other apps, e-mail addresses and citations are easier to type,
 annotations and Typst comments tidy into pills in the visual editor, and the
 app is hardened against notes and noteboxes from other people. Renaming a
