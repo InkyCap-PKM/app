@@ -14,6 +14,7 @@ import { compareName, compareZid } from "../lib/sort";
 import { createNoteForTarget } from "../lib/wikilink-nav";
 import * as ipc from "../lib/ipc";
 import { revealInFileTree } from "../lib/file-tree-reveal";
+import { copyInkycapLink } from "../lib/copy-inkycap-link";
 import type { OutboundLink, PotentialLink } from "../lib/ipc";
 import type { SearchResult } from "../lib/types";
 import { indexReady, bumpPropertyVersion } from "../stores/notebox";
@@ -1152,6 +1153,13 @@ const RightPanel: Component = () => {
     } catch (err) {
       toastError(t("rightPanel.toast.bookmarkFailed"), err);
     }
+  }
+
+  function menuCopyInkycapLink() {
+    setFileMenu(null);
+    const tab = activeFileTab();
+    if (!tab) return;
+    void copyInkycapLink(tab.path);
   }
 
   function menuExport() {
@@ -2310,6 +2318,9 @@ const RightPanel: Component = () => {
             </button>
             <button class="context-menu__item" onClick={menuBookmark}>
               {t("rightPanel.menu.bookmark")}
+            </button>
+            <button class="context-menu__item" onClick={menuCopyInkycapLink}>
+              {t("deepLink.copyLink")}
             </button>
             <div class="context-menu__separator" />
             <button class="context-menu__item" onClick={menuExport}>

@@ -16,11 +16,9 @@ import {
   SplitSquareHorizontal,
   SplitSquareVertical,
   BookOpen,
-  Link,
   X,
   Check,
 } from "lucide-solid";
-import { copyInkycapLink } from "../../lib/copy-inkycap-link";
 
 /**
  * The pane menu at the right edge of a tab strip (`MenuTabsIcon` glyph).
@@ -43,16 +41,6 @@ const TabBarMenu: Component<{ leaf: LeafPane }> = (props) => {
       !!active.path &&
       !pathHasSyncedPreview(active.path)
     );
-  };
-
-  // "Copy InkyCap link" copies a link to the pane's active note or collection.
-  const linkablePath = () => {
-    const active = props.leaf.activeTabId
-      ? tabs.find((x) => x.id === props.leaf.activeTabId)
-      : undefined;
-    return (active?.type === "file" || active?.type === "collection") && active.path
-      ? active.path
-      : null;
   };
 
   function onDocPointerDown(e: PointerEvent) {
@@ -124,21 +112,6 @@ const TabBarMenu: Component<{ leaf: LeafPane }> = (props) => {
               <BookOpen size={15} />
               <span>{t("pane.splitWithPreview")}</span>
             </button>
-          </Show>
-          <Show when={linkablePath()}>
-            {(path) => (
-              <button
-                class="tab-bar__menu-item"
-                role="menuitem"
-                onClick={() => {
-                  void copyInkycapLink(path());
-                  close();
-                }}
-              >
-                <Link size={15} />
-                <span>{t("deepLink.copyLink")}</span>
-              </button>
-            )}
           </Show>
           <Show when={hasMultiplePanes()}>
             <button

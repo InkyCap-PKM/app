@@ -18,7 +18,7 @@ Right-click a note or collection and choose *Copy InkyCap link*. The link is cop
 
 - the file tree, for notes and collections;
 - the *Collections* list;
-- the *Tab options* menu at the right end of the tab bar, for the note or collection in the active tab;
+- the *File actions* menu at the top of the right panel, for the note in the active tab;
 - the *Outline* panel, where *Copy InkyCap link to this heading* makes a link that opens the note scrolled to that heading.
 
 == What happens when you click a link

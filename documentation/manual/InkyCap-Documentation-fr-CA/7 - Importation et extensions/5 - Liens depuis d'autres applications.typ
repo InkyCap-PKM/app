@@ -19,7 +19,7 @@ Faites un clic droit sur une note ou une collection et choisissez *Copier le lie
 
 - l'arborescence des fichiers, pour les notes et les collections;
 - la liste des *Collections*;
-- le menu *Options de l'onglet*, au bout de la barre d'onglets, pour la note ou la collection de l'onglet actif;
+- le menu *Actions sur le fichier*, en haut du panneau de droite, pour la note de l'onglet actif;
 - le panneau *Plan*, où *Copier le lien InkyCap vers ce titre* crée un lien qui ouvre la note à la hauteur de ce titre.
 
 == Ce qui se passe quand vous cliquez sur un lien
