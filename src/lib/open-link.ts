@@ -9,6 +9,14 @@ import { isInkycapUrl } from "./inkycap-url";
 const URI_SCHEME = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
 /** A Windows drive-absolute path (`C:\…`), which is NOT a URL. */
 const WINDOWS_DRIVE = /^[a-zA-Z]:[\\/]/;
+/** A URI scheme followed by `//`: `https://`, `inkycap://`, `zotero://`, … */
+const SCHEME_SLASHES = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//;
+
+/** Whether `text` starts with a URI scheme and `//`. Neither a file path nor
+ *  a note's name can start that way, so this tells a URL apart from them. */
+export function startsWithSchemeAndSlashes(text: string): boolean {
+  return SCHEME_SLASHES.test(text);
+}
 
 /**
  * Open a link target authored in a note.

@@ -44,7 +44,7 @@ import {
   READING_ZOOM_STEP,
 } from "../stores/tabs";
 import { navigateWikilink, showWikilinkContextMenu } from "../lib/wikilink-nav";
-import { openLink } from "../lib/open-link";
+import { openLink, startsWithSchemeAndSlashes } from "../lib/open-link";
 import { isDocumentationWindow } from "../lib/docs-window";
 import { searchHighlights } from "../stores/search";
 import { pathEquals, pathStartsWith } from "../lib/paths";
@@ -1417,7 +1417,9 @@ const TypstReadingView: Component<TypstReadingViewProps> = (props) => {
     if (!a) return;
     const href = a.getAttribute("href") ?? a.getAttribute("xlink:href") ?? "";
     const [pathPart, hash] = href.split("#");
-    if (!/\.typ$/i.test(pathPart)) {
+    // A URL can end in `.typ` too (`inkycap://open?…&file=Note.typ`), so a
+    // scheme rules out a wikilink before the extension is checked.
+    if (startsWithSchemeAndSlashes(href) || !/\.typ$/i.test(pathPart)) {
       // Not a wikilink — an external URL or a notebox file link authored via
       // `#link(...)`. Without interception the webview would follow the href
       // and navigate away from the app. Route it through `openLink` so URLs
