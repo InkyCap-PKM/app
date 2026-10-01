@@ -79,6 +79,9 @@ Il existe aussi quelques *raccourcis de frappe* qui se déploient à mesure que 
 > texte    →  une citation en bloc (en début de ligne)
 - [ ] tâche →  une tâche cochable
 - [x] fait →  une tâche terminée
+zotero://  →  un lien vers cette adresse (tout schéma sauf http et https)
+mailto:    →  un lien vers une adresse de courriel
+nom@       →  un lien vers cette adresse de courriel
 ```
 
 Les raccourcis de tâche conservent le marqueur de liste : `- [ ]` devient donc un élément de liste contenant une tâche (`- #task("")`), que vous pouvez imbriquer ou déplacer comme n'importe quel autre élément.

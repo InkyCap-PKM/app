@@ -177,8 +177,12 @@ Where a link goes depends on what it is:
 You can also paste a web address straight from your clipboard. What happens depends on where your cursor is:
 
 - If you have *selected some text* first, a small *Paste as* popup appears with two choices. *Link* turns your selection into the link's text (`#link("https://…")[your words]`), and *Plain text* replaces the selection with the address itself. Use the arrow keys and *Enter*, or click, to choose; *Escape* cancels.
-- If nothing is selected, the address is simply inserted as text. There is no popup, because the visual editor already shows a bare web address as something you can click.
+- If nothing is selected, the address is simply inserted as a link. There is no popup, because the visual editor already shows a bare address as something you can click.
 - If your cursor is already inside the address part of a `#link(...)` call, the pasted address drops straight into place.
+
+Typst only recognizes a bare `http://` or `https://` address as a link. With any other kind of address, such as `inkycap://`, `zotero://`, `obsidian://` or `ftp://`, Typst would read the `//` as the start of a comment and hide the rest. So InkyCap pastes those addresses as a `#link("…")` call. It does the same with an e-mail address, with or without `mailto:` in front, because Typst would otherwise read its `@` as a citation. An e-mail link shows just the address, without the `mailto:`.
+
+The Visual editor does this as you type, too. When you type the `//` of an address such as `zotero://`, the colon of `mailto:`, or the `@` of an e-mail address, it becomes a `#link("…")` call with your cursor inside the address, so you just keep typing. Type a space or press *Enter* at the end of the address to carry on writing after the link. If you didn't want a link, *Ctrl/Cmd+Z* turns it back into plain text. For an e-mail address, that plain text is `name\@domain.org`: the backslash tells Typst the `@` is part of the address, and the Visual editor hides it unless your cursor is on it. The Source editor leaves what you type as written, so there you wrap these addresses in `#link("…")` yourself.
 
 
 == Backlinks matter: the reciprocal model

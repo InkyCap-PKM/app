@@ -50,6 +50,7 @@ import { symbolGlyph } from "./symbols";
 import { highlight, buildHighlightMark, widgetHighlightFor, type WidgetHighlight } from "./visual-colors";
 import { visualTheme } from "./visual-theme";
 import { computePreambleImportRanges, noteHeaderItems } from "./note-header";
+import { urlTyping } from "./url-typing";
 import { commentHideRange, isCommentClosed } from "./comments";
 import { createProtectedRangesField, createProtectedCursorFilter, createProtectedChangeFilter, externalReload } from "./visual-protected";
 import { lineStartCaretFilter } from "./line-start-caret";
@@ -3127,8 +3128,8 @@ export function typstVisualMode(options?: { inlineOnly?: boolean }) {
   // the note narrowed to one cell, so table/verse entry, the table clipboard
   // routing, and the post-undo rebuild (undo runs in the main editor) stay out.
   if (options?.inlineOnly) {
-    return [inlineOnlyFacet.of(true), expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, lineStartCaretGuard, blockBodyCaretEntry, visualField, softBreakRangesField, softBreakAtomicRanges, markupAtomicRanges, visualTheme, linkClickHandler, pillBoundaryNav];
+    return [inlineOnlyFacet.of(true), expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, lineStartCaretGuard, blockBodyCaretEntry, visualField, softBreakRangesField, softBreakAtomicRanges, markupAtomicRanges, visualTheme, linkClickHandler, urlTyping, pillBoundaryNav];
   }
-  return [expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, lineStartCaretGuard, blockBodyCaretEntry, dueCursorRoundOut, Prec.high(tableEntryKeymap), Prec.high(verseEntryKeymap), visualField, softBreakRangesField, softBreakAtomicRanges, markupAtomicRanges, postHistoryRebuild, visualTheme, caretLineErrorMute(), linkClickHandler, tableClipboardHandler, cellEditorSync, tableSearchSync, tableScrollHandler, pillBoundaryNav];
+  return [expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, lineStartCaretGuard, blockBodyCaretEntry, dueCursorRoundOut, Prec.high(tableEntryKeymap), Prec.high(verseEntryKeymap), visualField, softBreakRangesField, softBreakAtomicRanges, markupAtomicRanges, postHistoryRebuild, visualTheme, caretLineErrorMute(), linkClickHandler, urlTyping, tableClipboardHandler, cellEditorSync, tableSearchSync, tableScrollHandler, pillBoundaryNav];
 }
 

@@ -57,7 +57,7 @@ Before building new things *in Rust or TypeScript*, stop and check because it is
 
 ### Typst-native syntax, not Markdown-translated
 
-The visual editor recognizes Typst's own syntax (`*bold*`, `_italic_`, `= heading`, `- bullet`, `+ ordered`, `$math$`) without translation. Markdown shortcuts like `**bold**` or `# heading` are NOT supported. The only "translations" are a few explicit InkyCap shortcuts into function calls: `[[Name]]` → `#wikilink("Name")` and the `/` command palette.
+The visual editor recognizes Typst's own syntax (`*bold*`, `_italic_`, `= heading`, `- bullet`, `+ ordered`, `$math$`) without translation. Markdown shortcuts like `**bold**` or `# heading` are NOT supported. The only "translations" are a few explicit InkyCap shortcuts into function calls: `[[Name]]` → `#wikilink("Name")`, the `/` command palette, the typing shortcuts in [markdown-shortcuts.ts](src/editor/typst-decorations/markdown-shortcuts.ts) (`> ` → `#quote`, `+++` → `#line`, `++text++` → `#footnote`, `- [ ] ` → `#task`), and, in the visual editor only, a typed `<scheme>://` (any scheme but `http`/`https`), `mailto:`, or email address (`joshua@`) → `#link("…")` ([url-typing.ts](src/editor/typst-decorations/url-typing.ts)). That last one exists because Typst reads `//` after those schemes as a comment and `@` in a bare address as a reference; undoing an email link leaves Typst's escaped plain-text form, `joshua\@phydeau.org`. Each new shortcut is added to this list and to the user manual's typing-shortcut table.
 
 ### Visual editor as a user-friendliness tool
 

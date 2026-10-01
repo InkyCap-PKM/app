@@ -4,6 +4,7 @@ import { type CompletionContext, type CompletionResult, type Completion, startCo
 import { setDiagnostics, type Diagnostic } from "@codemirror/lint";
 import { renderDiagnosticMessage } from "../diagnostic-style";
 import { referenceActions } from "./reference-quickfix";
+import { isEmailLikeAt } from "../typst-decorations/reference-form";
 import { LspClient, filePathToUri, type LspDiagnostic, type LspPosition, type LspCompletionItem } from "./client";
 import * as ipc from "../../lib/ipc";
 import { t } from "../../lib/i18n";
@@ -364,15 +365,33 @@ async function refreshBibKeys(): Promise<Set<string>> {
   return cachedBibKeys;
 }
 
+/**
+ * Whether `d` is Typst's unresolved-label error for the `@domain` of an email
+ * address such as `athena@inkycap.org`. InkyCap reads that shape as an address
+ * (see `isEmailLikeAt`) and its own compile escapes the `@`, so the error the
+ * language server reports from the raw source does not apply.
+ */
+export function isEmailAddressDiagnostic(
+  doc: EditorView["state"]["doc"],
+  d: LspDiagnostic,
+): boolean {
+  if (!UNRESOLVED_LABEL_RE.test(d.message)) return false;
+  const at = lspPositionToOffset(doc, d.range.start);
+  if (at < 1 || at >= doc.length || doc.sliceString(at, at + 1) !== "@") return false;
+  return isEmailLikeAt(doc.sliceString(at - 1, at));
+}
+
 function convertDiagnostics(
   doc: EditorView["state"]["doc"],
   diagnostics: LspDiagnostic[],
   bibKeys: Set<string>,
   suppressUnknownVars: boolean,
 ): Diagnostic[] {
-  const relevant = suppressUnknownVars
-    ? diagnostics.filter((d) => !UNKNOWN_VARIABLE_RE.test(d.message))
-    : diagnostics;
+  const relevant = diagnostics.filter(
+    (d) =>
+      !(suppressUnknownVars && UNKNOWN_VARIABLE_RE.test(d.message)) &&
+      !isEmailAddressDiagnostic(doc, d),
+  );
   return relevant.map((d) => {
     const from = lspPositionToOffset(doc, d.range.start);
     const to = lspPositionToOffset(doc, d.range.end);

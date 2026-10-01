@@ -259,6 +259,12 @@ function buildTagPill(name: string): HTMLElement {
   return pill;
 }
 
+/** The text Typst shows for a link with no text of its own: the address,
+ *  without a `mailto:` or `tel:` prefix. */
+export function linkTextFromUrl(url: string): string {
+  return url.replace(/^(?:mailto|tel):/, "");
+}
+
 /** Build an interactive external-link span for a rendered block body. Mirrors
  *  LinkWidget's behaviour (pointer cursor, mousedown → openLink) and stops the
  *  event from reaching CM so the click opens the URL instead of dropping the
@@ -268,7 +274,7 @@ function buildLinkSpan(url: string, display: string): HTMLElement {
   const a = document.createElement("span");
   a.className = "cm-typst-link";
   a.style.cursor = "pointer";
-  a.textContent = display || url;
+  a.textContent = display || linkTextFromUrl(url);
   a.title = url;
   a.addEventListener("mousedown", (e) => {
     if (e.button === 2) return;
@@ -2452,7 +2458,7 @@ export class LinkWidget extends WidgetType {
     el.title = this.url;
 
     const text = document.createElement("span");
-    text.textContent = this.display || this.url;
+    text.textContent = this.display || linkTextFromUrl(this.url);
     el.appendChild(text);
 
     const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");

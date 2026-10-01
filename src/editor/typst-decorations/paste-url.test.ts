@@ -62,6 +62,57 @@ describe("pasteUrlHandler", () => {
     v.destroy();
   });
 
+  // Typst reads `//` after any scheme but http(s) as a comment, so those URLs
+  // must go in as a `#link("…")` call or everything after the colon vanishes.
+  it.each([
+    "inkycap://open?notebox=Notes&file=a.typ",
+    "zotero://select/library/items/ABC123",
+    "obsidian://open?vault=V&file=N",
+    "ftp://files.example.test/x.txt",
+    "some-future-app+v2://thing",
+    "mailto:joshua@phydeau.org",
+  ])("pastes %s as a #link call into blank space", (url) => {
+    const v = mk("foo ", 4);
+    expect(pasteUrlHandler(pasteEvent(url), v)).toBe(true);
+    const expected = `foo #link("${url}")`;
+    expect(v.state.doc.toString()).toBe(expected);
+    expect(v.state.selection.main.head).toBe(expected.length);
+    expect(visibleMenu()).toBeNull();
+    v.destroy();
+  });
+
+  it("pastes a bare email address as a mailto: link", () => {
+    const v = mk("foo ", 4);
+    pasteUrlHandler(pasteEvent("joshua@phydeau.org"), v);
+    expect(v.state.doc.toString()).toBe('foo #link("mailto:joshua@phydeau.org")');
+    v.destroy();
+  });
+
+  it("offers the escaped address as the plain-text form of a pasted email", () => {
+    const v = mk("foo bar baz", 4, 7);
+    pasteUrlHandler(pasteEvent("joshua@phydeau.org"), v);
+    const rows = visibleMenu()!.querySelectorAll<HTMLElement>(".paste-url-menu__item");
+    rows[1].dispatchEvent(new MouseEvent("mousedown")); // "Plain text"
+    expect(v.state.doc.toString()).toBe("foo joshua\\@phydeau.org baz");
+    v.destroy();
+  });
+
+  it("escapes quotes and backslashes when wrapping a URL in #link", () => {
+    const v = mk("", 0);
+    pasteUrlHandler(pasteEvent('zotero://a"b\\c'), v);
+    expect(v.state.doc.toString()).toBe('#link("zotero://a\\"b\\\\c")');
+    v.destroy();
+  });
+
+  it("offers the same #link form for a custom scheme pasted over a selection", () => {
+    const v = mk("foo bar baz", 4, 7);
+    pasteUrlHandler(pasteEvent("inkycap://open?notebox=N&zid=1"), v);
+    const rows = visibleMenu()!.querySelectorAll<HTMLElement>(".paste-url-menu__item");
+    rows[1].dispatchEvent(new MouseEvent("mousedown")); // "Plain text"
+    expect(v.state.doc.toString()).toBe('foo #link("inkycap://open?notebox=N&zid=1") baz');
+    v.destroy();
+  });
+
   it("ignores a non-URL paste", () => {
     const v = mk("foo ", 4);
     const handled = pasteUrlHandler(pasteEvent("just some text"), v);

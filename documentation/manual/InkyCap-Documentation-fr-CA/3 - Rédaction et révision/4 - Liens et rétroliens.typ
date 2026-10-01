@@ -178,8 +178,12 @@ La destination d'un lien dépend de ce qu'il est :
 Vous pouvez aussi coller une adresse web directement depuis votre presse-papiers. Ce qui se passe dépend de l'endroit où se trouve votre curseur :
 
 - Si vous avez d'abord *sélectionné du texte*, un petit menu surgissant *Coller comme* apparaît avec deux choix. *Lien* transforme votre sélection en texte du lien (`#link("https://…")[vos mots]`), et *Texte brut* remplace la sélection par l'adresse elle-même. Utilisez les touches fléchées et *Entrée*, ou cliquez, pour choisir ; *Échap* annule.
-- Si rien n'est sélectionné, l'adresse est simplement insérée comme texte. Il n'y a pas de menu surgissant, parce que l'éditeur visuel affiche déjà une adresse web nue comme quelque chose sur quoi vous pouvez cliquer.
+- Si rien n'est sélectionné, l'adresse est simplement insérée comme lien. Il n'y a pas de menu surgissant, parce que l'éditeur visuel affiche déjà une adresse nue comme quelque chose sur quoi vous pouvez cliquer.
 - Si votre curseur est déjà à l'intérieur de la partie adresse d'un appel `#link(...)`, l'adresse collée se place directement à cet endroit.
+
+Typst ne reconnaît comme lien qu'une adresse nue en `http://` ou `https://`. Pour tout autre type d'adresse, comme `inkycap://`, `zotero://`, `obsidian://` ou `ftp://`, Typst lirait les `//` comme le début d'un commentaire et masquerait la suite. InkyCap colle donc ces adresses sous forme d'appel `#link("…")`. Il fait de même pour une adresse de courriel, précédée ou non de `mailto:`, parce que Typst lirait autrement son `@` comme une citation. Un lien de courriel n'affiche que l'adresse, sans le `mailto:`.
+
+L'éditeur visuel le fait aussi pendant que vous tapez. Quand vous tapez les `//` d'une adresse comme `zotero://`, le deux-points de `mailto:` ou le `@` d'une adresse de courriel, elle devient un appel `#link("…")` avec votre curseur dans l'adresse : vous n'avez qu'à continuer de taper. Tapez une espace ou appuyez sur *Entrée* à la fin de l'adresse pour poursuivre votre texte après le lien. Si vous ne vouliez pas de lien, *Ctrl/Cmd+Z* le remet en texte brut. Pour une adresse de courriel, ce texte brut est `nom\@domaine.org` : la barre oblique inverse indique à Typst que le `@` fait partie de l'adresse, et l'éditeur visuel la masque, sauf si votre curseur est dessus. L'éditeur source laisse ce que vous tapez tel quel : entourez-y vous-même ces adresses de `#link("…")`.
 
 
 == Les rétroliens comptent : le modèle réciproque
