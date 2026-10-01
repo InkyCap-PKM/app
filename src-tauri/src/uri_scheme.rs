@@ -12,7 +12,10 @@
 //! treated as hostile. [`parse`] accepts only the two verbs below with their
 //! required parameters, and rejects any `file` value that could point outside
 //! the notebox (absolute paths, drive letters, `..` segments) or at anything
-//! other than a note or a collection. A rejected link yields `None`: it is
+//! other than a note or a collection. A collection is named by its path inside
+//! the notebox's collections folder (`.inkycap/collections/`), the one place
+//! collections live, so `file=Reading%20list.collection` finds
+//! `.inkycap/collections/Reading list.collection`. A rejected link yields `None`: it is
 //! ignored without telling the user, since a malformed link is not theirs to
 //! fix. Finding the notebox and the file on disk is the job of
 //! [`crate::deep_link`], which works only from what this module returns.
@@ -34,8 +37,11 @@ const MAX_ZID_LEN: usize = 128;
 const MAX_HEADING_LEN: usize = 512;
 const MAX_QUERY_LEN: usize = 1024;
 
-/// File extensions a link may open (see [`RelativePath::candidates`]).
-const OPENABLE_EXTENSIONS: [&str; 2] = ["typ", "collection"];
+/// Extension of a note, which a link names by its path from the notebox root.
+const NOTE_EXTENSION: &str = "typ";
+/// Extension of a collection, which a link names by its path inside the
+/// collections folder.
+const COLLECTION_EXTENSION: &str = "collection";
 
 /// A checked request from an `inkycap://` link.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -83,16 +89,24 @@ impl RelativePath {
         &self.segments
     }
 
-    /// The files this path may name, in the order to try them: the path as
-    /// written when it names a note or collection, then the path with `.typ`
-    /// added (so `file=Testpad` finds `Testpad.typ`). Nothing else is ever
-    /// opened by a link: another kind of file would be handed to another
-    /// program and could run something.
+    /// The files this path may name, relative to the notebox root, in the
+    /// order to try them: the note as written, or for a `.collection` name the
+    /// collection in the collections folder, then the path with `.typ` added
+    /// (so `file=Testpad` finds `Testpad.typ`). Nothing else is ever opened by
+    /// a link: another kind of file would be handed to another program and
+    /// could run something.
     pub fn candidates(&self) -> Vec<RelativePath> {
         let mut out = Vec::new();
         let name = self.segments.last().map(String::as_str).unwrap_or_default();
-        if has_openable_extension(name) {
+        if has_extension(name, NOTE_EXTENSION) {
             out.push(self.clone());
+        } else if has_extension(name, COLLECTION_EXTENSION) {
+            let segments = crate::notebox_package::collections_relpath()
+                .split('/')
+                .map(str::to_string)
+                .chain(self.segments.iter().cloned())
+                .collect();
+            out.push(RelativePath { segments });
         }
         if !name.to_ascii_lowercase().ends_with(".typ") {
             let mut segments = self.segments.clone();
@@ -105,14 +119,10 @@ impl RelativePath {
     }
 }
 
-/// Whether a file name ends in an extension a link may open.
-fn has_openable_extension(name: &str) -> bool {
-    name.rsplit_once('.').is_some_and(|(stem, ext)| {
-        !stem.is_empty()
-            && OPENABLE_EXTENSIONS
-                .iter()
-                .any(|allowed| ext.eq_ignore_ascii_case(allowed))
-    })
+/// Whether a file name has a non-empty stem and the extension `wanted`.
+fn has_extension(name: &str, wanted: &str) -> bool {
+    name.rsplit_once('.')
+        .is_some_and(|(stem, ext)| !stem.is_empty() && ext.eq_ignore_ascii_case(wanted))
 }
 
 /// Parse an `inkycap://` link. Returns `None` for anything that is not a
@@ -223,7 +233,8 @@ fn parse_relative_path(file: &str) -> Option<RelativePath> {
         }
         segments.push(segment.to_string());
     }
-    // The notebox's own configuration folder holds no notes.
+    // Nothing in the notebox's own configuration folder is named from the
+    // root; collections there are named from the collections folder.
     if segments[0].eq_ignore_ascii_case(".inkycap") {
         return None;
     }
@@ -414,9 +425,20 @@ mod tests {
             ["a/b.typ"]
         );
         assert_eq!(candidates("inkycap://open?notebox=N&file=b.TYP"), ["b.TYP"]);
+    }
+
+    #[test]
+    fn a_collection_is_looked_up_in_the_collections_folder() {
         assert_eq!(
             candidates("inkycap://open?notebox=N&file=b.collection"),
-            ["b.collection", "b.collection.typ"]
+            [".inkycap/collections/b.collection", "b.collection.typ"]
+        );
+        assert_eq!(
+            candidates("inkycap://open?notebox=N&file=Reading%2Fb.Collection"),
+            [
+                ".inkycap/collections/Reading/b.Collection",
+                "Reading/b.Collection.typ"
+            ]
         );
     }
 

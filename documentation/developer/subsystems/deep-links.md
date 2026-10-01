@@ -51,8 +51,10 @@ links, so a format change on one side fails the other side's tests.
    else yields `None` and is dropped without telling the user.
 3. **Resolving** (`deep_link::resolve`). The notebox must be in the registry
    under that display name (most recently opened wins on a tie; the
-   documentation notebox never matches). The file is tried as written if it is
-   a `.typ` or `.collection`, then with `.typ` added; it is joined to the
+   documentation notebox never matches). A `.typ` file is tried as written; a
+   `.collection` file is looked up inside `.inkycap/collections/`, where
+   collections live, so a link names a collection by its path in that folder;
+   then the path is tried with `.typ` added. Each candidate is joined to the
    canonical root, canonicalized through `validate_notebox_path` (which follows
    symlinks and checks the result is still under the root), and must still be
    a `.typ` or `.collection` file afterwards. A link never opens any other kind

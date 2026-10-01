@@ -8,18 +8,25 @@ import { normalizePath, pathStartsWith } from "./paths";
 //   inkycap://open?notebox=<name>&file=<path>[&heading=<heading>]
 //   inkycap://search?notebox=<name>&query=<text>
 //
-// `notebox` is the notebox's name in the notebox list, `file` a path relative
-// to the notebox root with `/` separators. Every value is percent-encoded, so
-// a space becomes %20 and a separator %2F.
+// `notebox` is the notebox's name in the notebox list, `file` a note's path
+// relative to the notebox root with `/` separators, or a collection's path
+// relative to the collections folder. Every value is percent-encoded, so a
+// space becomes %20 and a separator %2F.
 
 /** The URL scheme InkyCap registers with the operating system. */
 export const INKYCAP_SCHEME = "inkycap";
 
+/** The notebox folder that holds collections (`collections_relpath` in
+ *  src-tauri/src/notebox_package.rs). Links name a collection from here. */
+const COLLECTIONS_FOLDER = ".inkycap/collections/";
+
 /** A link that opens `file` (notebox-relative) in the notebox named `notebox`,
  *  optionally scrolled to a heading's text or label. */
 export function buildOpenUrl(notebox: string, file: string, heading?: string): string {
+  let path = normalizePath(file);
+  if (path.startsWith(COLLECTIONS_FOLDER)) path = path.slice(COLLECTIONS_FOLDER.length);
   let url = `${INKYCAP_SCHEME}://open?notebox=${encodeURIComponent(notebox)}` +
-    `&file=${encodeURIComponent(normalizePath(file))}`;
+    `&file=${encodeURIComponent(path)}`;
   if (heading) url += `&heading=${encodeURIComponent(heading)}`;
   return url;
 }

@@ -437,7 +437,12 @@ mod tests {
         let root = dir.path().join("Professional");
         std::fs::create_dir_all(root.join("1 Ephemera")).unwrap();
         std::fs::write(root.join("1 Ephemera/Testpad.typ"), "").unwrap();
-        std::fs::write(root.join("Reading list.collection"), "").unwrap();
+        std::fs::create_dir_all(root.join(".inkycap/collections")).unwrap();
+        std::fs::write(
+            root.join(".inkycap/collections/Reading list.collection"),
+            "",
+        )
+        .unwrap();
         std::fs::write(root.join("run.sh"), "").unwrap();
         let registry = vec![entry(&root, "Professional", 1)];
         let root = canonicalize_root(&root).unwrap();
@@ -501,7 +506,10 @@ mod tests {
             &f.registry,
         )
         .unwrap();
-        assert_eq!(opened_file(link), f.root.join("Reading list.collection"));
+        assert_eq!(
+            opened_file(link),
+            f.root.join(".inkycap/collections/Reading list.collection")
+        );
     }
 
     #[test]
@@ -651,7 +659,7 @@ mod tests {
         assert_eq!(json["link"]["target"]["kind"], "file");
         assert_eq!(
             json["link"]["target"]["path"],
-            to_frontend_string(&f.root.join("Reading list.collection"))
+            to_frontend_string(&f.root.join(".inkycap/collections/Reading list.collection"))
         );
         assert_eq!(json["link"]["heading"], "Top");
     }

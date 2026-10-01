@@ -17,9 +17,12 @@ describe("buildOpenUrl", () => {
     );
   });
 
-  it("encodes a collection", () => {
-    expect(buildOpenUrl("Professional", "Reading list.collection")).toBe(
+  it("names a collection by its path in the collections folder", () => {
+    expect(buildOpenUrl("Professional", ".inkycap/collections/Reading list.collection")).toBe(
       "inkycap://open?notebox=Professional&file=Reading%20list.collection",
+    );
+    expect(buildOpenUrl("N", ".inkycap/collections/Reading/Week 1.collection")).toBe(
+      "inkycap://open?notebox=N&file=Reading%2FWeek%201.collection",
     );
   });
 
