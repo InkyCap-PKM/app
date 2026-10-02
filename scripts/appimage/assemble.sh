@@ -21,13 +21,14 @@ apt-get update
 # Installing the .deb itself pulls in exactly the libraries it declares
 # (WebKitGTK, GTK, the GStreamer plugins). The rest is what quick-sharun needs:
 # strace and a virtual display to watch which libraries the app loads while
-# it runs, bubblewrap and xdg-dbus-proxy for WebKit's sandbox, and
-# glib-networking for TLS in the webview.
+# it runs, bubblewrap and xdg-dbus-proxy for WebKit's sandbox,
+# glib-networking for TLS in the webview, and glycin-loaders, the programs
+# GTK's image library runs to decode icons and other images.
 apt-get install -y --no-install-recommends \
   "$DEB" \
   ca-certificates wget file binutils patchelf strace xvfb xauth dbus-x11 \
   bubblewrap xdg-dbus-proxy glib-networking libnss-mdns \
-  gstreamer1.0-gl
+  gstreamer1.0-gl glycin-loaders
 
 wget -q -O /usr/local/bin/quick-sharun \
   "https://raw.githubusercontent.com/pkgforge-dev/Anylinux-AppImages/$QUICK_SHARUN_COMMIT/useful-tools/quick-sharun.sh"
@@ -54,7 +55,21 @@ export OUTNAME="$(basename "$OUT")"
 # Bundle GStreamer, which plays #video and #audio embeds.
 export DEPLOY_GSTREAMER=1
 
-quick-sharun /usr/bin/inkycap /usr/bin/inkycap-tinymist
+# The glycin loaders are named explicitly because quick-sharun only looks for
+# them under /usr/lib, and Ubuntu installs them under /usr/libexec. Without
+# them GTK aborts the first time it draws a PNG icon from the user's theme.
+quick-sharun /usr/bin/inkycap /usr/bin/inkycap-tinymist \
+  /usr/libexec/glycin-loaders/*/*
+
+# quick-sharun's test run can't catch a missing loader, because the build
+# container has no icon theme that makes GTK decode an image. Check directly
+# that every loader the bundled glycin settings name is in the AppImage.
+for exec_name in $(sed -n 's/^Exec=//p' "$APPDIR"/share/glycin-loaders/*/conf.d/*.conf | sort -u); do
+  if [ ! -e "$APPDIR/bin/$exec_name" ]; then
+    echo "Image loader $exec_name is named in the glycin settings but not bundled." >&2
+    exit 1
+  fi
+done
 
 # Tauri looks for bundled resources (the license texts) in ../lib/InkyCap
 # next to the program, which quick-sharun places in shared/bin.
