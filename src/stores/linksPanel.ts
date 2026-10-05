@@ -48,6 +48,8 @@ interface LinksPanelState {
   /// single session because they describe what the user is currently
   /// looking at, not how they like the pane configured.
   collapsePreviews: boolean;
+  /// Widen previews: an inbound passage gains the paragraph before and after
+  /// it, and search and potential-link lines gain the lines around them.
   showMoreContext: boolean;
   showFilter: boolean;
   filterQuery: string;
@@ -56,7 +58,7 @@ interface LinksPanelState {
 
 const DEFAULTS: LinksPanelState = {
   sortMode: "name-asc",
-  collapsePreviews: false,
+  collapsePreviews: true,
   showMoreContext: false,
   showFilter: false,
   filterQuery: "",
@@ -70,7 +72,9 @@ function load(): LinksPanelState {
     const parsed = JSON.parse(raw) ?? {};
     return {
       sortMode: parsed.sortMode ?? DEFAULTS.sortMode,
-      collapsePreviews: !!parsed.collapsePreviews,
+      // Saved under `hidePreviews`. An older `collapsePreviews` value is
+      // ignored on purpose, so the default (hidden) applies.
+      collapsePreviews: parsed.hidePreviews ?? DEFAULTS.collapsePreviews,
       showMoreContext: !!parsed.showMoreContext,
       showFilter: !!parsed.showFilter,
       filterQuery: typeof parsed.filterQuery === "string" ? parsed.filterQuery : "",
@@ -116,7 +120,7 @@ function persist() {
       STORAGE_KEY,
       JSON.stringify({
         sortMode: sortMode(),
-        collapsePreviews: collapsePreviews(),
+        hidePreviews: collapsePreviews(),
         showMoreContext: showMoreContext(),
         showFilter: showFilter(),
         filterQuery: filterQuery(),

@@ -1,4 +1,5 @@
 use crate::errors::InkyCapError;
+use crate::link_index::{link_name_key, note_stem, LinkIndex};
 use crate::models::note::{NoteMetadata, PropertyValue};
 use chrono::Local;
 use std::path::Path;
@@ -417,13 +418,80 @@ pub fn rename_property_in_expr(input: &str, old: &str, new: &str) -> Option<Stri
 
 // ── Evaluator ───────────────────────────────────────────────────────
 
+/// What a filter can see besides the note being tested.
+pub struct FilterContext<'a> {
+    /// The `.collection` file, for `this.file.*`.
+    pub self_path: &'a Path,
+    /// The notebox's resolved links, for `file.links` and `file.backlinks`.
+    /// Without it both resolve to an empty list.
+    pub links: Option<&'a LinkIndex>,
+}
+
+impl<'a> FilterContext<'a> {
+    pub fn new(self_path: &'a Path) -> Self {
+        Self {
+            self_path,
+            links: None,
+        }
+    }
+
+    pub fn with_links(self, links: &'a LinkIndex) -> Self {
+        Self {
+            links: Some(links),
+            ..self
+        }
+    }
+}
+
+/// `file.links` (notes this note links to) and `file.backlinks` (notes that
+/// link to it), as lists of note names.
+fn is_link_list(prop: &PropertyRef) -> bool {
+    matches!(prop, PropertyRef::File(f) if f == "links" || f == "backlinks")
+}
+
+fn link_list(field: &str, note: &NoteMetadata, ctx: &FilterContext<'_>) -> PropertyValue {
+    let Some(links) = ctx.links else {
+        return PropertyValue::List(Vec::new());
+    };
+    let paths = if field == "links" {
+        links.get_forward_links(&note.path)
+    } else {
+        links.get_backlinks(&note.path)
+    };
+    let mut names: Vec<String> = paths.iter().map(|p| note_stem(p)).collect();
+    names.sort();
+    names.dedup();
+    PropertyValue::List(names.into_iter().map(PropertyValue::String).collect())
+}
+
+/// Whether a link list holds `needle`, compared the way wikilinks resolve:
+/// ignoring case, surrounding `[[ ]]`, and any `::heading` suffix.
+fn link_list_contains(list: &PropertyValue, needle: &str) -> bool {
+    let Some(needle) = link_name_key(needle) else {
+        return false;
+    };
+    match list {
+        PropertyValue::List(items) => items.iter().any(|item| {
+            matches!(item, PropertyValue::String(s) if link_name_key(s).as_deref() == Some(needle.as_str()))
+        }),
+        _ => false,
+    }
+}
+
 /// Resolve a property reference to a value from a note's metadata.
-fn resolve_property(prop: &PropertyRef, note: &NoteMetadata, self_path: &Path) -> PropertyValue {
+fn resolve_property(
+    prop: &PropertyRef,
+    note: &NoteMetadata,
+    ctx: &FilterContext<'_>,
+) -> PropertyValue {
     match prop {
         PropertyRef::File(field) => {
             // `file.tags` resolves from the note's real tag list — the union
             // of inline `#tag(...)` calls and `#note(tags: ...)` — rather
             // than from the `file.*` property map, which never carries tags.
+            if field == "links" || field == "backlinks" {
+                return link_list(field, note, ctx);
+            }
             if field == "tags" {
                 return PropertyValue::List(
                     note.tags
@@ -447,27 +515,40 @@ fn resolve_property(prop: &PropertyRef, note: &NoteMetadata, self_path: &Path) -
             // Return a property of the .collection file itself
             match field.as_str() {
                 "name" => {
-                    let name = self_path
+                    let name = ctx
+                        .self_path
                         .file_stem()
                         .map(|s| s.to_string_lossy().into_owned())
                         .unwrap_or_default();
                     PropertyValue::String(name)
                 }
                 "folder" => {
-                    let folder = self_path
+                    let folder = ctx
+                        .self_path
                         .parent()
                         .map(crate::storage::to_frontend_string)
                         .unwrap_or_default();
                     PropertyValue::String(folder)
                 }
-                "path" => PropertyValue::String(crate::storage::to_frontend_string(self_path)),
+                "path" => PropertyValue::String(crate::storage::to_frontend_string(ctx.self_path)),
                 _ => PropertyValue::Null,
             }
         }
     }
 }
 
-fn value_to_property(val: &Value, note: &NoteMetadata, self_path: &Path) -> PropertyValue {
+/// The value a collection table shows in column `col` for `note`, read the
+/// same way a filter reads it, so `file.tags`, `file.links` and
+/// `file.backlinks` work as columns too.
+pub fn column_value(col: &str, note: &NoteMetadata, ctx: &FilterContext<'_>) -> PropertyValue {
+    let prop = match col.strip_prefix("file.") {
+        Some(field) => PropertyRef::File(field.to_string()),
+        None => PropertyRef::Note(col.to_string()),
+    };
+    resolve_property(&prop, note, ctx)
+}
+
+fn value_to_property(val: &Value, note: &NoteMetadata, ctx: &FilterContext<'_>) -> PropertyValue {
     match val {
         Value::String(s) => match resolve_relative_date(s) {
             Some(resolved) => PropertyValue::String(resolved),
@@ -475,7 +556,7 @@ fn value_to_property(val: &Value, note: &NoteMetadata, self_path: &Path) -> Prop
         },
         Value::Bool(b) => PropertyValue::Bool(*b),
         Value::Number(n) => PropertyValue::Number(*n),
-        Value::PropertyRef(prop) => resolve_property(prop, note, self_path),
+        Value::PropertyRef(prop) => resolve_property(prop, note, ctx),
     }
 }
 
@@ -562,14 +643,14 @@ fn property_cmp(a: &PropertyValue, b: &PropertyValue) -> Option<std::cmp::Orderi
 }
 
 /// Evaluate a filter expression against a note.
-pub fn evaluate(expr: &FilterExpr, note: &NoteMetadata, self_path: &Path) -> bool {
+pub fn evaluate(expr: &FilterExpr, note: &NoteMetadata, ctx: &FilterContext<'_>) -> bool {
     use std::cmp::Ordering;
     match expr {
-        FilterExpr::Not(inner) => !evaluate(inner, note, self_path),
+        FilterExpr::Not(inner) => !evaluate(inner, note, ctx),
 
         FilterExpr::Comparison { left, op, right } => {
-            let left_val = resolve_property(left, note, self_path);
-            let right_val = value_to_property(right, note, self_path);
+            let left_val = resolve_property(left, note, ctx);
+            let right_val = value_to_property(right, note, ctx);
             match op {
                 CompOp::Eq => property_eq(&left_val, &right_val),
                 CompOp::Ne => !property_eq(&left_val, &right_val),
@@ -595,11 +676,15 @@ pub fn evaluate(expr: &FilterExpr, note: &NoteMetadata, self_path: &Path) -> boo
             method,
             args,
         } => {
-            let target_val = resolve_property(target, note, self_path);
+            let target_val = resolve_property(target, note, ctx);
             match method.as_str() {
                 "contains" => {
                     if let Some(Value::String(needle)) = args.first() {
-                        target_val.contains(needle)
+                        if is_link_list(target) {
+                            link_list_contains(&target_val, needle)
+                        } else {
+                            target_val.contains(needle)
+                        }
                     } else {
                         false
                     }
@@ -620,18 +705,18 @@ pub fn evaluate(expr: &FilterExpr, note: &NoteMetadata, self_path: &Path) -> boo
 fn evaluate_filter_member(
     member: &serde_yaml::Value,
     note: &NoteMetadata,
-    self_path: &Path,
+    ctx: &FilterContext<'_>,
 ) -> bool {
     match member {
         serde_yaml::Value::String(expr_str) => match parse_filter_expr(expr_str) {
-            Ok(expr) => evaluate(&expr, note, self_path),
+            Ok(expr) => evaluate(&expr, note, ctx),
             Err(_) => false,
         },
         serde_yaml::Value::Mapping(_) => {
             match serde_yaml::from_value::<crate::collection_parser::model::FilterGroup>(
                 member.clone(),
             ) {
-                Ok(group) => evaluate_filter_group(&group, note, self_path),
+                Ok(group) => evaluate_filter_group(&group, note, ctx),
                 Err(_) => false,
             }
         }
@@ -652,32 +737,22 @@ fn evaluate_filter_member(
 pub fn evaluate_filter_group(
     group: &crate::collection_parser::model::FilterGroup,
     note: &NoteMetadata,
-    self_path: &Path,
+    ctx: &FilterContext<'_>,
 ) -> bool {
     if let Some(members) = &group.and {
-        if !members
-            .iter()
-            .all(|m| evaluate_filter_member(m, note, self_path))
-        {
+        if !members.iter().all(|m| evaluate_filter_member(m, note, ctx)) {
             return false;
         }
     }
 
     if let Some(members) = &group.or {
-        if !members.is_empty()
-            && !members
-                .iter()
-                .any(|m| evaluate_filter_member(m, note, self_path))
-        {
+        if !members.is_empty() && !members.iter().any(|m| evaluate_filter_member(m, note, ctx)) {
             return false;
         }
     }
 
     if let Some(members) = &group.not {
-        if members
-            .iter()
-            .any(|m| evaluate_filter_member(m, note, self_path))
-        {
+        if members.iter().any(|m| evaluate_filter_member(m, note, ctx)) {
             return false;
         }
     }
@@ -720,7 +795,7 @@ mod tests {
             "file.name",
             PropertyValue::String("TestNote.md".to_string()),
         )]);
-        let self_path = Path::new("/notebox/notes/TestNote.collection");
+        let self_path = &FilterContext::new(Path::new("/notebox/notes/TestNote.collection"));
         // file.name is "TestNote.md", this.file.name (stem) is "TestNote" — not equal
         assert!(evaluate(&expr, &note, self_path));
     }
@@ -732,7 +807,7 @@ mod tests {
         assert!(evaluate(
             &expr,
             &note,
-            Path::new("/notebox/test.collection")
+            &FilterContext::new(Path::new("/notebox/test.collection"))
         ));
     }
 
@@ -746,7 +821,7 @@ mod tests {
         assert!(evaluate(
             &expr,
             &note,
-            Path::new("/notebox/test.collection")
+            &FilterContext::new(Path::new("/notebox/test.collection"))
         ));
     }
 
@@ -757,7 +832,7 @@ mod tests {
         assert!(evaluate(
             &expr,
             &note,
-            Path::new("/notebox/test.collection")
+            &FilterContext::new(Path::new("/notebox/test.collection"))
         ));
     }
 
@@ -771,7 +846,7 @@ mod tests {
         assert!(evaluate(
             &expr,
             &note,
-            Path::new("/notebox/test.collection")
+            &FilterContext::new(Path::new("/notebox/test.collection"))
         ));
     }
 
@@ -785,7 +860,7 @@ mod tests {
         assert!(evaluate(
             &expr,
             &note,
-            Path::new("/notebox/test.collection")
+            &FilterContext::new(Path::new("/notebox/test.collection"))
         ));
     }
 
@@ -796,7 +871,7 @@ mod tests {
         assert!(evaluate(
             &expr,
             &note,
-            Path::new("/notebox/test.collection")
+            &FilterContext::new(Path::new("/notebox/test.collection"))
         ));
     }
 
@@ -807,7 +882,7 @@ mod tests {
         assert!(evaluate(
             &expr,
             &note,
-            Path::new("/notebox/test.collection")
+            &FilterContext::new(Path::new("/notebox/test.collection"))
         ));
     }
 
@@ -841,7 +916,11 @@ mod tests {
                 PropertyValue::List(vec![PropertyValue::String("rust".into())]),
             )]);
             // Unknown method should evaluate to false, not panic.
-            assert!(!evaluate(&expr, &note, Path::new("/notebox/x.collection")));
+            assert!(!evaluate(
+                &expr,
+                &note,
+                &FilterContext::new(Path::new("/notebox/x.collection"))
+            ));
         }
     }
 
@@ -852,7 +931,7 @@ mod tests {
         assert!(!evaluate(
             &expr,
             &note,
-            Path::new("/notebox/test.collection")
+            &FilterContext::new(Path::new("/notebox/test.collection"))
         ));
     }
 
@@ -864,14 +943,14 @@ mod tests {
         assert!(!evaluate(
             &expr,
             &typ_note,
-            Path::new("/notebox/test.collection")
+            &FilterContext::new(Path::new("/notebox/test.collection"))
         ));
 
         let pdf_note = make_note(vec![("file.ext", PropertyValue::String("pdf".to_string()))]);
         assert!(evaluate(
             &expr,
             &pdf_note,
-            Path::new("/notebox/test.collection")
+            &FilterContext::new(Path::new("/notebox/test.collection"))
         ));
     }
 
@@ -883,14 +962,14 @@ mod tests {
         assert!(!evaluate(
             &expr,
             &has_rust,
-            Path::new("/notebox/x.collection")
+            &FilterContext::new(Path::new("/notebox/x.collection"))
         ));
 
         let no_rust = make_tagged_note(vec!["go"]);
         assert!(evaluate(
             &expr,
             &no_rust,
-            Path::new("/notebox/x.collection")
+            &FilterContext::new(Path::new("/notebox/x.collection"))
         ));
     }
 
@@ -901,14 +980,22 @@ mod tests {
         // never had a `tags` key, which is surprising for users.
         let expr = parse_filter_expr("tags.isEmpty()").unwrap();
         let note = make_note(vec![]);
-        assert!(evaluate(&expr, &note, Path::new("/notebox/x.collection")));
+        assert!(evaluate(
+            &expr,
+            &note,
+            &FilterContext::new(Path::new("/notebox/x.collection"))
+        ));
     }
 
     #[test]
     fn test_is_empty_on_empty_list() {
         let expr = parse_filter_expr("tags.isEmpty()").unwrap();
         let note = make_note(vec![("tags", PropertyValue::List(vec![]))]);
-        assert!(evaluate(&expr, &note, Path::new("/notebox/x.collection")));
+        assert!(evaluate(
+            &expr,
+            &note,
+            &FilterContext::new(Path::new("/notebox/x.collection"))
+        ));
     }
 
     #[test]
@@ -918,7 +1005,11 @@ mod tests {
             "tags",
             PropertyValue::List(vec![PropertyValue::String("rust".into())]),
         )]);
-        assert!(!evaluate(&expr, &note, Path::new("/notebox/x.collection")));
+        assert!(!evaluate(
+            &expr,
+            &note,
+            &FilterContext::new(Path::new("/notebox/x.collection"))
+        ));
     }
 
     #[test]
@@ -931,7 +1022,11 @@ mod tests {
             "file.folder",
             PropertyValue::String("my/notes".to_string()),
         )]);
-        assert!(evaluate(&expr, &note, Path::new("/notebox/x.collection")));
+        assert!(evaluate(
+            &expr,
+            &note,
+            &FilterContext::new(Path::new("/notebox/x.collection"))
+        ));
     }
 
     #[test]
@@ -947,7 +1042,7 @@ mod tests {
         assert!(!evaluate(
             &expr,
             &note_same,
-            Path::new("/notebox/notes/TestNote.collection")
+            &FilterContext::new(Path::new("/notebox/notes/TestNote.collection"))
         ));
 
         let note_other = make_note(vec![(
@@ -957,7 +1052,7 @@ mod tests {
         assert!(evaluate(
             &expr,
             &note_other,
-            Path::new("/notebox/notes/TestNote.collection")
+            &FilterContext::new(Path::new("/notebox/notes/TestNote.collection"))
         ));
     }
 
@@ -970,7 +1065,11 @@ mod tests {
             "publisher-type",
             PropertyValue::String("blog".to_string()),
         )]);
-        assert!(evaluate(&expr, &note, Path::new("/notebox/x.collection")));
+        assert!(evaluate(
+            &expr,
+            &note,
+            &FilterContext::new(Path::new("/notebox/x.collection"))
+        ));
     }
 
     #[test]
@@ -980,7 +1079,11 @@ mod tests {
         // than panic.
         let expr = parse_filter_expr(r#"nonexistent == "something""#).unwrap();
         let note = make_note(vec![]);
-        assert!(!evaluate(&expr, &note, Path::new("/notebox/x.collection")));
+        assert!(!evaluate(
+            &expr,
+            &note,
+            &FilterContext::new(Path::new("/notebox/x.collection"))
+        ));
     }
 
     // ── Relational operators (< <= > >=) ────────────────────────────
@@ -991,7 +1094,11 @@ mod tests {
     fn eval1(expr: &str, key: &str, val: PropertyValue) -> bool {
         let parsed = parse_filter_expr(expr).expect("valid filter expression");
         let note = make_note(vec![(key, val)]);
-        evaluate(&parsed, &note, Path::new("/notebox/x.collection"))
+        evaluate(
+            &parsed,
+            &note,
+            &FilterContext::new(Path::new("/notebox/x.collection")),
+        )
     }
 
     #[test]
@@ -1076,7 +1183,7 @@ and:
   - due < "2025-10-01"
 "#,
         );
-        let p = Path::new("/notebox/x.collection");
+        let p = &FilterContext::new(Path::new("/notebox/x.collection"));
         let inside = make_note(vec![("due", PropertyValue::String("2025-09-15".into()))]);
         assert!(evaluate_filter_group(&group, &inside, p));
         let after = make_note(vec![("due", PropertyValue::String("2025-10-02".into()))]);
@@ -1106,7 +1213,7 @@ or:
   - status == "review"
 "#,
         );
-        let p = Path::new("/notebox/x.collection");
+        let p = &FilterContext::new(Path::new("/notebox/x.collection"));
         let in_review = make_note(vec![(
             "status",
             PropertyValue::List(vec![PropertyValue::String("review".into())]),
@@ -1140,7 +1247,7 @@ and:
   - file.name != this.file.name
 "#,
         );
-        let p = Path::new("/notebox/Collection.collection");
+        let p = &FilterContext::new(Path::new("/notebox/Collection.collection"));
 
         let typ_note = make_note(vec![
             ("file.ext", PropertyValue::String("typ".into())),
@@ -1164,7 +1271,7 @@ or:
   - file.ext == "md"
 "#,
         );
-        let p = Path::new("/notebox/Collection.collection");
+        let p = &FilterContext::new(Path::new("/notebox/Collection.collection"));
 
         let md_note = make_note(vec![("file.ext", PropertyValue::String("md".into()))]);
         assert!(evaluate_filter_group(&group, &md_note, p));
@@ -1181,7 +1288,7 @@ not:
   - file.ext == "pdf"
 "#,
         );
-        let p = Path::new("/notebox/Collection.collection");
+        let p = &FilterContext::new(Path::new("/notebox/Collection.collection"));
 
         let typ_note = make_note(vec![("file.ext", PropertyValue::String("typ".into()))]);
         assert!(evaluate_filter_group(&group, &typ_note, p));
@@ -1199,7 +1306,7 @@ not:
         assert!(evaluate_filter_group(
             &group,
             &note,
-            Path::new("/notebox/x.collection")
+            &FilterContext::new(Path::new("/notebox/x.collection"))
         ));
     }
 
@@ -1217,7 +1324,7 @@ and:
       - file.folder.contains("Research")
 "#,
         );
-        let p = Path::new("/notebox/my-paper.collection");
+        let p = &FilterContext::new(Path::new("/notebox/my-paper.collection"));
 
         // Tagged member.
         let tagged = make_note(vec![
@@ -1259,7 +1366,11 @@ and:
                 PropertyValue::String("thesis-ch3".into()),
             ]),
         )]);
-        assert!(evaluate(&expr, &member, Path::new("/notebox/x.collection")));
+        assert!(evaluate(
+            &expr,
+            &member,
+            &FilterContext::new(Path::new("/notebox/x.collection"))
+        ));
 
         let non_member = make_note(vec![(
             "collection",
@@ -1268,14 +1379,14 @@ and:
         assert!(!evaluate(
             &expr,
             &non_member,
-            Path::new("/notebox/x.collection")
+            &FilterContext::new(Path::new("/notebox/x.collection"))
         ));
 
         let no_collection = make_note(vec![]);
         assert!(!evaluate(
             &expr,
             &no_collection,
-            Path::new("/notebox/x.collection")
+            &FilterContext::new(Path::new("/notebox/x.collection"))
         ));
     }
 
@@ -1287,7 +1398,7 @@ and:
         // a list-vs-scalar comparison always fell through to `false`.
         let eq = parse_filter_expr(r#"collection == "CollectionConflict""#).unwrap();
         let ne = parse_filter_expr(r#"collection != "CollectionConflict""#).unwrap();
-        let p = Path::new("/notebox/x.collection");
+        let p = &FilterContext::new(Path::new("/notebox/x.collection"));
 
         let member = make_note(vec![(
             "collection",
@@ -1343,7 +1454,7 @@ and:
         let due_next_week = (today + chrono::Duration::days(7))
             .format("%Y-%m-%d")
             .to_string();
-        let p = Path::new("/notebox/x.collection");
+        let p = &FilterContext::new(Path::new("/notebox/x.collection"));
 
         // "is today" lowers to `due >= @today AND due < @today+1`.
         let lower = parse_filter_expr(r#"due >= "@today""#).unwrap();
@@ -1387,5 +1498,76 @@ and:
         assert!(expr_references_property("tags.contains(\"x\")", "tags"));
         assert!(!expr_references_property("title == \"tags\"", "tags"));
         assert!(!expr_references_property("tags ==", "tags"));
+    }
+
+    fn note_at(path: &str) -> NoteMetadata {
+        NoteMetadata {
+            path: std::path::PathBuf::from(path),
+            ..make_note(vec![])
+        }
+    }
+
+    /// A links to B (by a differently cased name with a heading), B links
+    /// to C, and A also names a note that doesn't exist.
+    fn sample_links() -> LinkIndex {
+        let paths: Vec<std::path::PathBuf> = ["/nb/A.typ", "/nb/B.typ", "/nb/C.typ"]
+            .iter()
+            .map(std::path::PathBuf::from)
+            .collect();
+        let mut links = LinkIndex::new();
+        links.add_link(paths[0].clone(), "b::intro".to_string());
+        links.add_link(paths[0].clone(), "Missing".to_string());
+        links.add_link(paths[1].clone(), "C".to_string());
+        links.resolve_and_build_backlinks(&paths);
+        links
+    }
+
+    fn eval_links(expr: &str, note: &NoteMetadata, links: &LinkIndex) -> bool {
+        let ctx = FilterContext::new(Path::new("/nb/x.collection")).with_links(links);
+        evaluate(&parse_filter_expr(expr).unwrap(), note, &ctx)
+    }
+
+    #[test]
+    fn links_filter_matches_notes_linking_to_a_name() {
+        let links = sample_links();
+        let a = note_at("/nb/A.typ");
+        let b = note_at("/nb/B.typ");
+        assert!(eval_links(r#"file.links.contains("B")"#, &a, &links));
+        assert!(eval_links(r#"file.links.contains("[[b]]")"#, &a, &links));
+        assert!(!eval_links(r#"file.links.contains("C")"#, &a, &links));
+        assert!(!eval_links(r#"file.links.contains("Missing")"#, &a, &links));
+        assert!(eval_links(r#"file.links.contains("C")"#, &b, &links));
+    }
+
+    #[test]
+    fn backlinks_filter_matches_notes_linked_from_a_name() {
+        let links = sample_links();
+        assert!(eval_links(
+            r#"file.backlinks.contains("a")"#,
+            &note_at("/nb/B.typ"),
+            &links
+        ));
+        assert!(eval_links(
+            r#"file.backlinks.contains("B")"#,
+            &note_at("/nb/C.typ"),
+            &links
+        ));
+        assert!(!eval_links(
+            r#"file.backlinks.contains("A")"#,
+            &note_at("/nb/C.typ"),
+            &links
+        ));
+        assert!(eval_links(
+            "file.backlinks.isEmpty()",
+            &note_at("/nb/A.typ"),
+            &links
+        ));
+    }
+
+    #[test]
+    fn link_filters_are_empty_without_link_index() {
+        let ctx = FilterContext::new(Path::new("/nb/x.collection"));
+        let expr = parse_filter_expr(r#"file.links.contains("B")"#).unwrap();
+        assert!(!evaluate(&expr, &note_at("/nb/A.typ"), &ctx));
     }
 }

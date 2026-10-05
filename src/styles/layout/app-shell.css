@@ -32,7 +32,9 @@
    (a non-growing flex child of `.main-content`, above the pane tree). It sits
    inside the content column — not the window chrome — and stays put while the
    manual scrolls, because scrolling happens inside the pane below it. */
-.docs-banner {
+/* A one-line notice under the editor toolbar about the state the note is in
+   (the Help manual's "edits aren't saved", Compose mode). */
+.editor-notice {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
@@ -47,7 +49,7 @@
   text-align: center;
 }
 
-.docs-banner__icon {
+.editor-notice__icon {
   flex-shrink: 0;
   color: var(--accent);
 }

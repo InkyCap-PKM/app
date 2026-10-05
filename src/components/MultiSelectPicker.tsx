@@ -1,4 +1,4 @@
-import { Component, createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { Component, createEffect, createMemo, createSignal, For, onCleanup, Show, type JSX } from "solid-js";
 import { createHoverGuard } from "../lib/picker-hover";
 
 /**
@@ -32,6 +32,8 @@ import { createHoverGuard } from "../lib/picker-hover";
 export interface MultiSelectPickerProps {
   /** Values shown as chips on the trigger row. */
   selected: string[];
+  /** Draws one selected value on the trigger row. Defaults to a badge. */
+  renderSelected?: (value: string) => JSX.Element;
   /** Values offered in the list, in display order and already filtered. */
   options: string[];
   onToggle: (value: string) => void;
@@ -209,7 +211,13 @@ const MultiSelectPicker: Component<MultiSelectPickerProps> = (props) => {
         onKeyDown={handleTriggerKeyDown}
       >
         <For each={props.selected}>
-          {(item) => <span class="badge badge--accent">{item}</span>}
+          {(item) =>
+            props.renderSelected ? (
+              props.renderSelected(item)
+            ) : (
+              <span class="badge badge--accent">{item}</span>
+            )
+          }
         </For>
         <Show when={props.selected.length === 0}>
           <span class="property-editor__value property-editor__value--empty">

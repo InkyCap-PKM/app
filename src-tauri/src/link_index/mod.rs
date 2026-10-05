@@ -161,10 +161,22 @@ pub fn note_stem(path: &std::path::Path) -> String {
 /// The note name a wikilink target points at: the target with any
 /// `::heading` or `#heading` suffix removed and surrounding spaces trimmed.
 /// `None` when nothing is left (a link to a heading in the same note).
-fn link_note_name(target: &str) -> Option<&str> {
+pub(crate) fn link_note_name(target: &str) -> Option<&str> {
     let name = target.split("::").next().unwrap_or(target);
     let name = name.split('#').next().unwrap_or(name).trim();
     (!name.is_empty()).then_some(name)
+}
+
+/// The lowercase note name in a link written by hand, as a user might type
+/// it in a filter: surrounding `[[ ]]` and any heading suffix removed. `None`
+/// when no name is left.
+pub(crate) fn link_name_key(text: &str) -> Option<String> {
+    let text = text.trim();
+    let text = text
+        .strip_prefix("[[")
+        .and_then(|r| r.strip_suffix("]]"))
+        .unwrap_or(text);
+    link_note_name(text).map(str::to_lowercase)
 }
 
 /// Every wikilink that names a note which does not exist yet, as

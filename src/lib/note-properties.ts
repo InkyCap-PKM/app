@@ -8,7 +8,7 @@
  */
 export const KNOWN_PROPERTY_KEYS = [
   "title", "aliases", "description", "tags", "date", "due",
-  "task", "disposition", "source", "zid", "collection",
+  "task", "disposition", "source", "zid", "collection", "derived-from",
 ];
 
 export const KNOWN_PROPERTY_KEY_SET = new Set(KNOWN_PROPERTY_KEYS);

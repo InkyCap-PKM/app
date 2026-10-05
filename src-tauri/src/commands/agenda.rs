@@ -20,6 +20,7 @@
 use chrono::{Duration, Local, NaiveDate};
 use tauri::State;
 
+use crate::collection_parser::filter::FilterContext;
 use crate::collection_parser::model::parse_collection_file;
 use crate::commands::collections::resolve_collection_members;
 use crate::errors::InkyCapError;
@@ -359,8 +360,11 @@ pub async fn get_collection_agenda(
     }
     .ok_or_else(|| InkyCapError::InvalidPath(format!("View '{}' not found", view_name)))?;
 
+    // Link index before property index: the documented lock order.
+    let links = session.link_index.read().await;
     let index = session.property_index.read().await;
-    let members = resolve_collection_members(&base, view, &index, &collection_path_buf);
+    let ctx = FilterContext::new(&collection_path_buf).with_links(&links);
+    let members = resolve_collection_members(&base, view, &index, &ctx);
     Ok(agenda_items_for_notes(&members, local_today()))
 }
 

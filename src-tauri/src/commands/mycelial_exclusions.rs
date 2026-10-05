@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::collection_parser::filter::evaluate_filter_group;
+use crate::collection_parser::filter::{evaluate_filter_group, FilterContext};
 use crate::collection_parser::model::FilterGroup;
 use crate::errors::InkyCapError;
 use crate::scanner::property_index::PropertyIndex;
@@ -85,10 +85,11 @@ pub(crate) fn excluded_note_paths(
     root: &Path,
 ) -> HashSet<PathBuf> {
     let self_path = exclusions_path(root);
+    let ctx = FilterContext::new(&self_path);
     index
         .notes
         .iter()
-        .filter(|(_, note)| evaluate_filter_group(group, note, &self_path))
+        .filter(|(_, note)| evaluate_filter_group(group, note, &ctx))
         .map(|(id, _)| id.clone())
         .collect()
 }

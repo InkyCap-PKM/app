@@ -156,6 +156,11 @@ const PropertyEditor: Component<PropertyEditorProps> = (props) => {
 
 const WIKILINK_BRACKET_RE = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
 
+/** Whether `text` holds a `[[…]]` wikilink. */
+function hasWikilink(text: string): boolean {
+  return text.includes("[[") && text.includes("]]");
+}
+
 function renderStringWithWikilinks(text: string): (string | HTMLSpanElement)[] {
   const parts: (string | HTMLSpanElement)[] = [];
   WIKILINK_BRACKET_RE.lastIndex = 0;
@@ -220,10 +225,7 @@ const StringEditor: Component<PropertyEditorProps> = (props) => {
     if (Array.isArray(v)) return v.length === 0;
     return !v && v !== 0 && v !== false;
   };
-  const hasWikilinks = () => {
-    const v = displayValue();
-    return v.includes("[[") && v.includes("]]");
-  };
+  const hasWikilinks = () => hasWikilink(displayValue());
 
   function startEdit() {
     setDraft(displayValue());
@@ -469,6 +471,15 @@ const ListEditor: Component<PropertyEditorProps> = (props) => {
   return (
     <MultiSelectPicker
       selected={currentItems()}
+      // A value holding a wikilink (a `link-ref` in the source) reads and
+      // clicks like the single-value links in other rows.
+      renderSelected={(item) =>
+        hasWikilink(item) ? (
+          <span class="property-editor__links-item">{renderStringWithWikilinks(item)}</span>
+        ) : (
+          <span class="badge badge--accent">{item}</span>
+        )
+      }
       options={candidates()}
       onToggle={toggle}
       open={isOpen()}

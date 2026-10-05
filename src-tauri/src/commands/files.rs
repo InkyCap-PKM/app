@@ -159,10 +159,7 @@ async fn link_infos_for(paths: Vec<(PathBuf, Option<String>)>) -> Vec<LinkInfo> 
         paths
             .into_iter()
             .map(|(p, zid)| {
-                let name = p
-                    .file_stem()
-                    .map(|s| s.to_string_lossy().into_owned())
-                    .unwrap_or_default();
+                let name = crate::link_index::note_stem(&p);
                 let (mtime, ctime) = file_times(&p);
                 LinkInfo {
                     path: to_frontend_string(&p),
@@ -1090,76 +1087,6 @@ fn preferred_path<'a>(paths: impl Iterator<Item = &'a PathBuf>) -> Option<&'a Pa
             .cmp(&b.components().count())
             .then_with(|| a.cmp(b))
     })
-}
-
-/// Multi-line excerpt of a backlink. `line` is the line that mentions the
-/// target; `context_before` / `context_after` carry up to 2 surrounding
-/// lines each so the Links pane can show extra context when the user
-/// toggles "more context" on. All strings are trimmed of trailing
-/// whitespace but left-padding (indentation) is preserved.
-#[derive(serde::Serialize)]
-pub struct BacklinkContext {
-    pub line: String,
-    pub context_before: Vec<String>,
-    pub context_after: Vec<String>,
-}
-
-/// Get the context lines where `source_path` links to `target_path`.
-/// Returns the first wikilink-bearing line plus up to two lines of
-/// surrounding context on each side. Matches both the `[[target]]`
-/// markdown shortcut and the canonical `#wikilink("target")` call.
-#[tauri::command]
-pub async fn get_backlink_context(
-    source_path: String,
-    target_path: String,
-    state: State<'_, AppState>,
-    window: tauri::WebviewWindow,
-) -> Result<Option<BacklinkContext>, InkyCapError> {
-    let session = state.session(window.label()).await;
-    const CONTEXT_LINES: usize = 2;
-    const MAX_SNIPPET_CHARS: usize = 200;
-
-    let storage = session.get_storage().await?;
-    let source = sanitize_notebox_arg(&source_path)?;
-    let target = sanitize_notebox_arg(&target_path)?;
-
-    let content = storage.read_file(&source).await?;
-
-    let target_name = target
-        .file_stem()
-        .map(|s| s.to_string_lossy().to_lowercase())
-        .unwrap_or_default();
-    if target_name.is_empty() {
-        return Ok(None);
-    }
-    let bracket_marker = format!("[[{}", target_name);
-    let call_marker = format!("#wikilink(\"{}", target_name);
-
-    let lines: Vec<&str> = content.lines().collect();
-    for (idx, line) in lines.iter().enumerate() {
-        let lower = line.to_lowercase();
-        if !(lower.contains(&bracket_marker) || lower.contains(&call_marker)) {
-            continue;
-        }
-        let snippet = trim_snippet(line, MAX_SNIPPET_CHARS);
-        let before_start = idx.saturating_sub(CONTEXT_LINES);
-        let context_before: Vec<String> = lines[before_start..idx]
-            .iter()
-            .map(|l| trim_snippet(l, MAX_SNIPPET_CHARS))
-            .collect();
-        let after_end = (idx + 1 + CONTEXT_LINES).min(lines.len());
-        let context_after: Vec<String> = lines[idx + 1..after_end]
-            .iter()
-            .map(|l| trim_snippet(l, MAX_SNIPPET_CHARS))
-            .collect();
-        return Ok(Some(BacklinkContext {
-            line: snippet,
-            context_before,
-            context_after,
-        }));
-    }
-
-    Ok(None)
 }
 
 /// Trim trailing whitespace and truncate to a printable character budget,

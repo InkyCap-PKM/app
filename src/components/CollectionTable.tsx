@@ -23,6 +23,7 @@ import * as ipc from "../lib/ipc";
 import { openTab, type EditingMode } from "../stores/tabs";
 import { propertyVersion, fileTreeVersion } from "../stores/notebox";
 import { promptText, promptChoice } from "../stores/prompt";
+import { linkTargetsInFilter } from "../lib/filter-expr";
 import { useI18n, tPlural } from "../lib/i18n";
 import { propertyLabel } from "../lib/property-labels";
 import { clickOutside, dismissOnEscape } from "../lib/clickOutside";
@@ -927,6 +928,28 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
     setShowExportMenu(false);
     try {
       const cf = collectionFile();
+      // A collection that gathers notes linking to a name can be exported as
+      // just those passages; ask which the user wants.
+      const viewDef = cf?.views.find((v) => v.name === activeView());
+      const linkTargets = [
+        ...new Set([...linkTargetsInFilter(cf?.filters), ...linkTargetsInFilter(viewDef?.filters)]),
+      ];
+      let passagesLinkingTo: string | undefined;
+      if (linkTargets.length > 0) {
+        const choice = await promptChoice({
+          title: t("collection.export.passagesTitle"),
+          message: t("collection.export.passagesBody"),
+          options: [
+            { id: "whole", label: t("collection.export.wholeNotes"), variant: "primary" },
+            ...linkTargets.map((name) => ({
+              id: `link:${name}`,
+              label: t("collection.export.passagesLinkingTo", { name }),
+            })),
+          ],
+        });
+        if (choice === null) return;
+        if (choice.startsWith("link:")) passagesLinkingTo = choice.slice("link:".length);
+      }
       const titleHint = cf?.book?.title || collectionName();
       const safeName = titleHint.replace(/[\\/:*?"<>|]+/g, "_");
       const outputPath = await ipc.pickExportFile({
@@ -938,7 +961,13 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
       const std = exportPdfStandard() === "standard" ? undefined : exportPdfStandard();
       const rm = exportReviewMode() === "keep" ? undefined : exportReviewMode();
       const overrides: ipc.BookExportOverrides | undefined =
-        std || rm ? { pdfStandard: std, reviewMode: rm } : undefined;
+        std || rm || passagesLinkingTo
+          ? {
+              pdfStandard: std,
+              reviewMode: rm,
+              passagesLinkingTo,
+            }
+          : undefined;
 
       // Retry loop: each round either writes the PDF or reports notes that
       // failed to compile. The user decides whether to exclude those and retry.
@@ -964,8 +993,13 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
             ? tPlural("collection.export.bookOmitted", excluded.length)
             : "";
           const bypassed = result.bypassed ? t("collection.export.bookBypassed") : "";
+          const withoutPassages = result.withoutPassages.length
+            ? tPlural("collection.export.bookWithoutPassages", result.withoutPassages.length)
+            : "";
           setExportStatus(
-            t("collection.export.bookDone", { path: result.outputPath, omitted }) + bypassed,
+            t("collection.export.bookDone", { path: result.outputPath, omitted }) +
+              withoutPassages +
+              bypassed,
           );
           setTimeout(() => setExportStatus(null), 4000);
           return;

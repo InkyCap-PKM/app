@@ -1,0 +1,99 @@
+/* Compose panel (components/ComposePanel.tsx): passage cards beside a draft.
+   Drag states come from the shared .reorder--* classes (utilities.css). */
+
+.compose__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.compose__origin {
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+}
+
+/* Insert buttons that act on every card at once. */
+.compose__all {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.compose__all-label {
+  flex: 1;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+.compose__card {
+  margin: var(--space-3) var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+}
+
+/* The draft already links to this card's note. */
+.compose__card--used {
+  opacity: 0.55;
+}
+
+.compose__card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.compose__grip {
+  display: inline-flex;
+  color: var(--fg-dim);
+  cursor: grab;
+}
+
+.compose__source {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  text-align: start;
+  font: inherit;
+  font-weight: 600;
+  color: var(--fg-primary);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compose__source:hover {
+  color: var(--accent-text);
+}
+
+.compose__heading {
+  margin: var(--space-2) 0 0;
+  font-weight: 600;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+/* The passage, wrapped, with its line breaks kept. */
+.compose__text {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  color: var(--fg-secondary);
+  white-space: pre-line;
+}
+
+.compose__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}

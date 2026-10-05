@@ -6,6 +6,8 @@
 // (ColumnFilterPopover, column-filter.ts) build the same expression strings,
 // so the serializer lives here, in one place, rather than being duplicated.
 
+import type { FilterGroup } from "./types";
+
 /** A single filter clause in editable form. `value` is unused for the
  *  empty/not-empty operators. */
 export interface FilterRow {
@@ -122,4 +124,27 @@ export function serializeFilterRow(row: FilterRow): string {
     default:
       return `${prop} ${row.operator} "${row.value}"`;
   }
+}
+
+/** The note names a filter group requires notes to link to: the values of
+ *  `file.links.contains("…")` leaves under `and`/`or`, at any depth, in
+ *  order and without repeats. Leaves under `not` are skipped, since those
+ *  notes must *not* link to the name. */
+export function linkTargetsInFilter(group: FilterGroup | null | undefined): string[] {
+  const out: string[] = [];
+  const visit = (g: FilterGroup) => {
+    for (const member of [...(g.and ?? []), ...(g.or ?? [])]) {
+      if (typeof member === "string") {
+        const row = parseFilterRow(member);
+        const name = row.value.trim();
+        if (row.property === "file.links" && row.operator === ".contains" && name && !out.includes(name)) {
+          out.push(name);
+        }
+      } else {
+        visit(member);
+      }
+    }
+  };
+  if (group) visit(group);
+  return out;
 }

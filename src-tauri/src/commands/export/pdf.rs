@@ -425,6 +425,10 @@ pub struct BookExportOverrides {
     /// Review-markup policy ("accept"/"reject"/"keep") applied to every note
     /// before it is inlined into the book. Absent → keep marks.
     pub review_mode: Option<String>,
+    /// Name of a note. When set, each chapter holds only the passages that
+    /// link to it, not the whole note. Notes with no such passage are left
+    /// out and listed in [`BookExportResult::without_passages`].
+    pub passages_linking_to: Option<String>,
 }
 
 /// Detected user-label collision returned to the frontend so the UI can
@@ -485,6 +489,11 @@ pub async fn export_collection_book_pdf(
         .and_then(|o| o.pdf_standard)
         .unwrap_or_default();
     let review_mode = overrides.as_ref().and_then(|o| o.review_mode.clone());
+    let passages_target = overrides
+        .as_ref()
+        .and_then(|o| o.passages_linking_to.as_deref())
+        .and_then(crate::link_index::link_name_key);
+    let mut without_passages: Vec<String> = Vec::new();
     let mut options = BookExportOptions::from_config(base.book.as_ref());
     if let Some(ov) = overrides {
         if ov.title.is_some() {
@@ -544,6 +553,17 @@ pub async fn export_collection_book_pdf(
             .unwrap_or_else(|| row.file_name.clone());
         let title = extract_note_title(&content);
 
+        let content = match &passages_target {
+            Some(target) => match passage_chapter(&content, target) {
+                Some(chapter) => chapter,
+                None => {
+                    without_passages.push(stem);
+                    continue;
+                }
+            },
+            None => content,
+        };
+
         // Rebase relative path arguments in the note's source so calls
         // like `image("daisy.png")` resolve against the note's own
         // folder once inlined into the merged document's synthetic main
@@ -567,6 +587,12 @@ pub async fn export_collection_book_pdf(
             content: rebased,
             title,
         });
+    }
+
+    if notes.is_empty() {
+        return Err(InkyCapError::ExportFailed(
+            "No note in the collection has a passage linking to the chosen note.".to_string(),
+        ));
     }
 
     // Drop notes the user chose to exclude after a previous attempt flagged
@@ -783,6 +809,7 @@ pub async fn export_collection_book_pdf(
                 failing_notes: failing,
                 message: Some(message),
                 bypassed: false,
+                without_passages,
             });
         }
     };
@@ -796,7 +823,41 @@ pub async fn export_collection_book_pdf(
         failing_notes: Vec::new(),
         message: None,
         bypassed: output.bypassed,
+        without_passages,
     })
+}
+
+/// A chapter made of the passages in `content` that link to the note named
+/// `target` (lowercase), separated by blank lines. `None` when the note has
+/// no such passage.
+fn passage_chapter(content: &str, target: &str) -> Option<String> {
+    let parts: Vec<String> =
+        crate::typst_pipeline::link_passages::inbound_passages(content, target)
+            .into_iter()
+            .map(|p| p.paragraph.source)
+            .collect();
+    (!parts.is_empty()).then(|| parts.join("\n\n"))
+}
+
+#[cfg(test)]
+mod passage_chapter_tests {
+    use super::passage_chapter;
+
+    const NOTE: &str =
+        "#note(title: \"S\")\n\n= One\nA #wikilink(\"T\").\n\nB #wikilink(\"T\").\n\n= Two\nC.";
+
+    #[test]
+    fn paragraphs_joined_in_order() {
+        assert_eq!(
+            passage_chapter(NOTE, "t").as_deref(),
+            Some("A #wikilink(\"T\").\n\nB #wikilink(\"T\").")
+        );
+    }
+
+    #[test]
+    fn note_without_passage_is_none() {
+        assert_eq!(passage_chapter(NOTE, "other"), None);
+    }
 }
 
 /// Outcome of a book export. Either the PDF was written (`output_path` set), or
@@ -811,6 +872,9 @@ pub struct BookExportResult {
     pub message: Option<String>,
     /// True when the book was written with errored markup kept as plain text.
     pub bypassed: bool,
+    /// Stems of notes left out of a passages-only book because they hold no
+    /// passage linking to the chosen note.
+    pub without_passages: Vec<String>,
 }
 
 /// Extract a `title:` value from the leading `#note(...)` call of a note's

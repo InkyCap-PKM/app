@@ -20,6 +20,8 @@ export const FILE_PROPERTY_KEYS = [
   "file.size",
   "file.ctime",
   "file.mtime",
+  "file.links",
+  "file.backlinks",
 ] as const;
 
 /**

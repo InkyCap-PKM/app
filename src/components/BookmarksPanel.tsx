@@ -1,10 +1,11 @@
 // Bookmarks panel: left sidebar mode for quick-access items.
 // Supports Note, Search, Heading, and Collection bookmark types.
 
-import { Component, createMemo, createResource, createSignal, For, Show, JSX } from "solid-js";
+import { Component, createMemo, createResource, For, Show, JSX } from "solid-js";
 import * as ipc from "../lib/ipc";
 import { pathEquals } from "../lib/paths";
 import { attachListNav } from "../lib/list-nav";
+import { createDragReorder, reorderIndex } from "../lib/drag-reorder";
 import { openTab } from "../stores/tabs";
 import { noteboxInfo } from "../stores/notebox";
 import { setRequestedAgendaView } from "../stores/agendaView";
@@ -26,64 +27,22 @@ const BookmarksPanel: Component<BookmarksPanelProps> = (props) => {
     async () => ipc.listBookmarks(),
   );
 
-  // Drag/drop state mirrors the right-panel property-row pattern: track
-  // the dragged id, the hovered target id, and whether the drop indicator
-  // sits above or below the target row.
-  const [draggingId, setDraggingId] = createSignal<string | null>(null);
-  const [dragOverId, setDragOverId] = createSignal<string | null>(null);
-  const [dropPosition, setDropPosition] = createSignal<"before" | "after">("before");
-
-  function handleDragStart(e: DragEvent, id: string) {
-    setDraggingId(id);
-    if (e.dataTransfer) {
-      e.dataTransfer.effectAllowed = "move";
-      // Non-empty data is required in some browsers for drag to start.
-      e.dataTransfer.setData("text/plain", id);
-    }
-  }
-
-  function handleDragEnd() {
-    setDraggingId(null);
-    setDragOverId(null);
-  }
-
-  function handleDragOver(e: DragEvent, id: string) {
-    if (!draggingId() || draggingId() === id) return;
-    e.preventDefault();
-    if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const midpoint = rect.top + rect.height / 2;
-    setDropPosition(e.clientY < midpoint ? "before" : "after");
-    setDragOverId(id);
-  }
-
-  async function handleDrop(e: DragEvent, targetId: string) {
-    e.preventDefault();
-    const src = draggingId();
-    setDragOverId(null);
-    setDraggingId(null);
-    if (!src || src === targetId) return;
-
+  // Drag the icon to reorder. Indices are taken from the full
+  // `bookmarks()` list, which is the order the backend stores.
+  const drag = createDragReorder(async (fromId, targetId, position) => {
     const list = bookmarks() ?? [];
-    const fromIndex = list.findIndex((b) => b.id === src);
+    const fromIndex = list.findIndex((b) => b.id === fromId);
     const targetIndex = list.findIndex((b) => b.id === targetId);
     if (fromIndex < 0 || targetIndex < 0) return;
-
-    // Compute the destination index in the original list. `before` lands
-    // on the target row's slot; `after` lands one row past it. When the
-    // source is above the target, removing it before insertion shifts
-    // the target up by one — adjust so the visual drop position matches.
-    let toIndex = dropPosition() === "before" ? targetIndex : targetIndex + 1;
-    if (fromIndex < toIndex) toIndex -= 1;
-    if (toIndex === fromIndex) return;
-
+    const toIndex = reorderIndex(fromIndex, targetIndex, position);
+    if (toIndex === null) return;
     try {
       await ipc.reorderBookmarks(fromIndex, toIndex);
       refetch();
     } catch (err) {
       console.error("Failed to reorder bookmark:", err);
     }
-  }
+  });
 
   // Hide saved Agenda views from other noteboxes — their tag/task-list
   // selections don't apply here. Every other kind is global. Reorder math still
@@ -208,17 +167,15 @@ const BookmarksPanel: Component<BookmarksPanelProps> = (props) => {
               data-list-item
               classList={{
                 "bookmark-item": true,
-                "bookmark-item--dragging": draggingId() === bm.id,
-                "bookmark-item--drop-above":
-                  dragOverId() === bm.id && dropPosition() === "before",
-                "bookmark-item--drop-below":
-                  dragOverId() === bm.id && dropPosition() === "after",
+                "reorder--dragging": drag.draggingId() === bm.id,
+                "reorder--drop-above":
+                  drag.dragOverId() === bm.id && drag.dropPosition() === "before",
+                "reorder--drop-below":
+                  drag.dragOverId() === bm.id && drag.dropPosition() === "after",
               }}
-              onDragOver={(e) => handleDragOver(e, bm.id)}
-              onDrop={(e) => handleDrop(e, bm.id)}
-              onDragLeave={() => {
-                if (dragOverId() === bm.id) setDragOverId(null);
-              }}
+              onDragOver={(e) => drag.onDragOver(e, bm.id)}
+              onDrop={(e) => drag.onDrop(e, bm.id)}
+              onDragLeave={() => drag.onDragLeave(bm.id)}
               onClick={() => handleClick(bm)}
             >
               {/* The icon doubles as the drag handle \u2014 only this span is
@@ -230,8 +187,8 @@ const BookmarksPanel: Component<BookmarksPanelProps> = (props) => {
                 class="bookmark-item__icon"
                 title={t("bookmarks.dragToReorder")}
                 draggable={true}
-                onDragStart={(e) => handleDragStart(e, bm.id)}
-                onDragEnd={handleDragEnd}
+                onDragStart={(e) => drag.onDragStart(e, bm.id)}
+                onDragEnd={drag.onDragEnd}
               >
                 {renderIcon(bm)}
               </span>

@@ -1,6 +1,6 @@
 use tauri::State;
 
-use crate::collection_parser::filter::evaluate_filter_group;
+use crate::collection_parser::filter::{column_value, evaluate_filter_group, FilterContext};
 use crate::collection_parser::model::{
     default_collection_file_for, parse_collection_file, serialize_collection_file, CollectionFile,
     FilterGroup, SortRule, ViewDef,
@@ -101,19 +101,19 @@ pub(crate) fn resolve_collection_members<'a>(
     base: &CollectionFile,
     view: &ViewDef,
     index: &'a crate::scanner::property_index::PropertyIndex,
-    collection_path: &std::path::Path,
+    ctx: &FilterContext<'_>,
 ) -> Vec<&'a crate::models::note::NoteMetadata> {
     index
         .notes
         .values()
         .filter(|note| {
             if let Some(ref g) = base.filters {
-                if !evaluate_filter_group(g, note, collection_path) {
+                if !evaluate_filter_group(g, note, ctx) {
                     return false;
                 }
             }
             if let Some(ref vf) = view.filters {
-                if !evaluate_filter_group(vf, note, collection_path) {
+                if !evaluate_filter_group(vf, note, ctx) {
                     return false;
                 }
             }
@@ -148,6 +148,8 @@ pub(crate) async fn collection_member_paths(
         Err(_) => return members,
     };
     let collection_files = session.collection_files.read().await;
+    // Link index before property index: the documented lock order.
+    let links = session.link_index.read().await;
     let index = session.property_index.read().await;
     for path in collection_files.iter() {
         let stem = path
@@ -176,20 +178,21 @@ pub(crate) async fn collection_member_paths(
                 continue;
             }
         };
+        let ctx = FilterContext::new(path).with_links(&links);
         if base.views.is_empty() {
             // No views defined: membership is the collection-level filter group.
             for note in index.notes.values() {
                 let included = base
                     .filters
                     .as_ref()
-                    .is_none_or(|g| evaluate_filter_group(g, note, path));
+                    .is_none_or(|g| evaluate_filter_group(g, note, &ctx));
                 if included {
                     members.insert(note.path.clone());
                 }
             }
         } else {
             for view in &base.views {
-                for note in resolve_collection_members(&base, view, &index, path) {
+                for note in resolve_collection_members(&base, view, &index, &ctx) {
                     members.insert(note.path.clone());
                 }
             }
@@ -212,7 +215,10 @@ pub async fn get_collection_data(
     let content = storage.read_file(&collection_path_buf).await?;
     let base = parse_collection_file(&content)?;
 
+    // Link index before property index: the documented lock order.
+    let links = session.link_index.read().await;
     let index = session.property_index.read().await;
+    let ctx = FilterContext::new(&collection_path_buf).with_links(&links);
 
     // Find the requested view (or first view)
     let view = if view_name.is_empty() {
@@ -233,13 +239,13 @@ pub async fn get_collection_data(
     // Filter notes — membership is resolved through the shared helper so
     // the table and the Agenda view (`get_collection_agenda`) can never
     // disagree about which notes belong to a collection view.
-    let members = resolve_collection_members(&base, view, &index, &collection_path_buf);
+    let members = resolve_collection_members(&base, view, &index, &ctx);
 
     // Facet values are computed across the full member set, *before* this
     // view's per-column quick filters narrow it — so a column's checklist still
     // offers values the user can toggle back on (standard faceted-filter
     // behaviour).
-    let column_values = collect_column_values(&members, &columns);
+    let column_values = collect_column_values(&members, &columns, &ctx);
 
     let mut matching_rows: Vec<CollectionRow> = Vec::new();
     for note in members {
@@ -249,7 +255,7 @@ pub async fn get_collection_data(
         if let Some(col_filters) = &view.column_filters {
             if !col_filters
                 .values()
-                .all(|g| evaluate_filter_group(g, note, &collection_path_buf))
+                .all(|g| evaluate_filter_group(g, note, &ctx))
             {
                 continue;
             }
@@ -263,12 +269,7 @@ pub async fn get_collection_data(
 
         let mut cells = std::collections::HashMap::new();
         for col in &columns {
-            let value = note
-                .properties
-                .get(col)
-                .cloned()
-                .unwrap_or(PropertyValue::Null);
-            cells.insert(col.clone(), value);
+            cells.insert(col.clone(), column_value(col, note, &ctx));
         }
 
         matching_rows.push(CollectionRow {
@@ -330,6 +331,7 @@ pub async fn get_collection_data(
 fn collect_column_values(
     members: &[&crate::models::note::NoteMetadata],
     columns: &[String],
+    ctx: &FilterContext<'_>,
 ) -> std::collections::HashMap<String, Vec<String>> {
     const CAP: usize = 200;
 
@@ -351,11 +353,12 @@ fn collect_column_values(
             if capped.contains(col) {
                 continue;
             }
-            let Some(value) = note.properties.get(col) else {
+            let value = column_value(col, note, ctx);
+            if value.is_empty() {
                 continue;
-            };
+            }
             let set = sets.entry(col.clone()).or_default();
-            match value {
+            match &value {
                 PropertyValue::List(items) => {
                     for item in items {
                         if let Some(s) = scalar_to_string(item) {
@@ -884,6 +887,8 @@ pub async fn get_all_property_keys(
         "file.ctime",
         "file.mtime",
         "file.size",
+        "file.links",
+        "file.backlinks",
     ] {
         keys.push(key.to_string());
     }
@@ -902,7 +907,10 @@ pub async fn get_collection_data_internal(
     let content = storage.read_file(&collection_path_buf).await?;
     let base = parse_collection_file(&content)?;
 
+    // Link index before property index: the documented lock order.
+    let links = session.link_index.read().await;
     let index = session.property_index.read().await;
+    let ctx = FilterContext::new(&collection_path_buf).with_links(&links);
 
     let view = if view_name.is_empty() {
         base.views.first()
@@ -922,12 +930,12 @@ pub async fn get_collection_data_internal(
 
     for note in index.notes.values() {
         if let Some(ref global_filters) = base.filters {
-            if !evaluate_filter_group(global_filters, note, &collection_path_buf) {
+            if !evaluate_filter_group(global_filters, note, &ctx) {
                 continue;
             }
         }
         if let Some(ref view_filters) = view.filters {
-            if !evaluate_filter_group(view_filters, note, &collection_path_buf) {
+            if !evaluate_filter_group(view_filters, note, &ctx) {
                 continue;
             }
         }
@@ -940,12 +948,7 @@ pub async fn get_collection_data_internal(
 
         let mut cells = std::collections::HashMap::new();
         for col in &columns {
-            let value = note
-                .properties
-                .get(col)
-                .cloned()
-                .unwrap_or(PropertyValue::Null);
-            cells.insert(col.clone(), value);
+            cells.insert(col.clone(), column_value(col, note, &ctx));
         }
 
         matching_rows.push(CollectionRow {

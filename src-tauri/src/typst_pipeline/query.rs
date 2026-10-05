@@ -295,7 +295,7 @@ fn walk_for_body_calls(
 /// literal; `None` otherwise (named arg first, non-string positional,
 /// empty args, etc.). Mirrors the first-positional-string scanning
 /// pattern in `path_rebase::rebase_first_string_arg`.
-fn first_string_positional_arg(call_node: &LinkedNode<'_>) -> Option<String> {
+pub(crate) fn first_string_positional_arg(call_node: &LinkedNode<'_>) -> Option<String> {
     let args_node = call_node
         .children()
         .find(|c| c.kind() == SyntaxKind::Args)?;

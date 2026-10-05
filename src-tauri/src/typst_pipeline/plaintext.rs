@@ -207,7 +207,7 @@ fn first_positional_string(call_node: &LinkedNode<'_>) -> Option<String> {
 }
 
 /// The decoded value of a named string argument `name: "…"`, if present.
-fn named_string_arg(call_node: &LinkedNode<'_>, name: &str) -> Option<String> {
+pub(crate) fn named_string_arg(call_node: &LinkedNode<'_>, name: &str) -> Option<String> {
     let args = call_node
         .children()
         .find(|c| c.kind() == SyntaxKind::Args)?;

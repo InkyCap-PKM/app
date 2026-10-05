@@ -216,3 +216,17 @@
   -webkit-mask-image: var(--lip-fade-mask);
   mask-image: var(--lip-fade-mask);
 }
+
+/* ── Drag to reorder ──
+   Rows reordered with lib/drag-reorder.ts: dim the row being dragged and
+   draw a line on the side of the row a drop would land. Same recipe as
+   .property-row in the right panel. */
+.reorder--dragging {
+  opacity: 0.4;
+}
+.reorder--drop-above {
+  box-shadow: inset 0 2px 0 0 var(--accent-purple, var(--accent));
+}
+.reorder--drop-below {
+  box-shadow: inset 0 -2px 0 0 var(--accent-purple, var(--accent));
+}

@@ -28,6 +28,13 @@ export function unregisterEditorView(tabId: string, handle: TypstEditorHandle): 
   });
 }
 
+/** The editor handle for tab `tabId`, or undefined when that tab has no
+ *  mounted note editor (it isn't showing in any pane, or isn't a note).
+ *  Reactive. */
+export function editorViewFor(tabId: string): TypstEditorHandle | undefined {
+  return editorHandles()[tabId];
+}
+
 /** The editor handle for the focused pane's active tab, or undefined when that
  *  tab isn't a note (collection / mycelial / empty / version-diff). Reactive:
  *  re-resolves on pane focus change and on tab switch within a pane. */

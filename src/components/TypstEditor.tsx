@@ -41,6 +41,7 @@ import {
 import { navigateWikilink, showWikilinkContextMenu } from "../lib/wikilink-nav";
 import { openLink, startsWithSchemeAndSlashes } from "../lib/open-link";
 import { isDocumentationWindow } from "../lib/docs-window";
+import { ComposeNotice } from "./ComposePanel";
 import { searchHighlights } from "../stores/search";
 import { pathEquals, pathStartsWith } from "../lib/paths";
 import { onFileChanged, onFileCreated } from "../lib/events";
@@ -1239,11 +1240,12 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
       </Show>
 
       <Show when={isDocumentationWindow()}>
-        <div class="docs-banner" role="note">
-          <FlaskConical class="docs-banner__icon" size={15} />
+        <div class="editor-notice" role="note">
+          <FlaskConical class="editor-notice__icon" size={15} />
           <span>{t("docs.ephemeralBanner")}</span>
         </div>
       </Show>
+      <ComposeNotice tabId={props.tabId} />
 
       {/* Everything below the toolbar. Its own element so the gutter can be
           a rounded panel in its own right — the toolbar stays flush and full

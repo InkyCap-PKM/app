@@ -44,6 +44,7 @@
 @import "./layout/outline-panel.css";
 @import "./layout/help-panel.css";
 @import "./layout/links.css";
+@import "./layout/compose.css";
 @import "./layout/references.css";
 @import "./layout/bookmarks.css";
 @import "./layout/snapshot-viewer.css";

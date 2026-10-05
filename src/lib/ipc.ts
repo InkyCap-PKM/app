@@ -528,20 +528,45 @@ export async function getNotePreview(
   });
 }
 
-export interface BacklinkContext {
-  line: string;
-  context_before: string[];
-  context_after: string[];
+/** One stretch of note text: its Typst source (for copying) and plain prose
+ *  for display, shortened with an ellipsis when long. */
+export interface PassageText {
+  source: string;
+  text: string;
 }
 
-export async function getBacklinkContext(
+/** The text around one wikilink: the paragraph (or list item, or heading plus
+ *  the paragraph after it) holding it, and for context the units of writing
+ *  just before and after (null at the edges). */
+export interface LinkPassage {
+  heading: string | null;
+  paragraph: PassageText;
+  before: PassageText | null;
+  after: PassageText | null;
+}
+
+/** The passages in `sourcePath` that link to `targetPath`, in document order.
+ *  Empty when the source links only from its properties. */
+export async function getLinkPassages(
   sourcePath: string,
   targetPath: string,
-): Promise<BacklinkContext | null> {
-  return invoke<BacklinkContext | null>("get_backlink_context", {
-    sourcePath,
-    targetPath,
-  });
+): Promise<LinkPassage[]> {
+  return invoke<LinkPassage[]>("get_link_passages", { sourcePath, targetPath });
+}
+
+/** `content` with `sourceName` added to its `derived-from` property, or null
+ *  when the property already lists that note. Text in, text out, so an open
+ *  note's unsaved changes are kept. */
+export async function noteWithDerivedFrom(
+  content: string,
+  sourceName: string,
+): Promise<string | null> {
+  return invoke<string | null>("note_with_derived_from", { content, sourceName });
+}
+
+/** Lowercase names of the notes `content`'s wikilinks point at. */
+export async function wikilinkNames(content: string): Promise<string[]> {
+  return invoke<string[]>("wikilink_names", { content });
 }
 
 export interface OutboundLink {
@@ -1936,6 +1961,9 @@ export interface BookExportOverrides {
   /// Review-markup policy applied to every note before it's inlined into the
   /// book. Omitted → keep tracked-change marks.
   reviewMode?: ReviewMarkupMode;
+  /// A note name. When set, each chapter holds only the passages that link
+  /// to it; notes without one are left out (see `withoutPassages`).
+  passagesLinkingTo?: string;
 }
 
 /// Outcome of a book export. `outputPath` is set when the PDF was written.
@@ -1950,6 +1978,9 @@ export interface BookExportResult {
   failingNotes: string[];
   message: string | null;
   bypassed: boolean;
+  /// Stems of notes left out of a passages-only book for having no passage
+  /// linking to the chosen note.
+  withoutPassages: string[];
 }
 
 /// `bypassErrors` keeps errored markup as plain text instead of failing; the

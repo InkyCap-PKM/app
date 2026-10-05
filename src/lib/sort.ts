@@ -60,3 +60,22 @@ export function compareZid(
   const c = az.localeCompare(bz, undefined, { numeric: true, sensitivity: "base" });
   return dir === "asc" ? c : -c;
 }
+
+/**
+ * Oldest first, as far as the notes show it: by ZID, then (for notes without
+ * a ZID, which follow) by creation time, then by name. Creation times of 0
+ * mean "unknown" and sort after real ones.
+ */
+export function compareChronological(
+  a: { zid?: string | null; created_time: number; name: string },
+  b: { zid?: string | null; created_time: number; name: string },
+): number {
+  const byZid = compareZid(a.zid, b.zid, "asc");
+  if (byZid !== 0) return byZid;
+  if (a.created_time !== b.created_time) {
+    if (!a.created_time) return 1;
+    if (!b.created_time) return -1;
+    return a.created_time - b.created_time;
+  }
+  return compareName(a.name, b.name);
+}

@@ -144,6 +144,10 @@ La liste des *Contributeurs* est la façon dont un livre multi-auteurs obtient u
 
 À partir de cette liste, InkyCap construit la *signature de la page de titre* (groupée par rôle), enregistre les auteurs dans les métadonnées du document, et (lorsqu'au moins une personne a un rôle CRediT) ajoute un *énoncé de contributions* facultatif sur sa propre page. Vous pouvez désactiver cet énoncé avec l'option *Inclure la déclaration des contributions CRediT dans l'exportation du livre* ; la signature apparaît dans tous les cas.
 
+=== Notes entières ou passages
+
+Quand la collection réunit des notes au moyen d'une règle *Lien vers* (voir #wikilink("2 - Collections")), l'exportation demande d'abord ce que chaque chapitre doit contenir : *Notes entières*, ou *Passages qui renvoient vers* la note nommée dans la règle. Avec les passages, chaque chapitre ne contient que les paragraphes de cette note qui pointent vers elle, dans l'ordre. Une note sans passage de ce genre (par exemple, une note qui n'y pointe que par une propriété) est laissée de côté, et le message de confirmation indique combien l'ont été.
+
 === Lorsqu'une note ne compile pas
 
 Si certaines notes contiennent des erreurs, l'exportation du livre se met en pause avec une boîte de dialogue *Certaines notes comportent des erreurs* qui les énumère. Vous pouvez choisir *Continuer (exclure)* pour laisser ces notes de côté et produire le reste du livre, ou *Arrêter et corriger* pour revenir en arrière et les réparer d'abord. (Un problème dans les pages liminaires du livre lui-même est un arrêt complet, puisqu'il n'y aurait rien à construire.)

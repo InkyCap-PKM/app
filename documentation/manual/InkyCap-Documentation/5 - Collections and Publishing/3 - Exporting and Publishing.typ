@@ -143,6 +143,10 @@ The *Contributors* roster is how a multi-author book gets a proper byline and cr
 
 From this roster InkyCap builds the *title-page byline* (grouped by role), records the authors in the document's metadata, and (when at least one person has a CRediT role) adds an optional *contributions statement* on its own page. You can turn that statement off with the *include credit statement* option; the byline appears either way.
 
+=== Whole notes or passages
+
+When the collection gathers notes with a *Links to* rule (see #wikilink("2 - Collections")), the export first asks what each chapter should hold: *Whole notes*, or *Passages linking to* the note named in the rule. With passages, each chapter holds only the paragraphs in that note which link to it, in order. A note with no such passage (for example, one that links only through a property) is left out, and the confirmation message says how many were.
+
 === When a note will not compile
 
 If some notes contain errors, the book export pauses with a *Some notes have errors* dialogue listing them. You can choose *Continue (exclude)* to leave those notes out and produce the rest of the book, or *Stop & fix* to go back and repair them first. (A problem in the book's own front matter is a hard stop, since there would be nothing to build.)

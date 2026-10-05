@@ -52,6 +52,7 @@ pub const SYSTEM_PROPERTY_KEYS: &[&str] = &[
     "task",
     "aliases",
     "zid",
+    "derived-from",
 ];
 
 pub fn is_system_property(key: &str) -> bool {
@@ -73,6 +74,7 @@ pub fn builtin_property_type(key: &str) -> PropertyType {
         "task" => PropertyType::Checkbox,
         "aliases" => PropertyType::CommaList,
         "zid" => PropertyType::Number,
+        "derived-from" => PropertyType::List,
         _ => PropertyType::Auto,
     }
 }
@@ -89,6 +91,7 @@ fn builtin_property_types() -> HashMap<String, PropertyType> {
         ("date", PropertyType::Date),
         ("due", PropertyType::Date),
         ("collection", PropertyType::List),
+        ("derived-from", PropertyType::List),
     ]
     .into_iter()
     .map(|(k, v)| (k.to_string(), v))

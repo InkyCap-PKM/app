@@ -16,6 +16,7 @@ pub mod fonts;
 pub mod git;
 pub mod html;
 pub mod journal_scroll;
+pub mod link_passages;
 pub mod markdown;
 pub mod mycelial;
 pub mod mycelial_exclusions;

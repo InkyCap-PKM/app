@@ -43,6 +43,15 @@ Vous la définissez depuis l'éditeur de *Propriétés* du panneau de droite de 
 
 Vous n'avez pas du tout besoin de toucher à une note pour l'inclure. Une collection peut rassembler des notes selon _n'importe quel_ critère (le dossier où elles se trouvent, leurs #wikilink("5 - Étiquettes"), une date, une case à cocher, ou toute propriété que vous avez définie) à l'aide de filtres imbriqués *Tous / N'importe lequel / Aucun*. Cela vous permet de bâtir une collection du genre « inclure tout ce qui est dans mon dossier Recherche _ou_ étiqueté `my-paper` » sans ajouter le nom de la collection à une seule note.
 
+=== Réunir des notes selon leurs liens
+
+Deux propriétés de fichier permettent à une collection de réunir des notes selon leurs liens :
+
+- *Lien vers* (`file.links`) contient les notes vers lesquelles une note pointe. Une règle *Lien vers* · *contient* · `Sommeil` réunit toutes les notes qui pointent vers la note nommée Sommeil : tout ce que vous avez écrit qui s'y rapporte.
+- *Lié depuis* (`file.backlinks`) contient les notes qui pointent vers une note. Une règle *Lié depuis* · *contient* · `Liste de lecture` réunit toutes les notes vers lesquelles la note Liste de lecture pointe.
+
+Les noms se comparent comme les liens : les majuscules n'ont pas d'importance, et vous pouvez taper `Sommeil` ou `[[Sommeil]]`. Les deux propriétés peuvent aussi s'afficher comme colonnes du tableau. Quand vous exportez sous forme de livre une collection réunie de cette façon, InkyCap demande s'il faut inclure les notes entières ou seulement les passages qui pointent vers la note (voir #wikilink("3 - Exportation et publication")).
+
 Les deux approches coexistent par conception : la règle par défaut qui correspond au nom de votre collection se trouve à l'intérieur d'un groupe *« N'importe lequel »* précisément pour que vous puissiez ajouter des solutions de rechange (un dossier, une étiquette, un test de propriété) juste à côté.
 
 == Construire des filtres

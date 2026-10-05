@@ -25,18 +25,8 @@
   color: var(--fg-secondary);
 }
 
-/* Drag-and-drop visual states. Same recipe as .property-row in the
-   right panel: dim the row being dragged, paint an inset border on the
-   row a drop would land above/below. */
-.bookmark-item--dragging {
-  opacity: 0.4;
-}
-.bookmark-item--drop-above {
-  box-shadow: inset 0 2px 0 0 var(--accent-purple, var(--accent));
-}
-.bookmark-item--drop-below {
-  box-shadow: inset 0 -2px 0 0 var(--accent-purple, var(--accent));
-}
+/* Drag-and-drop states come from the shared .reorder--* classes
+   (utilities.css). */
 
 
 .bookmark-item:hover {

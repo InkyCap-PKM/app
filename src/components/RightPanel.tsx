@@ -15,7 +15,7 @@ import { createNoteForTarget } from "../lib/wikilink-nav";
 import * as ipc from "../lib/ipc";
 import { revealInFileTree } from "../lib/file-tree-reveal";
 import { copyInkycapLink } from "../lib/copy-inkycap-link";
-import type { OutboundLink, PotentialLink } from "../lib/ipc";
+import type { LinkPassage, OutboundLink, PotentialLink } from "../lib/ipc";
 import type { SearchResult } from "../lib/types";
 import { indexReady, bumpPropertyVersion } from "../stores/notebox";
 import { moveActiveFileInteractive } from "../lib/move-file";
@@ -71,6 +71,7 @@ import {
   Waypoints,
   Filter,
   Sprout,
+  NotebookPen,
 } from "lucide-solid";
 import { NoteIcon, UnwrittenNoteIcon } from "./icons";
 import { Dynamic } from "solid-js/web";
@@ -83,6 +84,7 @@ import MycelialGrowthPanel from "./MycelialGrowthPanel";
 import { rightPanelContributions, rightPanelContribution } from "./right-panel-registry";
 import { Dropdown } from "./Dropdown";
 import { toastError } from "../stores/toasts";
+import { startCompose } from "./ComposePanel";
 import { promptText } from "../stores/prompt";
 import {
   rightPanelTab,
@@ -163,9 +165,9 @@ function defaultForKey(key: string): PropertyValue {
 
 /** Extended link info with multi-line context for the Links pane. */
 interface BacklinkWithContext extends LinkInfo {
-  line?: string;
-  context_before?: string[];
-  context_after?: string[];
+  /** Passages in the linking note around its links to this one. Empty when
+   *  it links only from its properties; absent when they couldn't be read. */
+  passages?: LinkPassage[];
 }
 
 const RightPanel: Component = () => {
@@ -540,16 +542,8 @@ const RightPanel: Component = () => {
         return await Promise.all(
           unique.map(async (link) => {
             try {
-              const ctx = await ipc.getBacklinkContext(link.path, path);
-              if (ctx) {
-                return {
-                  ...link,
-                  line: ctx.line,
-                  context_before: ctx.context_before,
-                  context_after: ctx.context_after,
-                };
-              }
-              return { ...link };
+              const passages = await ipc.getLinkPassages(link.path, path);
+              return { ...link, passages };
             } catch {
               return { ...link };
             }
@@ -1988,6 +1982,17 @@ const RightPanel: Component = () => {
                 >
                   <Search size={18} />
                 </button>
+                <button
+                  class="ui-icon-btn"
+                  onClick={() => {
+                    const tab = activeFileTab();
+                    if (tab) void startCompose({ path: tab.path, name: tab.title });
+                  }}
+                  title={t("compose.buttonTitle")}
+                  aria-label={t("compose.buttonTitle")}
+                >
+                  <NotebookPen size={18} />
+                </button>
               </div>
 
               <Show when={linksShowFilter()}>
@@ -2081,22 +2086,56 @@ const RightPanel: Component = () => {
                               <span class="sidebar-item__icon"><NoteIcon /></span>
                               <span class="sidebar-item__label">{link.name}</span>
                             </div>
-                            <Show when={expanded() && preview()}>
-                              {(p) => (
-                                <>
-                                  <Show when={linksShowMoreContext() && p().before.length}>
-                                    <For each={p().before}>
-                                      {(l) => <div class="link-context link-context--ctx">{l}</div>}
-                                    </For>
+                            <Show when={expanded()}>
+                              <Show
+                                when={!filterActive()}
+                                fallback={
+                                  <Show when={preview()}>
+                                    {(p) => (
+                                      <>
+                                        <Show when={linksShowMoreContext() && p().before.length}>
+                                          <For each={p().before}>
+                                            {(l) => <div class="link-context link-context--ctx">{l}</div>}
+                                          </For>
+                                        </Show>
+                                        <div class="link-context link-context--match">{p().line}</div>
+                                        <Show when={linksShowMoreContext() && p().after.length}>
+                                          <For each={p().after}>
+                                            {(l) => <div class="link-context link-context--ctx">{l}</div>}
+                                          </For>
+                                        </Show>
+                                      </>
+                                    )}
                                   </Show>
-                                  <div class="link-context link-context--match">{p().line}</div>
-                                  <Show when={linksShowMoreContext() && p().after.length}>
-                                    <For each={p().after}>
-                                      {(l) => <div class="link-context link-context--ctx">{l}</div>}
-                                    </For>
-                                  </Show>
-                                </>
-                              )}
+                                }
+                              >
+                                <For each={link.passages ?? []}>
+                                  {(p) => (
+                                    <>
+                                      <Show when={linksShowMoreContext() && p.before}>
+                                        {(b) => (
+                                          <div class="link-context link-context--ctx link-context--passage">
+                                            {b().text}
+                                          </div>
+                                        )}
+                                      </Show>
+                                      <div class="link-context link-context--match link-context--passage">
+                                        {p.paragraph.text}
+                                      </div>
+                                      <Show when={linksShowMoreContext() && p.after}>
+                                        {(a) => (
+                                          <div class="link-context link-context--ctx link-context--passage">
+                                            {a().text}
+                                          </div>
+                                        )}
+                                      </Show>
+                                    </>
+                                  )}
+                                </For>
+                                <Show when={link.passages?.length === 0}>
+                                  <div class="link-context">{t("rightPanel.linkedInProperties")}</div>
+                                </Show>
+                              </Show>
                             </Show>
                           </div>
                         );

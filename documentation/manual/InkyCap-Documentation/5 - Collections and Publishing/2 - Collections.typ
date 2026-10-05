@@ -36,6 +36,15 @@ You set it from the note's right-panel *Properties* editor (see #wikilink("6 - N
 
 You don't have to touch a note at all to include it. A collection can gather notes by _any_ criterion (the folder they live in, their #wikilink("5 - Tags"), a date, a checkbox, or any property you've defined) using nested *All / Any / None* filters. This lets you build a collection like "include everything in my Research folder _or_ tagged `my-paper`" without adding the collection's name to a single note.
 
+=== Gathering notes by their links
+
+Two file properties let a collection gather notes by how they connect:
+
+- *Links to* (`file.links`) holds the notes a note links to. A rule *Links to* · *contains* · `Sleep` gathers every note that links to the note named Sleep: everything you have written that mentions it.
+- *Linked from* (`file.backlinks`) holds the notes that link to a note. A rule *Linked from* · *contains* · `Reading list` gathers every note that the Reading list note links to.
+
+Names are matched the way links are: capital letters don't matter, and you can type `Sleep` or `[[Sleep]]`. Both properties can also be shown as table columns. When you export a collection gathered this way as a book, InkyCap asks whether to include whole notes or only the passages that link to the note (see #wikilink("3 - Exporting and Publishing")).
+
 The two approaches coexist by design: the default rule that matches your collection name sits inside an *"Any"* group precisely so you can add alternatives (a folder, a tag, a property test) right beside it.
 
 == Building filters

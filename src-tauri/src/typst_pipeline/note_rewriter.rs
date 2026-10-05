@@ -22,7 +22,7 @@
 
 use std::ops::Range;
 
-use typst::syntax::{ast, parse, LinkedNode, SyntaxKind};
+use typst::syntax::{ast, parse, parse_code, LinkedNode, SyntaxKind};
 
 use crate::models::note::PropertyValue;
 
@@ -165,6 +165,78 @@ fn is_trivia(kind: SyntaxKind) -> bool {
 /// expressions, and Unicode all round-trip cleanly.
 pub fn update_note_property(content: &str, key: &str, value: &PropertyValue) -> String {
     set_note_property_raw(content, key, &serialize_to_typst(value))
+}
+
+/// Add `link-ref("<name>")` to the list held by property `key`, keeping
+/// the existing entries' source exactly. A missing property becomes a
+/// one-item list; a single non-list value becomes the first item. `None`
+/// when the list already links to `name` (compared ignoring case), so the
+/// caller can leave the note untouched.
+pub fn append_link_ref(content: &str, key: &str, name: &str) -> Option<String> {
+    let existing = extract_note_properties(content)
+        .into_iter()
+        .find(|(k, _)| k == key)
+        .map(|(_, v)| v);
+    let mut items: Vec<String> = match existing.as_deref().map(str::trim) {
+        None | Some("none") | Some("()") | Some("") => Vec::new(),
+        Some(raw) => array_items(raw).unwrap_or_else(|| vec![raw.to_string()]),
+    };
+    let wanted = name.trim().to_lowercase();
+    if items
+        .iter()
+        .any(|item| link_ref_target(item).is_some_and(|t| t.trim().to_lowercase() == wanted))
+    {
+        return None;
+    }
+    items.push(format!(
+        "link-ref(\"{}\")",
+        escape_typst_string(name.trim())
+    ));
+    // A one-item array needs its trailing comma, or Typst reads parentheses.
+    let raw = if items.len() == 1 {
+        format!("({},)", items[0])
+    } else {
+        format!("({})", items.join(", "))
+    };
+    Some(set_note_property_raw(content, key, &raw))
+}
+
+/// The source of each item in an array literal, or `None` when `raw` is not
+/// an array.
+fn array_items(raw: &str) -> Option<Vec<String>> {
+    let root = parse_code(raw);
+    let root = LinkedNode::new(&root);
+    let array = root.children().find(|c| c.kind() == SyntaxKind::Array)?;
+    Some(
+        array
+            .children()
+            .filter(|c| {
+                !matches!(
+                    c.kind(),
+                    SyntaxKind::LeftParen
+                        | SyntaxKind::RightParen
+                        | SyntaxKind::Comma
+                        | SyntaxKind::Space
+                        | SyntaxKind::LineComment
+                        | SyntaxKind::BlockComment
+                )
+            })
+            .map(|c| raw[c.range()].to_string())
+            .collect(),
+    )
+}
+
+/// The note name in a `link-ref("…")` expression.
+fn link_ref_target(raw: &str) -> Option<String> {
+    let root = parse_code(raw);
+    let root = LinkedNode::new(&root);
+    let call = root.children().find(|c| c.kind() == SyntaxKind::FuncCall)?;
+    match call.cast::<ast::FuncCall>()?.callee() {
+        ast::Expr::Ident(ident) if ident.as_str() == "link-ref" => {
+            crate::typst_pipeline::query::first_string_positional_arg(&call)
+        }
+        _ => None,
+    }
 }
 
 /// Same as [`update_note_property`] but takes the value as raw Typst source
@@ -640,5 +712,37 @@ Some body text here.
         let updated = update_note_property(src, "status", &PropertyValue::String("done".into()));
         assert!(updated.contains("status: \"done\""));
         assert!(updated.contains("title: \"X\""));
+    }
+
+    #[test]
+    fn append_link_ref_creates_list() {
+        let src = "#note(\n  title: \"Draft\",\n)\n\nBody.";
+        let out = append_link_ref(src, "derived-from", "Sleep").unwrap();
+        let props = extract_note_properties(&out);
+        assert!(props.contains(&(
+            "derived-from".to_string(),
+            "(link-ref(\"Sleep\"),)".to_string()
+        )));
+        assert!(props.contains(&("title".to_string(), "\"Draft\"".to_string())));
+        assert!(out.ends_with("\n\nBody."));
+    }
+
+    #[test]
+    fn append_link_ref_keeps_entries_and_skips_repeats() {
+        let src = "#note(derived-from: (link-ref(\"A\"), link-ref(\"Café\")))\nBody";
+        let out = append_link_ref(src, "derived-from", "B").unwrap();
+        let props = extract_note_properties(&out);
+        assert_eq!(
+            props.iter().find(|(k, _)| k == "derived-from").unwrap().1,
+            "(link-ref(\"A\"), link-ref(\"Café\"), link-ref(\"B\"))"
+        );
+        assert!(append_link_ref(&out, "derived-from", "café").is_none());
+    }
+
+    #[test]
+    fn append_link_ref_wraps_a_single_value() {
+        let src = "#note(derived-from: link-ref(\"A\"))";
+        let out = append_link_ref(src, "derived-from", "B").unwrap();
+        assert!(out.contains("(link-ref(\"A\"), link-ref(\"B\"))"));
     }
 }

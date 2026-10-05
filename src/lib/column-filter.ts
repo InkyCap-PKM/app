@@ -29,7 +29,7 @@ export type ColumnFilterKind = "list" | "commalist" | "text" | "number" | "date"
  *  notebox of `YYYY-MM-DD.typ` files would otherwise make `file.name` look like
  *  a date and offer the wrong filter. Names/paths are text; the stat
  *  timestamps are ISO dates (`file.ctime`/`file.mtime` are RFC3339, which sort
- *  chronologically); the byte size is numeric. */
+ *  chronologically); the byte size is numeric; the link lists hold note names. */
 const FILE_COLUMN_TYPES: Record<string, PropertyType> = {
   "file.name": "text",
   "file.folder": "text",
@@ -38,6 +38,8 @@ const FILE_COLUMN_TYPES: Record<string, PropertyType> = {
   "file.ctime": "date",
   "file.mtime": "date",
   "file.size": "number",
+  "file.links": "list",
+  "file.backlinks": "list",
 };
 
 /** The fixed type for a `file.*` column, or `undefined` for any other key. */

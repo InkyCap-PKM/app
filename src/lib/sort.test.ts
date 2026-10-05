@@ -4,7 +4,7 @@
 // filing `10` between `1` and `2`.
 
 import { describe, it, expect } from "vitest";
-import { compareName, compareZid } from "./sort";
+import { compareChronological, compareName, compareZid } from "./sort";
 
 /** Sort a copy with `compareName` ascending, for readable assertions. */
 const byName = (items: string[]) => [...items].sort(compareName);
@@ -110,5 +110,20 @@ describe("compareZid", () => {
     expect(compareZid(null, "z1", "asc")).toBeGreaterThan(0);
     expect(compareZid(null, "z1", "desc")).toBeGreaterThan(0);
     expect(compareZid(null, null, "asc")).toBe(0);
+  });
+});
+
+describe("compareChronological", () => {
+  it("orders by zid, then creation time, then name", () => {
+    const notes = [
+      { name: "d", zid: null, created_time: 0 },
+      { name: "c", zid: null, created_time: 300 },
+      { name: "b", zid: "20260102", created_time: 100 },
+      { name: "a", zid: "20260101", created_time: 900 },
+      { name: "e", zid: null, created_time: 200 },
+    ];
+    expect([...notes].sort(compareChronological).map((n) => n.name)).toEqual([
+      "a", "b", "e", "c", "d",
+    ]);
   });
 });

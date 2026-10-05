@@ -1388,7 +1388,10 @@ pub async fn delete_folder(
 /// so the two stay in lockstep.
 pub(crate) fn update_wikilinks_in_content(content: &str, old_stem: &str, new_stem: &str) -> String {
     let after_brackets = rewrite_bracket_wikilinks(content, old_stem, new_stem);
-    rewrite_func_wikilinks(&after_brackets, old_stem, new_stem)
+    let after_calls = rewrite_first_arg_calls(&after_brackets, "#wikilink(\"", old_stem, new_stem);
+    // `link-ref("…")` values in `#note(...)` properties (e.g. `derived-from`)
+    // are links too. They sit in code, so they carry no `#`.
+    rewrite_first_arg_calls(&after_calls, "link-ref(\"", old_stem, new_stem)
 }
 
 fn rewrite_bracket_wikilinks(content: &str, old_stem: &str, new_stem: &str) -> String {
@@ -1429,22 +1432,29 @@ fn rewrite_bracket_wikilinks(content: &str, old_stem: &str, new_stem: &str) -> S
     result
 }
 
-/// Rewrite the first string argument of `#wikilink("...")` when it matches
-/// `old_stem` (case-insensitive). Other arguments (`display:`, `label:`)
-/// are preserved untouched. Names are matched on the literal quoted text;
-/// callers escape `new_stem` with `typst_string_escape` before passing it
-/// here.
-fn rewrite_func_wikilinks(content: &str, old_stem: &str, new_stem: &str) -> String {
-    const PREFIX: &str = "#wikilink(\"";
+/// Rewrite the first string argument of calls starting with `prefix` (for
+/// example `#wikilink("`) when it matches `old_stem` (case-insensitive).
+/// Other arguments (`display:`, `label:`) are preserved untouched. A match
+/// straight after a letter, digit, `-` or `_` is part of a longer name
+/// (`my-link-ref(`) and is left alone.
+fn rewrite_first_arg_calls(content: &str, prefix: &str, old_stem: &str, new_stem: &str) -> String {
     let old_lower = old_stem.to_lowercase();
     let escaped_new = typst_string_escape(new_stem);
 
     let mut result = String::with_capacity(content.len());
     let mut remaining = content;
 
-    while let Some(start) = remaining.find(PREFIX) {
-        result.push_str(&remaining[..start + PREFIX.len()]);
-        remaining = &remaining[start + PREFIX.len()..];
+    while let Some(start) = remaining.find(prefix) {
+        let part_of_longer_name = remaining[..start]
+            .chars()
+            .next_back()
+            .or_else(|| result.chars().next_back())
+            .is_some_and(|c| c.is_alphanumeric() || c == '-' || c == '_');
+        result.push_str(&remaining[..start + prefix.len()]);
+        remaining = &remaining[start + prefix.len()..];
+        if part_of_longer_name {
+            continue;
+        }
 
         // Find the closing quote of the first argument, honouring `\"`
         // and `\\` escapes the same way Typst's parser does.
@@ -2098,6 +2108,16 @@ mod tests {
         assert_eq!(
             result,
             "Start [[New Note]] middle [[New Note#heading]] end."
+        );
+    }
+
+    #[test]
+    fn test_update_wikilinks_link_ref_values() {
+        let content = "#note(derived-from: (link-ref(\"Old Note\"), link-ref(\"Other\")), x: my-link-ref(\"Old Note\"))";
+        let result = update_wikilinks_in_content(content, "Old Note", "New Note");
+        assert_eq!(
+            result,
+            "#note(derived-from: (link-ref(\"New Note\"), link-ref(\"Other\")), x: my-link-ref(\"Old Note\"))"
         );
     }
 

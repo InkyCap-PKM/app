@@ -124,6 +124,14 @@
   white-space: nowrap;
 }
 
+/* An inbound passage and its context: whole paragraphs, wrapped, with their
+   line breaks kept. Colour comes from --match / --ctx. */
+.link-context--passage {
+  white-space: pre-line;
+  overflow: visible;
+  text-overflow: clip;
+}
+
 .link-context__match {
   color: var(--accent-text);
   font-weight: 600;
