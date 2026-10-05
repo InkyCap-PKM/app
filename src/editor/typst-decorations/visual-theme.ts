@@ -557,13 +557,30 @@ export const visualTheme = EditorView.theme({
     padding: "2px 6px",
     textAlign: "center" as any,
   },
-  // The button beside a PDF image's path that opens the PDF in its own tab.
-  ".cm-typst-pdf-open": {
+  // An embed shown as its path and a button that opens the file: an `#image`
+  // of a PDF, or a picture or player that couldn't be shown here. Tall
+  // enough for the block pill floated over its top-left corner (one text row
+  // inset by the overlay's offset on each side), which the block's hidden
+  // overflow would otherwise cut off. Always centred, so a short path never
+  // runs under the pill.
+  ".cm-typst-file-row": {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "var(--space-2)",
+    minHeight: "calc(1em * var(--editor-line-height, 1.4) + 2 * var(--space-1))",
+  },
+  // Square and exactly one text row tall, the same as the block pill, which
+  // is sized in the same `em` (see `.cm-typst-pill`).
+  ".cm-typst-file-open": {
     display: "inline-flex",
     alignItems: "center",
-    verticalAlign: "middle",
-    marginLeft: "var(--space-2)",
-    padding: "var(--space-1)",
+    justifyContent: "center",
+    flexShrink: "0",
+    boxSizing: "border-box",
+    height: "calc(1em * var(--editor-line-height, 1.4))",
+    aspectRatio: "1",
+    padding: "0",
     background: "none",
     border: "1px solid var(--border-subtle)",
     borderRadius: "var(--radius-sm)",
@@ -571,10 +588,14 @@ export const visualTheme = EditorView.theme({
     cursor: "pointer",
     transition: "background var(--dur-fast) var(--ease-out)",
   },
-  ".cm-typst-pdf-open:hover": {
+  ".cm-typst-file-open svg": {
+    width: "0.9em",
+    height: "0.9em",
+  },
+  ".cm-typst-file-open:hover": {
     background: "var(--bg-hover)",
   },
-  ".cm-typst-pdf-open:focus-visible": {
+  ".cm-typst-file-open:focus-visible": {
     outline: "none",
     boxShadow: "var(--focus-ring)",
   },

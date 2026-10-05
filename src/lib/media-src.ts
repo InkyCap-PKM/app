@@ -105,7 +105,8 @@ export async function fetchMediaObjectUrl(noteboxPath: string): Promise<string> 
 }
 
 /**
- * Load a notebox image as a `blob:` object URL, or `null` on failure.
+ * Load a notebox image as a `blob:` object URL, rejecting with the backend's
+ * error (for example `file-too-large-to-show`) so the caller can say why.
  *
  * Tauri's asset protocol is switched off, so notebox images reach the webview
  * only as bytes over IPC, wrapped here in a correctly-typed blob, the same way
@@ -115,17 +116,6 @@ export async function fetchMediaObjectUrl(noteboxPath: string): Promise<string> 
  * The caller owns the returned URL and must `URL.revokeObjectURL` it (directly
  * or via {@link revokeBlobUrls}) when the element is torn down.
  */
-export async function loadImageObjectUrl(noteboxPath: string): Promise<string | null> {
-  try {
-    return await fetchImageObjectUrl(noteboxPath);
-  } catch (err) {
-    console.error("[media] failed to load image", noteboxPath, err);
-    return null;
-  }
-}
-
-/** Like {@link loadImageObjectUrl}, but rejects with the backend's error so
- *  the caller can say why. */
 export async function fetchImageObjectUrl(noteboxPath: string): Promise<string> {
   const buf = await ipc.readEmbedBytes(noteboxPath);
   return URL.createObjectURL(new Blob([buf], { type: imageMimeForPath(noteboxPath) }));

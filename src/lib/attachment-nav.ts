@@ -80,6 +80,23 @@ export async function openAttachmentInTab(target: string): Promise<void> {
   openResolved(path, "new-tab-in-front");
 }
 
+/** Open the notebox file named by `target` (any form `resolve_embed_path`
+ *  accepts) in the system's default application. Used by an embed's open
+ *  button when the file can't be shown inside InkyCap. */
+export async function openAttachmentExternally(target: string): Promise<void> {
+  let path: string | null = null;
+  try {
+    path = await ipc.resolveEmbedPath(target);
+  } catch (err) {
+    console.error("[attachment-nav] resolve failed:", target, err);
+  }
+  if (!path) {
+    toastError(t("attachment.menu.notFound"));
+    return;
+  }
+  openExternally(path);
+}
+
 /** Where `openResolved` shows a file: in place of the current tab (whose
  *  back arrow returns to the note), in a new tab that follows the "Switch to
  *  new tabs immediately" setting like every other "Open in new tab", or in a

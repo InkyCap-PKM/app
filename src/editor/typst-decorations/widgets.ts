@@ -4,11 +4,16 @@ import { getSearchQuery, setSearchQuery } from "@codemirror/search";
 import { openLink } from "../../lib/open-link";
 import {
   attachmentViewKind,
-  loadImageObjectUrl,
-  loadMediaObjectUrl,
+  fetchImageObjectUrl,
+  fetchMediaObjectUrl,
   revokeBlobUrls,
 } from "../../lib/media-src";
-import { openAttachmentInTab, showAttachmentContextMenu } from "../../lib/attachment-nav";
+import { errorCode } from "../../lib/errors";
+import {
+  openAttachmentExternally,
+  openAttachmentInTab,
+  showAttachmentContextMenu,
+} from "../../lib/attachment-nav";
 import { highlightCodeInto } from "./code-highlight";
 import { buildPillButton, findCallEnd, applyCallTransform, upsertNamedArg, type PillMenuSection } from "./pill";
 import { getPillOptions } from "./pill-options";
@@ -589,6 +594,12 @@ const FILE_TEXT_ICON =
   '<path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/>' +
   '<path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>';
 
+/** Lucide `external-link`, for links and openers that leave the app. */
+const EXTERNAL_LINK_ICON =
+  '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>' +
+  '<polyline points="15 3 21 3 21 9"/>' +
+  '<line x1="10" y1="14" x2="21" y2="3"/>';
+
 /** True when an `#image(...)` call points at a PDF. Typst places the PDF's
  *  page in the output, but the webview can't show it as a picture, so the
  *  visual editor shows the path with a button that opens the PDF instead. */
@@ -596,27 +607,63 @@ function isPdfImage(path: string): boolean {
   return attachmentViewKind(path) === "pdf";
 }
 
-/** Add the "open this PDF" button to an image widget's path label. It opens
- *  the PDF in its own tab, in front. */
-function appendPdfOpener(label: HTMLElement, path: string): void {
+/**
+ * Turn an embed widget's content row into a file row: the path label with a
+ * button beside it that opens the file. A PDF opens in InkyCap's own viewer,
+ * in front; a picture or player that couldn't be shown here (too large, or a
+ * format the webview can't play) opens in the default application, since the
+ * viewer would meet the same limit. The row is styled (`cm-typst-file-row`)
+ * to fit the block pill and to size the button to match it. Does nothing if
+ * the row already has its button.
+ */
+function appendFileOpener(row: HTMLElement, path: string, opens: "viewer" | "default-app"): void {
+  if (row.classList.contains("cm-typst-file-row")) return;
+  row.classList.add("cm-typst-file-row");
+  const title = opens === "viewer" ? t("attachmentView.openPdf") : t("attachmentView.openExternally");
   const button = document.createElement("button");
   button.type = "button";
-  button.className = "cm-typst-pdf-open";
-  button.title = t("attachmentView.openPdf");
-  button.setAttribute("aria-label", t("attachmentView.openPdf"));
-  button.appendChild(lucideIcon(FILE_TEXT_ICON, "cm-typst-pdf-open-icon"));
+  button.className = "cm-typst-file-open";
+  button.title = title;
+  button.setAttribute("aria-label", title);
+  button.appendChild(
+    lucideIcon(opens === "viewer" ? FILE_TEXT_ICON : EXTERNAL_LINK_ICON, "cm-typst-file-open-icon"),
+  );
   button.addEventListener("mousedown", (e) => {
     e.preventDefault();
     e.stopPropagation();
-    void openAttachmentInTab(path);
+    void (opens === "viewer" ? openAttachmentInTab(path) : openAttachmentExternally(path));
   });
-  label.appendChild(button);
+  row.appendChild(button);
 }
 
-/** Whether an event belongs to a PDF image's open button, which handles it
+/**
+ * When an embedded file couldn't be loaded, offer to open it in the default
+ * application if it exists but is too large to show here. Any other failure
+ * (most often a missing file) keeps the plain path, and the right-click menu
+ * says the file wasn't found.
+ */
+function offerOpenerAfterLoadFailure(err: unknown, row: HTMLElement, wrap: HTMLElement, path: string) {
+  if (!document.body.contains(wrap)) return;
+  if (errorCode(err) === "file-too-large-to-show") appendFileOpener(row, path, "default-app");
+}
+
+/** The picture or player in `row` failed to display (a format the webview
+ *  can't decode): hide it, bring the path back, and offer the default app. */
+function offerOpenerAfterDisplayFailure(
+  el: HTMLElement,
+  label: HTMLElement,
+  row: HTMLElement,
+  path: string,
+) {
+  el.style.display = "none";
+  label.style.display = "";
+  appendFileOpener(row, path, "default-app");
+}
+
+/** Whether an event belongs to an embed's open button, which handles it
  *  itself rather than letting CodeMirror place the caret. */
-function isPdfOpenerEvent(e: Event): boolean {
-  return !!(e.target as Element | null)?.closest?.(".cm-typst-pdf-open");
+function isFileOpenerEvent(e: Event): boolean {
+  return !!(e.target as Element | null)?.closest?.(".cm-typst-file-open");
 }
 
 /** Right-click on an embedded image or media element opens the attachment
@@ -656,12 +703,12 @@ export class ImageWidget extends WidgetType {
     wrap.appendChild(label);
 
     if (isPdfImage(this.path)) {
-      appendPdfOpener(label, this.path);
+      appendFileOpener(wrap, this.path, "viewer");
       return wrap;
     }
 
     const imgPath = this.path;
-    loadImageObjectUrl(imgPath).then((url) => {
+    fetchImageObjectUrl(imgPath).then((url) => {
       // The widget may have been torn down while the bytes were in flight;
       // don't leak the blob URL or touch a detached DOM.
       if (!url || !document.body.contains(wrap)) {
@@ -683,11 +730,11 @@ export class ImageWidget extends WidgetType {
       img.addEventListener("load", () => {
         label.style.display = "none";
       });
-      img.addEventListener("error", () => {
-        img.style.display = "none";
-      });
+      img.addEventListener("error", () =>
+        offerOpenerAfterDisplayFailure(img, label, wrap, imgPath),
+      );
       wrap.insertBefore(img, label);
-    });
+    }, (err) => offerOpenerAfterLoadFailure(err, wrap, wrap, imgPath));
 
     return wrap;
   }
@@ -696,7 +743,7 @@ export class ImageWidget extends WidgetType {
     revokeBlobUrls(dom);
   }
 
-  ignoreEvent(e: Event) { return isPdfOpenerEvent(e); }
+  ignoreEvent(e: Event) { return isFileOpenerEvent(e); }
 }
 
 export type ImageAlign = "left" | "center" | "right";
@@ -758,13 +805,13 @@ export class ImageBlockWidget extends WidgetType {
     inner.appendChild(label);
 
     if (isPdfImage(this.path)) {
-      appendPdfOpener(label, this.path);
+      appendFileOpener(inner, this.path, "viewer");
       wrap.appendChild(inner);
       return;
     }
 
     const imgPath = this.path;
-    loadImageObjectUrl(imgPath).then((url) => {
+    fetchImageObjectUrl(imgPath).then((url) => {
       // Bail (and free the blob) if the widget was replaced while the bytes
       // were loading.
       if (!url || !document.body.contains(wrap)) {
@@ -791,19 +838,21 @@ export class ImageBlockWidget extends WidgetType {
       if (this.height && !this.width) img.style.width = "auto";
       if (this.width || this.height) img.style.maxHeight = "none";
       img.addEventListener("load", () => { label.style.display = "none"; });
-      img.addEventListener("error", () => { img.style.display = "none"; });
+      img.addEventListener("error", () =>
+        offerOpenerAfterDisplayFailure(holder, label, inner, imgPath),
+      );
 
       holder.appendChild(img);
       attachImageResize(view, holder, img, () => resolveImageCallFrom(view, this.pos));
       inner.insertBefore(holder, label);
-    });
+    }, (err) => offerOpenerAfterLoadFailure(err, inner, wrap, imgPath));
     wrap.appendChild(inner);
   }
 
-  // Right-click is the attachment menu's, and a PDF's open button handles its
+  // Right-click is the attachment menu's, and a file row's open button handles its
   // own clicks; everything else stays CM's so the block behaves like editor
   // content (click places the caret, drag selects).
-  ignoreEvent(e: Event) { return e.type === "contextmenu" || isPdfOpenerEvent(e); }
+  ignoreEvent(e: Event) { return e.type === "contextmenu" || isFileOpenerEvent(e); }
 }
 
 /// Block widget for `#video(...)` / `#audio(...)`: an inline player rendered
@@ -865,7 +914,7 @@ export class MediaBlockWidget extends WidgetType {
     inner.appendChild(label);
 
     const mediaPath = this.path;
-    loadMediaObjectUrl(mediaPath).then((url) => {
+    fetchMediaObjectUrl(mediaPath).then((url) => {
       if (!url || !document.body.contains(wrap)) {
         if (url) URL.revokeObjectURL(url);
         return;
@@ -877,9 +926,11 @@ export class MediaBlockWidget extends WidgetType {
       el.src = url;
       if (this.kind === "video" && this.width) el.style.width = typstLengthToCss(this.width);
       el.addEventListener("loadedmetadata", () => { label.style.display = "none"; });
-      el.addEventListener("error", () => { el.style.display = "none"; });
+      el.addEventListener("error", () =>
+        offerOpenerAfterDisplayFailure(el, label, inner, mediaPath),
+      );
       inner.insertBefore(el, label);
-    });
+    }, (err) => offerOpenerAfterLoadFailure(err, inner, wrap, mediaPath));
     wrap.appendChild(inner);
   }
 
@@ -2454,14 +2505,7 @@ export class LinkWidget extends WidgetType {
     text.textContent = this.display || linkTextFromUrl(this.url);
     el.appendChild(text);
 
-    el.appendChild(
-      lucideIcon(
-        '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>' +
-          '<polyline points="15 3 21 3 21 9"/>' +
-          '<line x1="10" y1="14" x2="21" y2="3"/>',
-        "cm-typst-link-external-icon",
-      ),
-    );
+    el.appendChild(lucideIcon(EXTERNAL_LINK_ICON, "cm-typst-link-external-icon"));
 
     el.addEventListener("mousedown", (e) => {
       e.preventDefault();
