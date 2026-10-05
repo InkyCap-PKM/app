@@ -73,9 +73,9 @@ describe("caret in front of a list marker", () => {
 
 describe("stepping back onto a list marker", () => {
   // Left from the start of an item's text: CodeMirror's atomic handling has
-  // already pushed the caret from after the marker to the line start. Sending
-  // it forward again would pin it there for good, so it continues to where
-  // the writer was heading.
+  // already pushed the caret from after the marker to the line start. There
+  // the marker is revealed as source, so the caret visibly sits in front of
+  // it; the next step back continues to the previous line.
   const DOC = "- alpha\n- beta\n- gamma";
   const BETA = DOC.indexOf("- beta");
   const ALPHA_END = DOC.indexOf("\n");
@@ -90,31 +90,50 @@ describe("stepping back onto a list marker", () => {
       parent: document.body,
     });
 
-  it("goes to the end of the previous line", () => {
+  const bullets = (v: EditorView) => v.dom.querySelectorAll(".cm-typst-list-bullet").length;
+  const home = typstKeymap.find((b) => b.key === "Home")!;
+
+  it("stops in front of the revealed marker", () => {
     // Cursor-motion commands annotate their transactions as "select".
     const tr = visual(DOC, { anchor: BETA + 2 }).update({
       selection: EditorSelection.single(BETA),
       userEvent: "select",
     });
-    expect(tr.state.selection.main.head).toBe(ALPHA_END);
+    expect(tr.state.selection.main.head).toBe(BETA);
+    expect(buildDecorations(tr.state).size).toBeLessThan(buildDecorations(visual(DOC)).size);
   });
 
   it("treats an unannotated jump to the line start as a placement", () => {
     expect(select(visual(DOC, { anchor: BETA + 2 }), BETA).head).toBe(BETA + 2);
   });
 
-  it("Left arrow crosses to the previous line", () => {
+  it("Left arrow reveals the marker, then crosses to the previous line", () => {
     const v = view(BETA + 2);
     cursorCharLeft(v);
+    expect(v.state.selection.main.head).toBe(BETA);
+    expect(bullets(v)).toBe(2);
+    cursorCharLeft(v);
     expect(v.state.selection.main.head).toBe(ALPHA_END);
+    expect(bullets(v)).toBe(3);
     v.destroy();
   });
 
-  it("does not step back off the first line", () => {
+  it("Left arrow reveals the marker on the first line too", () => {
     const v = view(2);
     cursorCharLeft(v);
-    expect(v.state.selection.main.head).toBe(2);
+    expect(v.state.selection.main.head).toBe(0);
+    expect(bullets(v)).toBe(2);
     v.destroy();
+  });
+
+  it("a step back from mid-text does not reveal the marker", () => {
+    // Ctrl+Left-sized jumps that start inside the text land on the text
+    // start; only a step from the text start goes in front of the marker.
+    const tr = visual(DOC, { anchor: BETA + 4 }).update({
+      selection: EditorSelection.single(BETA),
+      userEvent: "select",
+    });
+    expect(tr.state.selection.main.head).toBe(ALPHA_END);
   });
 
   it("a click on the line start still lands after the marker", () => {
@@ -124,15 +143,37 @@ describe("stepping back onto a list marker", () => {
     v.destroy();
   });
 
-  it("Home stays on the start of the item's text", () => {
-    // In source mode a second Home jumps before the marker; here the marker
-    // is hidden, so there is nowhere visible to go.
+  it("Home goes to the item's text, then in front of the revealed marker", () => {
     const v = view(BETA + 4);
-    const home = typstKeymap.find((b) => b.key === "Home")!;
     home.run!(v);
     expect(v.state.selection.main.head).toBe(BETA + 2);
+    expect(bullets(v)).toBe(3);
+    home.run!(v);
+    expect(v.state.selection.main.head).toBe(BETA);
+    expect(bullets(v)).toBe(2);
+    // A third press goes back to the text; the marker stays revealed while
+    // the caret is on its line.
     home.run!(v);
     expect(v.state.selection.main.head).toBe(BETA + 2);
+    v.destroy();
+  });
+
+  it("Shift+Home twice selects the item along with its marker", () => {
+    const v = view(BETA + 6);
+    home.shift!(v);
+    home.shift!(v);
+    expect(v.state.selection.main.from).toBe(BETA);
+    expect(v.state.selection.main.to).toBe(BETA + 6);
+    v.destroy();
+  });
+
+  it("the marker turns back into a bullet once the caret leaves the line", () => {
+    const v = view(BETA + 4);
+    home.run!(v);
+    home.run!(v);
+    expect(bullets(v)).toBe(2);
+    v.dispatch({ selection: EditorSelection.single(ALPHA_END), userEvent: "select.pointer" });
+    expect(bullets(v)).toBe(3);
     v.destroy();
   });
 });

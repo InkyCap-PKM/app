@@ -79,7 +79,7 @@ Begin each line with a marker and a space:
 
 When you're working in a list, *Enter* starts the next item automatically, and pressing Enter on an empty item ends the list. *Tab* and *Shift+Tab* indent and outdent items, and *Shift+Alt+Up / Down* moves an item up or down, together with its nested items, while keeping any numbering tidy. A few smaller courtesies:
 
-- *Home* lands on the item's text, just after the bullet, and the *left arrow* at the start of an item's text steps back to the end of the line above.
+- *Home* lands on the item's text, just after the bullet. Press *Home* again, or the *left arrow* at the start of the item's text, and the cursor moves in front of the bullet, which shows as its marker (`-`, `+`, `1.`) while the cursor is on that line. From there *Shift+End* selects the whole item, bullet included, so you can delete it in one go. Another *left arrow* steps back to the end of the line above.
 - Fixed `1.` numbers are renumbered only when the list's shape changes (an item indented, outdented, or moved). A list you deliberately start at `5.` keeps running 5, 6, 7.
 - A list item with nested items can be *folded*: hover to its left and click the chevron that appears. See #wikilink("2 - Editing Notes") for more on folding.
 

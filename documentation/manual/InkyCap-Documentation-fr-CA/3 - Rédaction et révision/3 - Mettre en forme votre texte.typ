@@ -80,7 +80,7 @@ Commencez chaque ligne par un marqueur et une espace :
 
 Quand vous travaillez dans une liste, *Entrée* commence automatiquement l'élément suivant, et appuyer sur Entrée sur un élément vide met fin à la liste. *Tab* et *Maj+Tab* augmentent et diminuent le retrait des éléments, et *Maj+Alt+Haut / Bas* déplace un élément vers le haut ou le bas, avec ses éléments imbriqués, tout en gardant la numérotation soignée. Quelques petites attentions de plus :
 
-- *Début* (Home) place le curseur sur le texte de l'élément, juste après la puce, et la *flèche gauche* au début du texte d'un élément recule jusqu'à la fin de la ligne du dessus.
+- *Début* (Home) place le curseur sur le texte de l'élément, juste après la puce. Appuyez de nouveau sur *Début*, ou sur la *flèche gauche* au début du texte de l'élément, et le curseur passe devant la puce, qui s'affiche alors sous forme de marqueur (`-`, `+`, `1.`) tant que le curseur est sur cette ligne. De là, *Maj+Fin* sélectionne l'élément entier, puce comprise, pour le supprimer d'un coup. Une autre *flèche gauche* recule jusqu'à la fin de la ligne du dessus.
 - Les numéros fixes `1.` ne sont renumérotés que lorsque la forme de la liste change (un élément mis en retrait, sorti du retrait ou déplacé). Une liste que vous commencez délibérément à `5.` continue avec 5, 6, 7.
 - Un élément de liste qui contient des éléments imbriqués peut être *replié* : survolez à sa gauche et cliquez sur le chevron qui apparaît. Voir #wikilink("2 - Modifier des notes") pour en savoir plus sur le repliement.
 

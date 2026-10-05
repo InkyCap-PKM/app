@@ -33,6 +33,7 @@ import {
   RangeValue,
   Text,
   type Extension,
+  type Line,
 } from "@codemirror/state";
 import { expandFunc } from "./effects";
 
@@ -62,6 +63,16 @@ export function pastLineLeadingMarkup(
 }
 
 /**
+ * End of a list item's marker and its one separating space (`- `, `+ `,
+ * `1. `), the same span the visual editor folds into its bullet widget, or
+ * null when the line is not a list item.
+ */
+export function listMarkerEnd(line: Line): number | null {
+  const match = line.text.match(/^\s*(?:[-+]|\d+\.)[ \t]/);
+  return match ? line.from + match[0].length : null;
+}
+
+/**
  * Selection filter that keeps the caret — and the forward end of a selection —
  * out of the dead position in front of a line's hidden leading markup.
  *
@@ -76,6 +87,13 @@ export function pastLineLeadingMarkup(
  * forward again would pin it at the start of the item's text, so it goes where
  * the writer was heading: the end of the previous line. A pointer click is
  * never a step, whatever the caret was doing before it.
+ *
+ * A list bullet is the exception to the exception. Stepping back from the
+ * start of the item's text reveals the marker as source (through `expandFunc`,
+ * keyed on the line start) and leaves the caret in front of it, where it can
+ * now be told apart from the caret after it. That is how the writer selects
+ * or deletes an item together with its bullet; the next step back reaches the
+ * previous line as usual.
  *
  * Only the *forward* end of a non-empty selection moves, and only when the
  * selection starts mid-line. Pulling the start end forward as well would leave
@@ -105,6 +123,7 @@ export function lineStartCaretFilter(
     const keyboardMove = tr.isUserEvent("select") && !tr.isUserEvent("select.pointer");
 
     let moved = false;
+    let reveal: number | null = null;
     const ranges = tr.selection.ranges.map((range, i) => {
       if (range.empty) {
         const head = pastLineLeadingMarkup(atoms, doc, range.head);
@@ -117,9 +136,17 @@ export function lineStartCaretFilter(
           prev !== null &&
           prev.empty &&
           prev.head > range.head &&
-          prev.head <= line.to &&
-          line.number > 1;
-        if (steppedBack) return EditorSelection.cursor(doc.line(line.number - 1).to);
+          prev.head <= line.to;
+        if (
+          steppedBack &&
+          prev.head === head &&
+          i === tr.selection!.mainIndex &&
+          listMarkerEnd(line) === head
+        ) {
+          reveal = line.from;
+          return range;
+        }
+        if (steppedBack && line.number > 1) return EditorSelection.cursor(doc.line(line.number - 1).to);
         // assoc 1 draws the caret on the content side of the markup.
         return EditorSelection.cursor(head, 1);
       }
@@ -133,6 +160,9 @@ export function lineStartCaretFilter(
     });
     if (!moved) return tr;
 
-    return [tr, { selection: EditorSelection.create(ranges, tr.selection.mainIndex) }];
+    return [tr, {
+      selection: EditorSelection.create(ranges, tr.selection.mainIndex),
+      effects: reveal === null ? [] : expandFunc.of(reveal),
+    }];
   });
 }

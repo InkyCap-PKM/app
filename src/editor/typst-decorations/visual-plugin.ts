@@ -793,6 +793,28 @@ function pushListIndent(
   );
 }
 
+/**
+ * Draw a list item's marker as a bullet (or number) with the item's hanging
+ * indent. Returns false, drawing nothing, when the marker has been revealed as
+ * source: a second Home or a Left from the item's text expands it (keyed on
+ * the line start) so the caret in front of it can be seen and the item deleted
+ * along with its bullet. See `smartLineStart` and `lineStartCaretFilter`.
+ */
+function pushListMarker(
+  decos: Range<Decoration>[],
+  state: EditorState,
+  node: { from: number; to: number },
+  baseCols: number,
+  expandedPos: number | null,
+  label: string,
+): boolean {
+  const [from, to] = markerReplaceRange(state, node);
+  if (expandedPos === from) return false;
+  pushListIndent(decos, state, node.from, baseCols);
+  decos.push(Decoration.replace({ widget: new BulletWidget(label) }).range(from, to));
+  return true;
+}
+
 /** Build the visual layer's whole decoration set for `state`. Exported so
  *  tests can assert on decorations that only appear once the syntax tree is
  *  walked (nested calls, markers); the editor reaches it through
@@ -966,18 +988,12 @@ export function buildDecorations(
             // the bullet vanished. Gating on the space matches how markdown
             // editors form lists and keeps the display honest.
             if (!markerHasSeparator(state, node) || !markerOpensLine(state, node)) break;
-            pushListIndent(decos, state, node.from, listBase);
-            decos.push(
-              Decoration.replace({ widget: new BulletWidget("•") }).range(...markerReplaceRange(state, node)),
-            );
+            if (!pushListMarker(decos, state, node, listBase, expandedPos, "•")) break;
             return false;
           }
           case "EnumMarker": {
             if (!markerHasSeparator(state, node) || !markerOpensLine(state, node)) break;
-            pushListIndent(decos, state, node.from, listBase);
-            decos.push(
-              Decoration.replace({ widget: new BulletWidget(enumItemNumber(state, node.from)) }).range(...markerReplaceRange(state, node)),
-            );
+            if (!pushListMarker(decos, state, node, listBase, expandedPos, enumItemNumber(state, node.from))) break;
             return false;
           }
           case "Raw": {

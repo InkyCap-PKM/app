@@ -8,7 +8,8 @@ import { toggleEmphasis, toggleWrap } from "./wrap-format";
 import { listSubtreeEndLine, leadingWhitespace } from "./list-scan";
 import { listBlockRange, linesOfRange, markerWidth, renumberListLines } from "./list-renumber";
 import { dispatchVisible } from "./dispatch-visible";
-import { pastLineLeadingMarkup } from "./line-start-caret";
+import { pastLineLeadingMarkup, listMarkerEnd } from "./line-start-caret";
+import { expandFunc } from "./effects";
 
 /**
  * When true, typing an opening bracket or quote adds its closing partner, and
@@ -228,9 +229,13 @@ export function listContentStart(line: Line): number {
  * empty-selection line copy, still carries the marker and the item pastes back
  * as a complete bullet.
  *
- * That second press only applies where the markup can be seen. In the visual
- * editor it is hidden behind a widget and the position before it is not one the
- * caret should occupy, so the caret stays on the content start instead.
+ * In the visual editor the markup is hidden behind a widget, and the caret in
+ * front of it would be drawn in the same spot as the caret after it. For a list
+ * bullet the second press therefore also reveals the marker as source (through
+ * `expandFunc`, keyed on the line start) so the caret visibly sits before it;
+ * this is how the writer selects or deletes an item together with its bullet.
+ * Other hidden markup (a block element's opener) keeps the caret on the content
+ * start. Only the main cursor reveals, since one marker can be revealed at a time.
  *
  * `extend` mirrors the same toggle for Shift-Home, keeping the selection anchor
  * fixed. Operates on every cursor in a multi-selection.
@@ -238,7 +243,8 @@ export function listContentStart(line: Line): number {
 function smartLineStart(view: EditorView, extend: boolean): boolean {
   const { state } = view;
   const atomics = state.facet(EditorView.atomicRanges);
-  const ranges = state.selection.ranges.map((range) => {
+  let reveal: number | null = null;
+  const ranges = state.selection.ranges.map((range, i) => {
     const line = state.doc.lineAt(range.head);
     // Where the line's own markup ends: past a list marker, past hidden
     // element markup, whichever reaches further into the line.
@@ -248,13 +254,22 @@ function smartLineStart(view: EditorView, extend: boolean): boolean {
     );
     const cs = Math.max(listContentStart(line), pastMarkup);
     const markerHidden = pastMarkup !== line.from;
-    const target = range.head === cs && !markerHidden ? line.from : cs;
+    let target = cs;
+    if (range.head === cs) {
+      if (!markerHidden) {
+        target = line.from;
+      } else if (i === state.selection.mainIndex && listMarkerEnd(line) === pastMarkup) {
+        target = line.from;
+        reveal = line.from;
+      }
+    }
     return extend
       ? EditorSelection.range(range.anchor, target)
       : EditorSelection.cursor(target);
   });
   dispatchVisible(view, {
     selection: EditorSelection.create(ranges, state.selection.mainIndex),
+    effects: reveal === null ? [] : expandFunc.of(reveal),
     // Tag it the way CodeMirror tags its own cursor/selection commands. Things
     // that react to a deliberate selection gesture — the selection format
     // toolbar above all — look for this, and an untagged dispatch reads as a
