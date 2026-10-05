@@ -71,6 +71,13 @@
   color: var(--fg-dim);
 }
 
+/* Buttons under a card's list (the held-back tabs' Reopen all / Dismiss). */
+.new-tab-page__section-actions {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4) var(--space-1);
+}
+
 .new-tab-page__row {
   display: flex;
   align-items: baseline;

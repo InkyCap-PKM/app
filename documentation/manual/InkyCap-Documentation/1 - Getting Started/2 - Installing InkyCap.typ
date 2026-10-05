@@ -109,6 +109,20 @@ If you'd like InkyCap to look for updates on its own, you can turn that on:
 
 This option is *off by default*. With it on, InkyCap checks once shortly after launch and shows a small message if something newer is available. There's also an *Include development (beta) releases* option (also off by default) if you want to hear about pre-release builds.
 
+== If InkyCap freezes when it opens
+
+When *Previously open tabs* is your startup behaviour (see #wikilink("2 - Settings")), InkyCap reopens your tabs each time it starts. If one of those tabs makes InkyCap freeze or close, it would otherwise do the same thing at every start. InkyCap watches for this: if it froze or closed before it finished reopening your tabs, the next start leaves them closed. The empty tab then lists them under *Tabs not reopened*, so you can open the ones you need one at a time, or choose *Reopen all*.
+
+If InkyCap freezes, close it (force it to quit if it won't close normally) and start it again. If it froze after you opened something during the day rather than at startup, it may freeze once more on the next start before it leaves the tabs closed; close it and start it again once more.
+
+You can also start InkyCap without reopening any tabs, by adding `--no-restore` when you start it:
+
+- *Linux*: in a terminal, run `inkycap --no-restore`. For the Flatpak, run `flatpak run org.inkycap.editor --no-restore`; for the AppImage, run the AppImage file followed by `--no-restore`.
+- *macOS*: in Terminal, run `open -a InkyCap --args --no-restore`.
+- *Windows*: press *Windows+R* and run InkyCap's program with `--no-restore` after it, for example `"%LOCALAPPDATA%\InkyCap\InkyCap.exe" --no-restore` for a copy installed with the `-setup.exe`, or `"C:\Program Files\InkyCap\InkyCap.exe" --no-restore` for one installed with the `.msi`.
+
+InkyCap must not already be running for this to work. Your tabs are listed under *Tabs not reopened*, as above.
+
 == Knowing which version you're running
 
 To see your current version, open #wikilink("2 - Settings") and look at the *Overview* area, where the version number is displayed. InkyCap's version numbers have three parts, `year.month.release` (for example 26.9.10 is the tenth release of September 2026). The last number tells you what kind of build you have: even numbers are stable releases and odd numbers are development builds. If you happen to be running a development build, you'll also see a small *Development build* badge beside the version so you always know whether you're on a stable or pre-release copy.

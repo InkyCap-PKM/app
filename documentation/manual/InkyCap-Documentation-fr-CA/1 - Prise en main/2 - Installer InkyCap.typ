@@ -108,6 +108,20 @@ Si vous voulez qu'InkyCap cherche les mises à jour de lui-même, vous pouvez l'
 
 Cette option est *désactivée par défaut*. Activée, InkyCap vérifie une fois peu après le lancement et affiche un petit message si quelque chose de plus récent est disponible. Il y a aussi une option *Inclure les versions de développement (bêta)* (également désactivée par défaut) si vous voulez être informé des versions préliminaires.
 
+== Si InkyCap se fige à l'ouverture
+
+Quand *Onglets précédemment ouverts* est votre comportement au démarrage (voir #wikilink("2 - Paramètres")), InkyCap rouvre vos onglets à chaque démarrage. Si l'un de ces onglets fait figer ou fermer InkyCap, la même chose se reproduirait sinon à chaque démarrage. InkyCap le surveille : s'il s'est figé ou fermé avant d'avoir fini de rouvrir vos onglets, le démarrage suivant les laisse fermés. L'onglet vide les énumère alors sous *Onglets non rouverts*, pour que vous puissiez ouvrir ceux dont vous avez besoin un à la fois, ou choisir *Tout rouvrir*.
+
+Si InkyCap se fige, fermez-le (forcez-le à quitter s'il ne se ferme pas normalement) et relancez-le. S'il s'est figé après que vous avez ouvert quelque chose en cours de journée plutôt qu'au démarrage, il peut se figer une fois de plus au démarrage suivant avant de laisser les onglets fermés ; fermez-le et relancez-le une fois de plus.
+
+Vous pouvez aussi lancer InkyCap sans rouvrir aucun onglet, en ajoutant `--no-restore` au lancement :
+
+- *Linux* : dans un terminal, exécutez `inkycap --no-restore`. Pour le Flatpak, exécutez `flatpak run org.inkycap.editor --no-restore` ; pour l'AppImage, exécutez le fichier AppImage suivi de `--no-restore`.
+- *macOS* : dans Terminal, exécutez `open -a InkyCap --args --no-restore`.
+- *Windows* : appuyez sur *Windows+R* et exécutez le programme d'InkyCap suivi de `--no-restore`, par exemple `"%LOCALAPPDATA%\InkyCap\InkyCap.exe" --no-restore` pour une copie installée avec le `-setup.exe`, ou `"C:\Program Files\InkyCap\InkyCap.exe" --no-restore` pour une copie installée avec le `.msi`.
+
+InkyCap ne doit pas déjà être en cours d'exécution pour que cela fonctionne. Vos onglets sont alors énumérés sous *Onglets non rouverts*, comme ci-dessus.
+
 == Savoir quelle version vous utilisez
 
 Pour voir votre version actuelle, ouvrez #wikilink("2 - Paramètres") et regardez la section *Vue d'ensemble*, où le numéro de version est affiché. Les numéros de version d'InkyCap ont trois parties, `année.mois.version` (par exemple, 26.9.10 est la dixième version de septembre 2026). Le dernier nombre vous indique quel type de build vous avez : les nombres pairs sont des versions stables et les nombres impairs sont des builds de développement. Si vous utilisez une version de développement, vous verrez aussi un petit badge *Version de développement* à côté du numéro, de sorte que vous savez toujours si vous êtes sur une copie stable ou préliminaire.

@@ -123,6 +123,12 @@ pub enum InkyCapError {
     /// the frontend asks the user and retries with confirmation.
     #[error("This file is outside the notebox: {0}")]
     OpenOutsideNotebox(String),
+
+    /// A file is too large to hand to the webview, which holds the whole file
+    /// in memory several times over while loading it. Carries the file's size
+    /// for display (in `detail`).
+    #[error("This file is too large to show inside InkyCap ({0})")]
+    FileTooLargeToShow(String),
 }
 
 impl InkyCapError {
@@ -159,6 +165,7 @@ impl InkyCapError {
             InkyCapError::Clipboard(_) => "clipboard",
             InkyCapError::OpenProgramFile(_) => "open-program-file",
             InkyCapError::OpenOutsideNotebox(_) => "open-outside-notebox",
+            InkyCapError::FileTooLargeToShow(_) => "file-too-large-to-show",
         }
     }
 
@@ -187,7 +194,8 @@ impl InkyCapError {
             | InkyCapError::UpgradeFailed(s)
             | InkyCapError::Clipboard(s)
             | InkyCapError::OpenProgramFile(s)
-            | InkyCapError::OpenOutsideNotebox(s) => Some(s.clone()),
+            | InkyCapError::OpenOutsideNotebox(s)
+            | InkyCapError::FileTooLargeToShow(s) => Some(s.clone()),
             InkyCapError::NoteboxNotOpen
             | InkyCapError::FilenameRequired
             | InkyCapError::Cancelled

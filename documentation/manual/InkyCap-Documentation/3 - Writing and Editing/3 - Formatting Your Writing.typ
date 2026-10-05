@@ -160,7 +160,7 @@ Choose *Table* from the "/" menu to drop in a starter grid. In the visual editor
 
 To add an *image*, choose *Image* from the "/" menu (it opens a file picker), or simply *drag a file into the editor* or *paste* an image. However you add it, InkyCap copies the file into your notebox's attachment folder so the picture travels with your notes.
 
-Once it's in, you can set the image's *File* path, *width*, *alt text*, and *alignment* from its pill menu in the visual editor. A plain image sits on the left; centre or right alignment is available when you want it. Right-click the image itself for *Show in file tree* and *Show in system file manager*, which take you to the file behind it.
+Once it's in, you can set the image's *File* path, *width*, *alt text*, and *alignment* from its pill menu in the visual editor. A plain image sits on the left; centre or right alignment is available when you want it. Right-click the image itself for *Open* or *Open in new tab*, which show the file along with the notes that use it (*Open* uses the current tab, and its back arrow returns you to the note), *Open in default app*, and *Show in file tree* and *Show in system file manager*, which take you to the file behind it.
 
 InkyCap supports *video* and *audio*. These play live in the editor. When you publish to a web page they become real playable players; in a PDF (which can't play media) they appear as a tidy placeholder naming the file. See #wikilink("3 - Exporting and Publishing") for what each output format supports.
 

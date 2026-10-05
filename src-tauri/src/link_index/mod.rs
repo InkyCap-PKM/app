@@ -19,6 +19,9 @@ use std::path::PathBuf;
 
 use crate::models::note::NoteId;
 
+mod attachments;
+pub use attachments::AttachmentRefs;
+
 /// Tracks forward (outgoing) and backward (incoming) links between notes.
 pub struct LinkIndex {
     /// Note -> list of wikilink target strings (unresolved)
@@ -27,6 +30,8 @@ pub struct LinkIndex {
     pub forward: HashMap<NoteId, Vec<NoteId>>,
     /// Note -> list of notes that link TO it
     pub backward: HashMap<NoteId, Vec<NoteId>>,
+    /// The notebox files (images, PDFs, media, data) each note references.
+    pub attachments: AttachmentRefs,
 }
 
 impl Default for LinkIndex {
@@ -41,6 +46,7 @@ impl LinkIndex {
             forward_raw: HashMap::new(),
             forward: HashMap::new(),
             backward: HashMap::new(),
+            attachments: AttachmentRefs::default(),
         }
     }
 
@@ -90,6 +96,7 @@ impl LinkIndex {
             }
         }
         self.forward_raw.remove(note);
+        self.attachments.remove_note(note);
         // Also remove any backlinks pointing TO this note
         self.backward.remove(note);
     }

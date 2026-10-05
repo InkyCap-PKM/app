@@ -23,8 +23,10 @@ use std::path::{Component, Path, PathBuf};
 use typst::syntax::{ast, parse, LinkedNode, SyntaxKind};
 
 /// Typst function names whose first positional argument is a path that
-/// should be rebased. Exact identifier match, case-sensitive.
-const PATH_BEARING_CALLS: &[&str] = &["image", "read", "bibliography"];
+/// should be rebased. Exact identifier match, case-sensitive. `video` and
+/// `audio` are the inkycap-notebox media functions; their paths follow the
+/// same notebox-root-absolute convention as `image`.
+const PATH_BEARING_CALLS: &[&str] = &["image", "read", "bibliography", "video", "audio"];
 
 /// Rewrite relative path arguments to notebox-root-absolute paths.
 ///
@@ -59,22 +61,45 @@ pub fn rebase_relative_paths(source: &str, note_dir: &Path) -> String {
     out
 }
 
-/// Collect the string-literal first arguments of path-bearing calls
-/// (`image`, `read`, `bibliography`) in `source`, returning the
-/// raw path values exactly as written — absolute (`/Assets/x.png`),
-/// relative, or otherwise. The caller decides which to keep and how to
-/// resolve them (see `collab::attachments`). Non-string arguments
-/// (variables, function calls) are skipped because their target can't be
-/// known statically.
+/// The notebox files `source` references through path-bearing calls
+/// (`image`, `read`, `bibliography`, `video`, `audio`), as notebox-relative
+/// paths with `/` separators and no leading slash (`Assets/fig.png`).
 ///
-/// Used to discover which attachment files a note references so they can
-/// be bundled into a collaboration package.
-pub fn extract_referenced_paths(source: &str) -> Vec<String> {
+/// Absolute arguments (`/Assets/fig.png`) are taken as written; relative ones
+/// are anchored at `note_dir`, the note's notebox-relative folder. URLs,
+/// paths that escape the notebox, and non-literal arguments (variables,
+/// function calls) are skipped, since their target can't be known from the
+/// source alone. Each path appears once, in order of first appearance.
+pub fn referenced_notebox_paths(source: &str, note_dir: &Path) -> Vec<String> {
     let root = parse(source);
     let link = LinkedNode::new(&root);
-    let mut out = Vec::new();
-    collect_paths(&link, &mut out);
+    let mut raw = Vec::new();
+    collect_paths(&link, &mut raw);
+    let mut out: Vec<String> = Vec::new();
+    for value in raw {
+        if let Some(rel) = resolve_notebox_rel(&value, note_dir) {
+            if !out.contains(&rel) {
+                out.push(rel);
+            }
+        }
+    }
     out
+}
+
+/// Resolve a path argument as Typst would see it to a notebox-relative path
+/// without the leading slash, or `None` for a URL, an empty value, or a
+/// relative path that climbs out of the notebox.
+fn resolve_notebox_rel(value: &str, note_dir: &Path) -> Option<String> {
+    if value.is_empty() || value.contains("://") {
+        return None;
+    }
+    let resolved = match value.strip_prefix('/') {
+        Some(abs) => abs.to_string(),
+        None => rebase_path(value, note_dir)?
+            .trim_start_matches('/')
+            .to_string(),
+    };
+    (!resolved.is_empty()).then_some(resolved)
 }
 
 fn collect_paths(node: &LinkedNode<'_>, out: &mut Vec<String>) {
@@ -388,16 +413,8 @@ fn match_rename_arg(
     note_dir: &Path,
 ) -> Option<(std::ops::Range<usize>, String)> {
     let (node, value) = first_string_arg(call_node)?;
-    if value.is_empty() || value.contains("://") {
-        return None;
-    }
     // Resolve the argument to the same notebox-relative shape as `old_norm`.
-    let resolved = match value.strip_prefix('/') {
-        Some(abs) => abs.to_string(),
-        None => rebase_path(&value, note_dir)?
-            .trim_start_matches('/')
-            .to_string(),
-    };
+    let resolved = resolve_notebox_rel(&value, note_dir)?;
     if resolved != old_norm {
         return None;
     }
@@ -609,20 +626,34 @@ mod tests {
         assert_eq!(out, "#{ image(\"/notes/daisy.png\") }");
     }
 
-    // ── extract_referenced_paths ───────────────────────────────────
+    // ── referenced_notebox_paths ───────────────────────────────────
 
-    #[test]
-    fn extract_collects_path_bearing_calls_verbatim() {
-        let src = "#image(\"/Assets/fig.png\")\ntext\n#read(\"data/x.csv\")\n#bibliography(\"/docs/refs.bib\")";
-        let got = extract_referenced_paths(src);
-        assert_eq!(got, vec!["/Assets/fig.png", "data/x.csv", "/docs/refs.bib"]);
+    fn referenced(src: &str, note_dir: &str) -> Vec<String> {
+        referenced_notebox_paths(src, Path::new(note_dir))
     }
 
     #[test]
-    fn extract_skips_non_literal_and_non_path_calls() {
-        let src = "#let p = \"x.png\"\n#image(p)\n#strong(\"hi\")\n#image(\"/ok.png\")";
-        let got = extract_referenced_paths(src);
-        assert_eq!(got, vec!["/ok.png"]);
+    fn referenced_resolves_absolute_and_relative_paths() {
+        let src = "#image(\"/Assets/fig.png\")\ntext\n#read(\"data/x.csv\")\n#bibliography(\"/docs/refs.bib\")";
+        assert_eq!(
+            referenced(src, "notes"),
+            vec!["Assets/fig.png", "notes/data/x.csv", "docs/refs.bib"]
+        );
+    }
+
+    #[test]
+    fn referenced_includes_media_calls() {
+        let src = "#video(\"/Assets/clip.mp4\", width: 50%)\n#audio(\"/Assets/talk.mp3\")";
+        assert_eq!(
+            referenced(src, ""),
+            vec!["Assets/clip.mp4", "Assets/talk.mp3"]
+        );
+    }
+
+    #[test]
+    fn referenced_skips_non_literal_urls_escapes_and_duplicates() {
+        let src = "#let p = \"x.png\"\n#image(p)\n#strong(\"hi\")\n#image(\"https://e.org/a.png\")\n#image(\"../../up.png\")\n#image(\"/ok.png\")\n#image(\"/ok.png\")";
+        assert_eq!(referenced(src, "notes"), vec!["ok.png"]);
     }
 
     #[test]

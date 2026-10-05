@@ -95,6 +95,8 @@ Le math n'est interprété que dans le dialecte *Obsidian*, puisque le Markdown 
 
 Vous n'avez pas à déplacer les images à la main. Les images Markdown standards (`![alt](path/picture.png)`) comme les intégrations de style Obsidian (`![[picture.png]]`) sont copiées dans le dossier de pièces jointes désigné de votre boîte de notes, et la note est pointée vers le nouvel emplacement. Vous définissez ce dossier sous *Paramètres → Fichiers et liens → Dossier des pièces jointes* (il s'appelle *Assets* par défaut).
 
+Les intégrations d'Obsidian deviennent ce qu'Obsidian affiche pour chaque type de fichier : les images et les PDF deviennent des images (un PDF montre sa première page, et l'éditeur visuel offre un bouton qui ouvre le PDF complet), les fichiers vidéo et audio deviennent des lecteurs, une note intégrée devient un lien vers cette note, et tout autre fichier devient un lien qui l'ouvre. Un lien vers un titre (`[[Journal#Lundi]]`) garde le titre, et ouvre donc la note à ce titre.
+
 Quelques détails :
 
 - Les images sont appariées par nom de fichier, donc le sous-dossier dans lequel elles vivaient n'a pas d'importance.

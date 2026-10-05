@@ -48,6 +48,7 @@ import {
 import { useI18n } from "../lib/i18n";
 import {
   EllipsisVertical,
+  Paperclip,
   NotebookTabs,
   TableOfContents,
   Link,
@@ -71,10 +72,12 @@ import {
   Filter,
   Sprout,
 } from "lucide-solid";
-import { UnwrittenNoteIcon } from "./icons";
+import { NoteIcon, UnwrittenNoteIcon } from "./icons";
 import { Dynamic } from "solid-js/web";
 import ReferencesPanel from "./ReferencesPanel";
 import CollectionSettings from "./CollectionSettings";
+import AttachmentPanel from "./AttachmentPanel";
+import { showAttachmentFileMenu } from "../lib/attachment-nav";
 import MycelialFilteringPanel from "./MycelialFilteringPanel";
 import MycelialGrowthPanel from "./MycelialGrowthPanel";
 import { rightPanelContributions, rightPanelContribution } from "./right-panel-registry";
@@ -306,6 +309,19 @@ const RightPanel: Component = () => {
     const tab = getActiveTab();
     return tab?.type === "collection" ? tab : undefined;
   };
+
+  const activeAttachmentTab = () => {
+    const tab = getActiveTab();
+    return tab?.type === "attachment" ? tab : undefined;
+  };
+
+  /** File actions for an attachment tab (see `showAttachmentFileMenu`). */
+  function openAttachmentMenu(e: MouseEvent) {
+    const tab = activeAttachmentTab();
+    if (!tab) return;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    showAttachmentFileMenu(rect.left, rect.bottom + 4, tab.path, tab.id);
+  }
 
   /** True when the open file is a scaffold template. Scaffold property values
    *  are routinely `{{var}}` placeholders, so the property editors relax their
@@ -1387,6 +1403,26 @@ const RightPanel: Component = () => {
           })()}
         </Show>
 
+        {/* Attachment-view tabs: file actions and the "Used in" pane. */}
+        <Show when={activeAttachmentTab()}>
+          <button
+            class="right-panel__tab"
+            onClick={openAttachmentMenu}
+            title={t("rightPanel.fileActions")}
+            aria-label={t("rightPanel.fileActions")}
+          >
+            <EllipsisVertical size={18} />
+          </button>
+          {/* The only pane, so a marker like Scroll Context's, not a button. */}
+          <div
+            class="right-panel__tab right-panel__tab--indicator"
+            title={t("attachmentPanel.usedIn")}
+            aria-label={t("attachmentPanel.usedIn")}
+          >
+            <Paperclip size={18} />
+          </div>
+        </Show>
+
         {/* Mycelial-view tabs — Linked Context (the default graph-context pane)
             and Concept Filtering (suppressed terms + the stopword editor). */}
         <Show when={!activeFileTab() && getActiveTab()?.type === "mycelial"}>
@@ -1630,6 +1666,15 @@ const RightPanel: Component = () => {
         )}
       </Show>
 
+      {/* Attachment pane — the notes that use the file in an attachment tab. */}
+      <Show when={activeAttachmentTab()}>
+        {(tab) => (
+          <div class="right-panel__tab-content">
+            <AttachmentPanel path={tab().path} />
+          </div>
+        )}
+      </Show>
+
       <Show
         when={
           activeFileTab() &&
@@ -1640,6 +1685,7 @@ const RightPanel: Component = () => {
             when={
               getActiveTab()?.type !== "mycelial" &&
               getActiveTab()?.type !== "collection" &&
+              getActiveTab()?.type !== "attachment" &&
               activePanel() !== "annotations"
             }
           >
@@ -2032,7 +2078,7 @@ const RightPanel: Component = () => {
                               }
                               title={t("rightPanel.rowTitle.full")}
                             >
-                              <span class="sidebar-item__icon" innerHTML={`<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2H4.5a1.5 1.5 0 0 0-1.5 1.5v9a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5V5.5L9.5 2z"/><polyline points="9.5 2 9.5 5.5 13 5.5"/></svg>`} />
+                              <span class="sidebar-item__icon"><NoteIcon /></span>
                               <span class="sidebar-item__label">{link.name}</span>
                             </div>
                             <Show when={expanded() && preview()}>
@@ -2139,7 +2185,7 @@ const RightPanel: Component = () => {
                                   </span>
                                 }
                               >
-                                <span class="sidebar-item__icon" innerHTML={`<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2H4.5a1.5 1.5 0 0 0-1.5 1.5v9a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5V5.5L9.5 2z"/><polyline points="9.5 2 9.5 5.5 13 5.5"/></svg>`} />
+                                <span class="sidebar-item__icon"><NoteIcon /></span>
                               </Show>
                               <span class="sidebar-item__label">{link.name}</span>
                               <Show when={!link.resolved}>
@@ -2237,7 +2283,7 @@ const RightPanel: Component = () => {
                               }
                               title={t("rightPanel.rowTitle.full")}
                             >
-                              <span class="sidebar-item__icon" innerHTML={`<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2H4.5a1.5 1.5 0 0 0-1.5 1.5v9a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5V5.5L9.5 2z"/><polyline points="9.5 2 9.5 5.5 13 5.5"/></svg>`} />
+                              <span class="sidebar-item__icon"><NoteIcon /></span>
                               <span class="sidebar-item__label">{link.name}</span>
                             </div>
                             <Show when={expanded() && preview()}>

@@ -2911,6 +2911,7 @@ dependencies = [
  "git2",
  "gtk",
  "hayagriva 0.9.1",
+ "hayro-syntax",
  "icu_collator",
  "icu_normalizer",
  "include_dir",

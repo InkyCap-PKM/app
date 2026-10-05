@@ -2,8 +2,13 @@ import { type EditorView, WidgetType, ViewPlugin, type ViewUpdate, type Decorati
 import { type StateField } from "@codemirror/state";
 import { getSearchQuery, setSearchQuery } from "@codemirror/search";
 import { openLink } from "../../lib/open-link";
-import { loadImageObjectUrl, loadMediaObjectUrl, revokeBlobUrls } from "../../lib/media-src";
-import { showAttachmentContextMenu } from "../../lib/attachment-nav";
+import {
+  attachmentViewKind,
+  loadImageObjectUrl,
+  loadMediaObjectUrl,
+  revokeBlobUrls,
+} from "../../lib/media-src";
+import { openAttachmentInTab, showAttachmentContextMenu } from "../../lib/attachment-nav";
 import { highlightCodeInto } from "./code-highlight";
 import { buildPillButton, findCallEnd, applyCallTransform, upsertNamedArg, type PillMenuSection } from "./pill";
 import { getPillOptions } from "./pill-options";
@@ -229,14 +234,10 @@ function buildWikilinkSpan(target: string, display: string): HTMLElement {
   return link;
 }
 
-/** Build a tag pill (`<span class="cm-typst-tag">`) prefixed with a Lucide
- *  `tag` icon rather than a literal `#`. The hash is Typst syntax, not part of
- *  the tag name, so showing the icon reads as "tag" in InkyCap's context. Shared
- *  by TagWidget and the block-body renderer so both sites stay identical. */
-function buildTagPill(name: string): HTMLElement {
-  const pill = document.createElement("span");
-  pill.className = "cm-typst-tag";
-
+/** A 12px Lucide-style icon (24×24 view box, 2px round stroke) from static
+ *  SVG markup, for widgets that build their DOM by hand. `markup` must be a
+ *  constant from this file, never content from a note. */
+function lucideIcon(markup: string, className: string): SVGSVGElement {
   const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   icon.setAttribute("width", "12");
   icon.setAttribute("height", "12");
@@ -246,11 +247,26 @@ function buildTagPill(name: string): HTMLElement {
   icon.setAttribute("stroke-width", "2");
   icon.setAttribute("stroke-linecap", "round");
   icon.setAttribute("stroke-linejoin", "round");
-  icon.classList.add("cm-typst-tag-icon");
-  icon.innerHTML = // static-only
-    '<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/>' +
-    '<circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/>';
-  pill.appendChild(icon);
+  icon.classList.add(className);
+  icon.innerHTML = markup; // static-only
+  return icon;
+}
+
+/** Build a tag pill (`<span class="cm-typst-tag">`) prefixed with a Lucide
+ *  `tag` icon rather than a literal `#`. The hash is Typst syntax, not part of
+ *  the tag name, so showing the icon reads as "tag" in InkyCap's context. Shared
+ *  by TagWidget and the block-body renderer so both sites stay identical. */
+function buildTagPill(name: string): HTMLElement {
+  const pill = document.createElement("span");
+  pill.className = "cm-typst-tag";
+
+  pill.appendChild(
+    lucideIcon(
+      '<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/>' +
+        '<circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/>',
+      "cm-typst-tag-icon",
+    ),
+  );
 
   const label = document.createElement("span");
   label.textContent = name;
@@ -568,6 +584,41 @@ export class CodeBlockWidget extends WidgetType {
   }
 }
 
+/** Lucide `file-text`, the PDF opener's glyph. */
+const FILE_TEXT_ICON =
+  '<path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/>' +
+  '<path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>';
+
+/** True when an `#image(...)` call points at a PDF. Typst places the PDF's
+ *  page in the output, but the webview can't show it as a picture, so the
+ *  visual editor shows the path with a button that opens the PDF instead. */
+function isPdfImage(path: string): boolean {
+  return attachmentViewKind(path) === "pdf";
+}
+
+/** Add the "open this PDF" button to an image widget's path label. It opens
+ *  the PDF in its own tab, in front. */
+function appendPdfOpener(label: HTMLElement, path: string): void {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "cm-typst-pdf-open";
+  button.title = t("attachmentView.openPdf");
+  button.setAttribute("aria-label", t("attachmentView.openPdf"));
+  button.appendChild(lucideIcon(FILE_TEXT_ICON, "cm-typst-pdf-open-icon"));
+  button.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    void openAttachmentInTab(path);
+  });
+  label.appendChild(button);
+}
+
+/** Whether an event belongs to a PDF image's open button, which handles it
+ *  itself rather than letting CodeMirror place the caret. */
+function isPdfOpenerEvent(e: Event): boolean {
+  return !!(e.target as Element | null)?.closest?.(".cm-typst-pdf-open");
+}
+
 /** Right-click on an embedded image or media element opens the attachment
  *  menu (show in file tree / system file manager) for the file behind it. */
 function attachAttachmentMenu(el: HTMLElement, path: string): void {
@@ -603,6 +654,11 @@ export class ImageWidget extends WidgetType {
     label.className = "cm-typst-image-label";
     label.textContent = this.path;
     wrap.appendChild(label);
+
+    if (isPdfImage(this.path)) {
+      appendPdfOpener(label, this.path);
+      return wrap;
+    }
 
     const imgPath = this.path;
     loadImageObjectUrl(imgPath).then((url) => {
@@ -640,7 +696,7 @@ export class ImageWidget extends WidgetType {
     revokeBlobUrls(dom);
   }
 
-  ignoreEvent() { return false; }
+  ignoreEvent(e: Event) { return isPdfOpenerEvent(e); }
 }
 
 export type ImageAlign = "left" | "center" | "right";
@@ -701,6 +757,12 @@ export class ImageBlockWidget extends WidgetType {
     label.textContent = this.path;
     inner.appendChild(label);
 
+    if (isPdfImage(this.path)) {
+      appendPdfOpener(label, this.path);
+      wrap.appendChild(inner);
+      return;
+    }
+
     const imgPath = this.path;
     loadImageObjectUrl(imgPath).then((url) => {
       // Bail (and free the blob) if the widget was replaced while the bytes
@@ -738,9 +800,10 @@ export class ImageBlockWidget extends WidgetType {
     wrap.appendChild(inner);
   }
 
-  // Right-click is the attachment menu's; everything else stays CM's so the
-  // block behaves like editor content (click places the caret, drag selects).
-  ignoreEvent(e: Event) { return e.type === "contextmenu"; }
+  // Right-click is the attachment menu's, and a PDF's open button handles its
+  // own clicks; everything else stays CM's so the block behaves like editor
+  // content (click places the caret, drag selects).
+  ignoreEvent(e: Event) { return e.type === "contextmenu" || isPdfOpenerEvent(e); }
 }
 
 /// Block widget for `#video(...)` / `#audio(...)`: an inline player rendered
@@ -2391,21 +2454,14 @@ export class LinkWidget extends WidgetType {
     text.textContent = this.display || linkTextFromUrl(this.url);
     el.appendChild(text);
 
-    const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    icon.setAttribute("width", "12");
-    icon.setAttribute("height", "12");
-    icon.setAttribute("viewBox", "0 0 24 24");
-    icon.setAttribute("fill", "none");
-    icon.setAttribute("stroke", "currentColor");
-    icon.setAttribute("stroke-width", "2");
-    icon.setAttribute("stroke-linecap", "round");
-    icon.setAttribute("stroke-linejoin", "round");
-    icon.classList.add("cm-typst-link-external-icon");
-    icon.innerHTML = // static-only
-      '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>' +
-      '<polyline points="15 3 21 3 21 9"/>' +
-      '<line x1="10" y1="14" x2="21" y2="3"/>';
-    el.appendChild(icon);
+    el.appendChild(
+      lucideIcon(
+        '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>' +
+          '<polyline points="15 3 21 3 21 9"/>' +
+          '<line x1="10" y1="14" x2="21" y2="3"/>',
+        "cm-typst-link-external-icon",
+      ),
+    );
 
     el.addEventListener("mousedown", (e) => {
       e.preventDefault();

@@ -37,11 +37,6 @@ import {
   tabReadingFormat,
   setTabReadingFormat,
   tabReadingZoom,
-  nudgeTabReadingZoom,
-  resetTabReadingZoom,
-  READING_ZOOM_MIN,
-  READING_ZOOM_MAX,
-  READING_ZOOM_STEP,
 } from "../stores/tabs";
 import { navigateWikilink, showWikilinkContextMenu } from "../lib/wikilink-nav";
 import { openLink, startsWithSchemeAndSlashes } from "../lib/open-link";
@@ -81,12 +76,11 @@ import {
   PenLine,
   Eye,
   FlaskConical,
-  Minus,
-  Plus,
   MoreHorizontal,
 } from "lucide-solid";
 import JournalScrollPill from "./JournalScrollPill";
 import JournalScrollView from "./JournalScrollView";
+import ReadingZoomControl, { attachReadingZoomWheel } from "./ReadingZoomControl";
 import PaneNavBar from "./panes/PaneNavBar";
 import { DiagnosticRow } from "./DiagnosticRow";
 import { ensureNoteboxImport } from "../lib/notebox-import-check";
@@ -1158,44 +1152,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
         </div>
         </Row>
         <Row label={t("editor.reading.zoom.label")}>
-        <div
-          class="editor-header__mode-toggle editor-header__zoom"
-          role="group"
-          aria-label={t("editor.reading.zoom.label")}
-        >
-          <button
-            type="button"
-            class="editor-header__mode-seg"
-            disabled={readingZoom() <= READING_ZOOM_MIN}
-            onClick={() => nudgeTabReadingZoom(props.tabId, 1 / READING_ZOOM_STEP)}
-            title={t("editor.reading.zoom.out")}
-            aria-label={t("editor.reading.zoom.out")}
-          >
-            <Minus size={14} />
-          </button>
-          {/* The level doubles as the reset control — the same affordance a
-              browser's zoom indicator offers. */}
-          <button
-            type="button"
-            class="editor-header__mode-seg editor-header__zoom-level"
-            onClick={() => resetTabReadingZoom(props.tabId)}
-            title={t("editor.reading.zoom.reset")}
-          >
-            {t("editor.reading.zoom.percent", {
-              percent: String(Math.round(readingZoom() * 100)),
-            })}
-          </button>
-          <button
-            type="button"
-            class="editor-header__mode-seg"
-            disabled={readingZoom() >= READING_ZOOM_MAX}
-            onClick={() => nudgeTabReadingZoom(props.tabId, READING_ZOOM_STEP)}
-            title={t("editor.reading.zoom.in")}
-            aria-label={t("editor.reading.zoom.in")}
-          >
-            <Plus size={14} />
-          </button>
-        </div>
+        <ReadingZoomControl tabId={props.tabId} />
         </Row>
       </Show>
       <Show when={!isScrollEnabled(props.tabId)}>
@@ -1333,7 +1290,8 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
   );
 };
 
-const PT_TO_CSS_PX = 4 / 3;
+/** CSS pixels per Typst point (96 px per inch / 72 pt per inch). */
+export const PT_TO_CSS_PX = 4 / 3;
 
 /** Persist and restore the scroll offset of a reading-mode container across
  *  tab switches. The `.typst-reading` div is the scroll surface and is
@@ -1374,27 +1332,6 @@ function attachReadingScrollMemory(
       if (el.isConnected) el.scrollTop = saved;
     });
   });
-}
-
-/** Wire Ctrl/Cmd + wheel on a reading-view container to that tab's zoom, the
- *  gesture every document viewer uses. Plain wheel scrolling is untouched.
- *  `passive: false` because the browser's own page zoom must be suppressed. */
-function attachReadingZoomWheel(el: HTMLElement, tabId: string): void {
-  el.addEventListener(
-    "wheel",
-    (e: WheelEvent) => {
-      if (!e.ctrlKey && !e.metaKey) return;
-      e.preventDefault();
-      if (e.deltaY === 0) return;
-      // Trackpad pinch arrives as many small deltas where a mouse wheel sends
-      // one large notch, so scale the step by the delta's magnitude (capped)
-      // rather than applying a full notch per event.
-      const magnitude = Math.min(1, Math.abs(e.deltaY) / 100);
-      const factor = READING_ZOOM_STEP ** (e.deltaY < 0 ? magnitude : -magnitude);
-      nudgeTabReadingZoom(tabId, factor);
-    },
-    { passive: false },
-  );
 }
 
 interface TypstReadingViewProps {

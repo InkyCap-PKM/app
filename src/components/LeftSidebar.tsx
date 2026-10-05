@@ -66,6 +66,7 @@ import HelpPanel from "./HelpPanel";
 import type { SidebarMode } from "./VerticalToolbar";
 import { toastError } from "../stores/toasts";
 import { openFileInDefaultApp } from "../lib/open-link";
+import { attachmentViewKind } from "../lib/media-src";
 import { copyInkycapLink } from "../lib/copy-inkycap-link";
 import { promptText, promptConfirm } from "../stores/prompt";
 import { pickFolder } from "../stores/folderPicker";
@@ -91,12 +92,18 @@ function isCollectionFile(name: string): boolean {
   return name.toLowerCase().endsWith(".collection");
 }
 
-/// Files InkyCap opens in one of its own editors. Everything else
-/// (images, PDFs, `.bib`, data files) is shown in the tree so users can
-/// see and link to attachments, but is opened with the OS default app
-/// and visually de-emphasized.
+/// Files InkyCap opens in one of its own editors.
 function isAppEditable(name: string): boolean {
   return isNoteFile(name) || isCollectionFile(name);
+}
+
+/// Files InkyCap opens in a tab: notes and collections in their editors,
+/// images, PDFs, audio and video in a read-only attachment view. Everything
+/// else (`.bib`, data files, …) is shown in the tree so users can see and
+/// link to it, but opens in the system's default application and is
+/// visually de-emphasized.
+function opensInApp(name: string): boolean {
+  return isAppEditable(name) || attachmentViewKind(name) !== null;
 }
 
 /// Strip InkyCap's internal directories but keep everything else: every
@@ -1029,8 +1036,15 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
       );
       return;
     }
-    // Non-`.typ` files (images, PDFs, `.bib`, data files) aren't edited
-    // in-app — hand them to the OS default application.
+    if (attachmentViewKind(node.name)) {
+      openTab(
+        { type: "attachment", title: node.name, path: node.path },
+        { forceNewTab, newTabAction: forceNewTab },
+      );
+      return;
+    }
+    // Other non-`.typ` files (`.bib`, data files) have no in-app view — hand
+    // them to the OS default application.
     if (!isNoteFile(node.name)) {
       openFileInDefaultApp(node.path).catch((err) => toastError(t("editor.toast.openFailed"), err));
       return;
@@ -1061,6 +1075,13 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
           title: node.name.replace(/\.collection$/i, ""),
           path: node.path,
         },
+        { forceNewTab: true, newTabAction: true },
+      );
+      return;
+    }
+    if (attachmentViewKind(node.name)) {
+      openTab(
+        { type: "attachment", title: node.name, path: node.path },
         { forceNewTab: true, newTabAction: true },
       );
       return;
@@ -1378,7 +1399,9 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
           await ipc.deleteFile(item.path);
           // Close any open tab for this file.
           const openFileTab = tabs.find(
-            (t) => t.type === "file" && pathEquals(t.path, item.path),
+            (t) =>
+              (t.type === "file" || t.type === "attachment") &&
+              pathEquals(t.path, item.path),
           );
           if (openFileTab) closeTab(openFileTab.id);
         }
@@ -2385,7 +2408,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
               }}
               onClick={(e) => e.stopPropagation()}
             >
-              <Show when={!node.is_dir && isAppEditable(node.name)}>
+              <Show when={!node.is_dir && opensInApp(node.name)}>
                 <button
                   class="context-menu__item"
                   onClick={() => {
@@ -2568,7 +2591,7 @@ const TreeNode: Component<{
               "sidebar-item": true,
               "sidebar-item--dir": props.node.is_dir,
               "sidebar-item--non-note":
-                !props.node.is_dir && !isAppEditable(props.node.name),
+                !props.node.is_dir && !opensInApp(props.node.name),
               "sidebar-item--active": isActive(),
               "sidebar-item--kbd-focus": props.focusedPath() === props.node.path,
               "sidebar-item--drop-target": isDropTarget(),
@@ -2672,7 +2695,7 @@ const TreeNode: Component<{
               // extension display off, the hover title surfaces the full
               // filename so it's clear *why* the row is dimmed.
               title={
-                isAppEditable(props.node.name) ? undefined : props.node.name
+                opensInApp(props.node.name) ? undefined : props.node.name
               }
             >{
               props.node.is_dir || settings.files.show_file_extensions

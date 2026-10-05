@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { SessionTab } from "../lib/types";
+import type { SessionTab, TabRestoreHeldBack } from "../lib/types";
 
 // The store talks to the backend for the record itself; everything else under
 // test is the mapping between a recorded session and the tab store.
 vi.mock("../lib/ipc", () => ({
-  getNoteboxTabSession: vi.fn(),
+  startTabRestore: vi.fn(),
+  setTabRestorePending: vi.fn(async () => {}),
   saveNoteboxTabSession: vi.fn(async () => {}),
   clearAllNoteboxTabSessions: vi.fn(async () => {}),
   updateSettings: vi.fn(async () => {}),
@@ -14,9 +15,13 @@ vi.mock("../lib/ipc", () => ({
 import { createRoot } from "solid-js";
 import * as ipc from "../lib/ipc";
 import {
+  dismissHeldBackTabs,
+  heldBackTabs,
   installTabSessionRecorder,
   recordTabSession,
+  reopenHeldBackTabs,
   restorePreviousTabs,
+  whenWindowSettles,
   resumeTabSessionRecording,
   suspendTabSessionRecording,
 } from "./tab-session";
@@ -36,20 +41,25 @@ function recorded(path: string, over: Partial<SessionTab> = {}): SessionTab {
   };
 }
 
-function givenRecord(session: SessionTab[]): void {
-  vi.mocked(ipc.getNoteboxTabSession).mockResolvedValue({ tabs: session });
+function givenRecord(session: SessionTab[], heldBack: TabRestoreHeldBack | null = null): void {
+  vi.mocked(ipc.startTabRestore).mockResolvedValue({ tabs: session, held_back: heldBack });
 }
+
+// The reopen check waits on animation frames; these tests don't need it to run.
+vi.stubGlobal("requestAnimationFrame", () => 0);
 
 describe("restorePreviousTabs", () => {
   beforeEach(() => {
     closeAllTabs();
-    vi.mocked(ipc.getNoteboxTabSession).mockReset();
+    dismissHeldBackTabs();
+    vi.mocked(ipc.startTabRestore).mockReset();
+    vi.mocked(ipc.setTabRestorePending).mockClear();
   });
 
   it("reopens every recorded tab, in the order they were left", async () => {
     givenRecord([recorded("/nb/one.typ"), recorded("/nb/two.typ")]);
 
-    await restorePreviousTabs();
+    await restorePreviousTabs("/nb");
 
     expect(tabs.map((t) => t.path)).toEqual(["/nb/one.typ", "/nb/two.typ"]);
   });
@@ -60,7 +70,7 @@ describe("restorePreviousTabs", () => {
       recorded("/nb/two.typ", { active: true }),
     ]);
 
-    await restorePreviousTabs();
+    await restorePreviousTabs("/nb");
 
     const active = tabs.find((t) => t.id === activeTabId());
     expect(active?.path).toBe("/nb/two.typ");
@@ -75,7 +85,7 @@ describe("restorePreviousTabs", () => {
       }),
     ]);
 
-    await restorePreviousTabs();
+    await restorePreviousTabs("/nb");
 
     expect(tabs[0].editingMode).toBe("reading");
     expect(tabs[0].readingFormat).toBe("html");
@@ -86,15 +96,88 @@ describe("restorePreviousTabs", () => {
     // The record is a plain file on disk, so it may have been hand-edited.
     givenRecord([recorded("/nb/one.typ", { kind: "nonsense" })]);
 
-    await restorePreviousTabs();
+    await restorePreviousTabs("/nb");
     expect(tabs).toHaveLength(0);
   });
 
   it("restores nothing when the backend has no record", async () => {
     givenRecord([]);
 
-    await restorePreviousTabs();
+    await restorePreviousTabs("/nb");
     expect(tabs).toHaveLength(0);
+  });
+});
+
+describe("holding back tabs after a reopen that never finished", () => {
+  beforeEach(() => {
+    closeAllTabs();
+    dismissHeldBackTabs();
+    vi.mocked(ipc.setTabRestorePending).mockClear();
+  });
+
+  it("offers the tabs instead of opening them", async () => {
+    givenRecord([recorded("/nb/one.typ"), recorded("/nb/big.mp4", { kind: "attachment" })], "interrupted");
+
+    await restorePreviousTabs("/nb");
+
+    expect(tabs).toHaveLength(0);
+    expect(heldBackTabs()?.reason).toBe("interrupted");
+    expect(heldBackTabs()?.tabs.map((t) => t.path)).toEqual(["/nb/one.typ", "/nb/big.mp4"]);
+  });
+
+  it("reopens one held-back tab by hand, guarded like a startup reopen", async () => {
+    givenRecord([recorded("/nb/one.typ"), recorded("/nb/big.mp4", { kind: "attachment" })], "no-restore");
+    await restorePreviousTabs("/nb");
+
+    await reopenHeldBackTabs(heldBackTabs()!.tabs[0]);
+
+    expect(ipc.setTabRestorePending).toHaveBeenCalledWith("/nb", true);
+    expect(tabs.map((t) => t.path)).toEqual(["/nb/one.typ"]);
+    expect(heldBackTabs()?.tabs.map((t) => t.path)).toEqual(["/nb/big.mp4"]);
+  });
+
+  it("reopens them all and stops offering them", async () => {
+    givenRecord([recorded("/nb/one.typ"), recorded("/nb/two.typ")], "interrupted");
+    await restorePreviousTabs("/nb");
+
+    await reopenHeldBackTabs();
+
+    expect(tabs.map((t) => t.path)).toEqual(["/nb/one.typ", "/nb/two.typ"]);
+    expect(heldBackTabs()).toBeNull();
+  });
+});
+
+describe("whenWindowSettles", () => {
+  /** Drives `whenWindowSettles` with frames at the given times (ms). */
+  function runFrames(times: number[]): boolean {
+    let settled = false;
+    const queue: ((now: number) => void)[] = [];
+    whenWindowSettles(
+      () => (settled = true),
+      (cb) => queue.push(cb),
+    );
+    for (const now of times) {
+      const cb = queue.shift();
+      if (!cb) break;
+      cb(now);
+    }
+    return settled;
+  }
+
+  const every = (from: number, to: number, step: number) =>
+    Array.from({ length: Math.floor((to - from) / step) + 1 }, (_, i) => from + i * step);
+
+  it("settles after ten seconds of steady frames", () => {
+    expect(runFrames(every(0, 9_900, 100))).toBe(false);
+    expect(runFrames(every(0, 10_000, 100))).toBe(true);
+  });
+
+  it("starts counting again after a stall", () => {
+    // Steady for 6 s, frozen for 3 s, then steady for another 6 s: never ten
+    // unbroken seconds, so the reopen hasn't proved itself yet.
+    const frames = [...every(0, 6_000, 100), ...every(9_000, 15_000, 100)];
+    expect(runFrames(frames)).toBe(false);
+    expect(runFrames([...frames, ...every(15_100, 19_000, 100)])).toBe(true);
   });
 });
 

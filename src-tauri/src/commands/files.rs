@@ -231,6 +231,33 @@ pub async fn get_forward_links(
     Ok(link_infos_for(paths_with_zid(&session, links).await).await)
 }
 
+/// Return the notes that use the notebox file at `path` (an image, PDF,
+/// media or data file) through `#image`, `#read`, `#bibliography`, `#video`
+/// or `#audio`. Paths built by code at compile time can't be seen, so a file
+/// used only that way is not listed.
+#[tauri::command]
+pub async fn get_attachment_references(
+    path: String,
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<Vec<LinkInfo>, InkyCapError> {
+    let session = state.session(window.label()).await;
+    let path_arg = sanitize_notebox_arg(&path)?;
+    let storage = session.get_storage().await?;
+    let canonical = storage.resolve_path(&path_arg)?;
+    let Ok(rel) = canonical.strip_prefix(storage.canonical_root()) else {
+        return Ok(Vec::new());
+    };
+    let rel = to_frontend_string(rel);
+
+    let mut notes = {
+        let link_index = session.link_index.read().await;
+        link_index.attachments.notes_referencing(&rel)
+    };
+    notes.sort();
+    Ok(link_infos_for(paths_with_zid(&session, notes).await).await)
+}
+
 /// One entry in the Outbound Links section of the right-panel Links tab.
 /// Combines wikilink-target resolution with file stat in one IPC so the
 /// frontend doesn't have to fan out per-target requests just to sort by
@@ -488,8 +515,26 @@ pub async fn read_media_bytes(
     if !resolved.is_file() {
         return Err(InkyCapError::InvalidPath(format!("Not a file: {target}")));
     }
+    ensure_small_enough_for_webview(&resolved).await?;
     let bytes = tokio::fs::read(&resolved).await?;
     Ok(tauri::ipc::Response::new(bytes))
+}
+
+/// Largest file sent whole to the webview. The webview keeps several copies
+/// of a file while turning it into something it can display (the IPC
+/// transfer, the buffer, the blob), so a 900 MB video took over 2 GB and
+/// froze the app. Larger files open in the system's default application.
+const WEBVIEW_FILE_LIMIT_BYTES: u64 = 256 * 1024 * 1024;
+
+/// Refuse a file too large to send whole to the webview (see
+/// [`WEBVIEW_FILE_LIMIT_BYTES`]), checked before anything is read.
+async fn ensure_small_enough_for_webview(path: &std::path::Path) -> Result<(), InkyCapError> {
+    let size = tokio::fs::metadata(path).await?.len();
+    if size > WEBVIEW_FILE_LIMIT_BYTES {
+        let megabytes = size / (1024 * 1024);
+        return Err(InkyCapError::FileTooLargeToShow(format!("{megabytes} MB")));
+    }
+    Ok(())
 }
 
 /// Resolve an embed target to an absolute notebox file path, or `None` when
@@ -610,6 +655,7 @@ pub async fn read_embed_bytes(
         .await?
         .ok_or_else(|| InkyCapError::InvalidPath(format!("Embed not found: {target}")))?;
 
+    ensure_small_enough_for_webview(&resolved).await?;
     let bytes = tokio::fs::read(&resolved).await?;
     Ok(tauri::ipc::Response::new(bytes))
 }
@@ -1356,5 +1402,27 @@ mod zid_tests {
             Some(&PathBuf::from("/nb/b.typ"))
         );
         assert_eq!(preferred_path(std::iter::empty()), None);
+    }
+}
+
+#[cfg(test)]
+mod webview_limit_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn files_over_the_webview_limit_are_refused_before_reading() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let small = dir.path().join("small.mp4");
+        let large = dir.path().join("large.mp4");
+        std::fs::write(&small, b"tiny").expect("write small");
+        // Sparse: sets the length without writing the bytes.
+        std::fs::File::create(&large)
+            .and_then(|f| f.set_len(WEBVIEW_FILE_LIMIT_BYTES + 1))
+            .expect("size large");
+
+        assert!(ensure_small_enough_for_webview(&small).await.is_ok());
+        let err = ensure_small_enough_for_webview(&large).await.unwrap_err();
+        assert_eq!(err.code(), "file-too-large-to-show");
+        assert_eq!(err.detail().as_deref(), Some("256 MB"));
     }
 }

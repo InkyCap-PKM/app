@@ -123,6 +123,10 @@ comemo = "0.5"
 memmap2 = "0.9"
 typst = "0.15"
 typst-library = "0.15"
+# The PDF reader Typst uses for PDF images. Already in the lock graph via
+# typst-library, which keeps its own wrapper private; pinned here so the PDF
+# viewer can count pages with the same reader that draws them.
+hayro-syntax = "0.7"
 # The layout engine was split into its own crate in 0.15; `PagedDocument`
 # (and the layout routine) now live here rather than under `typst::layout`.
 typst-layout = "0.15"

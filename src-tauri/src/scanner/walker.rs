@@ -399,6 +399,9 @@ pub async fn scan_notebox(
 
         let note_id: NoteId = path.clone();
         link_index.set_forward_links(note_id, note.links.clone());
+        link_index
+            .attachments
+            .record(path.clone(), notebox_root, &content);
 
         notes.push(note);
         contents.push((path.clone(), content));
@@ -496,6 +499,9 @@ pub async fn scan_notebox_cached(
                     } else {
                         let note = cached_to_note(cached, path, notebox_root, &stat);
                         link_index.set_forward_links(path.clone(), note.links.clone());
+                        link_index
+                            .attachments
+                            .record(path.clone(), notebox_root, &content);
                         notes.push(note);
                         contents.push((path.clone(), content));
                         stats.cache_hits += 1;
@@ -521,6 +527,9 @@ pub async fn scan_notebox_cached(
             enrich_with_query(&mut note, qr);
 
             link_index.set_forward_links(path.clone(), note.links.clone());
+            link_index
+                .attachments
+                .record(path.clone(), notebox_root, &content);
             to_upsert.push(note_to_cached_file(
                 &note, relpath, stat.mtime, stat.size, &content,
             ));

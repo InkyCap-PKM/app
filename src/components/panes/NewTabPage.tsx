@@ -1,13 +1,22 @@
 // The page shown in a pane whose tab is empty: four fixed actions, then up to
 // three optional lists (recent notes, today's agenda, unwritten notes), each
-// switched on in Settings > Behaviour > Tabs.
+// switched on in Settings > Behaviour > Tabs. When tabs were held back at
+// startup instead of reopened (see stores/tab-session.ts), they lead the lists.
 //
 // A list only fetches while it is switched on and the page is on screen. The
 // backend answers every list from its in-memory index, so refetching after
 // each save (when `propertyVersion` bumps) stays cheap.
 
 import { Component, For, JSX, Show, createResource } from "solid-js";
-import { CalendarDays, CalendarFold, FilePlus2, History, Square, SquareCheck } from "lucide-solid";
+import {
+  CalendarDays,
+  CalendarFold,
+  FilePlus2,
+  History,
+  PanelTopClose,
+  Square,
+  SquareCheck,
+} from "lucide-solid";
 import * as ipc from "../../lib/ipc";
 import type { AgendaItem } from "../../lib/types";
 import { useI18n, tPlural } from "../../lib/i18n";
@@ -15,6 +24,11 @@ import { modifierKey } from "../../lib/platform";
 import { formatUserDate, formatUserTime } from "../../lib/dates";
 import { settings } from "../../stores/settings";
 import { openTab } from "../../stores/tabs";
+import {
+  dismissHeldBackTabs,
+  heldBackTabs,
+  reopenHeldBackTabs,
+} from "../../stores/tab-session";
 import { openHelpView } from "../../stores/help";
 import { noteboxInfo, indexReady, propertyVersion, fileTreeVersion } from "../../stores/notebox";
 import { executeCommand, findCommandByKeybinding } from "../../lib/command-registry";
@@ -205,11 +219,48 @@ const NewTabPage: Component = () => {
         </For>
       </div>
 
-      <Show when={noteboxInfo() && anySection()}>
+      <Show when={noteboxInfo() && (anySection() || heldBackTabs())}>
         <div
           class="new-tab-page__sections"
           style={{ "--new-tab-rows": behaviour().new_tab_list_length }}
         >
+          <Show when={heldBackTabs()}>
+            {(held) => (
+              <section class="new-tab-page__section">
+                <h2 class="new-tab-page__section-title">
+                  <PanelTopClose size={14} />
+                  {t("newTabPage.heldBack.title")}
+                </h2>
+                <p class="new-tab-page__quiet">
+                  {held().reason === "no-restore"
+                    ? t("newTabPage.heldBack.noRestore")
+                    : t("newTabPage.heldBack.interrupted")}
+                </p>
+                <ul class="new-tab-page__list new-tab-page__list--scroll">
+                  <For each={held().tabs}>
+                    {(rec) => (
+                      <Row
+                        text={rec.title}
+                        onOpen={(newTab) => void reopenHeldBackTabs(rec, newTab)}
+                      />
+                    )}
+                  </For>
+                </ul>
+                <div class="new-tab-page__section-actions">
+                  <button
+                    class="btn btn--secondary btn--sm"
+                    onClick={() => void reopenHeldBackTabs()}
+                  >
+                    {t("newTabPage.heldBack.reopenAll")}
+                  </button>
+                  <button class="btn btn--ghost btn--sm" onClick={dismissHeldBackTabs}>
+                    {t("common.dismiss")}
+                  </button>
+                </div>
+              </section>
+            )}
+          </Show>
+
           <Show when={behaviour().new_tab_recent_notes}>
             <Section
               icon={<History size={14} />}

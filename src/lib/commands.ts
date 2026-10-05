@@ -26,6 +26,7 @@ import {
 import { focusedLeaf, focusAdjacentPane, hasMultiplePanes } from "../stores/panes";
 import { moveActiveFileInteractive } from "./move-file";
 import { deleteActiveFileInteractive } from "./delete-file";
+import { attachmentZooms } from "./media-src";
 import { toggleTheme } from "../stores/theme";
 import { toggleDistractionFree, toggleLeftCollapsed, toggleRightCollapsed } from "../stores/layout";
 import { toggleScroll, isEnabled as isScrollEnabled } from "../stores/journal-scroll";
@@ -76,13 +77,17 @@ export interface BuiltinCommandCallbacks {
 // fresh translated titles after a UI-language switch — see that function.
 let lastBuiltinCallbacks: BuiltinCommandCallbacks | null = null;
 
-/** Id of the tab whose compiled reading view is currently on screen, or null
+/** Id of the active tab when what it shows zooms as a whole (a note's
+ *  compiled reading view, or an image or PDF in an attachment tab), or null
  *  when the active pane is showing something else. Used by the zoom commands
- *  to decide whether "content" means the preview or the editor body. Journal
+ *  to decide whether "content" means that view or the editor body. Journal
  *  Scroll takes over the pane when enabled, so a reading-mode tab in scroll
  *  mode isn't showing the reading view and doesn't count. */
 function activeReadingTabId(): string | null {
   const tab = getActiveTab();
+  if (tab?.type === "attachment") {
+    return attachmentZooms(tab.path) ? tab.id : null;
+  }
   if (!tab || tab.type !== "file") return null;
   if (tab.editingMode !== "reading") return null;
   if (isScrollEnabled(tab.id)) return null;

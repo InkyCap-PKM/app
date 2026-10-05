@@ -41,6 +41,29 @@ function extOf(path: string): string {
   return dot >= 0 ? path.slice(dot + 1).toLowerCase() : "";
 }
 
+/** The kinds of notebox file an attachment tab can show. */
+export type AttachmentViewKind = "image" | "video" | "audio" | "pdf";
+
+/** How an attachment tab shows the file at `path`, judged by its extension, or
+ *  `null` when the app has no viewer for it and it should go to the system's
+ *  default application instead. */
+export function attachmentViewKind(path: string): AttachmentViewKind | null {
+  const ext = extOf(path);
+  if (ext === "pdf") return "pdf";
+  if (IMAGE_MIME[ext]) return "image";
+  const mime = MIME[ext];
+  if (mime?.startsWith("video/")) return "video";
+  if (mime?.startsWith("audio/")) return "audio";
+  return null;
+}
+
+/** Whether an attachment tab showing `path` can be zoomed: images and PDFs
+ *  can, players can't. */
+export function attachmentZooms(path: string): boolean {
+  const kind = attachmentViewKind(path);
+  return kind === "image" || kind === "pdf";
+}
+
 function mimeForPath(path: string): string {
   return MIME[extOf(path)] ?? "";
 }
@@ -58,22 +81,27 @@ function imageMimeForPath(path: string): string {
  * Reading the bytes over IPC and wrapping them in a blob sidesteps the asset
  * protocol entirely and plays on every platform.
  *
- * The whole file is held in memory; this is fine for the modest clips a PKM
- * tool embeds. A range-streaming custom protocol would be the optimization for
- * very large media — deferred until it matters.
+ * The whole file is held in memory, several times over while it loads, so the
+ * backend refuses files above a size limit (`WEBVIEW_FILE_LIMIT_BYTES` in
+ * commands/files.rs); those open in the system's default application.
  *
  * The caller owns the returned URL and must `URL.revokeObjectURL` it when the
  * player is torn down.
  */
 export async function loadMediaObjectUrl(noteboxPath: string): Promise<string | null> {
   try {
-    const buf = await ipc.readMediaBytes(noteboxPath);
-    const blob = new Blob([buf], { type: mimeForPath(noteboxPath) });
-    return URL.createObjectURL(blob);
+    return await fetchMediaObjectUrl(noteboxPath);
   } catch (err) {
     console.error("[media] failed to load", noteboxPath, err);
     return null;
   }
+}
+
+/** Like {@link loadMediaObjectUrl}, but rejects with the backend's error (for
+ *  example `file-too-large-to-show`) so the caller can say why. */
+export async function fetchMediaObjectUrl(noteboxPath: string): Promise<string> {
+  const buf = await ipc.readMediaBytes(noteboxPath);
+  return URL.createObjectURL(new Blob([buf], { type: mimeForPath(noteboxPath) }));
 }
 
 /**
@@ -89,13 +117,18 @@ export async function loadMediaObjectUrl(noteboxPath: string): Promise<string | 
  */
 export async function loadImageObjectUrl(noteboxPath: string): Promise<string | null> {
   try {
-    const buf = await ipc.readEmbedBytes(noteboxPath);
-    const blob = new Blob([buf], { type: imageMimeForPath(noteboxPath) });
-    return URL.createObjectURL(blob);
+    return await fetchImageObjectUrl(noteboxPath);
   } catch (err) {
     console.error("[media] failed to load image", noteboxPath, err);
     return null;
   }
+}
+
+/** Like {@link loadImageObjectUrl}, but rejects with the backend's error so
+ *  the caller can say why. */
+export async function fetchImageObjectUrl(noteboxPath: string): Promise<string> {
+  const buf = await ipc.readEmbedBytes(noteboxPath);
+  return URL.createObjectURL(new Blob([buf], { type: imageMimeForPath(noteboxPath) }));
 }
 
 /** Revoke any `blob:` URLs on `<img>`/`<video>`/`<audio>` elements under `root`

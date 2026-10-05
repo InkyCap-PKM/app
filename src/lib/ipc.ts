@@ -1,6 +1,8 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { assertNoteboxWritable } from "../stores/notebox";
 import type {
+  TabRestore,
+  TypstFrame,
   DeepLinkDelivery,
   NoteboxInfo,
   NoteboxRegistryEntry,
@@ -203,6 +205,23 @@ export async function getFileMetadata(path: string): Promise<NoteMetadata> {
 
 export async function getBacklinks(path: string): Promise<LinkInfo[]> {
   return invoke<LinkInfo[]>("get_backlinks", { path });
+}
+
+/** The notes that use the notebox file at `path` (an image, PDF, media or
+ *  data file) through `#image`, `#read`, `#bibliography`, `#video` or
+ *  `#audio`. */
+export async function getAttachmentReferences(path: string): Promise<LinkInfo[]> {
+  return invoke<LinkInfo[]>("get_attachment_references", { path });
+}
+
+/** Number of pages in the PDF at `path`. */
+export async function getPdfPageCount(path: string): Promise<number> {
+  return invoke<number>("get_pdf_page_count", { path });
+}
+
+/** Page `page` (1-based) of the PDF at `path`, drawn by Typst as SVG. */
+export async function renderPdfPage(path: string, page: number): Promise<TypstFrame> {
+  return invoke<TypstFrame>("render_pdf_page", { path, page });
 }
 
 export async function getForwardLinks(path: string): Promise<LinkInfo[]> {
@@ -649,10 +668,17 @@ export async function updateNoteboxSettings(settings: NoteboxSettings): Promise<
 // Backing store for the "Open previous tabs" startup behaviour. The record is
 // per-machine and kept outside the notebox, so it never travels with it.
 
-/** Tabs this machine last had open in the current notebox. Notes that have
- *  since been deleted are already filtered out by the backend. */
-export async function getNoteboxTabSession(): Promise<NoteboxTabSession> {
-  return invoke<NoteboxTabSession>("get_notebox_tab_session");
+/** Tabs this machine last had open in the current notebox, and whether to
+ *  hold them back instead of reopening them. A reopen is marked in progress
+ *  until cleared with `setTabRestorePending`. Notes that have since been
+ *  deleted are already filtered out by the backend. */
+export async function startTabRestore(): Promise<TabRestore> {
+  return invoke<TabRestore>("start_tab_restore");
+}
+
+/** Mark or clear "reopen in progress" for the notebox at `noteboxPath`. */
+export async function setTabRestorePending(noteboxPath: string, pending: boolean): Promise<void> {
+  return invoke<void>("set_tab_restore_pending", { noteboxPath, pending });
 }
 
 /** Record the current notebox's open tabs, replacing the previous record. */

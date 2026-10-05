@@ -22,6 +22,7 @@ import {
   LibraryBig,
   GitCompareArrows,
   Link2,
+  Paperclip,
 } from "lucide-solid";
 import TabBarMenu from "./TabBarMenu";
 
@@ -329,6 +330,11 @@ const TabStrip: Component<{ leaf: LeafPane }> = (props) => {
                   <Show when={tab.type === "collection"}>
                     <span class="tab__icon" title={t("collection.tab.title")}>
                       <LibraryBig size={13} />
+                    </span>
+                  </Show>
+                  <Show when={tab.type === "attachment"}>
+                    <span class="tab__icon" title={t("attachmentView.tab.title")}>
+                      <Paperclip size={13} />
                     </span>
                   </Show>
                   <Show when={tab.type === "version-diff"}>

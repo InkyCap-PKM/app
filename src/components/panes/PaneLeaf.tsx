@@ -5,6 +5,7 @@ import CollectionTable from "../CollectionTable";
 import TypstEditor from "../TypstEditor";
 import MycelialView from "../MycelialView";
 import VersionDiffView from "../VersionDiffView";
+import AttachmentView from "../AttachmentView";
 import TabStrip from "./TabStrip";
 import NewTabPage from "./NewTabPage";
 
@@ -47,6 +48,9 @@ const PaneLeaf: Component<{ leaf: LeafPane }> = (props) => {
                 }
                 if (currentTab.type === "mycelial") {
                   return <MycelialView path={currentTab.path} tabId={currentTab.id} />;
+                }
+                if (currentTab.type === "attachment") {
+                  return <AttachmentView path={currentTab.path} tabId={currentTab.id} />;
                 }
                 if (currentTab.type === "version-diff") {
                   // A version-diff tab without metadata can't render (e.g. a

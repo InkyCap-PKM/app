@@ -17,6 +17,14 @@
 // renamed still restores; they are handed to the frontend as absolute paths
 // (the shape the rest of the app compares against). Nothing is recorded unless
 // the user has actually chosen the "previous tabs" startup behaviour.
+//
+// A tab whose file freezes or crashes the app would otherwise be reopened at
+// every start, with the setting that stops it out of reach. So a reopen has to
+// prove it worked: `start_restore` marks the notebox's record as "reopen in
+// progress", and the frontend clears the mark once the window has stayed
+// responsive for a while. A mark still set at the next start means the last
+// reopen never got that far, and the tabs are held back for the user to reopen
+// by hand. Starting with `--no-restore` holds them back too.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -37,7 +45,7 @@ const MAX_TABS: usize = 200;
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SessionTab {
-    /// Frontend tab type: "file", "collection", or "mycelial".
+    /// Frontend tab type: "file", "collection", "mycelial", or "attachment".
     pub kind: String,
     /// Tab label as it was shown in the tab strip.
     pub title: String,
@@ -59,6 +67,38 @@ pub struct SessionTab {
 #[serde(default)]
 pub struct NoteboxTabSession {
     pub tabs: Vec<SessionTab>,
+    /// Set while a reopen of these tabs has not yet proved it worked (see the
+    /// module comment). Kept by the backend: [`save`] ignores whatever the
+    /// frontend sends here.
+    pub restore_pending: bool,
+}
+
+/// Why the recorded tabs were held back instead of reopened.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum HeldBack {
+    /// The last reopen of these tabs never finished: the app froze, crashed,
+    /// or was closed within moments of starting.
+    Interrupted,
+    /// InkyCap was started with [`NO_RESTORE_ARG`].
+    NoRestore,
+}
+
+/// What to do with the recorded tabs when a notebox opens: reopen `tabs`, or,
+/// when `held_back` says why, offer them to the user instead.
+#[derive(Debug, Clone, Serialize)]
+pub struct TabRestore {
+    pub tabs: Vec<SessionTab>,
+    pub held_back: Option<HeldBack>,
+}
+
+/// Command-line option that starts InkyCap without reopening any tabs, the way
+/// out when a reopened tab makes the app unusable.
+pub const NO_RESTORE_ARG: &str = "--no-restore";
+
+/// Whether this run of InkyCap was started with [`NO_RESTORE_ARG`].
+pub fn launched_with_no_restore() -> bool {
+    std::env::args().skip(1).any(|a| a == NO_RESTORE_ARG)
 }
 
 /// The whole per-machine store: one entry per notebox, keyed by the notebox's
@@ -124,18 +164,54 @@ fn to_absolute(canonical_root: &Path, relative: &str) -> String {
     to_frontend_string(&canonical_root.join(relative))
 }
 
-/// The tabs recorded for this notebox, with paths expanded to absolute form and
-/// entries whose file has since disappeared dropped. Returns an empty session
-/// when nothing was recorded.
-pub fn load(canonical_root: &Path) -> NoteboxTabSession {
-    let stored = {
-        let _guard = FILE_LOCK.lock();
-        read_store()
-            .noteboxes
-            .remove(&key_for(canonical_root))
-            .unwrap_or_default()
+/// Decide whether the tabs recorded for this notebox are reopened or held back
+/// (see the module comment), and mark a reopen as in progress. Paths come back
+/// absolute, and tabs whose file has since been deleted are dropped. Empty when
+/// nothing was recorded.
+pub fn start_restore(canonical_root: &Path, no_restore: bool) -> Result<TabRestore> {
+    let _guard = FILE_LOCK.lock();
+    let mut store = read_store();
+    let restore = decide_restore(&mut store, canonical_root, no_restore);
+    write_store(&store)?;
+    Ok(restore)
+}
+
+fn decide_restore(
+    store: &mut TabSessionStore,
+    canonical_root: &Path,
+    no_restore: bool,
+) -> TabRestore {
+    let Some(entry) = store.noteboxes.get_mut(&key_for(canonical_root)) else {
+        return TabRestore {
+            tabs: Vec::new(),
+            held_back: None,
+        };
     };
-    expand(canonical_root, stored)
+    let held_back = if no_restore {
+        Some(HeldBack::NoRestore)
+    } else if entry.restore_pending {
+        Some(HeldBack::Interrupted)
+    } else {
+        None
+    };
+    let tabs = expand(canonical_root, entry.clone()).tabs;
+    entry.restore_pending = held_back.is_none() && !tabs.is_empty();
+    TabRestore { tabs, held_back }
+}
+
+/// Mark or clear "reopen in progress" for the notebox at `canonical_root`. The
+/// frontend sets it before reopening held-back tabs by hand and clears it once
+/// the window has stayed responsive. Does nothing for a notebox with no record.
+pub fn set_restore_pending(canonical_root: &Path, pending: bool) -> Result<()> {
+    let _guard = FILE_LOCK.lock();
+    let mut store = read_store();
+    match store.noteboxes.get_mut(&key_for(canonical_root)) {
+        Some(entry) if entry.restore_pending != pending => {
+            entry.restore_pending = pending;
+            write_store(&store)
+        }
+        _ => Ok(()),
+    }
 }
 
 /// Turn a stored session into one the frontend can act on: drop tabs whose file
@@ -168,9 +244,16 @@ pub fn save(canonical_root: &Path, session: &NoteboxTabSession) -> Result<()> {
 
     let _guard = FILE_LOCK.lock();
     let mut store = read_store();
-    store
-        .noteboxes
-        .insert(key_for(canonical_root), NoteboxTabSession { tabs });
+    let key = key_for(canonical_root);
+    // Recording happens all through a reopen, so the mark must survive it.
+    let restore_pending = store.noteboxes.get(&key).is_some_and(|s| s.restore_pending);
+    store.noteboxes.insert(
+        key,
+        NoteboxTabSession {
+            tabs,
+            restore_pending,
+        },
+    );
     prune_missing_noteboxes(&mut store);
     write_store(&store)
 }
@@ -252,6 +335,7 @@ mod tests {
             &root,
             NoteboxTabSession {
                 tabs: vec![tab("kept.typ"), tab("deleted.typ")],
+                ..Default::default()
             },
         );
 
@@ -272,8 +356,89 @@ mod tests {
             title: "Mycelial View".to_string(),
             ..Default::default()
         };
-        let session = expand(&root, NoteboxTabSession { tabs: vec![graph] });
+        let session = expand(
+            &root,
+            NoteboxTabSession {
+                tabs: vec![graph],
+                ..Default::default()
+            },
+        );
 
         assert_eq!(session.tabs.len(), 1);
+    }
+
+    /// A store holding one recorded tab, `note.typ`, for a fresh notebox.
+    fn store_with_one_tab() -> (tempfile::TempDir, PathBuf, TabSessionStore) {
+        let dir = tempfile::tempdir().unwrap();
+        let root = crate::storage::canonicalize_root(dir.path()).unwrap();
+        std::fs::write(root.join("note.typ"), "= Hi").unwrap();
+        let mut store = TabSessionStore::default();
+        store.noteboxes.insert(
+            key_for(&root),
+            NoteboxTabSession {
+                tabs: vec![tab("note.typ")],
+                restore_pending: false,
+            },
+        );
+        (dir, root, store)
+    }
+
+    fn pending(store: &TabSessionStore, root: &Path) -> bool {
+        store.noteboxes[&key_for(root)].restore_pending
+    }
+
+    #[test]
+    fn a_reopen_is_marked_until_it_proves_it_worked() {
+        let (_dir, root, mut store) = store_with_one_tab();
+
+        let restore = decide_restore(&mut store, &root, false);
+
+        assert_eq!(restore.held_back, None);
+        assert_eq!(restore.tabs.len(), 1);
+        assert!(
+            pending(&store, &root),
+            "the reopen should be marked in progress"
+        );
+    }
+
+    #[test]
+    fn tabs_are_held_back_after_a_reopen_that_never_finished() {
+        let (_dir, root, mut store) = store_with_one_tab();
+        decide_restore(&mut store, &root, false);
+
+        // The app froze, so nothing cleared the mark before the next start.
+        let restore = decide_restore(&mut store, &root, false);
+
+        assert_eq!(restore.held_back, Some(HeldBack::Interrupted));
+        assert_eq!(
+            restore.tabs.len(),
+            1,
+            "the held-back tabs are still offered"
+        );
+        assert!(!pending(&store, &root), "holding back clears the mark");
+
+        // And the start after that reopens normally again.
+        assert_eq!(decide_restore(&mut store, &root, false).held_back, None);
+    }
+
+    #[test]
+    fn the_no_restore_option_holds_tabs_back() {
+        let (_dir, root, mut store) = store_with_one_tab();
+
+        let restore = decide_restore(&mut store, &root, true);
+
+        assert_eq!(restore.held_back, Some(HeldBack::NoRestore));
+        assert!(!pending(&store, &root));
+    }
+
+    #[test]
+    fn nothing_to_reopen_marks_nothing() {
+        let (_dir, root, mut store) = store_with_one_tab();
+        std::fs::remove_file(root.join("note.typ")).unwrap();
+
+        let restore = decide_restore(&mut store, &root, false);
+
+        assert!(restore.tabs.is_empty());
+        assert!(!pending(&store, &root));
     }
 }

@@ -184,15 +184,87 @@ static CRITIC_HIGHLIGHT_RE: LazyLock<Regex> =
 /// `(?s)` makes `.` match newlines so multi-line comments are caught.
 static OBSIDIAN_COMMENT_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)%%.*?%%").unwrap());
 
-/// Extract the set of filenames referenced by Obsidian-style image
-/// embeds (`![[name.png]]`) in a markdown source. The importer uses
-/// this to decide which files in the source notebox should be routed
-/// into the user's `attachment_folder` instead of preserving their
-/// original relative paths.
+/// Split an Obsidian link target into the note and the heading it points
+/// at. Obsidian jumps to the last heading named (`Diary#Week 3#Monday` goes
+/// to *Monday*). A link to a paragraph (`Diary#^a1b2c3`) has no InkyCap
+/// counterpart, so it keeps only the note. A target with no note part
+/// (`#Monday`, a heading in the same note) is left whole.
+fn split_link_target(target: &str) -> (&str, Option<&str>) {
+    let Some((note, rest)) = target.split_once('#') else {
+        return (target.trim(), None);
+    };
+    let note = note.trim();
+    if note.is_empty() {
+        return (target.trim(), None);
+    }
+    let heading = rest.rsplit('#').next().unwrap_or(rest).trim();
+    if heading.is_empty() || heading.starts_with('^') {
+        (note, None)
+    } else {
+        (note, Some(heading))
+    }
+}
+
+/// What an Obsidian `![[name]]` embed points at, judged by the name's
+/// extension the way Obsidian itself decides.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EmbedKind {
+    /// A picture, or a PDF: Typst places a PDF's first page like an image,
+    /// and the visual editor offers a button that opens the whole PDF.
+    Image,
+    Video,
+    Audio,
+    /// Another note, which Obsidian shows inline. Becomes a wikilink.
+    Note,
+    /// Any other file, which Obsidian shows as a link to open it. Becomes
+    /// `#link("/path")`, which InkyCap opens with the default application.
+    File,
+}
+
+const EMBED_IMAGE_EXTS: &[&str] = &[
+    "png", "jpg", "jpeg", "gif", "svg", "webp", "avif", "bmp", "tif", "tiff", "ico", "pdf",
+];
+const EMBED_VIDEO_EXTS: &[&str] = &["mp4", "webm", "mov", "mkv", "ogv", "m4v"];
+const EMBED_AUDIO_EXTS: &[&str] = &["mp3", "wav", "ogg", "oga", "m4a", "flac", "aac", "opus"];
+
+fn embed_kind(name: &str) -> EmbedKind {
+    // `Note#Heading` and `Note^block` point into a note.
+    let file = name.split(['#', '^']).next().unwrap_or(name).trim();
+    let Some((_, ext)) = file.rsplit_once('.') else {
+        return EmbedKind::Note;
+    };
+    let ext = ext.to_ascii_lowercase();
+    if EMBED_IMAGE_EXTS.contains(&ext.as_str()) {
+        EmbedKind::Image
+    } else if EMBED_VIDEO_EXTS.contains(&ext.as_str()) {
+        EmbedKind::Video
+    } else if EMBED_AUDIO_EXTS.contains(&ext.as_str()) {
+        EmbedKind::Audio
+    } else if ext == "md"
+        || ext.is_empty()
+        || ext.len() > 5
+        || !ext.chars().all(|c| c.is_ascii_alphanumeric())
+    {
+        // A dot inside a note's name (`v1.2 plan`) is not an extension.
+        EmbedKind::Note
+    } else {
+        EmbedKind::File
+    }
+}
+
+/// Extract the set of filenames referenced by Obsidian-style file embeds
+/// (`![[name.png]]`, `![[clip.mp4]]`, `![[paper.pdf]]`) in a markdown
+/// source. Note embeds (`![[Other note]]`) are left out. The importer uses
+/// this to decide which files in the source notebox should be routed into
+/// the user's `attachment_folder` instead of preserving their original
+/// relative paths.
 pub fn extract_embed_filenames(input: &str) -> Vec<String> {
     let mut out = Vec::new();
     for caps in IMAGE_EMBED_RE.captures_iter(input) {
-        out.push(caps[1].trim().to_string());
+        let name = caps[1].trim();
+        if embed_kind(name) != EmbedKind::Note {
+            out.push(name.to_string());
+        }
     }
     out
 }
@@ -474,47 +546,62 @@ fn preprocess_markdown(input: &str, attachment_folder: &str, dialect: MarkdownDi
         result = lines.join("\n");
     }
 
-    // Replace `![[name.png]]` image embeds BEFORE wikilinks so the
-    // generic wikilink pass doesn't strip the `[[…]]` and leave the
-    // `!` dangling as `!#wikilink(...)`. The filename's spaces and
-    // other URL-unsafe characters are left as-is — Typst paths accept
-    // them inside quoted strings. Path is rooted at notebox root (Per
-    // CLAUDE.md's portable-paths principle) and joins the configured
-    // attachment folder so the importer's file-move target matches.
+    // Replace `![[name]]` embeds BEFORE wikilinks so the generic wikilink
+    // pass doesn't strip the `[[…]]` and leave the `!` dangling as
+    // `!#wikilink(...)`. Each becomes what Obsidian shows for that kind of
+    // file (see `EmbedKind`). A note embed is handed on to the wikilink pass
+    // as a plain `[[…]]`. The filename's spaces and other URL-unsafe
+    // characters are kept — Typst paths accept them inside quoted strings.
+    // Paths are rooted at the notebox root (Per CLAUDE.md's portable-paths
+    // principle) and join the configured attachment folder so the importer's
+    // file-move target matches.
     result = IMAGE_EMBED_RE
         .replace_all(&result, |caps: &regex::Captures| {
             let name = caps[1].trim();
+            let alt = caps
+                .get(2)
+                .map(|m| m.as_str().trim())
+                .filter(|a| !a.is_empty());
+            let kind = embed_kind(name);
+            if kind == EmbedKind::Note {
+                return match alt {
+                    Some(alt) => format!("[[{name}|{alt}]]"),
+                    None => format!("[[{name}]]"),
+                };
+            }
             let folder = attachment_folder.trim_matches('/');
             let path = if folder.is_empty() {
                 format!("/{}", name)
             } else {
                 format!("/{}/{}", folder, name)
             };
-            match caps
-                .get(2)
-                .map(|m| m.as_str().trim())
-                .filter(|a| !a.is_empty())
-            {
-                Some(alt) => format!("#image(\"{}\", alt: \"{}\")", path, escape_str(alt)),
-                None => format!("#image(\"{}\")", path),
+            let path = escape_str(&path);
+            match (kind, alt) {
+                (EmbedKind::Video, _) => format!("#video(\"{path}\")"),
+                (EmbedKind::Audio, _) => format!("#audio(\"{path}\")"),
+                // A bare link shows its path, which names the file.
+                (EmbedKind::File, _) => format!("#link(\"{path}\")"),
+                (_, Some(alt)) => format!("#image(\"{path}\", alt: \"{}\")", escape_str(alt)),
+                (_, None) => format!("#image(\"{path}\")"),
             }
         })
         .into_owned();
 
-    // Replace wikilinks after tag processing.
+    // Replace wikilinks after tag processing. A heading in the target
+    // (`[[Diary#Monday]]`) becomes the link's `label:`, which InkyCap
+    // matches against the heading's text when the heading has no label.
     result = WIKILINK_RE
         .replace_all(&result, |caps: &regex::Captures| {
-            let target = &caps[1];
-            match caps.get(2) {
-                Some(display) => {
-                    format!(
-                        "#wikilink(\"{}\", display: \"{}\")",
-                        target,
-                        display.as_str()
-                    )
-                }
-                None => format!("#wikilink(\"{}\")", target),
+            let (note, heading) = split_link_target(&caps[1]);
+            let mut call = format!("#wikilink(\"{}\"", escape_str(note));
+            if let Some(heading) = heading {
+                call.push_str(&format!(", label: \"{}\"", escape_str(heading)));
             }
+            if let Some(display) = caps.get(2) {
+                call.push_str(&format!(", display: \"{}\"", escape_str(display.as_str())));
+            }
+            call.push(')');
+            call
         })
         .into_owned();
 
@@ -1650,6 +1737,84 @@ mod tests {
             !result.contains("#wikilink(\"Pasted"),
             "image embed should not fall through to wikilink: {result}"
         );
+    }
+
+    fn assets() -> MarkdownToTypstOptions {
+        MarkdownToTypstOptions {
+            attachment_folder: "Assets".to_string(),
+            ..MarkdownToTypstOptions::default()
+        }
+    }
+
+    #[test]
+    fn embeds_become_what_obsidian_shows_for_each_kind_of_file() {
+        let result = markdown_to_typst(
+            "![[clip.MP4]]\n\n![[talk.mp3]]\n\n![[paper.pdf]]\n\n![[budget.xlsx]]",
+            &assets(),
+        );
+        assert!(result.contains("#video(\"/Assets/clip.MP4\")"), "{result}");
+        assert!(result.contains("#audio(\"/Assets/talk.mp3\")"), "{result}");
+        assert!(result.contains("#image(\"/Assets/paper.pdf\")"), "{result}");
+        assert!(
+            result.contains("#link(\"/Assets/budget.xlsx\")"),
+            "{result}"
+        );
+    }
+
+    #[test]
+    fn note_embeds_become_wikilinks() {
+        let result = markdown_to_typst(
+            "![[Reading notes]]\n\n![[Plan v1.2 draft|the plan]]",
+            &assets(),
+        );
+        assert!(result.contains("#wikilink(\"Reading notes\")"), "{result}");
+        assert!(
+            result.contains("#wikilink(\"Plan v1.2 draft\", display: \"the plan\")"),
+            "{result}"
+        );
+        assert!(!result.contains("#image"), "{result}");
+    }
+
+    #[test]
+    fn heading_links_point_at_the_note_with_the_heading_as_label() {
+        for dialect in [MarkdownDialect::Obsidian, MarkdownDialect::Standard] {
+            let opts = MarkdownToTypstOptions {
+                dialect,
+                ..assets()
+            };
+            let result = markdown_to_typst(
+                "see [[Diary#Monday]], [[Diary#Week 3#Friday|end of week]], [[Diary#^a1b2c3]] and ![[Diary#Sunday]]",
+                &opts,
+            );
+            assert!(
+                result.contains("#wikilink(\"Diary\", label: \"Monday\")"),
+                "{dialect:?}: {result}"
+            );
+            assert!(
+                result
+                    .contains("#wikilink(\"Diary\", label: \"Friday\", display: \"end of week\")"),
+                "{dialect:?}: {result}"
+            );
+            assert!(
+                result.contains("#wikilink(\"Diary\")"),
+                "{dialect:?}: {result}"
+            );
+            assert!(
+                result.contains("#wikilink(\"Diary\", label: \"Sunday\")"),
+                "{dialect:?}: {result}"
+            );
+            assert!(
+                !result.contains("\\#"),
+                "no escaped hash left: {dialect:?}: {result}"
+            );
+        }
+    }
+
+    #[test]
+    fn only_file_embeds_are_routed_into_the_attachment_folder() {
+        let names =
+            extract_embed_filenames("![[pic.png]] ![[Other note]] ![[clip.mp4]] ![[notes.md]]");
+        assert_eq!(names, vec!["pic.png", "clip.mp4"]);
     }
 
     #[test]

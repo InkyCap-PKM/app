@@ -437,7 +437,7 @@ export interface StartupSettings {
  *  Snake-case because it crosses IPC as-is; `stores/tab-session.ts` maps it
  *  to and from the frontend `Tab`. */
 export interface SessionTab {
-  /** Tab type: "file", "collection", or "mycelial". */
+  /** Tab type: "file", "collection", "mycelial", or "attachment". */
   kind: string;
   title: string;
   /** Absolute path, in the same shape as `FileTreeNode.path`. */
@@ -450,6 +450,17 @@ export interface SessionTab {
 }
 
 /** The tabs one notebox was last left with on this machine. */
+/** Why recorded tabs were held back at startup instead of reopened: the
+ *  last reopen never finished, or InkyCap was started with `--no-restore`. */
+export type TabRestoreHeldBack = "interrupted" | "no-restore";
+
+/** The answer to a startup reopen: the recorded tabs, and why they are held
+ *  back, if they are. */
+export interface TabRestore {
+  tabs: SessionTab[];
+  held_back: TabRestoreHeldBack | null;
+}
+
 export interface NoteboxTabSession {
   tabs: SessionTab[];
 }

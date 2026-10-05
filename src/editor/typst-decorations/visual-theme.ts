@@ -557,6 +557,27 @@ export const visualTheme = EditorView.theme({
     padding: "2px 6px",
     textAlign: "center" as any,
   },
+  // The button beside a PDF image's path that opens the PDF in its own tab.
+  ".cm-typst-pdf-open": {
+    display: "inline-flex",
+    alignItems: "center",
+    verticalAlign: "middle",
+    marginLeft: "var(--space-2)",
+    padding: "var(--space-1)",
+    background: "none",
+    border: "1px solid var(--border-subtle)",
+    borderRadius: "var(--radius-sm)",
+    color: "var(--accent-text)",
+    cursor: "pointer",
+    transition: "background var(--dur-fast) var(--ease-out)",
+  },
+  ".cm-typst-pdf-open:hover": {
+    background: "var(--bg-hover)",
+  },
+  ".cm-typst-pdf-open:focus-visible": {
+    outline: "none",
+    boxShadow: "var(--focus-ring)",
+  },
   // Inline-block wrapper around the preview <img> so the resize handle can be
   // anchored to the image's own box (not the full-width block) and the parent's
   // text-align still controls left/centre/right placement.

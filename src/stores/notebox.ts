@@ -265,9 +265,11 @@ async function applyStartupBehavior(): Promise<void> {
   switch (behavior) {
     case "default":
       break;
-    case "previous-tabs":
-      await restorePreviousTabs();
+    case "previous-tabs": {
+      const path = noteboxInfo()?.path;
+      if (path) await restorePreviousTabs(path);
       break;
+    }
     case "last-file":
       if (last_active_file) {
         try {

@@ -50,7 +50,7 @@ A couple of other panes (Search, Templates, Help, and Collaboration) live in thi
 
 Use the file tree to browse your folders and open notes. It will display folders and files sequenced according to your preference in the settings.
 
-- Notes (`.typ` files) and collection files open right inside InkyCap. Other files (images, PDFs, bibliography files, data) are shown but dimmed, and open in your computer's default application when clicked.
+- Notes (`.typ` files) and collection files open right inside InkyCap. Images, PDFs, audio and video files open in a read-only tab of their own, and the right panel lists the notes that use the file under *Used in*, which helps when deciding whether an attachment can go. Other files (bibliography files, data) are shown but dimmed, and open in your computer's default application when clicked.
 - The header has a *sort menu* (Name A→Z or Z→A, Modified, Created, or ZID ascending or descending), an *expand-all / collapse-all* toggle, and a *"New"* button for making a new note, a new folder, or uploading a file into your notebox. Names are sorted the way a person would sort them, so "Chapter 2" comes before "Chapter 10".
 - Right-clicking a file or folder gives you *Open in new tab*, *New Note*, *New Folder*, *Bookmark* (on notes), *Rename*, *Move file to…* (or *Move folder to…*), and *Delete*. Right-clicking a folder also offers *Search in folder*, which opens the Search panel limited to that folder.
 - To open a note in a *new tab* instead of the current one, hold *Ctrl* (or *Cmd*) while you click it, or click it with the middle mouse button. Whether that new tab comes to the front or stays in the background follows the *Switch to new tabs immediately* setting under *Behaviour* in #wikilink("2 - Settings").

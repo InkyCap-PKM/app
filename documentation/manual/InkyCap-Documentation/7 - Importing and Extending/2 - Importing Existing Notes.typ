@@ -86,6 +86,8 @@ Markdown math is written in LaTeX, which Typst doesn't typeset on its own. Simpl
 
 You don't have to move images around by hand. Both standard Markdown images (`![alt](path/picture.png)`)  and Obsidian-style embeds (`![[picture.png]]`)  are copied into your notebox's designated attachment folder, and the note is pointed at the new location. You set that folder under *Settings → Files → Attachment folder* (it's called *Assets* by default).
 
+Obsidian embeds become what Obsidian shows for each kind of file: pictures and PDFs become images (a PDF shows its first page, and the visual editor offers a button that opens the whole PDF), video and audio files become players, an embedded note becomes a link to that note, and any other file becomes a link that opens it. A link to a heading (`[[Diary#Monday]]`) keeps the heading, so it opens the note at that heading.
+
 A few details:
 
 - Images are matched by filename so it doesn't matter which subfolder they lived in.

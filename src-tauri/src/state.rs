@@ -849,6 +849,9 @@ impl NoteboxSession {
             for link_target in &note.links {
                 link_index.add_link(path.to_path_buf(), link_target.clone());
             }
+            link_index
+                .attachments
+                .record(path.to_path_buf(), &root, content);
         }
 
         // 2. Search engine.

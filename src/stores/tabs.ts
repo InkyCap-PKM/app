@@ -29,7 +29,9 @@ export const TAB_DRAG_MIME = "application/x-inkycap-tab";
 
 export interface Tab {
   id: string;
-  type: "collection" | "file" | "mycelial" | "empty" | "version-diff";
+  /** `attachment` shows a notebox file that isn't a note (an image, PDF,
+   *  audio or video file) read-only; see `attachmentViewKind`. */
+  type: "collection" | "file" | "mycelial" | "empty" | "version-diff" | "attachment";
   title: string;
   path: string;
   viewName?: string;
