@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { EditorState } from "@codemirror/state";
 import type { DecorationSet } from "@codemirror/view";
-import { typst } from "codemirror-lang-typst";
+import { typstLanguage } from "../typst-language";
 import { buildDecorations, rebuildDirtyLines, rebuildDocChange } from "./visual-plugin";
 
 // A cursor move rebuilds only the lines the caret left and arrived on, grown
@@ -44,7 +44,7 @@ const TOP_LEVEL = [
 ].join("\n") + TAIL;
 
 const state = (doc: string, caret: number) =>
-  EditorState.create({ doc, selection: { anchor: caret }, extensions: [typst()] });
+  EditorState.create({ doc, selection: { anchor: caret }, extensions: [typstLanguage()] });
 
 /** Stable text form of a decoration set, for comparing two builds. */
 function serialize(set: DecorationSet): string[] {
@@ -120,6 +120,38 @@ describe("document-edit rebuild drops the pill of a deleted call", () => {
       const incremental = rebuildDocChange(buildDecorations(before), tr);
       expect(serialize(incremental)).toEqual(serialize(buildDecorations(tr.state)));
       expect(serialize(incremental).some((d) => d.includes("FuncPillWidget"))).toBe(false);
+    });
+  }
+});
+
+// Closing an unterminated delimiter changes how everything after it parses:
+// the lines it had swallowed become list items and headings again. Those lines
+// sit outside the edit, so the rebuild must find them by comparing the parse
+// trees from before and after, or they keep their stale look until the caret
+// passes over each one.
+describe("document-edit rebuild follows a parse change below the edit", () => {
+  const BELOW = "\n- a bullet\n=== A heading\n- another bullet" + TAIL;
+
+  for (const [name, open, close] of [
+    ["content bracket", "#highlight[unclosed", "]"],
+    ["inline raw", "`unclosed", "`"],
+  ] as const) {
+    it(`closing an unterminated ${name}`, () => {
+      const doc = `Intro line.\n${open}` + BELOW;
+      const at = doc.indexOf(open) + open.length;
+      const before = state(doc, at);
+      const tr = before.update({ changes: { from: at, insert: close }, selection: { anchor: at + 1 } });
+      const incremental = rebuildDocChange(buildDecorations(before), tr);
+      expect(serialize(incremental)).toEqual(serialize(buildDecorations(tr.state)));
+    });
+
+    it(`opening an unterminated ${name}`, () => {
+      const doc = `Intro line.\n${open}${close}` + BELOW;
+      const at = doc.indexOf(open) + open.length;
+      const before = state(doc, at + 1);
+      const tr = before.update({ changes: { from: at, to: at + 1 }, selection: { anchor: at } });
+      const incremental = rebuildDocChange(buildDecorations(before), tr);
+      expect(serialize(incremental)).toEqual(serialize(buildDecorations(tr.state)));
     });
   }
 });

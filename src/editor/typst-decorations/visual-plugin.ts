@@ -2778,7 +2778,7 @@ export function rebuildDirtyLines(
  *  so tests can pin that its result matches a full rebuild. */
 export function rebuildDocChange(
   existing: DecorationSet,
-  tr: { state: EditorState; changes: ChangeSet },
+  tr: { startState: EditorState; state: EditorState; changes: ChangeSet },
 ): DecorationSet {
   const mapped = existing.map(tr.changes);
   const dirtyRanges: { from: number; to: number }[] = [];
@@ -2791,7 +2791,67 @@ export function rebuildDocChange(
     const line = tr.state.doc.lineAt(r.head);
     dirtyRanges.push({ from: line.from, to: line.to });
   }
+  const restructured = reparsedSpan(syntaxTree(tr.startState), syntaxTree(tr.state), tr.changes);
+  if (restructured) {
+    dirtyRanges.push({
+      from: tr.state.doc.lineAt(restructured.from).from,
+      to: tr.state.doc.lineAt(restructured.to).to,
+    });
+  }
   return rebuildRanges(mapped, tr.state, dirtyRanges);
+}
+
+/**
+ * The span of the new document whose top-level parse differs from the old
+ * one, or null if only the edited text itself changed.
+ *
+ * An edit can change how text far beyond it parses: closing an unterminated
+ * bracket or backtick hands back the lines it had swallowed, and opening one
+ * swallows them. Those lines are outside the change set, so without this they
+ * keep their old decorations until the caret visits them. The top-level nodes
+ * before and after the edit are compared from both ends; whatever lies between
+ * the matching runs is the region whose structure changed.
+ *
+ * Typing inside a line updates the parse tree in place, so the old and new
+ * trees are the same object and there is nothing to compare. A fresh tree only
+ * appears after the reparse that structural edits trigger (see
+ * `typst-editor.ts`), which is exactly when this matters.
+ */
+function reparsedSpan(
+  oldTree: ReturnType<typeof syntaxTree>,
+  newTree: ReturnType<typeof syntaxTree>,
+  changes: ChangeSet,
+): { from: number; to: number } | null {
+  if (oldTree === newTree) return null;
+  const before = topLevelNodes(oldTree);
+  const after = topLevelNodes(newTree);
+  const unchanged = (a: TopLevelNode, b: TopLevelNode) =>
+    a.name === b.name
+    && !changes.touchesRange(a.from, a.to)
+    && changes.mapPos(a.from) === b.from
+    && changes.mapPos(a.to) === b.to;
+
+  let head = 0;
+  while (head < before.length && head < after.length && unchanged(before[head], after[head])) head++;
+  let tail = 0;
+  while (
+    tail < before.length - head
+    && tail < after.length - head
+    && unchanged(before[before.length - 1 - tail], after[after.length - 1 - tail])
+  ) tail++;
+  if (head + tail >= after.length) return null;
+  return { from: after[head].from, to: after[after.length - 1 - tail].to };
+}
+
+interface TopLevelNode { name: string; from: number; to: number }
+
+function topLevelNodes(tree: ReturnType<typeof syntaxTree>): TopLevelNode[] {
+  const nodes: TopLevelNode[] = [];
+  const cursor = tree.cursor();
+  if (!cursor.firstChild()) return nodes;
+  do nodes.push({ name: cursor.name, from: cursor.from, to: cursor.to });
+  while (cursor.nextSibling());
+  return nodes;
 }
 
 
