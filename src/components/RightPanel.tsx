@@ -44,6 +44,8 @@ import ScrollContextPanel from "./ScrollContextPanel";
 import {
   isEnabled as isScrollEnabled,
   getScrollDirection,
+  getScrollScope,
+  getAnchorPath,
   scrollToAnchor,
   toggleScrollDirection,
 } from "../stores/journal-scroll";
@@ -1308,6 +1310,16 @@ const RightPanel: Component = () => {
                       >
                         <Anchor size={18} />
                       </button>
+                      <Show when={getScrollScope(tab().id) === "neighbourhood"}>
+                        <button
+                          class="right-panel__tab"
+                          onClick={() => void startCompose(getAnchorPath(tab().id))}
+                          title={t("compose.buttonTitle")}
+                          aria-label={t("compose.buttonTitle")}
+                        >
+                          <NotebookPen size={18} />
+                        </button>
+                      </Show>
                     </>
                   )}
                 </Show>
@@ -2000,17 +2012,6 @@ const RightPanel: Component = () => {
                   aria-pressed={linksShowFilter()}
                 >
                   <Search size={18} />
-                </button>
-                <button
-                  class="ui-icon-btn"
-                  onClick={() => {
-                    const tab = activeFileTab();
-                    if (tab) void startCompose({ path: tab.path, name: tab.title });
-                  }}
-                  title={t("compose.buttonTitle")}
-                  aria-label={t("compose.buttonTitle")}
-                >
-                  <NotebookPen size={18} />
                 </button>
               </div>
 

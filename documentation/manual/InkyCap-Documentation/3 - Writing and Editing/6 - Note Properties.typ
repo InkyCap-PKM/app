@@ -48,7 +48,7 @@ InkyCap understands a handful of properties out of the box. Their types are fixe
 - *source* provides a field to include an associated URI.
 - *collection* identifies any #wikilink("2 - Collections") that you would like to explicitly assign this note to.
 - *zid* is the note's Zettelkasten identifier (a number). When Zettelkasten IDs are turned on in Settings, new notes get one automatically from the pattern you choose, and lists can be sorted by it.
-- *derived-from* lists the notes this one copied passages from. Compose mode fills it in as you copy (see #wikilink("4 - Links and Backlinks")), and you can edit it like any list. Each entry is a link, so it also counts as a backlink on the note it names, and it follows that note when it is renamed.
+- *derived-from* lists the notes this one copied passages or whole notes from. Compose mode fills it in as you copy (see #wikilink("4 - Journal Scroll")), and you can edit it like any list. Each entry is a link, so it also counts as a backlink on the note it names, and it follows that note when it is renamed.
 
 #callout("tip")[There is no requirement to fill in every field or even any field. Add information when a property is something you find useful. ]
 

@@ -212,24 +212,7 @@ Le panneau vous donne quelques façons de retrouver des notes dans une liste cha
 
 === Composer une nouvelle note à partir de vos liens
 
-Les passages autour des liens d'une note sont souvent la matière première d'un nouveau texte : tout ce que vous avez écrit sur une idée, réuni au même endroit. *Composer* en fait une séance d'écriture.
-
-Cliquez sur le bouton *Composer* dans la barre d'outils du panneau Liens. InkyCap crée une nouvelle note exactement comme le ferait *Ctrl+N*, avec vos réglages habituels de nom, de dossier, de modèle et de ZID, et l'ouvre dans l'éditeur. Le panneau de droite passe à l'onglet *Composer*, qui présente sous forme de fiches les passages des autres notes qui pointent vers la note de départ, la plus ancienne en premier (selon le ZID, puis la date de création).
-
-Chaque fiche offre :
-
-- *Copier dans le brouillon* insère le passage tel quel à l'emplacement du curseur, prêt à être retravaillé. Utilisez-le pour vos propres textes que vous voulez reprendre sous une nouvelle forme.
-- *Copier dans le brouillon sous forme de citation* l'insère comme citation en bloc, attribuée par un lien vers sa note.
-- *Insérer un lien vers cette note* insère seulement le lien, quand vous préférez formuler l'idée à nouveau.
-- *Écarter* masque la fiche pour cette séance.
-
-Les trois mêmes boutons d'insertion se trouvent en haut du panneau, à côté de *Tous les passages* ; ils insèrent toutes les fiches encore affichées, dans l'ordre affiché. Insérer les liens de plusieurs fiches produit une liste à puces avec un lien par note.
-
-Faites glisser une fiche par sa poignée pour réordonner la liste ; disposer les fiches est une façon rapide de faire le plan du nouveau texte. Dès que votre brouillon contient un lien vers la note d'une fiche, la fiche pâlit pour que vous voyiez ce que vous n'avez pas encore utilisé. Cliquez sur le nom de la note d'une fiche pour l'ouvrir dans un nouvel onglet.
-
-Le texte copié est une copie : modifier l'original plus tard ne change pas votre brouillon, et modifier le brouillon ne touche pas l'original. Pour garder la trace de sa provenance, chaque note dont vous copiez un passage (tel quel ou sous forme de citation) est ajoutée à la propriété *derived-from* du brouillon (voir #wikilink("6 - Propriétés des notes")). Ces entrées sont de vrais liens : les sources apparaissent dans les liens sortants du brouillon, et le brouillon dans les liens entrants de chaque source. Si vous renommez une note source, son entrée est mise à jour comme tous les autres liens vers elle.
-
-L'onglet Composer appartient au brouillon et dure jusqu'à ce que vous fermiez l'onglet du brouillon. Un avis sous la barre d'outils du brouillon vous le rappelle, et son bouton *Afficher les fiches* ramène l'onglet Composer si vous êtes passé à un autre onglet du panneau de droite. Pour conserver un regroupement de notes liées que vous pourrez retrouver et exporter, utilisez plutôt une collection avec un filtre *Lien vers* (voir #wikilink("2 - Collections")).
+Pour réunir les passages autour des liens d'une note dans un nouveau texte, utilisez *Composer* depuis un Rouleau de journal en Voisinage. Voir #wikilink("4 - Rouleau de journal").
 
 #callout("note")[ Quand vous ouvrez une grande boîte de notes pour la première fois, InkyCap construit son index de liens en arrière-plan. Le panneau Liens peut paraître vide un instant et se remplira automatiquement une fois cela terminé. ]
 

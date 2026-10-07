@@ -555,6 +555,19 @@ export async function getLinkPassages(
   return invoke<LinkPassage[]>("get_link_passages", { sourcePath, targetPath });
 }
 
+/** The opening passage of the note at `path` (its first paragraph, list item,
+ *  or heading with the paragraph after it), or null when its body is empty. */
+export async function getLeadPassage(path: string): Promise<LinkPassage | null> {
+  return invoke<LinkPassage | null>("get_lead_passage", { path });
+}
+
+/** The whole body of the note at `path`, ready to copy into another note:
+ *  no `#import` lines, `#note(...)` or `#bibliography(...)` call, and
+ *  relative paths rebased to the notebox root. */
+export async function getNoteBodyForCopy(path: string): Promise<string> {
+  return invoke<string>("get_note_body_for_copy", { path });
+}
+
 /** `content` with `sourceName` added to its `derived-from` property, or null
  *  when the property already lists that note. Text in, text out, so an open
  *  note's unsaved changes are kept. */
@@ -2249,6 +2262,20 @@ export async function compileTypstSvg(path: string): Promise<TypstCompileResult>
 
 export async function compileTypstHtml(path: string): Promise<TypstHtmlResult> {
   return invoke<TypstHtmlResult>("compile_typst_html", { path });
+}
+
+/** An HTML compile of part of a note; `truncated` is false when the whole
+ *  note was short enough to show as it is. */
+export type ExcerptHtmlResult = TypstHtmlResult & { truncated: boolean };
+
+/** Compile only the passages of the note at `path` around its links to the
+ *  note at `linkedWith` (or its opening passage when it has none), each with
+ *  a paragraph either side. Used by the Journal Scroll's Neighbourhood. */
+export async function compileTypstHtmlExcerpt(
+  path: string,
+  linkedWith: string,
+): Promise<ExcerptHtmlResult> {
+  return invoke<ExcerptHtmlResult>("compile_typst_html_excerpt", { path, linkedWith });
 }
 
 // Bibliography (Phase 6)

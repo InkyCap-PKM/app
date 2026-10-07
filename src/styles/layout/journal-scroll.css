@@ -252,6 +252,37 @@
   display: none;
 }
 
+/* "Show more" / "Show less" strip under a Neighbourhood excerpt: a flat,
+   rounded bar inset from the entry's edges. A faint wash of the accent
+   colour sets it apart from both the white body and the grey header band
+   without competing with the note. */
+.journal-scroll__show-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  width: calc(100% - 2 * var(--space-3));
+  margin: 0 var(--space-3) var(--space-3);
+  padding: var(--space-1) var(--space-4);
+  border: none;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  color: var(--accent-text);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+
+.journal-scroll__show-more:hover {
+  background: var(--bg-hover);
+}
+
+.journal-scroll__show-more:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
 .journal-scroll__entry-loading {
   padding: var(--space-6) var(--space-7);
   color: var(--fg-dim);

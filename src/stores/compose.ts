@@ -1,5 +1,6 @@
-// Compose sessions: a new note being written beside the passages around
-// another note's links.
+// Compose sessions: a new note being written beside passages from the notes
+// linked with another note (the origin), both the notes that link to it and
+// the notes it links to.
 //
 // A session belongs to the draft's tab and lives only in memory. It ends when
 // that tab closes; whatever the writer kept is in the draft itself, and the
@@ -15,17 +16,21 @@ import { reorderIndex, type DropPosition } from "../lib/drag-reorder";
 import { pathEquals } from "../lib/paths";
 import { tabs } from "./tabs";
 
-/** One passage from a note that links to the origin note. */
+/** One passage from a note linked with the origin note. */
 export interface ComposeCard {
   /** Unique within a session. */
   id: string;
   /** The note the passage comes from. */
   source: LinkInfo;
   passage: LinkPassage;
+  /** True when the passage is the note's opening rather than a passage that
+   *  links to the origin: the origin links to the note but the note doesn't
+   *  link back in its text. */
+  lead: boolean;
 }
 
 export interface ComposeSession {
-  /** The note whose inbound links supplied the cards. */
+  /** The note whose links supplied the cards. */
   origin: { path: string; name: string };
   /** Every card, in display order. */
   cards: ComposeCard[];
@@ -86,21 +91,35 @@ export function moveCard(
   });
 }
 
-/** One card per passage, oldest linking note first, passages within a note
- *  in document order. A note that links only from its properties gives no
- *  card. */
+/** The cards for every note linked with the origin, oldest note first.
+ *  A note gives one card per passage that links to the origin, in document
+ *  order. A note with no such passage (the origin links to it, or it links
+ *  only from its properties) gives one card holding its opening passage. */
 async function loadCards(originPath: string): Promise<ComposeCard[]> {
   try {
-    const notes = (await ipc.getBacklinks(originPath)).filter(
+    const [inbound, outbound] = await Promise.all([
+      ipc.getBacklinks(originPath),
+      ipc.getForwardLinks(originPath),
+    ]);
+    const notes = [...inbound, ...outbound].filter(
       (n, i, all) =>
         !pathEquals(n.path, originPath) && all.findIndex((m) => pathEquals(m.path, n.path)) === i,
     );
     notes.sort(compareChronological);
     const perNote = await Promise.all(
-      notes.map(async (source) => {
+      notes.map(async (source): Promise<ComposeCard[]> => {
         try {
           const passages = await ipc.getLinkPassages(source.path, originPath);
-          return passages.map((passage, i) => ({ id: `${source.path}::${i}`, source, passage }));
+          if (passages.length > 0) {
+            return passages.map((passage, i) => ({
+              id: `${source.path}::${i}`,
+              source,
+              passage,
+              lead: false,
+            }));
+          }
+          const lead = await ipc.getLeadPassage(source.path);
+          return lead ? [{ id: `${source.path}::lead`, source, passage: lead, lead: true }] : [];
         } catch {
           return [];
         }

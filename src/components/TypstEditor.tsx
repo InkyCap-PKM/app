@@ -68,9 +68,13 @@ import {
   isEnabled as isScrollEnabled,
   getAnchorPath,
   getScrollDirection,
+  getScrollScope,
+  setScrollScope,
 } from "../stores/journal-scroll";
 import {
   BrainCircuit,
+  CalendarRange,
+  Waypoints,
   ArrowUpFromDot,
   ArrowDownToDot,
   BookA,
@@ -1088,17 +1092,25 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
     const anchor = getAnchorPath(props.tabId);
     const base = anchor.split("/").pop() ?? anchor;
     const title = base.replace(/\.typ$/i, "");
+    const desc = getScrollDirection(props.tabId) === "desc";
+    if (getScrollScope(props.tabId) === "neighbourhood") {
+      return t(
+        desc
+          ? "journalScroll.status.neighbourhoodRecentFirst"
+          : "journalScroll.status.neighbourhoodOldestFirst",
+        { anchor: title },
+      );
+    }
     return t(
-      getScrollDirection(props.tabId) === "desc"
-        ? "journalScroll.status.recentFirst"
-        : "journalScroll.status.oldestFirst",
+      desc ? "journalScroll.status.recentFirst" : "journalScroll.status.oldestFirst",
       { anchor: title },
     );
   };
 
-  // The editor header's right-hand control cluster: the Mycelial button, the
-  // Journal Scroll pill, the reading-format + zoom toggles (reading mode only),
-  // and the source/live/reading mode toggle. Rendered inline when there's room,
+  // The editor header's right-hand control cluster: the Mycelial button (not
+  // in scroll), the scroll's Timeline/Neighbourhood toggle (scroll only), the
+  // Journal Scroll pill, the reading-format + zoom toggles (reading mode
+  // only), and the source/live/reading mode toggle. Rendered inline when there's room,
   // or inside the overflow menu when the pane is narrow (see `compactToolbar`).
   const RightControls: Component<{ layout?: "inline" | "menu" }> = (rc) => {
     const inMenu = rc.layout === "menu";
@@ -1117,6 +1129,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
 
     return (
     <>
+      <Show when={!isScrollEnabled(props.tabId)}>
       <Row label={t("editor.toolbar.mycelialLabel")}>
       <button
         type="button"
@@ -1136,6 +1149,39 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
         <BrainCircuit size={14} />
       </button>
       </Row>
+      </Show>
+      <Show when={isScrollEnabled(props.tabId)}>
+        <Row label={t("journalScroll.scope.toggle")}>
+        <div
+          class="editor-header__mode-toggle editor-header__format-toggle"
+          role="group"
+          aria-label={t("journalScroll.scope.toggle")}
+        >
+          <button
+            type="button"
+            class="editor-header__mode-seg editor-header__format-seg"
+            classList={{ "is-active": getScrollScope(props.tabId) === "timeline" }}
+            onClick={() => void setScrollScope(props.tabId, "timeline")}
+            title={t("journalScroll.scope.timeline.title")}
+            aria-pressed={getScrollScope(props.tabId) === "timeline"}
+          >
+            <CalendarRange size={14} />
+            <span>{t("journalScroll.scope.timeline")}</span>
+          </button>
+          <button
+            type="button"
+            class="editor-header__mode-seg editor-header__format-seg"
+            classList={{ "is-active": getScrollScope(props.tabId) === "neighbourhood" }}
+            onClick={() => void setScrollScope(props.tabId, "neighbourhood")}
+            title={t("journalScroll.scope.neighbourhood.title")}
+            aria-pressed={getScrollScope(props.tabId) === "neighbourhood"}
+          >
+            <Waypoints size={14} />
+            <span>{t("journalScroll.scope.neighbourhood")}</span>
+          </button>
+        </div>
+        </Row>
+      </Show>
       <Row label={t("journalScroll.group")}>
         <JournalScrollPill tabId={props.tabId} anchorPath={props.path} />
       </Row>
@@ -1151,7 +1197,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
         >
           <button
             type="button"
-            class="editor-header__mode-seg editor-header__format-seg is-format-svg"
+            class="editor-header__mode-seg editor-header__format-seg"
             classList={{ "is-active": readingFormat() === "svg" }}
             onClick={() => setReadingFormat("svg")}
             title={t("readingFormat.svg.title")}
@@ -1162,7 +1208,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
           </button>
           <button
             type="button"
-            class="editor-header__mode-seg editor-header__format-seg is-format-html"
+            class="editor-header__mode-seg editor-header__format-seg"
             classList={{ "is-active": readingFormat() === "html" }}
             onClick={() => setReadingFormat("html")}
             title={t("readingFormat.html.title")}

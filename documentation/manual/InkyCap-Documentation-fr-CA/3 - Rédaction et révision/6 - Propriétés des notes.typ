@@ -49,7 +49,7 @@ InkyCap comprend une poignée de propriétés d'emblée. Leurs types sont fixes,
 - *source* fournit un champ pour inclure un URI associé.
 - *collection* indique les #wikilink("2 - Collections") auxquelles vous voulez assigner explicitement cette note.
 - *zid* est l'identifiant Zettelkasten de la note (un nombre). Quand les identifiants Zettelkasten sont activés dans les Paramètres, les nouvelles notes en reçoivent un automatiquement selon le modèle que vous choisissez, et les listes peuvent être triées selon celui-ci.
-- *derived-from* énumère les notes dont celle-ci a copié des passages. Le mode Composer la remplit à mesure que vous copiez (voir #wikilink("4 - Liens et rétroliens")), et vous pouvez la modifier comme toute liste. Chaque entrée est un lien ; elle compte donc aussi comme rétrolien sur la note qu'elle nomme, et suit cette note quand elle est renommée.
+- *derived-from* énumère les notes dont celle-ci a copié des passages ou le texte entier. Le mode Composer la remplit à mesure que vous copiez (voir #wikilink("4 - Rouleau de journal")), et vous pouvez la modifier comme toute liste. Chaque entrée est un lien ; elle compte donc aussi comme rétrolien sur la note qu'elle nomme, et suit cette note quand elle est renommée.
 
 #callout("tip")[ Rien ne vous oblige à remplir chaque champ, ni même aucun champ. Ajoutez de l'information quand une propriété vous est utile. ]
 

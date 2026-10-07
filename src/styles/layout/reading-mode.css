@@ -535,12 +535,13 @@
   background: var(--border-subtle);
 }
 
-/* Reading format toggle (SVG / HTML segmented control).
-   Reuses .editor-header__mode-toggle / __mode-seg and tints the active
-   segment with a format-specific accent so the control reads as a picker
-   rather than a status badge. Text is downsized relative to the mode
-   toggle next to it — the format pick is secondary to source/visual/
-   reading and shouldn't shout. */
+/* Labelled two-way pickers in the editor header: the reading format
+   (SVG / HTML) and the Journal Scroll's Timeline / Neighbourhood.
+   Reuses .editor-header__mode-toggle / __mode-seg and tints the chosen
+   segment green, with its outline, so the control reads as a picker rather
+   than a status badge. Text is downsized relative to the mode toggle next
+   to it — these picks are secondary to source/visual/reading and shouldn't
+   shout. */
 .editor-header__format-seg {
   font-size: var(--text-sm);
   padding: 3px 8px;
@@ -575,19 +576,13 @@
   border-radius: 0 var(--radius-control) var(--radius-control) 0;
 }
 
-.editor-header__format-seg.is-active {
+/* The chosen segment, marked by colour and by its outline. Scoped under the
+   toggle so it outranks the plain mode toggle's active colours. */
+.editor-header__format-toggle .editor-header__format-seg.is-active {
   position: relative;
   border-color: currentColor;
-}
-
-.editor-header__format-seg.is-format-svg.is-active {
   background: color-mix(in srgb, var(--accent-green) 14%, transparent);
   color: var(--accent-green);
-}
-
-.editor-header__format-seg.is-format-html.is-active {
-  background: color-mix(in srgb, var(--accent-orange) 16%, transparent);
-  color: var(--accent-orange);
 }
 
 /* Reading-view zoom control (− / level / +). Reuses the same segmented shell

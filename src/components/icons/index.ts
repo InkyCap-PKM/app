@@ -16,6 +16,7 @@ export { SquareArrowInDownLeft } from "./SquareArrowInDownLeft";
 export { TextCountIcon } from "./TextCount";
 export { MenuTabsIcon } from "./MenuTabs";
 export { CopyQuoteIcon } from "./CopyQuote";
+export { ComposeFilesCopyIcon } from "./ComposeFilesCopy";
 export { NoteIcon } from "./Note";
 export { UnwrittenNoteIcon } from "./UnwrittenNote";
 export { VERSE_ICON_SVG } from "./verse";

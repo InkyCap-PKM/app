@@ -15,6 +15,7 @@ pub mod contributors;
 pub mod diagnostic;
 pub mod fonts;
 pub mod link_passages;
+pub mod note_excerpt;
 pub mod note_rewriter;
 pub mod package_fetch;
 pub mod package_vendor;

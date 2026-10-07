@@ -2,7 +2,7 @@
 
 #note(
   title: "Journal Scroll",
-  description: "How to use Journal Scroll, InkyCap's continuous date-ordered timeline feed, including sort axis, anchor scope, navigation, and daily-note pairing.",
+  description: "How to use Journal Scroll, InkyCap's continuous date-ordered feed of notes, including Timeline and Neighbourhood, sort axis, anchor scope, navigation, daily-note pairing, and composing a new note from linked notes.",
   tags: ("documentation",),
 )
 
@@ -27,6 +27,17 @@ Journal Scroll is a per-tab view: turning it on, replaces the editor in the *cur
 All three do the same thing: they anchor the feed on whatever note is active in the current tab. The editor-header button is only there when a note (file) tab is open. If you run the command or press the shortcut with no note in front of you (an empty tab, a collection, or a freshly opened window), InkyCap opens your most recently modified note in a new tab and starts the scroll from there.
 
 When you turn the scroll off, the feed and its saved scroll position for that tab are discarded, and your ordinary editor returns untouched.
+
+== Timeline and Neighbourhood
+
+While the scroll is on, a two-part switch in the editor header picks which notes the feed holds:
+
+- *Timeline* (the default) is every note within your *Anchor scope*, unfolding in time from the anchor. Most of this page describes it.
+- *Neighbourhood* is the anchor together with every note it links to and every note that links to it. The anchor stays at the top and its whole neighbourhood follows below it, in date order, so nothing linked to the anchor is hidden on the other side of it in time. The *Anchor scope* setting doesn't apply here.
+
+In Neighbourhood, every note but the anchor is shortened to what connects it to the anchor: each passage that links to the anchor, with the paragraph before and after it. A note the anchor links to (that doesn't link back) shows its opening instead. A gap where text was left out shows as \[…\]. When a note has more than this, a *Show more* strip runs along its bottom; click it to show the whole note in place, and click *Show less* to shorten it again.
+
+Switching rebuilds the feed from the anchor; the date direction stays as it was. Each time you switch the scroll on, it starts in Timeline.
 
 == How the feed flows
 
@@ -105,7 +116,7 @@ This makes it easy to spot, at a glance, which notes in your timeline are part o
 
 == The right panel while you scroll
 
-When Journal Scroll is on, the right panel sets aside its usual single-note tabs and shows *Scroll Context* instead (a live summary of just the entries currently in view). It includes the date-direction and return-to-anchor controls, plus four collapsible sections:
+When Journal Scroll is on, the right panel sets aside its usual single-note tabs and shows *Scroll Context* instead (a live summary of just the entries currently in view). It includes the date-direction and return-to-anchor controls (and, in Neighbourhood, the *Compose* button described below), plus four collapsible sections:
 
 + *Outline* lists the headings across all the visible notes; click one to scroll straight to it.
 + *Connections* are notes _outside_ the feed that link to or from what you are currently reading; click to open them in a new tab.
@@ -113,6 +124,31 @@ When Journal Scroll is on, the right panel sets aside its usual single-note tabs
 + *Citations* are the references cited across the visible notes; click one to highlight where it appears.
 
 Before you have scrolled any note into view, this panel invites you to "Scroll into the view to populate context." For more on the panels and overall layout, see #wikilink("1 - Views and Navigation").
+
+== Composing a new note from the neighbourhood
+
+The notes around an idea are often the raw material for something new: everything you have written about it, gathered in one place. *Compose* turns them into a writing session.
+
+In Neighbourhood, click the *Compose* button in the right panel, just after *Return to the anchor note*. InkyCap creates a new note exactly as *Ctrl+N* would, with your usual naming, folder, template, and ZID settings, and opens it in the editor. The right panel switches to the *Compose* tab, which lists as cards passages from the notes linked with the anchor, oldest note first (by ZID, then by creation date):
+
+- For a note that links to the anchor, there is a card for each passage holding such a link.
+- For a note the anchor links to (that doesn't link back in its text), there is one card holding the note's opening passage, marked *Opening*.
+
+Each card offers:
+
+- *Copy the whole note into the draft* inserts the card's entire note at your cursor, without its properties. Use this when the whole note, not just one passage, belongs in the new piece.
+- *Copy into the draft* inserts the passage at your cursor as it is, ready to rework. Use this for your own writing that you want to carry forward in a new form.
+- *Copy into the draft as a quote* inserts it as a block quote, credited with a link to its note.
+- *Insert a link to this note* inserts just the link, for when you would rather write the idea afresh.
+- *Dismiss* hides the card for this session.
+
+The same four insert buttons sit at the top of the panel beside *All passages*; they insert every card still showing, in the order shown. Copying whole notes copies each note once, even when it has several cards. Inserting links for several cards makes a bulleted list with one link per note.
+
+Drag a card by its handle to reorder the list; arranging the cards is a quick way to outline the new piece. Once your draft links to a card's note, the card fades so you can see what you haven't used yet. Click a card's note name to open that note in a new tab.
+
+Copied text is a copy: editing the original later doesn't change your draft, and editing the draft doesn't touch the original. Images and other files the copied text uses keep working, wherever the draft is saved. A copied whole note leaves out any `#bibliography(...)` call, since a document can hold only one. To keep track of where text came from, each note you copy from (whole, as it is, or as a quote) is added to the draft's *derived-from* property (see #wikilink("6 - Note Properties")). Those entries are real links, so the sources show up in the draft's Outbound Links and the draft shows up in each source's Inbound Links. If you rename a source note, its entry is updated along with every other link to it.
+
+The Compose tab belongs to the draft and lasts until you close the draft's tab. A notice under the draft's toolbar reminds you of this, and its *Show cards* button brings the Compose tab back if you have switched to another tab in the right panel. To keep a gathering of linked notes that you can return to and export, use a collection with a *Links to* filter instead (see #wikilink("2 - Collections")).
 
 == An example
 
@@ -130,3 +166,4 @@ Before you have scrolled any note into view, this panel invites you to "Scroll i
 - #wikilink("2 - Settings") (where *Sort by* and *Anchor scope* live).
 - #wikilink("3 - Agenda, Tasks, and Dates") (another way to work with dated notes, tasks, and deadlines).
 - #wikilink("1 - Views and Navigation") (how Journal Scroll fits among InkyCap's other views).
+- #wikilink("4 - Links and Backlinks") (the links that make up a Neighbourhood).

@@ -969,7 +969,10 @@ export type ScrollFilter =
   | { kind: "property_eq"; name: string; value: PropertyValueJson }
   | { kind: "property_any"; name: string }
   | { kind: "linked_from"; source: string }
-  | { kind: "linked_to"; target: string };
+  | { kind: "linked_to"; target: string }
+  /** `note`, the notes it links to and the notes that link to it, with
+   *  `note` always first. */
+  | { kind: "neighbourhood"; note: string };
 
 export type ScrollSort =
   | { kind: "property"; name: string; direction: SortDir }

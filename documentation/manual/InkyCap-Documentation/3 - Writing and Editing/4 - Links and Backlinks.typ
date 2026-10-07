@@ -211,24 +211,7 @@ The panel gives you a few ways to find notes in a busy list:
 
 === Composing a new note from your links
 
-The passages around a note's links are often the raw material for something new: everything you have written about an idea, gathered in one place. *Compose* turns them into a writing session.
-
-Click the *Compose* button in the Links panel's toolbar. InkyCap creates a new note exactly as *Ctrl+N* would, with your usual naming, folder, template, and ZID settings, and opens it in the editor. The right panel switches to the *Compose* tab, which lists as cards the passages in other notes that link to the note you started from, oldest note first (by ZID, then by creation date).
-
-Each card offers:
-
-- *Copy into the draft* inserts the passage at your cursor as it is, ready to rework. Use this for your own writing that you want to carry forward in a new form.
-- *Copy into the draft as a quote* inserts it as a block quote, credited with a link to its note.
-- *Insert a link to this note* inserts just the link, for when you would rather write the idea afresh.
-- *Dismiss* hides the card for this session.
-
-The same three insert buttons sit at the top of the panel beside *All passages*; they insert every card still showing, in the order shown. Inserting links for several cards makes a bulleted list with one link per note.
-
-Drag a card by its handle to reorder the list; arranging the cards is a quick way to outline the new piece. Once your draft links to a card's note, the card fades so you can see what you haven't used yet. Click a card's note name to open that note in a new tab.
-
-Copied text is a copy: editing the original later doesn't change your draft, and editing the draft doesn't touch the original. To keep track of where it came from, each note you copy from (as it is or as a quote) is added to the draft's *derived-from* property (see #wikilink("6 - Note Properties")). Those entries are real links, so the sources show up in the draft's Outbound Links and the draft shows up in each source's Inbound Links. If you rename a source note, its entry is updated along with every other link to it.
-
-The Compose tab belongs to the draft and lasts until you close the draft's tab. A notice under the draft's toolbar reminds you of this, and its *Show cards* button brings the Compose tab back if you have switched to another tab in the right panel. To keep a gathering of linked notes that you can return to and export, use a collection with a *Links to* filter instead (see #wikilink("2 - Collections")).
+To gather the passages around a note's links into a new piece of writing, use *Compose* from a Journal Scroll in Neighbourhood. See #wikilink("4 - Journal Scroll").
 
 #callout("note")[When you first open a large notebox, InkyCap builds its link index in the background. The Links panel may look empty for a moment and will fill in automatically once that finishes. ]
 

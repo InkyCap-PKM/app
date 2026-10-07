@@ -16,6 +16,11 @@
 //   * `dateDirection` chooses whether downward = older (`desc`, the default
 //     "recent → past") or newer (`asc`, "past → recent"). It is the sort
 //     direction handed to every `ScrollQuery`.
+//   * `scope` picks which notes the feed holds. `timeline` is every note in
+//     the user's "Anchor scope" setting, unfolding in time from the anchor.
+//     `neighbourhood` is the anchor plus the notes it links to and the notes
+//     that link to it; the backend keeps the anchor first, so the whole
+//     neighbourhood lies below it in date order.
 //   * Merges dedupe by path: a sort property that mutates between paginated
 //     queries (e.g. `file.mtime` after an edit) can otherwise shift the
 //     sorted list so a later page re-returns an already-loaded note.
@@ -38,8 +43,12 @@ import type {
   SortDir,
 } from "../lib/types";
 
+/** Which notes a Journal Scroll holds; see the header comment. */
+export type ScrollScope = "timeline" | "neighbourhood";
+
 export interface JournalScrollState {
   enabled: boolean;
+  scope: ScrollScope;
   anchorPath: string;
   entries: ScrollEntry[];
   /** Most-positive offset (relative to anchor) we've issued a request for.
@@ -174,6 +183,12 @@ export function getScrollDirection(tabId: string): SortDir {
   return scrollStates[tabId]?.dateDirection ?? "desc";
 }
 
+/** Current scope of a tab's scroll (Timeline or Neighbourhood). */
+export function getScrollScope(tabId: string): ScrollScope {
+  scrollVersion();
+  return scrollStates[tabId]?.scope ?? "timeline";
+}
+
 export function getVisibleEntries(tabId: string): string[] {
   visibleVersion();
   return scrollStates[tabId]?.visibleEntries ?? [];
@@ -233,7 +248,10 @@ function scopeFolder(): string | null {
   }
 }
 
-function buildFilter(): ScrollFilter {
+function buildFilter(state: JournalScrollState): ScrollFilter {
+  if (state.scope === "neighbourhood") {
+    return { kind: "neighbourhood", note: state.anchorPath };
+  }
   const folder = scopeFolder();
   if (folder === null) return { kind: "all" };
   return { kind: "folder", path: folder, recursive: true };
@@ -245,7 +263,7 @@ function buildQuery(
   limit: number,
 ): ScrollQuery {
   return {
-    filter: buildFilter(),
+    filter: buildFilter(state),
     sort: buildSort(state.dateDirection),
     anchor: state.anchorPath,
     offset,
@@ -266,7 +284,7 @@ export async function findOffsetForTarget(
   if (!state) return null;
   try {
     return await ipc.findOffsetInScrollQuery({
-      filter: buildFilter(),
+      filter: buildFilter(state),
       sort: buildSort(state.dateDirection),
       anchor: state.anchorPath,
       target: targetPath,
@@ -416,6 +434,7 @@ export async function toggleScroll(tabId: string, anchorPath: string) {
     produce((s) => {
       s[tabId] = {
         enabled: true,
+        scope: "timeline",
         anchorPath,
         entries: [],
         lastOffset: 0,
@@ -494,6 +513,20 @@ export async function toggleScrollDirection(tabId: string) {
     produce((s) => {
       s[tabId].dateDirection =
         s[tabId].dateDirection === "desc" ? "asc" : "desc";
+    }),
+  );
+  bump();
+  await loadInitial(tabId);
+}
+
+/** Switch the scroll between Timeline and Neighbourhood and rebuild. The
+ *  anchor and date direction stay as they are. */
+export async function setScrollScope(tabId: string, scope: ScrollScope) {
+  const state = scrollStates[tabId];
+  if (!state || !state.enabled || state.scope === scope) return;
+  setScrollStates(
+    produce((s) => {
+      s[tabId].scope = scope;
     }),
   );
   bump();

@@ -1,12 +1,15 @@
 // Compose mode: write a new note (the draft, in the editor) beside cards
-// holding the passages in other notes that link to the note Compose was
-// started from (in the right panel).
+// holding passages from the notes linked with the note Compose was started
+// from (in the right panel): the passages that link to it, and the opening
+// passage of each note it links to.
 //
-// Started from the Links pane's Compose button. The draft is made exactly as
+// Started from the Compose button in the right panel of a Journal Scroll in
+// Neighbourhood mode, for the scroll's anchor. The draft is made exactly as
 // Ctrl+N makes a note, so the user's naming, folder, template and ZID
 // settings all apply. A passage can be copied in as it is or as a quote that
-// links back to its note; either way its note is added to the draft's
-// `derived-from` property. Session state lives in stores/compose.ts.
+// links back to its note, or the card's whole note can be copied in; each
+// way adds the note to the draft's `derived-from` property. Session state
+// lives in stores/compose.ts.
 
 import { Component, For, Show, createSignal, onCleanup, createEffect, on } from "solid-js";
 import { CopyPlus, GripVertical, Link, NotebookPen, X } from "lucide-solid";
@@ -17,7 +20,7 @@ import { t, useI18n } from "../lib/i18n";
 import { createDragReorder } from "../lib/drag-reorder";
 import { pathEquals } from "../lib/paths";
 import { typstStringEscape } from "../lib/typst";
-import { CopyQuoteIcon } from "./icons";
+import { ComposeFilesCopyIcon, CopyQuoteIcon } from "./icons";
 import { registerRightPanel } from "./right-panel-registry";
 import { externalReload } from "../editor/typst-decorations/visual-plugin";
 import { triggerCreationRule } from "../stores/creation-rules";
@@ -37,16 +40,18 @@ import {
 
 const PANEL_ID = "compose";
 
-/** How a passage goes into the draft: as written, as a quote crediting its
- *  note, or only as a link to its note. */
-type InsertMode = "copy" | "quote" | "link";
+/** How a card goes into the draft: its whole note, its passage as written,
+ *  its passage as a quote crediting its note, or only a link to its note. */
+type InsertMode = "whole" | "copy" | "quote" | "link";
 
 let unregisterPanel: (() => void) | null = null;
 
 /** Create a draft the way Ctrl+N does, open it, and show the Compose panel
- *  with the passages around `origin`'s inbound links. Does nothing if the
- *  user cancels naming the note. */
-export async function startCompose(origin: { path: string; name: string }): Promise<void> {
+ *  with the passages from the notes linked with the note at `originPath`.
+ *  Does nothing if the user cancels naming the note. */
+export async function startCompose(originPath: string): Promise<void> {
+  const fileName = originPath.split("/").pop() ?? originPath;
+  const origin = { path: originPath, name: fileName.replace(/\.typ$/i, "") };
   try {
     const result = await triggerCreationRule("new-note");
     if (!result) return;
@@ -120,6 +125,18 @@ const ComposePanel: Component = () => {
       const names = uniqueNames(cards);
       if (names.length === 1) insertInline(view, wikilinkMarkup(names[0]));
       else insertBlock(view, names.map((n) => `- ${wikilinkMarkup(n)}`).join("\n"));
+    } else if (mode === "whole") {
+      const sources = uniqueSources(cards);
+      let bodies: string[];
+      try {
+        bodies = await Promise.all(sources.map((src) => ipc.getNoteBodyForCopy(src.path)));
+      } catch (e) {
+        toastError(t("compose.copyNoteFailed"), e);
+        return;
+      }
+      const text = bodies.filter((b) => b.length > 0).join("\n\n");
+      if (text) insertBlock(view, text);
+      await recordSources(view, sources.map((src) => src.name));
     } else {
       const blocks = cards.map((c) =>
         mode === "quote"
@@ -141,9 +158,17 @@ const ComposePanel: Component = () => {
     );
   }
 
-  /** The three insert buttons, for one card or for all of them. */
+  /** The four insert buttons, for one card or for all of them. */
   const InsertButtons: Component<{ cards: () => ComposeCard[]; all?: boolean }> = (props) => (
     <>
+      <button
+        class="ui-icon-btn"
+        onClick={() => void insert(props.cards(), "whole")}
+        title={props.all ? t("compose.copyAllNotes") : t("compose.copyNote")}
+        aria-label={props.all ? t("compose.copyAllNotes") : t("compose.copyNote")}
+      >
+        <ComposeFilesCopyIcon size={16} />
+      </button>
       <button
         class="ui-icon-btn"
         onClick={() => void insert(props.cards(), "copy")}
@@ -225,6 +250,14 @@ const ComposePanel: Component = () => {
                       >
                         {card.source.name}
                       </button>
+                      <Show when={card.lead}>
+                        <span
+                          class="badge"
+                          title={t("compose.leadTitle", { name: s().origin.name })}
+                        >
+                          {t("compose.lead")}
+                        </span>
+                      </Show>
                     </div>
                     <Show when={card.passage.heading}>
                       <p class="compose__heading">{card.passage.heading}</p>
@@ -278,6 +311,13 @@ export const ComposeNotice: Component<{ tabId: string }> = (props) => {
 /** The cards' note names, once each, in card order. */
 function uniqueNames(cards: ComposeCard[]): string[] {
   return [...new Set(cards.map((c) => c.source.name))];
+}
+
+/** The cards' notes, once each, in card order. */
+function uniqueSources(cards: ComposeCard[]): ComposeCard["source"][] {
+  return cards
+    .map((c) => c.source)
+    .filter((src, i, all) => all.findIndex((o) => pathEquals(o.path, src.path)) === i);
 }
 
 function wikilinkMarkup(name: string): string {

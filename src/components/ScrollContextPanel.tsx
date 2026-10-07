@@ -424,17 +424,24 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
    *  the compiled HTML appear in document order, matching the order of
    *  `getNoteHeadings`, so the heading's index in that list selects the
    *  corresponding rendered element. Deep headings that Typst lowers to
-   *  `<div role="heading">` are included so the mapping stays 1:1. */
-  function scrollToHeading(path: string, headingIndex: number) {
+   *  `<div role="heading">` are included so the mapping stays 1:1. An entry
+   *  showing only an excerpt (Neighbourhood) renders fewer headings; there
+   *  the heading is found by its text, or the entry's top is used when the
+   *  excerpt leaves it out. */
+  function scrollToHeading(row: OutlineRow, headingIndex: number) {
     const entry = document.querySelector(
-      `.journal-scroll [data-path="${CSS.escape(path)}"]`,
+      `.journal-scroll [data-path="${CSS.escape(row.path)}"]`,
     );
     if (!entry) return;
     const body = entry.querySelector(".journal-scroll__entry-body");
-    const headings = body?.querySelectorAll(
-      "h1, h2, h3, h4, h5, h6, [role='heading']",
+    const rendered = Array.from(
+      body?.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6, [role='heading']") ?? [],
     );
-    const target = headings?.[headingIndex] as HTMLElement | undefined;
+    const wanted = row.headings[headingIndex]?.text.trim();
+    const target =
+      rendered.length === row.headings.length
+        ? rendered[headingIndex]
+        : rendered.find((el) => el.textContent?.trim() === wanted);
     (target ?? (entry as HTMLElement)).scrollIntoView({
       behavior: "smooth",
       block: "start",
@@ -489,7 +496,7 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
                           >
                             <button
                               type="button"
-                              onClick={() => scrollToHeading(row.path, i())}
+                              onClick={() => scrollToHeading(row, i())}
                             >
                               {h.text}
                             </button>

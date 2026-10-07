@@ -4,10 +4,10 @@
 // The Journal Scroll view (and internal sub-queries like the right-panel
 // "Scroll Context" tab and the wikilink-routing `queryResultIncludes` check)
 // issue queries against the in-memory `PropertyIndex` / `LinkIndex` through
-// this single command. The frontend pill exposes a curated subset of the
-// filter variants (Date / Tree / Properties); LinkedFrom, LinkedTo, and
-// PropertyAny exist so the right-panel sub-panes and routing logic can build
-// on the same primitive without each defining its own ad-hoc command.
+// this single command. The scroll's Timeline scope uses All or Folder, and
+// its Neighbourhood scope uses Neighbourhood; the other variants exist so
+// sub-panes and routing logic can build on the same primitive without each
+// defining its own ad-hoc command.
 // ---------------------------------------------------------------------------
 
 use std::collections::HashSet;
@@ -49,6 +49,10 @@ pub enum ScrollFilter {
     LinkedFrom { source: PathBuf },
     /// Notes that link to `target` (backlinks of `target`).
     LinkedTo { target: PathBuf },
+    /// The Journal Scroll's Neighbourhood scope: `note` itself, every note
+    /// it links to, and every note that links to it. `note` leads the
+    /// result whatever the sort, so the whole neighbourhood unfolds below it.
+    Neighbourhood { note: PathBuf },
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -176,6 +180,14 @@ async fn build_sorted(
             let link_index = session.link_index.read().await;
             Some(link_index.get_backlinks(target))
         }
+        ScrollFilter::Neighbourhood { note } => {
+            let note = sanitize_notebox_arg(&note.to_string_lossy())?;
+            let link_index = session.link_index.read().await;
+            let mut paths = link_index.get_forward_links(&note);
+            paths.extend(link_index.get_backlinks(&note));
+            paths.push(note);
+            Some(paths)
+        }
         _ => None,
     };
 
@@ -192,6 +204,21 @@ async fn build_sorted(
             .iter()
             .filter_map(|p| index.notes.get(p))
             .collect(),
+        ScrollFilter::Neighbourhood { .. } => {
+            // Compared as canonical strings: link-index and property-index
+            // keys can differ in shape for the same note.
+            let wanted: HashSet<String> = linked_paths
+                .as_ref()
+                .expect("linked_paths populated above")
+                .iter()
+                .map(|p| to_frontend_string(p))
+                .collect();
+            index
+                .notes
+                .values()
+                .filter(|note| wanted.contains(&to_frontend_string(&note.path)))
+                .collect()
+        }
     };
 
     let anchor_str = to_frontend_string(anchor);
@@ -211,7 +238,18 @@ async fn build_sorted(
         })
     };
 
-    Ok(sort_candidates(candidates, outside_anchor, sort))
+    let mut sorted = sort_candidates(candidates, outside_anchor, sort);
+    if matches!(filter, ScrollFilter::Neighbourhood { .. }) {
+        move_to_front(&mut sorted, &anchor_str);
+    }
+    Ok(sorted)
+}
+
+/// Move the entry for `path` to the front, keeping the others in order.
+fn move_to_front(entries: &mut [ScrollEntry], path: &str) {
+    if let Some(i) = entries.iter().position(|e| e.path == path) {
+        entries[..=i].rotate_right(1);
+    }
 }
 
 /// Sort a candidate note set into the scroll's display order.
@@ -776,6 +814,23 @@ mod tests {
         // Past-the-end returns empty.
         let past_end = slice_around_anchor(&entries, &anchor, 10, 3);
         assert!(past_end.is_empty());
+    }
+
+    #[test]
+    fn move_to_front_keeps_the_rest_in_order() {
+        let mut entries: Vec<ScrollEntry> = ["/v/a.typ", "/v/b.typ", "/v/c.typ", "/v/d.typ"]
+            .iter()
+            .map(|p| ScrollEntry {
+                path: (*p).to_string(),
+                title: String::new(),
+                out_of_scope: false,
+            })
+            .collect();
+        move_to_front(&mut entries, "/v/c.typ");
+        let order: Vec<&str> = entries.iter().map(|e| e.path.as_str()).collect();
+        assert_eq!(order, vec!["/v/c.typ", "/v/a.typ", "/v/b.typ", "/v/d.typ"]);
+        move_to_front(&mut entries, "/v/missing.typ");
+        assert_eq!(entries[0].path, "/v/c.typ");
     }
 
     #[test]

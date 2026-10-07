@@ -1,11 +1,12 @@
 //! Commands that return the passages of text around wikilinks, for the Links
-//! pane and Compose mode, and that help Compose edit its draft. The link index says *which* notes link; these read
-//! the notes on request to find *where*. See
-//! [`crate::typst_pipeline::link_passages`] for what a passage is.
+//! pane and Compose mode, and that help Compose edit its draft. The link
+//! index says *which* notes link; these read the notes on request to find
+//! *where*. See [`crate::typst_pipeline::link_passages`] for what a passage
+//! is.
 //!
-//! Passage sources are returned with relative paths (`#image("pic.png")`)
-//! rebased to the notebox root, so text copied into a note in another folder
-//! still finds its files.
+//! Text meant for copying is returned with relative paths
+//! (`#image("pic.png")`) rebased to the notebox root, so it still finds its
+//! files when pasted into a note in another folder.
 
 use std::path::Path;
 use std::time::Instant;
@@ -15,6 +16,7 @@ use tauri::State;
 use crate::errors::InkyCapError;
 use crate::link_index::note_stem;
 use crate::state::AppState;
+use crate::storage::local::LocalNoteboxStorage;
 use crate::storage::sanitize_notebox_arg;
 use crate::storage::traits::NoteboxStorage;
 use crate::typst_pipeline::link_passages::{self, LinkPassage};
@@ -38,12 +40,9 @@ pub async fn get_link_passages(
 
     let content = storage.read_file(&source).await?;
     let mut passages = link_passages::inbound_passages(&content, &note_stem(&target));
-    let note_dir = crate::commands::file_ops::notebox_relative_path(&source, &storage)
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_default();
+    let dir = note_dir(&source, &storage);
     for p in &mut passages {
-        rebase_passage(p, &note_dir);
+        rebase_passage(p, &dir);
     }
     log::debug!(
         "get_link_passages: {} passage(s) in {:?}",
@@ -51,6 +50,50 @@ pub async fn get_link_passages(
         started.elapsed()
     );
     Ok(passages)
+}
+
+/// The opening passage of the note at `path`: its first paragraph or list
+/// item, or its first heading with the paragraph after it. Compose shows it
+/// for a note the origin links to, which has no passage linking back. `None`
+/// when the note's body is empty.
+#[tauri::command]
+pub async fn get_lead_passage(
+    path: String,
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<Option<LinkPassage>, InkyCapError> {
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
+    let path = sanitize_notebox_arg(&path)?;
+    let content = storage.read_file(&path).await?;
+    let mut passage = link_passages::lead_passage(&content);
+    if let Some(p) = passage.as_mut() {
+        rebase_passage(p, &note_dir(&path, &storage));
+    }
+    Ok(passage)
+}
+
+/// The whole body of the note at `path`, ready to copy into another note:
+/// without its `#import` lines, its `#note(...)` call, or any
+/// `#bibliography(...)` call (a document may hold only one), and with
+/// relative paths rebased to the notebox root.
+#[tauri::command]
+pub async fn get_note_body_for_copy(
+    path: String,
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<String, InkyCapError> {
+    use crate::typst_pipeline::book_wrapper::prepare_note_for_include;
+    use crate::typst_pipeline::path_rebase::rebase_relative_paths;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
+    let path = sanitize_notebox_arg(&path)?;
+    let content = storage.read_file(&path).await?;
+    let body = prepare_note_for_include(&content);
+    Ok(rebase_relative_paths(
+        body.trim(),
+        &note_dir(&path, &storage),
+    ))
 }
 
 /// `content` with `source_name` added to its `derived-from` property, the
@@ -69,6 +112,15 @@ pub fn note_with_derived_from(content: String, source_name: String) -> Option<St
 #[tauri::command]
 pub fn wikilink_names(content: String) -> Vec<String> {
     link_passages::wikilink_names(&content)
+}
+
+/// The notebox-relative folder holding the note at `path`, which relative
+/// paths in its text are resolved against.
+fn note_dir(path: &Path, storage: &LocalNoteboxStorage) -> std::path::PathBuf {
+    crate::commands::file_ops::notebox_relative_path(path, storage)
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_default()
 }
 
 fn rebase_passage(passage: &mut LinkPassage, note_dir: &Path) {

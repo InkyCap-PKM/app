@@ -56,15 +56,49 @@ pub struct LinkPassage {
 /// Links made through `link-ref(...)` property values have no passage, so a
 /// note that links only from its properties yields an empty list.
 pub fn inbound_passages(source: &str, target_stem: &str) -> Vec<LinkPassage> {
+    let all_headings = headings(source);
+    inbound_spans(source, target_stem)
+        .into_iter()
+        .filter_map(|span| span_passage(source, &all_headings, span))
+        .collect()
+}
+
+/// The first unit of writing in `source`'s body, standing in for a note that
+/// is linked *to* rather than linking: its opening paragraph or list item, or
+/// its first heading plus the paragraph after it. `None` for an empty body.
+/// Carries no `before` (nothing comes before it) but does carry `after`.
+pub fn lead_passage(source: &str) -> Option<LinkPassage> {
+    span_passage(source, &headings(source), lead_span(source)?)
+}
+
+/// Where a passage and the units of writing around it sit in the source, as
+/// byte ranges.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PassageSpan {
+    pub unit: Range<usize>,
+    pub before: Option<Range<usize>>,
+    pub after: Option<Range<usize>>,
+}
+
+impl PassageSpan {
+    /// The passage together with its neighbours.
+    pub fn with_context(&self) -> Range<usize> {
+        let start = self.before.as_ref().map_or(self.unit.start, |r| r.start);
+        let end = self.after.as_ref().map_or(self.unit.end, |r| r.end);
+        start..end
+    }
+}
+
+/// The spans behind [`inbound_passages`], in document order, one per unit
+/// of writing that links to `target_stem`.
+pub(crate) fn inbound_spans(source: &str, target_stem: &str) -> Vec<PassageSpan> {
     let root = parse(source);
     let body_start = body_start(source);
     let target = target_stem.to_lowercase();
     let mut calls = Vec::new();
     collect_wikilinks(&LinkedNode::new(&root), &mut calls);
 
-    let all_headings = headings(source);
-    let mut seen: Vec<Range<usize>> = Vec::new();
-    let mut out = Vec::new();
+    let mut out: Vec<PassageSpan> = Vec::new();
     for call in calls {
         let matches = first_string_positional_arg(&call)
             .as_deref()
@@ -77,25 +111,56 @@ pub fn inbound_passages(source: &str, target_stem: &str) -> Vec<LinkPassage> {
         let Some(unit) = clip(unit, body_start) else {
             continue;
         };
-        if seen.contains(&unit) {
+        if out.iter().any(|s| s.unit == unit) {
             continue;
         }
-        seen.push(unit.clone());
         let (before, after) = match &markup {
             Some(m) => neighbours(m, &unit, body_start),
             None => (None, None),
         };
-        let Some(paragraph) = passage_text(source, unit.clone()) else {
-            continue;
-        };
-        out.push(LinkPassage {
-            heading: heading_above(&all_headings, unit.start).map(heading_plain_text),
-            paragraph,
-            before: before.and_then(|r| passage_text(source, r)),
-            after: after.and_then(|r| passage_text(source, r)),
+        out.push(PassageSpan {
+            unit,
+            before,
+            after,
         });
     }
     out
+}
+
+/// The span behind [`lead_passage`].
+pub(crate) fn lead_span(source: &str) -> Option<PassageSpan> {
+    let root = parse(source);
+    let body_start = body_start(source);
+    let markup = LinkedNode::new(&root);
+    let first = markup.children().find(|c| {
+        c.range().end > body_start && !matches!(c.kind(), SyntaxKind::Space | SyntaxKind::Parbreak)
+    })?;
+    let unit = match first.kind() {
+        k if is_item(k) => first.range(),
+        SyntaxKind::Heading => heading_and_next(&first),
+        _ => paragraph_run(&markup, &first),
+    };
+    let unit = clip(unit, body_start)?;
+    let (_, after) = neighbours(&markup, &unit, body_start);
+    Some(PassageSpan {
+        unit,
+        before: None,
+        after,
+    })
+}
+
+/// The passage a span marks out, or `None` when its unit is blank.
+fn span_passage(
+    source: &str,
+    all_headings: &[SourceHeading],
+    span: PassageSpan,
+) -> Option<LinkPassage> {
+    Some(LinkPassage {
+        heading: heading_above(all_headings, span.unit.start).map(heading_plain_text),
+        paragraph: passage_text(source, span.unit)?,
+        before: span.before.and_then(|r| passage_text(source, r)),
+        after: span.after.and_then(|r| passage_text(source, r)),
+    })
 }
 
 /// The lowercase note names `source`'s wikilinks point at, in document order
@@ -120,7 +185,7 @@ pub fn wikilink_names(source: &str) -> Vec<String> {
 
 /// Byte offset where the note's body starts, after the `#import` lines and
 /// the `#note(...)` call.
-fn body_start(source: &str) -> usize {
+pub(crate) fn body_start(source: &str) -> usize {
     // `strip_note_preamble` returns a tail slice of `source`, so the length
     // difference is a byte offset on a character boundary.
     source.len() - crate::notebox_package::strip_note_preamble(source).len()
@@ -372,6 +437,37 @@ mod tests {
             paragraphs(&src, "T"),
             vec!["Straight after #wikilink(\"T\")."]
         );
+    }
+
+    #[test]
+    fn lead_passage_is_the_first_body_paragraph() {
+        let src = note("Opening — with an em dash\nover two lines.\n\nSecond.");
+        let p = lead_passage(&src).unwrap();
+        assert_eq!(
+            p.paragraph.source,
+            "Opening — with an em dash\nover two lines."
+        );
+        assert_eq!(p.before, None);
+        assert_eq!(p.after.unwrap().source, "Second.");
+    }
+
+    #[test]
+    fn lead_passage_takes_a_leading_heading_with_its_paragraph() {
+        let src = note("= Überblick\nErster Absatz.\n\nZweiter.");
+        let p = lead_passage(&src).unwrap();
+        assert_eq!(p.paragraph.source, "= Überblick\nErster Absatz.");
+        assert_eq!(p.heading.as_deref(), Some("Überblick"));
+    }
+
+    #[test]
+    fn lead_passage_starts_after_the_note_call() {
+        let src = format!("{PREAMBLE}- first item\n- second");
+        assert_eq!(lead_passage(&src).unwrap().paragraph.source, "- first item");
+    }
+
+    #[test]
+    fn lead_passage_of_an_empty_body_is_none() {
+        assert_eq!(lead_passage(PREAMBLE), None);
     }
 
     #[test]

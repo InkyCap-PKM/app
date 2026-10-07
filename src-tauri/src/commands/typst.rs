@@ -260,12 +260,60 @@ pub async fn compile_typst_html(
     let session = state.session(window.label()).await;
     let path_arg = sanitize_notebox_arg(&path)?;
     let storage = session.get_storage().await?;
-    let canonical = storage.resolve_path(&path_arg)?;
     let source = storage.read_file(&path_arg).await?;
+    compile_html_source(&path_arg, &source, &state, &session).await
+}
+
+/// An HTML compile of part of a note, from [`compile_typst_html_excerpt`].
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ExcerptHtmlResult {
+    #[serde(flatten)]
+    pub result: TypstHtmlResult,
+    /// Part of the note was left out; false when the whole note was short
+    /// enough to show as it is.
+    pub truncated: bool,
+}
+
+/// Compile only the passages of the note at `path` around its links to the
+/// note at `linked_with` (or its opening passage when it has none), each
+/// with a unit of writing either side, for the Journal Scroll's
+/// Neighbourhood view. See [`crate::typst_pipeline::note_excerpt`].
+#[tauri::command]
+pub async fn compile_typst_html_excerpt(
+    path: String,
+    linked_with: String,
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<ExcerptHtmlResult, InkyCapError> {
+    let session = state.session(window.label()).await;
+    let path_arg = sanitize_notebox_arg(&path)?;
+    let linked_with = sanitize_notebox_arg(&linked_with)?;
+    let storage = session.get_storage().await?;
+    let source = storage.read_file(&path_arg).await?;
+    let excerpt = crate::typst_pipeline::note_excerpt::excerpt_source(
+        &source,
+        &crate::link_index::note_stem(&linked_with),
+    );
+    let truncated = excerpt.is_some();
+    let source = excerpt.unwrap_or(source);
+    let result = compile_html_source(&path_arg, &source, &state, &session).await?;
+    Ok(ExcerptHtmlResult { result, truncated })
+}
+
+/// Compile `source` to HTML as the note at `path_arg`, so its relative paths
+/// and style settings resolve as they do for that note.
+async fn compile_html_source(
+    path_arg: &std::path::Path,
+    source: &str,
+    state: &AppState,
+    session: &NoteboxSession,
+) -> Result<TypstHtmlResult, InkyCapError> {
+    let storage = session.get_storage().await?;
+    let canonical = storage.resolve_path(path_arg)?;
 
     let original_lines = source.lines().count();
-    let source = maybe_inject_set_notebox(&source, &state, CompilePurpose::ReadingView).await;
-    let source = inject_style_cascade(&source, &path_arg, &state).await;
+    let source = maybe_inject_set_notebox(source, state, CompilePurpose::ReadingView).await;
+    let source = inject_style_cascade(&source, path_arg, state).await;
     // Tag citations with `data-cite-key` so the Scroll Context panel can
     // locate and highlight them. HTML render path only — see
     // `style_injection::inject_cite_tagging`.
@@ -275,12 +323,12 @@ pub async fn compile_typst_html(
     // injected line is counted and diagnostics remap correctly.
     let source = style_injection::inject_html_align_shim(&source);
     let injected_line_offset = source.lines().count().saturating_sub(original_lines);
-    let source = maybe_inject_preview_bibliography(&source, &state, &session).await;
-    let source = escape_non_bib_citations(&source, &state, &session).await;
+    let source = maybe_inject_preview_bibliography(&source, state, session).await;
+    let source = escape_non_bib_citations(&source, state, session).await;
 
     let mut guard = session.typst_compiler.lock().await;
     let compiler = guard.as_mut().ok_or(InkyCapError::NoteboxNotOpen)?;
-    ensure_system_fonts_if_needed(compiler, &state).await;
+    ensure_system_fonts_if_needed(compiler, state).await;
     let mut result =
         compile_with_auto_packages(compiler, |c| c.compile_html(&canonical, source.clone()))
             .await

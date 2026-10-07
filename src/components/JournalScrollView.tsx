@@ -44,6 +44,7 @@ import {
   findOffsetForTarget,
   getAnchorPath,
   getAnchorPinNonce,
+  getScrollScope,
   getEntries,
   getSavedScrollPosition,
   getScrollNavRequest,
@@ -57,32 +58,62 @@ import {
 } from "../stores/journal-scroll";
 import { openTab } from "../stores/tabs";
 import { settings } from "../stores/settings";
-import { Anchor, MessageSquareWarning, MessageSquareX, Tags } from "lucide-solid";
+import {
+  Anchor,
+  ChevronsDownUp,
+  ChevronsUpDown,
+  MessageSquareWarning,
+  MessageSquareX,
+  Tags,
+} from "lucide-solid";
 import { FlagNoticeIcon } from "./icons/FlagNotice";
 import { SquareArrowOutUpRight, SquareArrowInDownLeft } from "./icons";
 import { DiagnosticRow } from "./DiagnosticRow";
 import type { ConnectionFlags, ScrollEntry, TypstHtmlResult } from "../lib/types";
 
 // === Module-level render cache + bounded-concurrency queue ===
+//
+// A render is either a whole note or, in Neighbourhood, an excerpt of a note
+// around its links to the anchor. Both are cached under a key naming the
+// note and, for an excerpt, the anchor (see `renderKey`).
 
 const MAX_CONCURRENT = 3;
 const CACHE_CAP = 50;
 
-/** Path → compiled HTML result. */
-const htmlCache = new Map<string, TypstHtmlResult>();
+/** What to compile: the note at `path`, or only its passages around links
+ *  to `excerptOf` when that is set. */
+interface RenderJob {
+  path: string;
+  excerptOf?: string;
+}
 
-/** Path → set of subscriber callbacks called once when the path's
+/** A compiled entry. `truncated` is set on an excerpt that left part of the
+ *  note out. */
+type RenderResult = TypstHtmlResult & { truncated?: boolean };
+
+/** Separates the note from the anchor in an excerpt's key; a path can't
+ *  hold it. */
+const KEY_SEPARATOR = "\u0000";
+
+function renderKey(job: RenderJob): string {
+  return job.excerptOf ? `${job.path}${KEY_SEPARATOR}${job.excerptOf}` : job.path;
+}
+
+/** Render key → compiled HTML result. */
+const htmlCache = new Map<string, RenderResult>();
+
+/** Render key → set of subscriber callbacks called once when the
  *  compilation completes (or fails). Used to coalesce multiple in-flight
- *  requests for the same path. */
-const pendingSubscribers = new Map<string, Set<(r: TypstHtmlResult) => void>>();
+ *  requests for the same render. */
+const pendingSubscribers = new Map<string, Set<(r: RenderResult) => void>>();
 
-/** Paths currently queued for rendering but not yet started. */
-const renderQueue: string[] = [];
+/** Renders queued but not yet started. */
+const renderQueue: RenderJob[] = [];
 let activeWorkers = 0;
 
-function cacheTouch(path: string, result: TypstHtmlResult) {
-  if (htmlCache.has(path)) htmlCache.delete(path); // move-to-front
-  htmlCache.set(path, result);
+function cacheTouch(key: string, result: RenderResult) {
+  if (htmlCache.has(key)) htmlCache.delete(key); // move-to-front
+  htmlCache.set(key, result);
   while (htmlCache.size > CACHE_CAP) {
     // Map iteration order is insertion order; first key is oldest.
     const oldest = htmlCache.keys().next().value;
@@ -91,10 +122,10 @@ function cacheTouch(path: string, result: TypstHtmlResult) {
   }
 }
 
-function notifySubscribers(path: string, result: TypstHtmlResult) {
-  const subs = pendingSubscribers.get(path);
+function notifySubscribers(key: string, result: RenderResult) {
+  const subs = pendingSubscribers.get(key);
   if (!subs) return;
-  pendingSubscribers.delete(path);
+  pendingSubscribers.delete(key);
   for (const cb of subs) {
     try {
       cb(result);
@@ -106,18 +137,21 @@ function notifySubscribers(path: string, result: TypstHtmlResult) {
 
 async function runOneWorker() {
   while (renderQueue.length > 0) {
-    const path = renderQueue.shift()!;
-    if (htmlCache.has(path)) {
+    const job = renderQueue.shift()!;
+    const key = renderKey(job);
+    if (htmlCache.has(key)) {
       // Already rendered while waiting in queue.
-      notifySubscribers(path, htmlCache.get(path)!);
+      notifySubscribers(key, htmlCache.get(key)!);
       continue;
     }
     try {
-      const result = await ipc.compileTypstHtml(path);
-      cacheTouch(path, result);
-      notifySubscribers(path, result);
+      const result: RenderResult = job.excerptOf
+        ? await ipc.compileTypstHtmlExcerpt(job.path, job.excerptOf)
+        : await ipc.compileTypstHtml(job.path);
+      cacheTouch(key, result);
+      notifySubscribers(key, result);
     } catch (err) {
-      const failResult: TypstHtmlResult = {
+      const failResult: RenderResult = {
         ok: false,
         recovered: false,
         html: "",
@@ -131,31 +165,32 @@ async function runOneWorker() {
           },
         ],
       };
-      cacheTouch(path, failResult);
-      notifySubscribers(path, failResult);
+      cacheTouch(key, failResult);
+      notifySubscribers(key, failResult);
     }
   }
   activeWorkers--;
 }
 
 function requestRender(
-  path: string,
-  onResult: (r: TypstHtmlResult) => void,
+  job: RenderJob,
+  onResult: (r: RenderResult) => void,
 ): () => void {
+  const key = renderKey(job);
   // Cache hit: short-circuit.
-  const cached = htmlCache.get(path);
+  const cached = htmlCache.get(key);
   if (cached) {
     // Refresh recency.
-    cacheTouch(path, cached);
+    cacheTouch(key, cached);
     queueMicrotask(() => onResult(cached));
     return () => {};
   }
   // Subscribe and (if needed) enqueue.
-  let subs = pendingSubscribers.get(path);
+  let subs = pendingSubscribers.get(key);
   if (!subs) {
     subs = new Set();
-    pendingSubscribers.set(path, subs);
-    renderQueue.push(path);
+    pendingSubscribers.set(key, subs);
+    renderQueue.push(job);
   }
   subs.add(onResult);
 
@@ -166,15 +201,17 @@ function requestRender(
   }
 
   return () => {
-    const s = pendingSubscribers.get(path);
+    const s = pendingSubscribers.get(key);
     if (s) s.delete(onResult);
   };
 }
 
-/** Drop a path from the cache and any in-flight subscriptions so the next
- *  view of that entry re-compiles. Called on file-changed events. */
+/** Drop every cached render of a note (whole and excerpts) so the next view
+ *  of that entry re-compiles. Called on file-changed events. */
 function invalidatePath(path: string) {
-  htmlCache.delete(path);
+  for (const key of [...htmlCache.keys()]) {
+    if (key === path || key.startsWith(path + KEY_SEPARATOR)) htmlCache.delete(key);
+  }
   // Pending compiles will still run; their result populates the cache and
   // any newly-subscribed listeners pick up the latest version. Subscribers
   // already attached get the in-flight result, then a fresh subscription
@@ -735,9 +772,41 @@ const JournalScrollEntryView: Component<JournalScrollEntryViewProps> = (
   const t = useI18n();
   let frameRef: HTMLDivElement | undefined;
   let bodyRef: HTMLDivElement | undefined;
-  const [result, setResult] = createSignal<TypstHtmlResult | null>(null);
+  const [result, setResult] = createSignal<RenderResult | null>(null);
+  // In Neighbourhood every entry but the anchor shows only its passages
+  // around the anchor, until "Show more" expands it to the whole note.
+  const [expanded, setExpanded] = createSignal(false);
+  const excerptOf = () => {
+    const anchor = getAnchorPath(props.tabId);
+    return getScrollScope(props.tabId) === "neighbourhood" &&
+      !expanded() &&
+      !pathEquals(props.entry.path, anchor)
+      ? anchor
+      : undefined;
+  };
+  // A new anchor or scope makes a new excerpt, so start collapsed again.
+  createEffect(
+    on(
+      [() => getScrollScope(props.tabId), () => getAnchorPath(props.tabId)],
+      () => setExpanded(false),
+      { defer: true },
+    ),
+  );
   const [near, setNear] = createSignal(false);
   const [visible, setVisible] = createSignal(false);
+  // Shown while the entry is an excerpt that left something out, and after
+  // "Show more" so the reader can switch back.
+  const showStrip = () => expanded() || !!result()?.truncated;
+  function toggleExpanded() {
+    const collapsing = expanded();
+    setExpanded(!collapsing);
+    // Collapsing a long note read to its end would leave the reader far
+    // below it; bring its top back into view.
+    if (collapsing && frameRef && frameRef.getBoundingClientRect().top < props.container.getBoundingClientRect().top) {
+      frameRef.scrollIntoView({ block: "start" });
+    }
+  }
+
   // Compile diagnostics are hidden behind a header button by default — in
   // Journal Scroll the warning is incidental and can be ignored; the button
   // reveals the full message on demand.
@@ -809,10 +878,10 @@ const JournalScrollEntryView: Component<JournalScrollEntryViewProps> = (
 
   // Trigger render when the entry approaches view; subscribe to results.
   createEffect(
-    on([near, () => props.entry.path], ([isNear, path]) => {
+    on([near, () => props.entry.path, excerptOf], ([isNear, path, of]) => {
       if (!isNear) return;
       setResult(null);
-      const unsub = requestRender(path, (r) => setResult(r));
+      const unsub = requestRender({ path, excerptOf: of }, (r) => setResult(r));
       onCleanup(unsub);
     }),
   );
@@ -957,6 +1026,19 @@ const JournalScrollEntryView: Component<JournalScrollEntryViewProps> = (
               style={contentStyle()}
               ref={bodyRef}
             />
+            <Show when={showStrip()}>
+              <button
+                type="button"
+                class="journal-scroll__show-more"
+                onClick={toggleExpanded}
+                aria-expanded={expanded()}
+              >
+                <span>{expanded() ? t("journalScroll.showLess") : t("journalScroll.showMore")}</span>
+                <Show when={expanded()} fallback={<ChevronsUpDown size={14} aria-hidden="true" />}>
+                  <ChevronsDownUp size={14} aria-hidden="true" />
+                </Show>
+              </button>
+            </Show>
           </>
         )}
       </Show>
