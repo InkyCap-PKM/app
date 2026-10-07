@@ -238,7 +238,7 @@ async fn build_sorted(
         })
     };
 
-    let mut sorted = sort_candidates(candidates, outside_anchor, sort);
+    let mut sorted = sort_candidates(candidates, outside_anchor, &anchor_str, sort);
     if matches!(filter, ScrollFilter::Neighbourhood { .. }) {
         move_to_front(&mut sorted, &anchor_str);
     }
@@ -262,32 +262,26 @@ fn move_to_front(entries: &mut [ScrollEntry], path: &str) {
 /// tier-0 note, ordered among its peers by file creation date so the tail
 /// is still a stable, sensible chronological run.
 ///
-/// `outside_anchor` is an anchor the filter excluded. It is sorted in with
-/// the candidates and marked `out_of_scope`. When it lacks the sort
-/// property (a topic note has no `date` or ZID, say) it is placed by its
-/// creation date instead of dropping to the tail, so the notes after it are
-/// still the ones nearest to it in time.
+/// The anchor (at path `anchor`) is the exception: when it lacks the sort
+/// property (a note with no `date` or ZID, say) it is placed by its creation
+/// date instead of dropping to the tail, so the notes after it are still the
+/// ones nearest to it in time. `outside_anchor` is an anchor the filter
+/// excluded; it is sorted in the same way and marked `out_of_scope`.
 fn sort_candidates(
     candidates: Vec<&NoteMetadata>,
     outside_anchor: Option<&NoteMetadata>,
+    anchor: &str,
     sort: &ScrollSort,
 ) -> Vec<ScrollEntry> {
     let mut keyed: Vec<((u8, String), ScrollEntry)> = candidates
         .into_iter()
         .map(|note| {
-            let key = match sort_key(note, sort) {
-                Some(k) => (0u8, k),
-                None => (1u8, creation_date_key(note)),
-            };
-            (key, scroll_entry(note, false))
+            let is_anchor = to_frontend_string(&note.path) == anchor;
+            (keyed_by(note, sort, is_anchor), scroll_entry(note, false))
         })
         .collect();
     if let Some(note) = outside_anchor {
-        let key = match sort_key(note, sort).or_else(|| creation_date_as_sort_key(note, sort)) {
-            Some(k) => (0u8, k),
-            None => (1u8, creation_date_key(note)),
-        };
-        keyed.push((key, scroll_entry(note, true)));
+        keyed.push((keyed_by(note, sort, true), scroll_entry(note, true)));
     }
 
     let direction = sort_direction(sort);
@@ -314,6 +308,24 @@ fn sort_candidates(
     });
 
     keyed.into_iter().map(|(_, e)| e).collect()
+}
+
+/// A note's `(tier, key)` for [`sort_candidates`]. The anchor, when it
+/// lacks the sort key, is placed by its creation date among the notes that
+/// have one, so the feed continues from the notes nearest to it in time
+/// rather than from the tail of undated notes.
+fn keyed_by(note: &NoteMetadata, sort: &ScrollSort, is_anchor: bool) -> (u8, String) {
+    let key = sort_key(note, sort).or_else(|| {
+        if is_anchor {
+            creation_date_as_sort_key(note, sort)
+        } else {
+            None
+        }
+    });
+    match key {
+        Some(k) => (0, k),
+        None => (1, creation_date_key(note)),
+    }
 }
 
 // === Connection flags ===
@@ -532,26 +544,26 @@ fn creation_date_key(note: &NoteMetadata) -> String {
 }
 
 /// The note's creation date written in the same form as the sort axis's
-/// keys, so it can be compared against them: 14 digits (`YYYYMMDDhhmmss`)
-/// for ZID sorting, the RFC 3339 timestamp for date properties (which also
-/// orders correctly against a plain `YYYY-MM-DD`). `None` for a title sort,
-/// where a date means nothing, or when the creation date is unknown.
+/// keys, so it can be compared against them. `None` for a title sort, where
+/// a date means nothing, or when the creation date is unknown. The stored
+/// time is UTC; it is turned into local time first, the time ZIDs and
+/// hand-written dates are written in.
 fn creation_date_as_sort_key(note: &NoteMetadata, sort: &ScrollSort) -> Option<String> {
-    let ctime = creation_date_key(note);
-    if ctime.is_empty() {
-        return None;
-    }
+    let ctime = chrono::DateTime::parse_from_rfc3339(&creation_date_key(note)).ok()?;
+    format_creation_key(ctime.with_timezone(&chrono::Local).fixed_offset(), sort)
+}
+
+/// `time` as a sort key: 14 digits (`YYYYMMDDhhmmss`) for ZID sorting, an
+/// RFC 3339 timestamp for date properties (which also orders correctly
+/// against a plain `YYYY-MM-DD`).
+fn format_creation_key(
+    time: chrono::DateTime<chrono::FixedOffset>,
+    sort: &ScrollSort,
+) -> Option<String> {
     match sort {
         ScrollSort::Title { .. } => None,
-        ScrollSort::Property { .. } => Some(ctime),
-        ScrollSort::Zid { .. } => {
-            let digits: String = ctime
-                .chars()
-                .filter(|c| c.is_ascii_digit())
-                .take(14)
-                .collect();
-            (digits.len() == 14).then_some(digits)
-        }
+        ScrollSort::Property { .. } => Some(time.to_rfc3339()),
+        ScrollSort::Zid { .. } => Some(time.format("%Y%m%d%H%M%S").to_string()),
     }
 }
 
@@ -885,6 +897,7 @@ mod tests {
         let sorted = sort_candidates(
             candidates,
             None,
+            "",
             &ScrollSort::Zid {
                 direction: SortDir::Desc,
             },
@@ -929,9 +942,14 @@ mod tests {
         let notes_b = mk();
         let paths =
             |entries: Vec<ScrollEntry>| entries.into_iter().map(|e| e.path).collect::<Vec<_>>();
-        let order_a = paths(sort_candidates(notes_a.iter().collect(), None, &sort));
+        let order_a = paths(sort_candidates(notes_a.iter().collect(), None, "", &sort));
         // Reversed input must yield the same output.
-        let order_b = paths(sort_candidates(notes_b.iter().rev().collect(), None, &sort));
+        let order_b = paths(sort_candidates(
+            notes_b.iter().rev().collect(),
+            None,
+            "",
+            &sort,
+        ));
         assert_eq!(order_a, ["/v/a.typ", "/v/b.typ", "/v/c.typ"]);
         assert_eq!(order_a, order_b);
     }
@@ -952,7 +970,12 @@ mod tests {
             name: "date".into(),
             direction: SortDir::Desc,
         };
-        let sorted = sort_candidates(days.iter().collect(), Some(&topic), &sort);
+        let sorted = sort_candidates(
+            days.iter().collect(),
+            Some(&topic),
+            "/v/topics/t.typ",
+            &sort,
+        );
         let order: Vec<(&str, bool)> = sorted
             .iter()
             .map(|e| (e.path.as_str(), e.out_of_scope))
@@ -989,7 +1012,12 @@ mod tests {
             name: "date".into(),
             direction: SortDir::Desc,
         };
-        let sorted = sort_candidates(days.iter().collect(), Some(&topic), &sort);
+        let sorted = sort_candidates(
+            days.iter().collect(),
+            Some(&topic),
+            "/v/topics/t.typ",
+            &sort,
+        );
         let order: Vec<&str> = sorted.iter().map(|e| e.path.as_str()).collect();
         assert_eq!(
             order,
@@ -1003,25 +1031,65 @@ mod tests {
     }
 
     #[test]
-    fn creation_date_matches_the_zid_key_shape() {
-        let topic = note(
-            "/v/t.typ",
-            &[(
-                "file.ctime",
-                PropertyValue::String("2026-02-15T09:30:05Z".into()),
-            )],
-            &[],
+    fn anchor_in_scope_without_sort_key_is_placed_by_creation_date() {
+        // A daily note made without `#note(zid:)` is the anchor; it must not
+        // fall to the tail behind every note that has a ZID.
+        let zid_note =
+            |path: &str, zid: &str| note(path, &[("zid", PropertyValue::String(zid.into()))], &[]);
+        let days = [
+            zid_note("/v/daily/05.typ", "20261005080000"),
+            zid_note("/v/daily/06.typ", "20261006080000"),
+            note(
+                "/v/daily/07.typ",
+                &[(
+                    "file.ctime",
+                    PropertyValue::String("2026-10-07T12:00:00Z".into()),
+                )],
+                &[],
+            ),
+            note("/v/daily/undated.typ", &[], &[]),
+        ];
+        let sort = ScrollSort::Zid {
+            direction: SortDir::Desc,
+        };
+        let sorted = sort_candidates(days.iter().collect(), None, "/v/daily/07.typ", &sort);
+        let order: Vec<&str> = sorted.iter().map(|e| e.path.as_str()).collect();
+        assert_eq!(
+            order,
+            vec![
+                "/v/daily/07.typ",
+                "/v/daily/06.typ",
+                "/v/daily/05.typ",
+                "/v/daily/undated.typ"
+            ]
         );
+        // The same note, not the anchor, keeps to the tail.
+        let sorted = sort_candidates(days.iter().collect(), None, "", &sort);
+        assert_eq!(sorted[0].path, "/v/daily/06.typ");
+    }
+
+    #[test]
+    fn creation_key_is_written_in_local_time() {
+        let utc = chrono::DateTime::parse_from_rfc3339("2026-02-15T02:30:05Z").unwrap();
+        let toronto = chrono::FixedOffset::west_opt(5 * 3600).unwrap();
         let zid = ScrollSort::Zid {
             direction: SortDir::Desc,
         };
         assert_eq!(
-            creation_date_as_sort_key(&topic, &zid).as_deref(),
-            Some("20260215093005")
+            format_creation_key(utc.with_timezone(&toronto), &zid).as_deref(),
+            Some("20260214213005")
+        );
+        let date = ScrollSort::Property {
+            name: "date".into(),
+            direction: SortDir::Desc,
+        };
+        assert_eq!(
+            format_creation_key(utc.with_timezone(&toronto), &date).as_deref(),
+            Some("2026-02-14T21:30:05-05:00")
         );
         let title = ScrollSort::Title {
             direction: SortDir::Asc,
         };
-        assert_eq!(creation_date_as_sort_key(&topic, &title), None);
+        assert_eq!(format_creation_key(utc.fixed_offset(), &title), None);
     }
 }

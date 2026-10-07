@@ -59,7 +59,7 @@ Parce que le Rouleau de journal est une _chronologie_, il a besoin de savoir par
 
 Ce réglage est enregistré par boîte de notes, donc chaque boîte de notes peut avoir sa propre chronologie.
 
-#callout("important")[ Une note à laquelle manque la date que vous avez choisie est placée dans un second palier tout à la fin du fil, ordonnée par date de création du fichier. Donc rien ne disparaît ; cela se trie simplement en dernier. ]
+#callout("important")[ Une note à laquelle manque la date que vous avez choisie est placée dans un second palier tout à la fin du fil, ordonnée par date de création du fichier. Donc rien ne disparaît ; cela se trie simplement en dernier. L'exception est l'ancre : si la note de départ n'a pas cette date, sa date de création du fichier la place parmi les notes datées, pour que le fil continue tout de même à partir des notes les plus proches d'elle dans le temps. ]
 
 #callout("warning")[ Si vous avez importé vos notes depuis un autre outil, leurs dates de création et de modification de fichier ont peut-être toutes été remises à la même journée. Dans ce cas, trier par *Propriété date de la note* (que vous rédigez vous-même) ou par le `zid` si vous avez importé un équivalent donne habituellement une chronologie plus fidèle que les dates de fichier. Voir #wikilink("2 - Importer des notes existantes"). ]
 

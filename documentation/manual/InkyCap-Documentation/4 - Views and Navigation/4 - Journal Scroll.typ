@@ -58,7 +58,7 @@ Because Journal Scroll is a _timeline_, it needs to know which date property to 
 
 This setting is saved per notebox, so each notebox can have its own timeline.
 
-#callout("important")[A note that is missing the date you chose gets placed in a second tier at the very end of the feed, ordered by file creation date. So nothing disappears; it just sorts last. ]
+#callout("important")[A note that is missing the date you chose gets placed in a second tier at the very end of the feed, ordered by file creation date. So nothing disappears; it just sorts last. The exception is the anchor: if the note you start from is missing that date, its file creation date places it among the dated notes, so the feed still continues from the notes nearest to it in time. ]
 
 #callout("warning")[If you imported your notes from another tool, their file creation and modification dates may all have been reset to the same day. In that case, sorting by *Note's date property* (which you author yourself) or the `zid` if you imported an equivalent, usually gives a truer timeline than the file dates. See #wikilink("2 - Importing Existing Notes"). ]
 
