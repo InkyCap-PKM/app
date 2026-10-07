@@ -12,6 +12,87 @@ each tagged release, newest first, grouping entries under **Added**, **Changed**
 **Fixed**, **Removed**, **Security**, or **Deprecated** as needed.
 
 
+## [26.10.4] - 2026-10-07
+
+A new Compose feature pulls the writing around a note's links into a new note, and the
+Journal Scroll gained a Neighbourhood view that shows a note with everything
+linked to it. Images, PDFs (as an image), audio and video open in their own tab for previewing purposes, which
+lists the notes that use them (enabling easier management of files). The Collections interface is improved and its exports are now set up and run
+from one Export tab. Every export can include separately, the files its notes use.
+
+### Added
+
+- **Compose** (issue #4). In the Journal Scroll's Neighbourhood view, the
+  Compose button in the right panel starts a new note beside cards holding
+  passages from the notes linked with the anchor: each passage that links to
+  it, and the opening of each note it links to. A card can be copied into the
+  draft as written, as a quote crediting its note, as the whole note, or as a
+  link; the buttons at the top act on every card. Drag cards to reorder them;
+  a card fades once the draft links to its note. Each note copied from is
+  recorded in the draft's new **derived-from** property.
+- **Neighbourhood** (issue #4) in the Journal Scroll: a Timeline / Neighbourhood switch
+  in the editor header. Neighbourhood shows the anchor, the notes it links to
+  and the notes that link to it. Each linked note is shortened to its
+  passages about the anchor, with a paragraph before and after; **Show more**
+  shows the whole note in place.
+- **Attachment tabs.** Images, SVGs, PDFs, audio and video open in a
+  read-only tab in InkyCap (zoomable like the reading view) instead of going
+  straight to another app. The right panel lists the notes that use the file,
+  to help decide what can be deleted.
+- The Links panel can show the **passage** around each inbound link, with
+  more context on request.
+- Collections can filter and show columns by **Links to** and **Linked
+  from**. A book export of a collection that gathers notes linking to one
+  note can include whole notes or only the passages that link to it.
+- Exports can **carry the files their notes use**: links to files can be
+  kept as written, reduced to the file name, or pointed at copies beside the
+  export, and images can be copied there too. This replaces "Extract
+  figures".
+- Dropping or pasting a PDF asks whether to link it or show its first page.
+- An embed a note can't display (a video, an oversized image, a PDF in
+  `#image`) shows a button that opens it.
+- If InkyCap freezes or crashes while reopening your tabs, the next start
+  holds them back and lists them on the empty tab to reopen by hand. The
+  user manual has a section on recovering from a freeze at startup.
+
+### Changed
+
+- **Collection exports** start from a new Export tab in the collection's
+  right panel, which shows only the options the chosen format uses and links
+  to the other tabs whose settings it also uses. The table's Export button
+  and menu are gone, and the other tabs are renamed Appearance, Book and
+  Collection. Collections gain a plain-text description that is never
+  exported.
+- Quick Open (Ctrl+O) lists notes only, not attachments.
+- Renaming a note also updates `link-ref("…")` values in properties.
+- In the visual editor, a second Home (or Left from the start of the text)
+  moves the cursor in front of a list item, so the item and its bullet can be
+  selected or deleted together.
+- Scrolling in typewriter mode and in the regular editor keeps the text you
+  are writing better in view.
+- Links in list properties show as links, and property names line up with
+  the first line of their values.
+- Inbound and Potential links open one preview at a time from a caret.
+- Markdown import turns Obsidian embeds into what Obsidian shows for each
+  file type, and heading links into links to the heading.
+- The Mycelial View button is hidden while the Journal Scroll is on.
+- The bundled Junicode (2.226) and JuliaMono (0.63.2) fonts are updated.
+
+### Fixed
+
+- The AppImages crashed on Ubuntu 26.04 the first time an icon was drawn.
+- Renaming a note could miss links typed but not yet saved, links straight
+  after a word, or overwrite the
+  rewritten note from a tab that was open elsewhere.
+- A Journal Scroll started from a note without the date or ZID it sorts by
+  showed only a few notes and then stopped.
+- Lists of links named notes with dots in their names wrongly ("v1" for
+  "v1.2 plan").
+- Opening a very large video or image could freeze the app; files over
+  256 MB now open in their default app.
+- An empty collection book export reported the wrong error.
+
+
 ## [26.10.2] - 2026-10-01
 
 InkyCap can now be opened with a note or collection from other apps with `inkycap://` links. Web
