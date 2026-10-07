@@ -226,12 +226,56 @@ InkyCap is built to be picked up and extended by future human contributors who h
   a future regression on either side of the IPC boundary. They are
   read-only helpers — do not rewrite paths for round-tripping back to
   Rust; the backend accepts either separator via `PathBuf::from`.
+- **Path rewriting takes notebox-relative input.** The frontend sends absolute
+  paths, `sanitize_notebox_arg` does not make them relative, and
+  `list_files` returns canonical absolute paths. Before calling
+  `path_rebase` or stripping a root, convert with
+  `file_ops::notebox_relative_path`, and strip `storage.canonical_root()`,
+  never the session's `notebox_root` (the two differ under symlinks).
+  Otherwise the rewrite silently does nothing. Tests for path-rewriting code
+  include at least one absolute-path input.
+- **Every note mutation goes through `reindex_note`**, so the link index,
+  search, properties and metadata cache stay in step.
+- **A new frontend setting needs its Rust field too.** `settings.rs` mirrors
+  the settings structs and serde drops unknown fields, so a setting added only
+  in TypeScript is lost on the next save.
+- **New startup resources need a CSP entry.** A wasm fetch, worker or new
+  origin loaded at startup must be allowed in `app.security.csp` in
+  `tauri.conf.json`. `tauri dev` doesn't enforce that policy and packaged
+  builds do, so a missing entry shows up only as a blank window in a release
+  build. To reproduce, serve the built `dist/` with the production CSP as a
+  response header in a headless browser.
 
 ### TypeScript / Frontend
 - TypeScript strict mode
 - Solid.js stores for state; keep simple, avoid over-engineering
 - CodeMirror extensions modular: one file per extension/feature in `src/editor/typst-decorations/`
 - IPC calls go through the typed API layer in [src/lib/ipc.ts](src/lib/ipc.ts), never raw `invoke()`
+- **Solid.js gotchas.**
+  - Keep `on*` handler values a bare function or an arrow that branches in
+    its body. A computed handler (`onKeyDown={cond ? undefined : fn}`) makes
+    Solid rebuild the whole enclosing block whenever its inputs change,
+    replacing a focused `<input>` mid-keystroke. The test "keeps the filter
+    box (and the focus in it) while typing" in
+    `MultiSelectPicker.test.tsx` shows how to guard against it.
+  - A `ref` runs once, when the element is created. Inside a non-keyed
+    `<Show>` a new value reuses the element, so DOM filled from reactive data
+    in a ref goes stale; fill it in a `createEffect`. A ref also runs before
+    the element is attached, so `closest()` there returns null.
+- **Whole-document replacements carry `externalReload`.** Any CodeMirror
+  transaction that replaces the whole document must add the
+  `externalReload.of(true)` annotation (or use the editor handle's
+  `setText`, which does). Without it, the protected-range change filters
+  keep the old header lines and shred the new text.
+- **Decorations that can land on half-typed markup must not move text.**
+  A mark over something the user may be mid-way through typing (`$` math,
+  backticks) may change colour but never layout (display, padding, margins,
+  height, font size); underlines that must not shift text are drawn as a
+  CodeMirror layer, not a mark. `math-equation.test.ts` guards the math rules.
+- **File dialogs take their starting folder from
+  [src/lib/dialog-defaults.ts](src/lib/dialog-defaults.ts)**
+  (`exportDefault`, `noteboxRootDefault`, `homeDirDefault`, `backupDefault`);
+  don't inline `homeDir()` or pass a bare file name.
 - **CM6 widgets that embed editable elements (contentEditable,
   `<textarea>`, `<input>`) need a small but specific recipe to behave
   correctly.** Skipping any one of these produces classic symptoms:
@@ -355,6 +399,15 @@ InkyCap is built to be picked up and extended by future human contributors who h
   CSS, CodeMirror `EditorView.theme` objects, and inline `style`
   strings alike. Adding a new menu means referencing them, not copying
   literal values from a neighbour.
+- **Keyboard control of menus comes from one place,**
+  [src/lib/menu-nav.ts](src/lib/menu-nav.ts). A new menu gets arrow keys,
+  Home/End and Enter by using one of the container/item class pairs in its
+  `MENU_SURFACES` list (`.context-menu` / `.context-menu__item` is the usual
+  one); don't add per-menu arrow handling. The keyboard highlight is the
+  `.is-kbd-active` class, not `:focus-visible`.
+- **Panes sit flush under the shared header band.** A new pane starts with a
+  section header row, or puts `.pane-top-inset` on its root; never add top
+  padding to a pane root.
 
 ### Internationalization (i18n)
 - **Every user-facing string flows through the locale seam** in
@@ -387,10 +440,21 @@ InkyCap is built to be picked up and extended by future human contributors who h
 - Use Canadian English spellings as the standard base.
 - Test the Typst compile pipeline against representative documents — round-trip identity (source ↔ visual mode) is a load-bearing invariant
 - Document properties round-trip through `#note(...)` — the property editor must preserve untouched fields and whitespace byte-for-byte
+- Markdown import and export stay equal in capability: a construct supported
+  in one direction is added to the other in the same change.
+- "Set all" actions (expand all, collapse all, select all) set every item to
+  the target state; they never toggle each item.
+- Example names in UI placeholder text and documentation use the project's
+  fictional identity: Athena Otlet, `athena-otlet`, `athena@inkycap.org`,
+  `https://codeberg.org/[repository]/notes`. Never a real person's name,
+  account or repository.
 
 ## Branch & workflow
 
 - **Active branch:** `main`
+- **Format Rust before committing:** run
+  `cargo fmt --manifest-path src-tauri/Cargo.toml`; the pre-commit hook
+  rejects unformatted Rust.
 - **Remote:** `origin` at `git@codefloe.com:InkyCap/app.git` (org-owned). The
   project moved here from Codeberg in September 2026; the Codeberg repository is
   archived and read-only, and still holds the earlier issue history and every
