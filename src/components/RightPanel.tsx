@@ -70,6 +70,7 @@ import {
   MessagesSquare,
   Settings2,
   Ligature,
+  FolderOutput,
   Waypoints,
   Filter,
   Sprout,
@@ -1417,9 +1418,10 @@ const RightPanel: Component = () => {
             );
             return (
               <>
-                {collTab("characteristics", t("rightPanel.coll.characteristics"), Settings2)}
-                {collTab("style", t("collection.style.overrides"), Ligature)}
+                {collTab("export", t("rightPanel.coll.export"), FolderOutput)}
+                {collTab("appearance", t("rightPanel.coll.appearance"), Ligature)}
                 {collTab("book", t("rightPanel.coll.book"), NotebookTabs)}
+                {collTab("collection", t("rightPanel.coll.collection"), Settings2)}
               </>
             );
           })()}
@@ -1657,9 +1659,9 @@ const RightPanel: Component = () => {
         })()}
       </Show>
 
-      {/* Collection Settings — the right-panel surface for a Collection View
-          (Characteristics / Style Overrides / Book Metadata, selected via the
-          collection tab bar above). Shown when a collection tab is active. */}
+      {/* Collection Settings: the right-panel surface for a Collection View
+          (Export / Appearance / Book / Collection, selected via the collection
+          tab bar above). Shown when a collection tab is active. */}
       <Show when={activeCollectionTab()}>
         {(tab) => (
           <div class="right-panel__tab-content">
@@ -1667,6 +1669,7 @@ const RightPanel: Component = () => {
                 for the top inset the content box no longer applies. */}
             <div class="right-panel__pane-body pane-top-inset">
               <CollectionSettings
+                tabId={tab().id}
                 collectionPath={tab().path}
                 collectionName={collectionStem(tab().path)}
                 tab={collectionPanelTab()}

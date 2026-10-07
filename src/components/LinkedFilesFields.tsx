@@ -27,14 +27,16 @@ export function companionSummary(report: CompanionReport | null | undefined): st
 /**
  * The "files used by this note" choices of an export: what links to notebox
  * files become, and whether the note's images are copied too. Both copy into
- * one folder beside the exported file. Shared by the export dialog, the
- * collection export menu and the collection's book settings; each passes the
- * class names of its own form layout.
+ * one folder beside the exported file. Shared by the export dialog and the
+ * collection's Export tab; each passes the class names of its own form
+ * layout.
  */
 const LinkedFilesFields: Component<{
   value: LinkedFilesOptions;
   onChange: (value: LinkedFilesOptions) => void;
-  classes: { field: string; label: string; checkbox: string; hint?: string };
+  /** Class names from the caller's form layout. `dropdown` defaults to a
+   *  full-width dropdown; pass "" to size it to its content. */
+  classes: { field: string; label: string; checkbox: string; hint?: string; dropdown?: string };
 }> = (props) => {
   const t = useI18n();
   const mode = () => LINK_MODES.find((m) => m.value === props.value.links) ?? LINK_MODES[0];
@@ -43,7 +45,7 @@ const LinkedFilesFields: Component<{
       <div class={props.classes.field}>
         <label class={props.classes.label}>{t("export.linkedFiles.links")}</label>
         <Dropdown<FileLinkMode>
-          class="dropdown--block"
+          class={props.classes.dropdown ?? "dropdown--block"}
           value={props.value.links}
           options={LINK_MODES.map((m) => ({ value: m.value, label: t(m.labelKey) }))}
           onChange={(links) => props.onChange({ ...props.value, links })}

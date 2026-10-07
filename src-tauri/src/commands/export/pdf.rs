@@ -446,7 +446,7 @@ pub struct BookExportOverrides {
     /// link to it, not the whole note. Notes with no such passage are left
     /// out and listed in [`BookExportResult::without_passages`].
     pub passages_linking_to: Option<String>,
-    /// Overrides the `book:` block's `linked_files`.
+    /// Overrides the collection's saved `export.linked_files`.
     pub linked_files: Option<LinkedFilesOptions>,
 }
 
@@ -515,7 +515,7 @@ pub async fn export_collection_book_pdf(
     let linked_files = overrides
         .as_ref()
         .and_then(|o| o.linked_files)
-        .or_else(|| base.book.as_ref().and_then(|b| b.linked_files));
+        .or_else(|| base.export.as_ref().and_then(|e| e.linked_files));
     let mut companion = CompanionFiles::beside_file(linked_files, Path::new(&output_path));
     let mut without_passages: Vec<String> = Vec::new();
     let mut options = BookExportOptions::from_config(base.book.as_ref());

@@ -64,7 +64,7 @@ Une règle set s'applique *de l'endroit où elle se trouve jusqu'à la fin de la
 En placer une à mi-chemin est parfois utile, par exemple pour passer à deux colonnes pour la seconde moitié d'une note.
 
 #callout("note")[
-Ces règles vivent dans *une seule note*. Elles ne s'étendent pas à votre boîte de notes. Pour mettre en forme plusieurs notes à la fois, regroupez-les dans une #wikilink("2 - Collections", display: "collection") (par exemple pour créer un livre), puis utilisez les *Substitutions de style* de la collection, qui appliquent les mêmes types de réglages à chaque note de la collection au moment de l'exportation. Voir #wikilink("2 - Collections") et #wikilink("3 - Exportation et publication").
+Ces règles vivent dans *une seule note*. Elles ne s'étendent pas à votre boîte de notes. Pour mettre en forme plusieurs notes à la fois, regroupez-les dans une #wikilink("2 - Collections", display: "collection") (par exemple pour créer un livre), puis utilisez les substitutions de style de l'onglet *Apparence* de la collection, qui appliquent les mêmes types de réglages à chaque note de la collection au moment de l'exportation. Voir #wikilink("2 - Collections") et #wikilink("3 - Exportation et publication").
 ]
 
 == Modifier un réglage Style dans l'éditeur visuel

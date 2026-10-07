@@ -1,5 +1,5 @@
 //! Export options that are both sent by the export dialogs and stored in a
-//! collection's `book:` settings.
+//! collection's `export:` settings.
 
 use serde::{Deserialize, Serialize};
 
@@ -24,4 +24,15 @@ pub struct LinkedFilesOptions {
     pub links: FileLinkMode,
     /// Copy the images a note places (its figures) into the folder too.
     pub copy_images: bool,
+}
+
+/// The separator between columns when a collection's table is exported.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TableDelimiter {
+    /// Comma-separated values (`.csv`).
+    #[default]
+    Comma,
+    /// Tab-separated values (`.tsv`).
+    Tab,
 }

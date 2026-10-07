@@ -29,12 +29,14 @@ in the session. The parsed model is `CollectionFile` (in
 | Field | Purpose |
 |---|---|
 | `icon` | Lucide icon name for the sidebar |
+| `description` | the user's own plain-text note about the collection; shown in the Collection tab, never exported |
 | `filters` | the collection-wide membership filter (a `FilterGroup`) |
 | `views` | one or more `ViewDef` (table or agenda) over the members |
 | `style` | per-collection style overrides (page, text, paragraph, heading) |
 | `typst_template`, `custom_typst` | a template package import, and a raw-Typst escape hatch |
 | `bibliography_style`, `bibliography_file` | citation style and source for this collection |
 | `book` | the persistent book-export configuration (`BookExportConfig`) |
+| `export` | the Export tab's saved choices (`CollectionExportConfig`): format, PDF standard, review markup, links to files, table separator |
 | `formulas`, `summaries` | reserved for a future computed-column feature |
 
 A freshly created collection gets a sensible default: a filter that excludes the
@@ -133,8 +135,11 @@ cascade). Page geometry is emitted as a direct `#set page(...)` because
 helper functions in the `inkycap-notebox` package, keeping the styling logic
 Typst-native. `custom_typst` is a verbatim escape hatch for power users.
 
-The frontend edits all of this in `CollectionSettings` (Characteristics, Style
-Overrides, and Book Metadata tabs), autosaving on change.
+The frontend edits all of this in `CollectionSettings`, autosaving on change.
+Its tabs are Export (format and run, `CollectionExportPane.tsx`), Appearance
+(template, bibliography style, style overrides), Book, and Collection (icon,
+description, bibliography file). The Appearance and Book tabs each say which exports use
+them.
 
 ---
 
@@ -170,7 +175,18 @@ and bibliography applied):
 - **CSV export** (`export_collection_csv` / `..._to_file`) emits the table as
   CSV or TSV, flattening booleans and lists.
 - **Static site** (`export_collection_static_site`) compiles each note to HTML
-  with internal wikilinks rewritten to relative links and assets copied in.
+  with internal wikilinks rewritten to relative links and assets copied in. It
+  leaves out review markup (which is for collaborators, not readers) and does
+  not use the Typst template or the collection's bibliography.
+
+Every export starts from the right panel's Export tab and uses the view the
+table is showing, so switching views changes which notes are exported. The
+tab's choices are saved in `export:`; one "links to files" setting serves all
+formats. Older files kept that setting under `book.linked_files`;
+`parse_collection_file` moves it to `export.linked_files` on load. The runs
+themselves (file pickers, the book's retry loop, progress and the report of
+left-out notes) live in `src/stores/collection-export.ts`, and the table
+publishes its current view through `src/stores/collection-views.ts`.
 
 ---
 
@@ -195,5 +211,6 @@ and bibliography applied):
 | Book assembly | `src-tauri/src/typst_pipeline/book_wrapper.rs` |
 | Style injection | `src-tauri/src/typst_pipeline/style_injection.rs` |
 | Export commands | `src-tauri/src/commands/export/` (`pdf.rs`, `csv.rs`, `site.rs`) |
-| Table + settings + filter UI | `src/components/CollectionTable.tsx`, `CollectionSettings.tsx`, `FilterBuilder.tsx`, `ContributorsEditor.tsx` |
+| Table + settings + filter UI | `src/components/CollectionTable.tsx`, `CollectionSettings.tsx`, `CollectionExportPane.tsx`, `FilterBuilder.tsx`, `ContributorsEditor.tsx` |
+| Running exports | `src/stores/collection-export.ts`, `src/stores/collection-views.ts` |
 | Friendly property labels | `src/lib/property-labels.ts` |

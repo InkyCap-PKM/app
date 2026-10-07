@@ -18,7 +18,7 @@ Vous n'avez besoin de rien connaître de Typst ni de la mise en page pour utilis
 Il y a deux points de départ, selon ce que vous voulez exporter :
 
 + *Une note* → la boîte de dialogue *Exporter*.
-+ *Une collection entière* (plusieurs notes à la fois, ou fusionnées en livre) → le menu *Exporter* dans la table de la collection. Voir #wikilink("2 - Collections").
++ *Une collection entière* (plusieurs notes à la fois, ou fusionnées en livre) → l'onglet *Exportation* du panneau de droite lorsque la collection est ouverte. Voir #wikilink("2 - Collections").
 \
 
 == Exporter une seule note
@@ -98,21 +98,25 @@ Conserver est le défaut partout, et ce contrôle ne s'affiche que pour une seul
 
 == Exporter une collection entière
 
-Une #wikilink("2 - Collections", display: "collection") rassemble plusieurs notes apparentées, et vous pouvez les publier toutes d'un coup. Ouvrez la table de la collection, puis cliquez sur *Exporter* dans sa barre d'outils. Le menu offre :
+Une #wikilink("2 - Collections", display: "collection") rassemble plusieurs notes apparentées, et vous pouvez les publier toutes d'un coup. Ouvrez la collection, puis l'onglet *Exportation* du panneau de droite (le premier onglet), où toute exportation de la collection est réglée et lancée :
 
-- *Tableau en CSV* / *Tableau en TSV* enregistre la grille de notes de la collection sous forme de fichier de tableur.
-- *Collection en fichiers PDF* écrit un PDF par note, dans un dossier que vous choisissez. Si une seule note ne compile pas, InkyCap le signale mais poursuit avec le reste.
-- *Collection fusionnée en un seul PDF (livre)* combine chaque note en un seul document bien structuré (voir ci-dessous).
-- *Collection en fichiers HTML* publie la collection comme un petit site web (voir ci-dessous).
-- *Collection en fichiers Markdown* écrit un fichier Markdown par note.
+- *Notes* indique combien de notes seront exportées et depuis quelle vue. Les exportations utilisent la vue affichée par le tableau, dans son ordre ; passez à une autre vue dans le tableau pour exporter d'autres notes.
+- *Format* est ce que vous voulez produire :
+  - *Tableau* enregistre la grille de notes de la collection sous forme de fichier de tableur (voir #wikilink("2 - Collections")).
+  - *Fichiers PDF* écrit un PDF par note, dans un dossier que vous choisissez. Si une seule note ne compile pas, InkyCap le signale mais poursuit avec le reste.
+  - *Livre* combine chaque note en un seul document bien structuré (voir ci-dessous).
+  - *Site Web* publie la collection comme un petit site web (voir ci-dessous).
+  - *Fichiers Markdown* écrit un fichier Markdown par note.
+- *Options* n'affiche que les réglages utilisés par le format choisi : *Standard PDF* et *Marquage de révision*, avec les mêmes choix décrits ci-dessus ; *Liens vers des fichiers* et *Copier les images à côté de l'exportation* ; ou le *Séparateur* du tableau. Le site Web n'inclut jamais le marquage de révision, puisque les modifications suivies s'adressent aux collaborateurs plutôt qu'aux lecteurs. Lorsqu'un format copie des fichiers, le livre les place dans un dossier à côté du PDF, et les autres formats dans un dossier qui porte le nom de la collection.
+- *Réglages dans d'autres onglets* apparaît lorsque le format choisi utilise aussi l'onglet *Apparence* ou *Livre*, avec un bouton qui ouvre chacun d'eux.
 
-Le menu porte aussi ses propres menus déroulants *Standard PDF* et *Marquage de révision*, avec les mêmes choix décrits ci-dessus, de sorte que tout le lot suit votre décision. L'ordre des notes dans chaque exportation de collection suit le tri actuel ou l'ordre manuel de la collection.
+Vos choix sont enregistrés avec la collection ; la prochaine exportation reprend donc là où vous en étiez. Cliquez sur le bouton d'exportation sous *Notes* (*Exporter les fichiers PDF*, *Exporter le livre*, etc.), puis choisissez où enregistrer. Si certaines notes n'ont pas pu être exportées, l'onglet les énumère ; cliquez sur l'une d'elles pour l'ouvrir et la corriger.
 
 == Fusionner une collection en un « livre »
 
-*Collection fusionnée en un seul PDF (livre)* est la façon de produire un document professionnel de longue haleine (une thèse, un rapport, un ouvrage collectif) à partir de plusieurs notes. Le résultat peut inclure une page de titre, un résumé, une table des matières, vos chapitres dans l'ordre, et une seule bibliographie.
+Le format *Livre* est la façon de produire un document professionnel de longue haleine (une thèse, un rapport, un ouvrage collectif) à partir de plusieurs notes. Le résultat peut inclure une page de titre, un résumé, une table des matières, vos chapitres dans l'ordre, et une seule bibliographie.
 
-Vous configurez cela dans l'onglet *Métadonnées et structure du livre* de la collection, dans le panneau de droite, qui s'enregistre automatiquement à mesure que vous le modifiez. Choix clés :
+Vous configurez cela dans l'onglet *Livre* de la collection, dans le panneau de droite, qui s'enregistre automatiquement à mesure que vous le modifiez. Choix clés :
 
 - *Titre*, *Sous-titre*, *Date* et *Résumé* pour le début du livre.
 - *Contributeurs* est une liste de toutes les personnes qui y ont travaillé (couverte ci-dessous).
@@ -123,7 +127,7 @@ Vous configurez cela dans l'onglet *Métadonnées et structure du livre* de la c
   - *Après {chapter}* la place juste après un chapitre précis que vous nommez.
 - *Titre de chapitre* contrôle si InkyCap fournit le titre supérieur de chaque chapitre à partir du titre de la note, toujours, jamais, ou seulement lorsqu'une note n'a pas le sien.
 - *Liens wiki* → *Résolution* décide ce que deviennent les liens entre vos notes dans le livre : *Résoudre vers les chapitres du livre* les transforme en sauts vers le bon chapitre, *Lier aux fichiers sources (comme à la compilation d'une note seule)* les garde pointés vers les fichiers de notes, et *Texte brut seulement (retirer les liens)* ne laisse que les mots.
-- *Numérotation des pages* → *Style* définit le schéma du livre fusionné. Il y en a quatre : *Romains (i, ii, iii…) puis arabes à partir du chapitre 1* ; *Pages liminaires non numérotées, les chapitres commencent à 1* ; *Chiffres arabes à partir de la page 1* ; et *Chiffres arabes commençant à une page précise*, qui ajoute un champ *Commencer à la page*. Ce choix décide seulement où s'appliquent la numérotation romaine et la numérotation arabe ; le format des nombres lui-même, ainsi que la numérotation des chapitres et des titres, proviennent de l'onglet *Substitutions de style*.
+- *Numérotation des pages* → *Style* définit le schéma du livre fusionné. Il y en a quatre : *Romains (i, ii, iii…) puis arabes à partir du chapitre 1* ; *Pages liminaires non numérotées, les chapitres commencent à 1* ; *Chiffres arabes à partir de la page 1* ; et *Chiffres arabes commençant à une page précise*, qui ajoute un champ *Commencer à la page*. Ce choix décide seulement où s'appliquent la numérotation romaine et la numérotation arabe ; le format des nombres lui-même, ainsi que la numérotation des chapitres et des titres, proviennent de l'onglet *Apparence*.
 
 === Où va la bibliographie
 
@@ -159,7 +163,7 @@ Le fichier fini porte le nom du titre de votre livre et est enregistré là où 
 
 == Publier une collection comme site web
 
-*Collection en fichiers HTML* transforme votre collection en un petit site web autonome (un ensemble de pages web interactives que vous pouvez héberger n'importe où). InkyCap produit :
+Le format *Site Web* transforme votre collection en un petit site web autonome (un ensemble de pages web interactives que vous pouvez héberger n'importe où). InkyCap produit :
 
 - une page web par note,
 - une *page d'index* qui énumère et relie chaque page, et
@@ -169,13 +173,13 @@ Les liens wiki entre les notes de la collection deviennent des liens ordinaires 
 
 == Conception, style et personnalisation
 
-Lorsque vous exportez une collection, InkyCap superpose automatiquement votre mise en style pour que le résultat ait l'air délibéré et cohérent : d'abord vos valeurs par défaut à l'échelle de l'application, puis les *Substitutions de style* propres à la collection (taille du papier, marges, polices, espacement, numérotation des pages et des titres), puis tout template Typst que vous avez choisi pour la collection, et enfin votre propre Typst personnalisé. Vous trouvez ces réglages dans les onglets du panneau de droite de la collection ; voir #wikilink("2 - Collections") et #wikilink("2 - Paramètres").
+Lorsque vous exportez une collection, InkyCap superpose automatiquement votre mise en style pour que le résultat ait l'air délibéré et cohérent : d'abord vos valeurs par défaut à l'échelle de l'application, puis les substitutions de style propres à la collection, dans son onglet *Apparence* (taille du papier, marges, polices, espacement, numérotation des pages et des titres), puis tout template Typst que vous avez choisi pour la collection, et enfin votre propre Typst personnalisé. Vous trouvez ces réglages dans les onglets du panneau de droite de la collection ; voir #wikilink("2 - Collections") et #wikilink("2 - Paramètres").
 
-- Pour *choisir un template Typst pour votre collection*, ouvrez l'onglet *Caractéristiques* de la collection et choisissez-en un dans le menu déroulant *Template Typst*. Il énumère les templates que vous avez installés, plus *Aucun* et *Personnalisé…* (qui vous laisse saisir vous-même une spécification de package ou un chemin de la boîte de notes). Vous devez d'abord installer le template (voir #wikilink("3 - Scaffolds, Templates et Packages")).
+- Pour *choisir un template Typst pour votre collection*, ouvrez l'onglet *Apparence* de la collection et choisissez-en un dans le menu déroulant *Template Typst*. Il énumère les templates que vous avez installés, plus *Aucun* et *Personnalisé…* (qui vous laisse saisir vous-même une spécification de package ou un chemin de la boîte de notes). Vous devez d'abord installer le template (voir #wikilink("3 - Scaffolds, Templates et Packages")).
 - Choisir un template ne fait que le rendre disponible. Pour l'appliquer réellement, cliquez sur *Configurer le template…*, qui apparaît une fois un template choisi. Cela ouvre l'éditeur de Typst personnalisé de la collection avec la configuration propre au template déjà remplie, prête à recevoir votre titre, vos auteurs et tout ce que le template demande.
-- L'onglet *Substitutions de style* se termine par une rangée *Typst personnalisé*. Utilisez *Ajouter…* (ou *Modifier…* une fois qu'il y a quelque chose) pour écrire votre propre style Typst, qui est appliqué en dernier et l'emporte donc sur tout ce qui précède. Le bouton *Insérer la configuration du template* de l'éditeur remplit pour vous la configuration du template choisi, la même chose que fait *Configurer le template…*.
+- L'onglet *Apparence* se termine par une rangée *Typst personnalisé*. Utilisez *Ajouter…* (ou *Modifier…* une fois qu'il y a quelque chose) pour écrire votre propre style Typst, qui est appliqué en dernier et l'emporte donc sur tout ce qui précède. Le bouton *Insérer la configuration du template* de l'éditeur remplit pour vous la configuration du template choisi, la même chose que fait *Configurer le template…*.
 
-#callout("note")[ Lorsque vous choisissez un template, les contrôles de l'onglet *Substitutions de style* sont verrouillés et un avis explique pourquoi : le template contrôle la mise en page, alors ces substitutions n'auraient aucun effet. Ajustez plutôt la mise en page à travers la configuration propre au template, dans la rangée *Typst personnalisé*. ]
+#callout("note")[ Lorsque vous choisissez un template, les contrôles de mise en page de l'onglet *Apparence* sont verrouillés et un avis explique pourquoi : le template contrôle la mise en page, alors ces substitutions n'auraient aucun effet. Ajustez plutôt la mise en page à travers la configuration propre au template, dans la rangée *Typst personnalisé*. ]
 
 
 

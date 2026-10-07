@@ -63,7 +63,7 @@ A set rule applies *from where it sits to the end of the note*. Put it near the 
 Placing one partway down is occasionally useful, for example, to switch to two columns for the second half of a note.
 
 #callout("note")[
-These rules live in *one note*. They do not reach across your notebox. To style many notes at once, group them into a #wikilink("2 - Collections", display: "collection") (e.g. for creating a book) and then use the collection's *Style Overrides*, which apply the same kinds of settings to every note in the collection at export time. See #wikilink("2 - Collections") and #wikilink("3 - Exporting and Publishing").
+These rules live in *one note*. They do not reach across your notebox. To style many notes at once, group them into a #wikilink("2 - Collections", display: "collection") (e.g. for creating a book) and then use the style overrides on the collection's *Appearance* tab, which apply the same kinds of settings to every note in the collection at export time. See #wikilink("2 - Collections") and #wikilink("3 - Exporting and Publishing").
 ]
 
 == Editing a Style setting in the visual editor
@@ -100,5 +100,5 @@ The Style menu is just a friendly front end to Typst's `set` rules for the `page
 - #wikilink("3 - Formatting Your Writing"). The everyday marks for styling words and blocks
 - #wikilink("3.1 - Formatting Examples"). A scannable cheat sheet of the common marks
 - #wikilink("2 - Editing Notes"). Editor modes, the slash command, and how pills work
-- #wikilink("2 - Collections"). Style Overrides that apply settings across many notes
+- #wikilink("2 - Collections"). Style overrides that apply settings across many notes
 - #wikilink("3 - Exporting and Publishing"). Where page, font, and spacing settings become visible

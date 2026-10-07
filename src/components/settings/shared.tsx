@@ -62,7 +62,7 @@ export const PAGE_SIZE_OPTIONS = [
   { value: "b5", labelKey: "settings.appearance.pageSize.b5" },
 ];
 
-/** Citation styles offered in Settings and in a collection's Characteristics.
+/** Citation styles offered in Settings and in a collection's Appearance tab.
  *  Style names are proper names and stay as written; the "custom" entry is a
  *  translatable label, resolved by `citationStyleOptions`. */
 export const CITATION_STYLES: { value: string; label?: string; labelKey?: string }[] = [

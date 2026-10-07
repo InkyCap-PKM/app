@@ -92,7 +92,7 @@ When a *note* is active, the right panel offers:
 - *References* is the bibliography pane. See #wikilink("7 - Citations and Bibliography").
 - *Changes & History* lets you review suggestions, tracked changes, and annotations. A small dot appears on this tab when suggested changes are waiting for you to accept or reject them.
 
-When you open a *collection*, the right panel switches to Characteristics, Style Overrides, and Book Metadata and Structure. When you open a #wikilink("5 - Mycelial View"), it shows three tabs instead: *Linked Context*, *Growth*, and *Filtering*.
+When you open a *collection*, the right panel switches to *Export*, *Appearance*, *Book*, and *Collection*. When you open a #wikilink("5 - Mycelial View"), it shows three tabs instead: *Linked Context*, *Growth*, and *Filtering*.
 
 == Tabs and split panes
 

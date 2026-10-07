@@ -30,7 +30,7 @@ interface CustomTypstModalProps {
    *  "Insert template setup" action reads the template's starter scaffold and
    *  prepends its `#show: …` apply rule for the user to fill in. */
   templateSpec?: string;
-  /** When true (the Characteristics "Set up template…" path), insert the
+  /** When true (the Appearance tab's "Set up template…" path), insert the
    *  starter automatically on open if the template isn't applied yet. */
   autoInsertStarter?: boolean;
   /** The collection's `.collection` path, so the inserted starter's

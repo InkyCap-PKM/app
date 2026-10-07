@@ -12,7 +12,7 @@ import LinkedFilesFields, { DEFAULT_LINKED_FILES, companionSummary } from "./Lin
 export type ExportFormat = "pdf" | "typ" | "typst-html" | "markdown" | "odt" | "docx" | "latex" | "pandoc-pdf";
 export type MetadataMode = "exclude" | "properties";
 
-// The review-markup labels match the collection-table export menu, so they
+// The review-markup labels match the collection Export tab, so they
 // reuse the same `collection.table.reviewMarkup.*` keys (resolved inline).
 const REVIEW_MARKUP_HINT_KEYS: Record<ReviewMarkupMode, string> = {
   keep: "export.reviewHint.keep",

@@ -96,7 +96,7 @@ impl Drop for EvictComemoOnDrop {
 /// the natural archival+accessible combination. The standalone variants stay for
 /// users who want exactly one conformance level. Adding a preset means one new
 /// entry here plus the frontend type in `ipc.ts` and the select options in
-/// `ExportDialog.tsx` / `CollectionTable.tsx`.
+/// `ExportDialog.tsx` / `CollectionExportPane.tsx`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum PdfStandardPreset {

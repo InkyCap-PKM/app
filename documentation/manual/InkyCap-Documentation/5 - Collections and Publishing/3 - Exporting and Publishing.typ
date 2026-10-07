@@ -17,7 +17,7 @@ You do not need to know anything about Typst or page layout to use this function
 There are two starting points, depending on what you want to export:
 
 + *One note* → the *Export* dialogue.
-+ *A whole collection* (many notes at once, or merged into a book) → the *Export* menu in the collection table. See #wikilink("2 - Collections").
++ *A whole collection* (many notes at once, or merged into a book) → the *Export* tab in the right panel while the collection is open. See #wikilink("2 - Collections").
 \
 
 == Exporting a single note
@@ -97,21 +97,25 @@ Keep is the default everywhere, and this control only shows for a single note wh
 
 == Exporting a whole collection
 
-A #wikilink("2 - Collections", display: "collection") gathers many related notes, and you can publish them all at once. Open the collection's table, then click *Export* in its toolbar. The menu offers:
+A #wikilink("2 - Collections", display: "collection") gathers many related notes, and you can publish them all at once. Open the collection, then the *Export* tab in the right panel (the first tab), where every export of the collection is set up and started:
 
-- *Table as CSV* / *Table as TSV* saves the collection's grid of notes as a spreadsheet file.
-- *Collection as PDF files* writes one PDF per note, into a folder you choose. If a single note will not compile, InkyCap reports it but keeps going with the rest.
-- *Collection merged into one PDF (book)* combines every note into a single, well-structured document (see below).
-- *Collection as HTML files* publishes the collection as a small web site (see below).
-- *Collection as Markdown files* writes one Markdown file per note.
+- *Notes* says how many notes will be exported and from which view. Exports use the view the table is showing, in its order, so switch views in the table to export different notes.
+- *Format* is what to make:
+  - *Table* saves the collection's grid of notes as a spreadsheet file (see #wikilink("2 - Collections")).
+  - *PDF files* writes one PDF per note, into a folder you choose. If a single note will not compile, InkyCap reports it but keeps going with the rest.
+  - *Book* combines every note into a single, well-structured document (see below).
+  - *Website* publishes the collection as a small web site (see below).
+  - *Markdown files* writes one Markdown file per note.
+- *Options* shows only the settings the chosen format uses: *PDF standard* and *Review markup*, with the same choices described above; *Links to files* and *Copy images beside the export*; or the table's *Separator*. The website never includes review markup, since tracked changes are meant for collaborators rather than readers. When a format copies files, the book puts them in a folder beside the PDF, and the other formats put them in a folder named after the collection.
+- *Settings in other tabs* appears when the chosen format also uses the *Appearance* or *Book* tab, with a button that opens each one.
 
-The menu also carries its own *PDF standard* and *Review markup* dropdowns, with the same choices described above, so the whole batch follows your decision. The order of notes in every collection export follows the collection's current sort or manual ordering.
+Your choices are saved with the collection, so the next export starts where you left off. Click the export button under *Notes* (it reads *Export PDF files*, *Export book*, and so on), then choose where to save. If some notes could not be exported, the tab lists them; click one to open it and fix it.
 
 == Merging a collection into a "book"
 
-*Collection merged into one PDF (book)* is how you produce a professional long-form document (a thesis, a report, an edited volume) from many notes. The result can include a title page, an abstract, a table of contents, your chapters in order, and a single bibliography.
+The *Book* format is how you produce a professional long-form document (a thesis, a report, an edited volume) from many notes. The result can include a title page, an abstract, a table of contents, your chapters in order, and a single bibliography.
 
-You set this up in the collection's *Book Metadata and Structure* tab in the right panel, which saves automatically as you change it. Key choices:
+You set this up in the collection's *Book* tab in the right panel, which saves automatically as you change it. Key choices:
 
 - *Title*, *Subtitle*, *Date*, and *Abstract* for the front of the book.
 - *Contributors* is a roster of everyone who worked on it (covered below).
@@ -122,7 +126,7 @@ You set this up in the collection's *Book Metadata and Structure* tab in the rig
   - *After {chapter}* places it right after a specific chapter you name.
 - *Chapter heading* controls whether InkyCap supplies each chapter's top heading from the note's title, always, never, or only when a note has none of its own.
 - *Wikilinks* → *Resolution* decides what the links between your notes become in the book: *Resolve to in-book chapters* turns them into jumps to the right chapter, *Link to source files (as in single-note compile)* keeps them pointing at the note files, and *Plain text only (strip linking)* leaves just the words.
-- *Page numbering* → *Style* sets the scheme for the merged book. There are four: *Roman (i, ii, iii…) then arabic from chapter 1*; *Front matter unnumbered, chapters start at 1*; *Arabic numerals from page 1*; and *Arabic numerals starting at a specific page*, which adds a *Start on page* field. This choice only decides where Roman and Arabic numbering apply; the number format itself, and chapter and heading numbering, come from the *Style Overrides* tab.
+- *Page numbering* → *Style* sets the scheme for the merged book. There are four: *Roman (i, ii, iii…) then arabic from chapter 1*; *Front matter unnumbered, chapters start at 1*; *Arabic numerals from page 1*; and *Arabic numerals starting at a specific page*, which adds a *Start on page* field. This choice only decides where Roman and Arabic numbering apply; the number format itself, and chapter and heading numbering, come from the *Appearance* tab.
 
 === Where the bibliography goes
 
@@ -158,7 +162,7 @@ The finished file is named after your book's title and saved wherever you choose
 
 == Publishing a collection as a website
 
-*Collection as HTML files* turns your collection into a small, self-contained website (a set of interactive web pages you can host anywhere). InkyCap produces:
+The *Website* format turns your collection into a small, self-contained website (a set of interactive web pages you can host anywhere). InkyCap produces:
 
 - one web page per note,
 - an *index page* that lists and links to every page, and
@@ -168,13 +172,13 @@ Wikilinks between notes in the collection become ordinary clickable links betwee
 
 == Design, style, and customization
 
-When you export a collection, InkyCap layers your styling automatically so the result looks deliberate and consistent: your app-wide defaults first, then the collection's own *Style Overrides* (paper size, margins, fonts, spacing, page and heading numbering), then any Typst template you have chosen for the collection, and finally your own custom Typst. You can find these settings in the collection's right-panel tabs; see #wikilink("2 - Collections") and #wikilink("2 - Settings").
+When you export a collection, InkyCap layers your styling automatically so the result looks deliberate and consistent: your app-wide defaults first, then the collection's own style overrides on its *Appearance* tab (paper size, margins, fonts, spacing, page and heading numbering), then any Typst template you have chosen for the collection, and finally your own custom Typst. You can find these settings in the collection's right-panel tabs; see #wikilink("2 - Collections") and #wikilink("2 - Settings").
 
-- To *choose a Typst template for your collection*, open the collection's *Characteristics* tab and pick one from the *Typst Template* dropdown. It lists the templates you have installed, plus *None* and *Custom…* (which lets you type a package spec or a notebox path yourself). You must first install the template (see #wikilink("3 - Scaffolds, Templates, and Packages")).
+- To *choose a Typst template for your collection*, open the collection's *Appearance* tab and pick one from the *Typst Template* dropdown. It lists the templates you have installed, plus *None* and *Custom…* (which lets you type a package spec or a notebox path yourself). You must first install the template (see #wikilink("3 - Scaffolds, Templates, and Packages")).
 - Choosing a template only makes it available. To actually apply it, click *Set up template…*, which appears once a template is chosen. This opens the collection's Custom Typst editor with the template's own setup already filled in, ready for you to add your title, authors, and whatever else the template asks for.
-- The *Style Overrides* tab ends with a *Custom Typst* row. Use *Add…* (or *Edit…* once something is there) to write your own Typst styling, which is applied last and so wins over everything above it. The editor's *Insert template setup* button fills in the chosen template's setup for you, the same thing *Set up template…* does.
+- The *Appearance* tab ends with a *Custom Typst* row. Use *Add…* (or *Edit…* once something is there) to write your own Typst styling, which is applied last and so wins over everything above it. The editor's *Insert template setup* button fills in the chosen template's setup for you, the same thing *Set up template…* does.
 
-#callout("note")[When you choose a template, the controls on the *Style Overrides* tab are locked and a notice explains why: the template controls the layout, so those overrides would have no effect. Adjust layout through the template's own setup in the *Custom Typst* row instead. ]
+#callout("note")[When you choose a template, the layout controls on the *Appearance* tab are locked and a notice explains why: the template controls the layout, so those overrides would have no effect. Adjust layout through the template's own setup in the *Custom Typst* row instead. ]
 
 
 

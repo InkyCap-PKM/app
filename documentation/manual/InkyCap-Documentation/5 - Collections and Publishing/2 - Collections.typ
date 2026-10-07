@@ -123,24 +123,27 @@ The view has the same *Task List* and *Date* filters as the sidebar Agenda, incl
 
 == The collection's settings
 
-With a collection open, the right panel shows three tabs for the collection itself:
+With a collection open, the right panel shows four tabs for the collection:
 
-- *Characteristics* holds the collection's icon, its Typst template, and its bibliography style and file.
-- *Style Overrides* holds the layout choices for anything you export from the collection (paper size, margins, fonts, spacing, page and heading numbering) and a *Custom Typst* row for anything the controls do not cover.
-- *Book Metadata and Structure* holds everything about the merged book: title page, contributors, table of contents, bibliography, and page numbering.
+- *Export* is where every export of the collection starts: pick a format, set its options, and click the export button near the top. It is the first tab.
+- *Appearance* holds the collection's Typst template and bibliography style, its layout choices (paper size, margins, fonts, spacing, page and heading numbering), and a *Custom Typst* row for anything the controls do not cover. PDF files, the book, and the website use these.
+- *Book* holds everything about the merged book: title page, contributors, table of contents, bibliography, and page numbering. Only the book uses these.
+- *Collection* holds the collection's icon, a *Description* where you can keep a note to yourself about what the collection is for (it is never exported), and the collection's bibliography file.
 
-All three matter mostly when you publish, so they are described on #wikilink("3 - Exporting and Publishing").
+Export, Appearance, and Book matter mostly when you publish, so they are described on #wikilink("3 - Exporting and Publishing").
 
 == Exporting to a spreadsheet
 
-When you want your collection's data outside InkyCap (in a spreadsheet like LibreOffice Calc, Excel, Numbers, Google Sheets, or a statistics tool), use the *Export* button and choose:
+When you want your collection's data outside InkyCap (in a spreadsheet like LibreOffice Calc, Excel, Numbers, Google Sheets, or a statistics tool), open the *Export* tab in the right panel, choose *Table* as the format, and pick a *Separator*:
 
-- *Table as CSV* writes comma-separated values, the universal spreadsheet format.
-- *Table as TSV* writes tab-separated values, handy when your text contains commas.
+- *Comma (.csv)* writes comma-separated values, the universal spreadsheet format.
+- *Tab (.tsv)* writes tab-separated values, handy when your text contains commas.
+
+Then click *Export table*.
 
 The export mirrors exactly what you see: the active view's columns, filters, and sort order. Values will be quoted and escaped to preserve during the export, lists will be joined into a single cell, and empty cells stay empty. You'll get a confirmation once the file is saved.
 
-#callout("note")[CSV and TSV are the _spreadsheet_ exports; they capture your collection properties' values as data. The same *Export* menu also renders the notes themselves into PDFs, a merged book, an HTML site, or Markdown files. Those publishing workflows, including the book metadata and structure options, are covered on #wikilink("3 - Exporting and Publishing").]
+#callout("note")[CSV and TSV are the _spreadsheet_ exports; they capture your collection properties' values as data. The same *Export* tab also renders the notes themselves into PDFs, a merged book, an HTML site, or Markdown files. Those publishing workflows, including the book metadata and structure options, are covered on #wikilink("3 - Exporting and Publishing").]
 
 == Related pages
 

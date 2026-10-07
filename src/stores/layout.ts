@@ -35,12 +35,13 @@ const BUILT_IN_RIGHT_PANEL_TABS: readonly RightPanelTab[] = [
 /// file tab can't be active at the same time, and keeping the two enums apart
 /// means switching between a note and a collection never strands the panel on
 /// an inapplicable tab.
-export type CollectionPanelTab = "characteristics" | "style" | "book";
+export type CollectionPanelTab = "export" | "appearance" | "book" | "collection";
 
 const COLLECTION_PANEL_TABS: readonly CollectionPanelTab[] = [
-  "characteristics",
-  "style",
+  "export",
+  "appearance",
   "book",
+  "collection",
 ];
 
 /// Which metric the status-bar count readout shows. The two share one slot
@@ -64,7 +65,7 @@ const DEFAULTS: LayoutState = {
   leftCollapsed: false,
   rightCollapsed: false,
   rightPanelTab: "outline",
-  collectionPanelTab: "characteristics",
+  collectionPanelTab: "export",
   statusCountMode: "words",
 };
 

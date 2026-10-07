@@ -52,6 +52,23 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+  /* The same side inset as the text of a note pane's section header, so
+     the content keeps clear of the panel's edge. */
+  padding-inline: var(--space-2);
+}
+
+/* Every tab's first item sits the same distance below the panel's header
+   line, whatever kind of item it is (a section heading brings its own top
+   margin; a row or a note does not). */
+.collection-settings__body > :first-child {
+  margin-top: var(--space-2);
+}
+
+/* A multi-line text field that fills the rest of its row. */
+.collection-meta__textarea {
+  flex: 1;
+  min-width: 0;
+  resize: vertical;
 }
 
 .collection-meta__row {
@@ -120,6 +137,29 @@
 
 .collection-meta__row--top {
   align-items: flex-start;
+}
+
+/* A row whose label sits above its field, giving the field the panel's full
+   width. Placed after `.collection-meta__row` so it overrides its centring. */
+.collection-meta__row--stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+
+.collection-meta__row--stacked .collection-meta__textarea {
+  flex: none;
+  width: auto;
+}
+
+/* A lone short row whose label needn't line up with a column of others, so
+   its control sits close beside it. */
+.collection-meta__row--compact {
+  gap: var(--space-5);
+}
+
+.collection-meta__row--compact .collection-meta__label {
+  min-width: 0;
 }
 
 .collection-meta__inline-check {
@@ -458,6 +498,15 @@
   font-size: var(--text-xs);
   color: var(--fg-dim);
   margin-top: var(--space-1);
+}
+
+/* "Used by" line at the top of a collection tab, saying which exports read
+   the tab's settings. */
+.collection-meta__used-by {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  line-height: var(--leading-normal);
 }
 
 

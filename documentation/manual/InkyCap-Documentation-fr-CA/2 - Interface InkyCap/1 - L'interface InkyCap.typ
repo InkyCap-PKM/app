@@ -93,7 +93,7 @@ Quand une *note* est active, le panneau de droite vous offre :
 - *Références* est le panneau de bibliographie. Voyez #wikilink("7 - Citations et bibliographie").
 - *Modifications et historique* vous permet de réviser les suggestions, les modifications suivies et les annotations. Un petit point apparaît sur cet onglet quand des modifications suggérées attendent que vous les acceptiez ou les refusiez.
 
-Quand vous ouvrez une *collection*, le panneau de droite passe à Caractéristiques, Substitutions de style et Métadonnées et structure du livre. Quand vous ouvrez une #wikilink("5 - Vue mycélienne"), il affiche plutôt trois onglets : *Contexte lié*, *Croissance* et *Filtrage*.
+Quand vous ouvrez une *collection*, le panneau de droite passe à *Exportation*, *Apparence*, *Livre* et *Collection*. Quand vous ouvrez une #wikilink("5 - Vue mycélienne"), il affiche plutôt trois onglets : *Contexte lié*, *Croissance* et *Filtrage*.
 
 == Onglets et panneaux divisés
 

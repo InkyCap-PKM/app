@@ -142,25 +142,28 @@ La vue offre les mêmes filtres *Liste de tâches* et *Date* que l'Agenda de la 
 
 == Les paramètres de la collection
 
-Lorsqu'une collection est ouverte, le panneau de droite affiche trois onglets propres à la collection :
+Lorsqu'une collection est ouverte, le panneau de droite affiche quatre onglets propres à la collection :
 
-- *Caractéristiques* contient l'icône de la collection, son template Typst, ainsi que son style et son fichier de bibliographie.
-- *Substitutions de style* contient les choix de mise en page pour tout ce que vous exportez depuis la collection (taille du papier, marges, polices, espacement, numérotation des pages et des titres) et une rangée *Typst personnalisé* pour tout ce que les contrôles ne couvrent pas.
-- *Métadonnées et structure du livre* contient tout ce qui concerne le livre fusionné : page de titre, contributeurs, table des matières, bibliographie et numérotation des pages.
+- *Exportation* est le point de départ de toute exportation de la collection : choisissez un format, réglez ses options et cliquez sur le bouton d'exportation près du haut. C'est le premier onglet.
+- *Apparence* contient le template Typst et le style de bibliographie de la collection, ses choix de mise en page (taille du papier, marges, polices, espacement, numérotation des pages et des titres) et une rangée *Typst personnalisé* pour tout ce que les contrôles ne couvrent pas. Les fichiers PDF, le livre et le site Web s'en servent.
+- *Livre* contient tout ce qui concerne le livre fusionné : page de titre, contributeurs, table des matières, bibliographie et numérotation des pages. Seul le livre s'en sert.
+- *Collection* contient l'icône de la collection, une *Description* où vous pouvez garder une note pour vous-même sur le but de la collection (elle n'est jamais exportée), et le fichier de bibliographie de la collection.
 
-Ces trois onglets importent surtout au moment de publier ; ils sont donc décrits dans #wikilink("3 - Exportation et publication").
+Exportation, Apparence et Livre importent surtout au moment de publier ; ils sont donc décrits dans #wikilink("3 - Exportation et publication").
 
 == Exporter vers un tableur
 
-Lorsque vous voulez les données de votre collection hors d'InkyCap (dans un tableur comme LibreOffice Calc, Excel, Numbers, Google Sheets, ou un outil de statistiques), utilisez le bouton *Exporter* et choisissez :
+Lorsque vous voulez les données de votre collection hors d'InkyCap (dans un tableur comme LibreOffice Calc, Excel, Numbers, Google Sheets, ou un outil de statistiques), ouvrez l'onglet *Exportation* du panneau de droite, choisissez le format *Tableau*, puis un *Séparateur* :
 
-- *Tableau en CSV* écrit des valeurs séparées par des virgules, le format de tableur universel.
-- *Tableau en TSV* écrit des valeurs séparées par des tabulations, pratique lorsque votre texte contient des virgules.
+- *Virgule (.csv)* écrit des valeurs séparées par des virgules, le format de tableur universel.
+- *Tabulation (.tsv)* écrit des valeurs séparées par des tabulations, pratique lorsque votre texte contient des virgules.
+
+Cliquez ensuite sur *Exporter le tableau*.
 
 L'exportation reflète exactement ce que vous voyez : les colonnes, les filtres et l'ordre de tri de la vue active. Les valeurs sont mises entre guillemets et échappées pour être préservées durant l'exportation, les listes sont jointes en une seule cellule, et les cellules vides restent vides. Vous obtiendrez une confirmation une fois le fichier enregistré.
 
 #callout("note")[
-  CSV et TSV sont les exportations _de tableur_ ; elles capturent les valeurs des propriétés de votre collection sous forme de données. Le même menu *Exporter* rend aussi les notes elles-mêmes en PDF, en livre fusionné, en site HTML ou en fichiers Markdown. Ces flux de travail de publication, y compris les options de métadonnées et de structure du livre, sont couverts dans #wikilink("3 - Exportation et publication").
+  CSV et TSV sont les exportations _de tableur_ ; elles capturent les valeurs des propriétés de votre collection sous forme de données. Le même onglet *Exportation* rend aussi les notes elles-mêmes en PDF, en livre fusionné, en site HTML ou en fichiers Markdown. Ces flux de travail de publication, y compris les options de métadonnées et de structure du livre, sont couverts dans #wikilink("3 - Exportation et publication").
 ]
 
 == Pages connexes

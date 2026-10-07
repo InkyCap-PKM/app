@@ -1,12 +1,10 @@
-// Right-panel Collection Settings — the tabbed editor for a Collection View,
-// mirroring the file-note right-panel tabs. The three tabs (Characteristics /
-// Style Overrides / Book Metadata) are driven by the tab bar in `RightPanel`;
-// this module owns their content.
+// Right-panel Collection Settings: the tabbed panel for a Collection View.
+// The four tabs (Export / Appearance / Book / Collection) are driven by the
+// tab bar in `RightPanel`; this module owns their content. Export leads,
+// because the other tabs are the settings different exports use.
 //
-// The Style and Book editors moved here from `CollectionTable` (where they used
-// to live inside a collapsible "Collection Settings" header above the table).
-// All edits autosave to the `.collection` file on field blur/change — there is
-// no Save button — and then `onSaved` bumps the property version so the table
+// All edits autosave to the `.collection` file on field blur/change (there is
+// no Save button), and then `onSaved` bumps the property version so the table
 // and member list stay in sync.
 
 import {
@@ -22,7 +20,6 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { noteboxRootDefault } from "../lib/dialog-defaults";
 import type {
   BookExportConfig,
-  LinkedFilesOptions,
   BibliographyMode,
   CollectionFile,
   CollectionStyle,
@@ -41,9 +38,13 @@ import { Dropdown } from "./Dropdown";
 import { LengthInput } from "./LengthInput";
 import { PresetSelect, type PresetOption } from "./PresetSelect";
 import HelpButton from "./HelpButton";
-import LinkedFilesFields, { DEFAULT_LINKED_FILES } from "./LinkedFilesFields";
 import CustomTypstModal from "./CustomTypstModal";
 import { useI18n } from "../lib/i18n";
+import { patchCollectionFile } from "../lib/collection-file";
+import { collectionViewFor } from "../stores/collection-views";
+import CollectionExportPane from "./CollectionExportPane";
+import BusyOverlay from "./BusyOverlay";
+import { exportStateFor } from "../stores/collection-export";
 
 // ── Collection style editor ───────────────────────────────────────
 
@@ -123,7 +124,7 @@ const CollectionStyleEditor: Component<{
   alwaysExpanded?: boolean;
   /// The collection's raw custom Typst, shown here only to drive the "in use"
   /// hint and the Add/Edit label. Editing happens in a modal hosted by the
-  /// parent (so the Characteristics tab's "Set up template…" reaches the same
+  /// parent (so the template's "Set up template…" button reaches the same
   /// editor); this button just requests that the parent open it.
   customTypst?: string;
   onEditCustomTypst?: () => void;
@@ -461,20 +462,20 @@ const CollectionBookEditor: Component<{
   collectionFile: CollectionFile;
   collectionName: string;
   collectionPath: string;
+  /// The table view the book is made from ("" for the default view).
+  view: string;
   templateInUse: boolean;
   onSave: (book: BookExportConfig | null) => Promise<void>;
 }> = (props) => {
   const t = useI18n();
 
-  // The chapters that make up the book, in the default view's order. Used to
-  // populate the "after chapter" table-of-contents placement options. The
-  // empty view name asks the backend for the collection's default view; the
-  // stored placement anchors on the chapter's stem, so the exact view here
-  // isn't load-bearing — only the labels are.
+  // The chapters that make up the book, in the order of the view the table
+  // shows (the notes the book is made from). Used to populate the "after
+  // chapter" table-of-contents placement options.
   const [chapters] = createResource(
-    () => props.collectionPath,
-    async (path) => {
-      const data = await ipc.getCollectionData(path, "");
+    () => [props.collectionPath, props.view] as const,
+    async ([path, view]) => {
+      const data = await ipc.getCollectionData(path, view);
       return data.rows.map((r) => ({
         stem: r.file_name.replace(/\.typ$/i, ""),
       }));
@@ -527,10 +528,6 @@ const CollectionBookEditor: Component<{
     "internal" | "external" | "plain"
   >(cfg().wikilink_mode ?? "internal");
 
-  const [linkedFiles, setLinkedFiles] = createSignal<LinkedFilesOptions>(
-    cfg().linked_files ?? DEFAULT_LINKED_FILES,
-  );
-
   const initialNumbering = cfg().page_numbering;
   const [pageStyle, setPageStyle] = createSignal<PageStyle>(
     initialNumbering?.style ?? "roman_then_arabic",
@@ -566,7 +563,6 @@ const CollectionBookEditor: Component<{
       page_numbering: pageNumbering,
       bibliography_mode: bibMode(),
       include_credit_statement: includeCreditStatement(),
-      linked_files: linkedFiles(),
     };
   }
 
@@ -833,22 +829,6 @@ const CollectionBookEditor: Component<{
       </div>
 
       <div class="collection-meta__section-label">
-        {t("export.linkedFiles.section")}
-      </div>
-      <LinkedFilesFields
-        value={linkedFiles()}
-        onChange={(v) => {
-          setLinkedFiles(v);
-          flush();
-        }}
-        classes={{
-          field: "collection-meta__row",
-          label: "collection-meta__label",
-          checkbox: "collection-meta__inline-check",
-        }}
-      />
-
-      <div class="collection-meta__section-label">
         {t("collection.book.pageNumbering")}
       </div>
       <p class="collection-meta__hint" style={{ margin: "0 0 6px" }}>
@@ -904,35 +884,25 @@ const CollectionBookEditor: Component<{
   );
 };
 
-// ── Shared partial-save helper ─────────────────────────────────────
+// ── Saving single fields ───────────────────────────────────────────
 
-/// Apply a partial change to a `.collection` file without clobbering fields
-/// edited elsewhere.
-///
-/// The collection's filters and columns are saved from `CollectionTable` on a
-/// *separate* refresh signal from the settings panel's loaded copy, so the
-/// snapshot a settings editor holds (`props.collectionFile` / `loadedFile()`)
-/// can be stale by the time the user changes an icon, contributor, or style.
-/// Writing that stale whole-file snapshot back is what silently wiped freshly
-/// applied filters/columns. Re-reading the current file straight from disk
-/// immediately before merging the single-field change preserves whatever the
-/// table just wrote. Every collection write still goes through the full-file
-/// `saveCollectionFile` command, so on-disk fields the frontend type doesn't
-/// model round-trip untouched.
-async function patchCollectionFile(
+/// Save top-level fields of the `.collection` file, then refresh the panel
+/// and the sidebar (which shows the collection's icon).
+async function saveCollectionField(
   path: string,
   patch: Partial<CollectionFile>,
+  onSaved: () => void,
 ): Promise<void> {
-  const fresh = await ipc.getCollectionFile(path);
-  await ipc.saveCollectionFile(path, { ...fresh, ...patch });
+  await patchCollectionFile(path, patch);
+  onSaved();
+  document.dispatchEvent(new CustomEvent("inkycap:collections-changed"));
 }
 
-// ── Characteristics editor (the former "Common" tab) ───────────────
+// ── Template and bibliography style (Appearance tab) ───────────────
 
-/// General collection settings: icon, Typst template, bibliography style/file,
-/// and free-form custom metadata. Autosaves each field to the `.collection`
-/// file and notifies the sidebar so the collection's icon/name refresh.
-const CollectionCharacteristicsEditor: Component<{
+/// The Typst template and bibliography style, shown at the top of the
+/// Appearance tab. Autosaves each field to the `.collection` file.
+const CollectionTemplateFields: Component<{
   collectionFile: CollectionFile;
   collectionPath: string;
   onSaved: () => void;
@@ -941,6 +911,8 @@ const CollectionCharacteristicsEditor: Component<{
   onSetupTemplate?: () => void;
 }> = (props) => {
   const t = useI18n();
+  const saveField = (field: keyof CollectionFile, value: string | null) =>
+    saveCollectionField(props.collectionPath, { [field]: value || null }, props.onSaved);
   const [customCslMode, setCustomCslMode] = createSignal(false);
   const [customTemplateMode, setCustomTemplateMode] = createSignal(false);
 
@@ -968,24 +940,6 @@ const CollectionCharacteristicsEditor: Component<{
       setCustomTemplateMode(false);
       saveField("typst_template", v || null);
     }
-  }
-
-  function notifySidebar() {
-    document.dispatchEvent(new CustomEvent("inkycap:collections-changed"));
-  }
-
-  async function saveField(field: keyof CollectionFile, value: string | null) {
-    await patchCollectionFile(props.collectionPath, {
-      [field]: value || null,
-    } as Partial<CollectionFile>);
-    props.onSaved();
-    notifySidebar();
-  }
-
-  async function saveIcon(value: string) {
-    await patchCollectionFile(props.collectionPath, { icon: value || null });
-    props.onSaved();
-    notifySidebar();
   }
 
   const bibStyleValue = () => {
@@ -1021,16 +975,6 @@ const CollectionCharacteristicsEditor: Component<{
 
   return (
     <>
-      <div class="collection-meta__row">
-        <label class="collection-meta__label">
-          {t("collection.char.icon")}
-        </label>
-        <LucideIconPicker
-          value={props.collectionFile.icon ?? "lucide:folder-pen"}
-          onSelect={saveIcon}
-        />
-      </div>
-
       <div class="collection-meta__row">
         <span class="collection-meta__label-group">
           <label class="collection-meta__label">
@@ -1117,8 +1061,56 @@ const CollectionCharacteristicsEditor: Component<{
           />
         </div>
       </div>
+    </>
+  );
+};
 
-      <div class="collection-meta__row">
+// ── Collection details (Collection tab) ────────────────────────────
+
+/// Settings that belong to the collection itself rather than to how it is
+/// exported: its sidebar icon, the user's description, and its bibliography
+/// file.
+const CollectionDetailsEditor: Component<{
+  collectionFile: CollectionFile;
+  collectionPath: string;
+  onSaved: () => void;
+}> = (props) => {
+  const t = useI18n();
+  const saveField = (field: keyof CollectionFile, value: string | null) =>
+    saveCollectionField(props.collectionPath, { [field]: value || null }, props.onSaved);
+
+  // Kept locally and saved when the field loses focus, so typing doesn't
+  // write the file on every keystroke.
+  const [description, setDescription] = createSignal(props.collectionFile.description ?? "");
+
+  return (
+    <>
+      <div class="collection-meta__row collection-meta__row--compact">
+        <label class="collection-meta__label">
+          {t("collection.char.icon")}
+        </label>
+        <LucideIconPicker
+          value={props.collectionFile.icon ?? "lucide:folder-pen"}
+          onSelect={(v) => saveField("icon", v)}
+        />
+      </div>
+
+      <div class="collection-meta__row collection-meta__row--stacked">
+        <label class="collection-meta__label" for="collection-description">
+          {t("collection.char.description")}
+        </label>
+        <textarea
+          id="collection-description"
+          class="settings__text-input collection-meta__textarea"
+          rows={5}
+          value={description()}
+          placeholder={t("collection.char.descriptionPlaceholder")}
+          onInput={(e) => setDescription(e.currentTarget.value)}
+          onChange={() => saveField("description", description().trim() === "" ? null : description())}
+        />
+      </div>
+
+      <div class="collection-meta__row collection-meta__row--stacked">
         <span class="collection-meta__label-group">
           <label class="collection-meta__label">
             {t("collection.char.bibFile")}
@@ -1168,6 +1160,8 @@ const CollectionCharacteristicsEditor: Component<{
 /// `.collection` file once (keyed on `propertyVersion` so it refetches after
 /// any autosave) and routes to the matching editor.
 const CollectionSettings: Component<{
+  /// The collection tab the panel belongs to, for the view its table shows.
+  tabId: string;
   collectionPath: string;
   collectionName: string;
   tab: CollectionPanelTab;
@@ -1195,9 +1189,9 @@ const CollectionSettings: Component<{
     bumpPropertyVersion();
   };
 
-  // The Custom Typst editor is hosted here, not inside the Style tab, so the
-  // Characteristics tab's "Set up template…" opens the same editor (the tabs
-  // are mutually exclusive, so the Style editor isn't mounted then). `autoInsert`
+  // The Custom Typst editor is hosted here, not inside the style editor, so
+  // the template's "Set up template…" button and the style editor's Custom
+  // Typst button open the same editor. `autoInsert`
   // pre-fills the assigned template's starter `#show:` rule on open.
   const [customTypstModal, setCustomTypstModal] = createSignal<{
     autoInsert: boolean;
@@ -1247,24 +1241,32 @@ const CollectionSettings: Component<{
   return (
     <Show when={loadedPath()} keyed>
       <Switch>
-        <Match when={props.tab === "characteristics"}>
+        <Match when={props.tab === "export"}>
           <Show when={loadedFile()}>
             {(cf) => (
               <div class="collection-settings__body">
-                <CollectionCharacteristicsEditor
+                <CollectionExportPane
+                  tabId={props.tabId}
                   collectionFile={cf()}
                   collectionPath={props.collectionPath}
+                  collectionName={props.collectionName}
                   onSaved={onSaved}
-                  onSetupTemplate={() => setCustomTypstModal({ autoInsert: true })}
                 />
               </div>
             )}
           </Show>
         </Match>
-        <Match when={props.tab === "style"}>
+        <Match when={props.tab === "appearance"}>
           <Show when={loadedFile()}>
             {(cf) => (
               <div class="collection-settings__body">
+                <p class="collection-meta__used-by">{t("collection.appearance.usedBy")}</p>
+                <CollectionTemplateFields
+                  collectionFile={cf()}
+                  collectionPath={props.collectionPath}
+                  onSaved={onSaved}
+                  onSetupTemplate={() => setCustomTypstModal({ autoInsert: true })}
+                />
                 <CollectionStyleEditor
                   alwaysExpanded
                   style={cf().style ?? null}
@@ -1281,10 +1283,12 @@ const CollectionSettings: Component<{
           <Show when={loadedFile()}>
             {(cf) => (
               <div class="collection-settings__body">
+                <p class="collection-meta__used-by">{t("collection.book.usedBy")}</p>
                 <CollectionBookEditor
                   collectionFile={cf()}
                   collectionName={props.collectionName}
                   collectionPath={props.collectionPath}
+                  view={collectionViewFor(props.tabId)?.view ?? ""}
                   templateInUse={!!cf().typst_template}
                   onSave={saveBook}
                 />
@@ -1292,7 +1296,27 @@ const CollectionSettings: Component<{
             )}
           </Show>
         </Match>
+        <Match when={props.tab === "collection"}>
+          <Show when={loadedFile()}>
+            {(cf) => (
+              <div class="collection-settings__body">
+                <CollectionDetailsEditor
+                  collectionFile={cf()}
+                  collectionPath={props.collectionPath}
+                  onSaved={onSaved}
+                />
+              </div>
+            )}
+          </Show>
+        </Match>
       </Switch>
+      {/* Shown here rather than in the Export tab so a long export keeps
+          its overlay when the user switches to another collection tab. */}
+      <BusyOverlay
+        visible={exportStateFor(props.collectionPath).busy !== null}
+        message={exportStateFor(props.collectionPath).busy?.message ?? ""}
+        detail={exportStateFor(props.collectionPath).busy?.detail}
+      />
       <Show when={customTypstModal()}>
         {(m) => (
           <CustomTypstModal

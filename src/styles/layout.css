@@ -37,6 +37,7 @@
 @import "./layout/dropdown.css";
 @import "./layout/creation-rules.css";
 @import "./layout/collection-metadata.css";
+@import "./layout/collection-export.css";
 @import "./layout/command-palette.css";
 @import "./layout/pickers.css";
 @import "./layout/right-panel.css";

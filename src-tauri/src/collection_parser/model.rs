@@ -316,11 +316,52 @@ pub struct BookExportConfig {
     /// multi-author byline still renders. Defaults to `true` when unset.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_credit_statement: Option<bool>,
-    /// What the book does with links to notebox files, and whether it copies
-    /// them and the images into a folder beside the PDF. Unset means links
-    /// stay as written and nothing is copied.
+    /// Where older files kept the "links to files" choice. Read only so
+    /// [`parse_collection_file`] can move it to [`CollectionExportConfig`];
+    /// never written back.
+    #[serde(default, skip_serializing)]
+    pub linked_files: Option<crate::models::export::LinkedFilesOptions>,
+}
+
+/// The kinds of output the collection's Export tab can make.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum CollectionExportFormat {
+    /// One PDF per note.
+    #[default]
+    PdfFiles,
+    /// All the notes merged into one PDF, set up by the `book:` settings.
+    Book,
+    /// One HTML page per note.
+    Site,
+    /// One Markdown file per note.
+    Markdown,
+    /// The table's rows and columns as CSV or TSV.
+    Table,
+}
+
+/// The saved choices of a collection's Export tab, shared by every format
+/// that uses them. Every field is optional; unset means the format's default.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(default)]
+pub struct CollectionExportConfig {
+    /// The format last chosen in the Export tab.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<CollectionExportFormat>,
+    /// PDF standard for the PDF files and book formats.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pdf_standard: Option<crate::typst_pipeline::compiler::PdfStandardPreset>,
+    /// What happens to suggested changes and annotations. Not used by the
+    /// website, which never shows review markup.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_mode: Option<crate::typst_pipeline::review_markup::ReviewMarkupMode>,
+    /// What the export does with links to notebox files, and whether it
+    /// copies them and the images beside the export.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub linked_files: Option<crate::models::export::LinkedFilesOptions>,
+    /// Comma or tab for the table format.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub table_delimiter: Option<crate::models::export::TableDelimiter>,
 }
 
 /// One contributor to a collection — drives the Book Metadata byline and
@@ -348,6 +389,10 @@ pub struct Contributor {
 pub struct CollectionFile {
     #[serde(default)]
     pub icon: Option<String>,
+    /// The user's own plain-text note about the collection. Shown only in the
+    /// collection's settings; never exported.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     #[serde(default)]
     pub typst_template: Option<String>,
     #[serde(default)]
@@ -369,6 +414,9 @@ pub struct CollectionFile {
     /// dialog time).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub book: Option<BookExportConfig>,
+    /// The Export tab's saved choices. None until the user changes one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub export: Option<CollectionExportConfig>,
     #[serde(default)]
     pub filters: Option<FilterGroup>,
     #[serde(default)]
@@ -445,8 +493,17 @@ pub struct FilterGroup {
 }
 
 /// Parse a `.collection` file from its YAML content.
+///
+/// Older files kept the "links to files" choice under `book:`. It is moved to
+/// `export:` here (unless `export:` already has one), so the next save writes
+/// it in its new place only.
 pub fn parse_collection_file(content: &str) -> Result<CollectionFile, serde_yaml::Error> {
-    serde_yaml::from_str(content)
+    let mut base: CollectionFile = serde_yaml::from_str(content)?;
+    if let Some(old) = base.book.as_mut().and_then(|b| b.linked_files.take()) {
+        let export = base.export.get_or_insert_with(Default::default);
+        export.linked_files.get_or_insert(old);
+    }
+    Ok(base)
 }
 
 /// Serialize a `CollectionFile` back to YAML content for writing to disk.
@@ -480,12 +537,14 @@ pub fn default_collection_file_for(name: &str) -> CollectionFile {
     let collection_filter = format!(r#"collection.contains("{}")"#, name);
     CollectionFile {
         icon: None,
+        description: None,
         typst_template: None,
         bibliography_style: None,
         bibliography_file: None,
         style: None,
         custom_typst: None,
         book: None,
+        export: None,
         filters: Some(FilterGroup {
             and: Some(vec![
                 serde_yaml::Value::String("file.name != this.file.name".to_string()),
@@ -516,12 +575,14 @@ pub fn default_collection_file_for(name: &str) -> CollectionFile {
 pub fn default_collection_file() -> CollectionFile {
     CollectionFile {
         icon: None,
+        description: None,
         typst_template: None,
         bibliography_style: None,
         bibliography_file: None,
         style: None,
         custom_typst: None,
         book: None,
+        export: None,
         filters: None,
         formulas: None,
         summaries: None,
@@ -685,5 +746,92 @@ views:
             Some("@preview/charged-ieee:0.1.0")
         );
         assert_eq!(base.bibliography_style.as_deref(), Some("ieee"));
+    }
+
+    #[test]
+    fn old_book_linked_files_moves_to_export() {
+        use crate::models::export::{FileLinkMode, LinkedFilesOptions};
+        let yaml = r#"
+book:
+  title: "My Book"
+  linked_files:
+    links: copies
+    copy_images: true
+views: []
+"#;
+        let base = parse_collection_file(yaml).unwrap();
+        let moved = LinkedFilesOptions {
+            links: FileLinkMode::Copies,
+            copy_images: true,
+        };
+        assert_eq!(
+            base.export.as_ref().and_then(|e| e.linked_files),
+            Some(moved)
+        );
+        assert!(base.book.as_ref().unwrap().linked_files.is_none());
+
+        // The next save writes it under `export:` only.
+        let saved = serialize_collection_file(&base).unwrap();
+        let reparsed: serde_yaml::Value = serde_yaml::from_str(&saved).unwrap();
+        assert!(reparsed["book"].get("linked_files").is_none());
+        assert_eq!(
+            reparsed["export"]["linked_files"]["links"].as_str(),
+            Some("copies")
+        );
+        assert_eq!(reparsed["book"]["title"].as_str(), Some("My Book"));
+    }
+
+    #[test]
+    fn export_linked_files_wins_over_old_book_value() {
+        use crate::models::export::FileLinkMode;
+        let yaml = r#"
+book:
+  linked_files:
+    links: copies
+export:
+  linked_files:
+    links: file-name
+views: []
+"#;
+        let base = parse_collection_file(yaml).unwrap();
+        let links = base.export.unwrap().linked_files.unwrap().links;
+        assert_eq!(links, FileLinkMode::FileName);
+    }
+
+    #[test]
+    fn export_settings_round_trip() {
+        use crate::models::export::TableDelimiter;
+        use crate::typst_pipeline::compiler::PdfStandardPreset;
+        use crate::typst_pipeline::review_markup::ReviewMarkupMode;
+        let yaml = r#"
+export:
+  format: book
+  pdf_standard: pdf-a4
+  review_mode: accept
+  table_delimiter: tab
+views: []
+"#;
+        let base = parse_collection_file(yaml).unwrap();
+        let reparsed = parse_collection_file(&serialize_collection_file(&base).unwrap()).unwrap();
+        let export = reparsed.export.unwrap();
+        assert_eq!(export.format, Some(CollectionExportFormat::Book));
+        assert_eq!(export.pdf_standard, Some(PdfStandardPreset::PdfA4));
+        assert_eq!(export.review_mode, Some(ReviewMarkupMode::Accept));
+        assert_eq!(export.table_delimiter, Some(TableDelimiter::Tab));
+        assert!(export.linked_files.is_none());
+    }
+
+    #[test]
+    fn description_round_trips_and_is_omitted_when_unset() {
+        let yaml =
+            "description: \"Drafts for the spring issue.\\nAsk Sam about the order.\"\nviews: []\n";
+        let base = parse_collection_file(yaml).unwrap();
+        let text = "Drafts for the spring issue.\nAsk Sam about the order.";
+        assert_eq!(base.description.as_deref(), Some(text));
+        let reparsed = parse_collection_file(&serialize_collection_file(&base).unwrap()).unwrap();
+        assert_eq!(reparsed.description.as_deref(), Some(text));
+
+        let saved = serialize_collection_file(&default_collection_file()).unwrap();
+        assert!(!saved.contains("description"));
     }
 }

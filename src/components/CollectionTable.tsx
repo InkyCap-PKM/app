@@ -1,4 +1,3 @@
-import { errorText } from "../lib/errors";
 import {
   Component,
   createEffect,
@@ -9,60 +8,33 @@ import {
   Show,
   onCleanup,
 } from "solid-js";
-import { Portal } from "solid-js/web";
 import { ChevronLeft, ChevronRight, Funnel, PenLine } from "lucide-solid";
-import { exportDefault, rememberExportFile, rememberExportDir } from "../lib/dialog-defaults";
 import type {
   PropertyValue,
   PropertyType,
   SortRule,
   FilterGroup,
   ViewDef,
-  LinkedFilesOptions,
 } from "../lib/types";
-import LinkedFilesFields, { DEFAULT_LINKED_FILES, companionSummary } from "./LinkedFilesFields";
 import * as ipc from "../lib/ipc";
 import { openTab, type EditingMode } from "../stores/tabs";
 import { propertyVersion, fileTreeVersion } from "../stores/notebox";
-import { promptText, promptChoice } from "../stores/prompt";
-import { linkTargetsInFilter } from "../lib/filter-expr";
+import { promptText } from "../stores/prompt";
+import { publishCollectionView, clearCollectionView } from "../stores/collection-views";
 import { useI18n, tPlural } from "../lib/i18n";
 import { propertyLabel } from "../lib/property-labels";
 import { clickOutside, dismissOnEscape } from "../lib/clickOutside";
-import { anchorPanelMenu } from "../lib/uiMenu";
 import { propertyType, inferPropertyType } from "../stores/propertyTypes";
 import { columnFilterKind, fileColumnType } from "../lib/column-filter";
 import AgendaList from "./AgendaList";
-import BusyOverlay from "./BusyOverlay";
 import FilterBuilder from "./FilterBuilder";
 import ColumnFilterPopover from "./ColumnFilterPopover";
-import { Dropdown } from "./Dropdown";
 import PaneNavBar from "./panes/PaneNavBar";
 
 // Remember the last active view per collection for the session, so switching
 // to another tab and back doesn't reset the collection to its first view.
 // Keyed by collection path; an empty value means "the default (first) view".
 const lastActiveViewByCollection = new Map<string, string>();
-
-/** An export error report, shown in the banner under the table. */
-interface ExportReport {
-  message: string;
-  /** Notes the export left out, each openable from the banner. */
-  notes?: ipc.SkippedNote[];
-  /** How to re-run the export with errors bypassed. Absent when bypassing
-   *  isn't allowed or was already tried. */
-  bypass?: BypassRequest;
-}
-
-/** What the banner's bypass button re-runs. */
-type BypassRequest =
-  | { kind: "pdf"; outputDir: string; reviewMode: ipc.ReviewMarkupMode; onlyFiles: string[] }
-  | { kind: "site"; outputDir: string };
-
-// Export error reports per collection for the session, so a report (such as
-// the list of notes a batch export left out) survives opening one of those
-// notes and coming back. Cleared only when the user dismisses it.
-const exportReportByCollection = new Map<string, ExportReport>();
 
 // ── Cell rendering ─────────────────────────────────────────────────
 
@@ -300,43 +272,6 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
     filePath: string;
     fileName: string;
   } | null>(null);
-  const [showExportMenu, setShowExportMenu] = createSignal(false);
-  const [exportPdfStandard, setExportPdfStandard] = createSignal<ipc.PdfStandardPreset>("standard");
-  const [exportReviewMode, setExportReviewMode] = createSignal<ipc.ReviewMarkupMode>("keep");
-  // The menu's choice for files the notes use; until changed, the book
-  // settings' saved choice, so every export from here starts from it.
-  const [linkedFilesChoice, setLinkedFilesChoice] = createSignal<LinkedFilesOptions | null>(null);
-  const exportLinkedFiles = (): LinkedFilesOptions =>
-    linkedFilesChoice() ?? collectionFile()?.book?.linked_files ?? DEFAULT_LINKED_FILES;
-  const [exportStatus, setExportStatusRaw] = createSignal<string | null>(null);
-  // A new export's status replaces the previous export's error report, so a
-  // stale report doesn't linger after the user fixes the notes and re-exports.
-  const setExportStatus = (msg: string | null) => {
-    if (msg !== null) setExportReport(null);
-    return setExportStatusRaw(msg);
-  };
-  // Errors are tracked separately so they persist (with a close button)
-  // until the user dismisses them. Multi-line PDF/UA-1 reports in
-  // particular need time to read, and auto-dismissing them defeats the
-  // point of the actionable error. `setExportReport` writes through to the
-  // per-collection session cache so the report outlives this view.
-  const [exportReport, setExportReportRaw] = createSignal<ExportReport | null>(
-    exportReportByCollection.get(props.path) ?? null,
-  );
-  const setExportReport = (report: ExportReport | null) => {
-    if (report === null) exportReportByCollection.delete(props.path);
-    else exportReportByCollection.set(props.path, report);
-    return setExportReportRaw(report);
-  };
-  function reportExportError(msg: string) {
-    setExportStatus(null);
-    setExportReport({ message: msg });
-  }
-  // Visible-overlay state for long-running export operations. The status
-  // bar message is easy to miss for compiles that take 5–60 seconds, so
-  // we mirror the active export through this overlay.
-  const [busyMessage, setBusyMessage] = createSignal<string | null>(null);
-  const [busyDetail, setBusyDetail] = createSignal<string | undefined>(undefined);
   // Counter to force refetch
   const [refreshTick, setRefreshTick] = createSignal(0);
   // Whether the "+ add view" type picker (Table / Agenda) is open.
@@ -386,6 +321,20 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
     () => ({ path: props.path, tick: refreshTick(), pv: propertyVersion() }),
     async ({ path }) => ipc.getCollectionFile(path),
   );
+
+  // Tell the right panel which view this tab shows, so its Export and Book
+  // tabs work from the same notes as the table.
+  createEffect(() => {
+    const d = data();
+    if (!d) return;
+    const view = activeView();
+    publishCollectionView(props.tabId, {
+      view,
+      label: view || d.views[0]?.name || t("collection.table.defaultView"),
+      noteCount: d.rows.length,
+    });
+  });
+  onCleanup(() => clearCollectionView(props.tabId));
 
   // Get the current view's sort rules from the collection file
   function currentSortRules(): SortRule[] {
@@ -784,12 +733,6 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
     setContextMenu({ x: e.clientX, y: e.clientY, viewName });
   }
 
-  // The export menu is portaled to <body> (so it escapes `.main-content`'s
-  // `overflow: hidden` and never paints behind the right panel), then anchored
-  // back to this button with `anchorPanelMenu`. Its own `clickOutside`
-  // directive handles dismissal, so handleDocClick below leaves it alone.
-  let exportBtnRef: HTMLButtonElement | undefined;
-
   // Close context menu on click outside
   function handleDocClick() {
     setContextMenu(null);
@@ -814,336 +757,9 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
     );
   }
 
-  async function exportDelimited(delimiter: "comma" | "tab") {
-    setShowExportMenu(false);
-    const ext = delimiter === "tab" ? "tsv" : "csv";
-    const label = delimiter === "tab" ? "TSV" : "CSV";
-    try {
-      const outputPath = await ipc.pickExportFile({
-        defaultPath: await exportDefault(`${collectionName()}.${ext}`),
-        filters: [{ name: label, extensions: [ext] }],
-      });
-      if (!outputPath) return;
-      await rememberExportFile(outputPath);
-      await ipc.exportCollectionCsvToFile(props.path, activeView(), outputPath, delimiter);
-      setExportStatus(t("collection.export.csvDone", { label, path: outputPath }));
-      setTimeout(() => setExportStatus(null), 4000);
-    } catch (e: any) {
-      reportExportError(t("collection.export.csvFailed", { label, error: errorText(e) }));
-    }
-  }
-
-  /** Report the outcome of a one-file-per-note export. When some notes were
-   *  left out, list them in the persistent banner so the user can open and
-   *  fix them, offering `bypass` when given; otherwise show the brief
-   *  `doneKey` status. `bypassUnavailable` explains why no bypass is offered
-   *  (archival and accessible PDF formats); `afterBypass` marks a run that
-   *  already tried bypassing, so what remains couldn't be bypassed. */
-  function reportBatchResult(
-    result: ipc.BatchExportResult,
-    doneKey: string,
-    opts: { bypass?: BypassRequest; bypassUnavailable?: boolean; afterBypass?: boolean } = {},
-  ) {
-    if (result.skippedNotes.length > 0) {
-      let message = t("collection.export.batchSkipped", {
-        files: result.files.length,
-        skipped: result.skippedNotes.length,
-      });
-      if (opts.afterBypass) message += `\n\n${t("collection.export.bypassIncomplete")}`;
-      if (opts.bypassUnavailable) message += `\n\n${t("collection.export.bypassUnavailable")}`;
-      setExportStatus(null);
-      setExportReport({ message, notes: result.skippedNotes, bypass: opts.bypass });
-      return;
-    }
-    const bypassed = result.bypassedCount
-      ? tPlural("collection.export.bypassedSuffix", result.bypassedCount)
-      : "";
-    const copied = companionSummary(result.companion);
-    setExportStatus(tPlural(doneKey, result.files.length) + bypassed + (copied ? ` ${copied}` : ""));
-    setTimeout(() => setExportStatus(null), 4000);
-  }
-
-  /** Re-run the export described by the banner's bypass request. */
-  function bypassFromBanner() {
-    const request = exportReport()?.bypass;
-    if (!request) return;
-    if (request.kind === "pdf") {
-      void runPdfBatch(request.outputDir, undefined, request.reviewMode, request.onlyFiles, true);
-    } else {
-      void runSiteExport(request.outputDir, true);
-    }
-  }
-
-  async function exportAllPdf() {
-    setShowExportMenu(false);
-    let outputDir: string | null;
-    try {
-      outputDir = await ipc.pickExportFolder({ title: t("collection.export.selectPdfFolder"), defaultPath: await exportDefault() });
-    } catch (e: any) {
-      reportExportError(t("collection.export.pdfFailed", { error: errorText(e) }));
-      return;
-    }
-    if (!outputDir) return;
-    rememberExportDir(outputDir);
-    const std = exportPdfStandard() === "standard" ? undefined : exportPdfStandard();
-    await runPdfBatch(outputDir, std, exportReviewMode());
-  }
-
-  /** Export each note as a PDF into `outputDir` and report the outcome.
-   *  `onlyFiles` and `bypass` are set when retrying skipped notes with
-   *  errors bypassed. Bypassing is offered only for plain PDF (`std`
-   *  undefined); archival and accessible formats must compile cleanly. */
-  async function runPdfBatch(
-    outputDir: string,
-    std: ipc.PdfStandardPreset | undefined,
-    reviewMode: ipc.ReviewMarkupMode,
-    onlyFiles?: string[],
-    bypass = false,
-  ) {
-    try {
-      setBusyMessage(t("collection.export.pdfBusy"));
-      setBusyDetail(t("collection.export.outputFolder", { path: outputDir }));
-      setExportStatus(t("collection.export.pdfStatus"));
-      const result = await ipc.exportCollectionBatchPdf(
-        props.path,
-        activeView(),
-        outputDir,
-        "properties",
-        std,
-        undefined,
-        reviewMode,
-        onlyFiles,
-        bypass || undefined,
-        exportLinkedFiles(),
-      );
-      const canBypass = !std && !bypass;
-      reportBatchResult(result, "collection.export.pdfDone", {
-        bypass: canBypass
-          ? { kind: "pdf", outputDir, reviewMode, onlyFiles: result.skippedNotes.map((n) => n.path) }
-          : undefined,
-        bypassUnavailable: !!std,
-        afterBypass: bypass,
-      });
-    } catch (e: any) {
-      const msg = errorText(e);
-      reportExportError(t("collection.export.pdfFailed", { error: msg }));
-    } finally {
-      setBusyMessage(null);
-      setBusyDetail(undefined);
-    }
-  }
-
-  async function exportAsBook() {
-    setShowExportMenu(false);
-    try {
-      const cf = collectionFile();
-      // A collection that gathers notes linking to a name can be exported as
-      // just those passages; ask which the user wants.
-      const viewDef = cf?.views.find((v) => v.name === activeView());
-      const linkTargets = [
-        ...new Set([...linkTargetsInFilter(cf?.filters), ...linkTargetsInFilter(viewDef?.filters)]),
-      ];
-      let passagesLinkingTo: string | undefined;
-      if (linkTargets.length > 0) {
-        const choice = await promptChoice({
-          title: t("collection.export.passagesTitle"),
-          message: t("collection.export.passagesBody"),
-          options: [
-            { id: "whole", label: t("collection.export.wholeNotes"), variant: "primary" },
-            ...linkTargets.map((name) => ({
-              id: `link:${name}`,
-              label: t("collection.export.passagesLinkingTo", { name }),
-            })),
-          ],
-        });
-        if (choice === null) return;
-        if (choice.startsWith("link:")) passagesLinkingTo = choice.slice("link:".length);
-      }
-      const titleHint = cf?.book?.title || collectionName();
-      const safeName = titleHint.replace(/[\\/:*?"<>|]+/g, "_");
-      const outputPath = await ipc.pickExportFile({
-        defaultPath: await exportDefault(`${safeName}.pdf`),
-        filters: [{ name: "PDF", extensions: ["pdf"] }],
-      });
-      if (!outputPath) return;
-      await rememberExportFile(outputPath);
-      const std = exportPdfStandard() === "standard" ? undefined : exportPdfStandard();
-      const rm = exportReviewMode() === "keep" ? undefined : exportReviewMode();
-      const overrides: ipc.BookExportOverrides = {
-        pdfStandard: std,
-        reviewMode: rm,
-        passagesLinkingTo,
-        linkedFiles: exportLinkedFiles(),
-      };
-
-      // Retry loop: each round either writes the PDF or reports notes that
-      // failed to compile. The user decides whether to exclude those and retry.
-      // Excluded notes are dropped from the book, so they can't reappear —
-      // the loop terminates on success, a hard error (thrown), or Stop.
-      const excluded: string[] = [];
-      // Bypassing errors is allowed only for plain PDF, and tried at most once.
-      let bypass = false;
-      for (;;) {
-        setBusyMessage(t("collection.export.bookBusy"));
-        setBusyDetail(t("collection.export.bookOutput", { path: outputPath }));
-        setExportStatus(t("collection.export.bookStatus"));
-        const result = await ipc.exportCollectionBookPdf(
-          props.path,
-          activeView(),
-          outputPath,
-          overrides,
-          excluded.length > 0 ? excluded : undefined,
-          bypass || undefined,
-        );
-        if (result.outputPath) {
-          const omitted = excluded.length
-            ? tPlural("collection.export.bookOmitted", excluded.length)
-            : "";
-          const bypassed = result.bypassed ? t("collection.export.bookBypassed") : "";
-          const withoutPassages = result.withoutPassages.length
-            ? tPlural("collection.export.bookWithoutPassages", result.withoutPassages.length)
-            : "";
-          setExportStatus(
-            t("collection.export.bookDone", { path: result.outputPath, omitted }) +
-              withoutPassages +
-              bypassed +
-              (companionSummary(result.companion) ? ` ${companionSummary(result.companion)}` : ""),
-          );
-          setTimeout(() => setExportStatus(null), 4000);
-          return;
-        }
-        // Compile failed in specific notes — clear the busy overlay so the
-        // confirm dialog is visible, then ask whether to exclude + retry.
-        setBusyMessage(null);
-        setBusyDetail(undefined);
-        const failing = result.failingNotes;
-        const list = failing.map((n) => `  • ${n}`).join("\n");
-        const canBypass = !std && !bypass;
-        let message = t("collection.export.someErrorsBody", { list });
-        if (bypass) message += `\n\n${t("collection.export.bypassIncomplete")}`;
-        message += `\n\n${t(canBypass ? "collection.export.someErrorsAskBypass" : "collection.export.someErrorsAsk")}`;
-        if (std) message += `\n\n${t("collection.export.bypassUnavailable")}`;
-        const choice = await promptChoice({
-          title: t("collection.export.someErrorsTitle"),
-          message,
-          // Stopping is the highlighted choice: it's the only one that
-          // doesn't produce a book missing or misrendering content.
-          options: [
-            { id: "exclude", label: t("collection.export.continueExclude") },
-            ...(canBypass ? [{ id: "bypass", label: t("collection.export.bypassErrors") }] : []),
-            { id: "stop", label: t("collection.export.stopFix"), variant: "primary" },
-          ],
-        });
-        if (choice === "bypass") {
-          bypass = true;
-          continue;
-        }
-        if (choice !== "exclude") {
-          // Book errors name notes by stem; match them to the table rows so
-          // the banner can open each one.
-          const rows = data()?.rows ?? [];
-          const notes = failing.flatMap((stem) => {
-            const row = rows.find((r) => r.file_name.replace(/\.typ$/, "") === stem);
-            return row ? [{ path: row.file_path, name: row.file_name, reason: "" }] : [];
-          });
-          setExportStatus(null);
-          setExportReport({
-            message:
-              tPlural("collection.export.bookStopped", failing.length) +
-              (result.message ? `\n${result.message}` : ""),
-            notes,
-          });
-          return;
-        }
-        for (const n of failing) if (!excluded.includes(n)) excluded.push(n);
-      }
-    } catch (e: any) {
-      const msg = errorText(e);
-      reportExportError(t("collection.export.bookFailed", { error: msg }));
-    } finally {
-      setBusyMessage(null);
-      setBusyDetail(undefined);
-    }
-  }
-
-  async function exportStaticSite() {
-    setShowExportMenu(false);
-    let outputDir: string | null;
-    try {
-      outputDir = await ipc.pickExportFolder({ title: t("collection.export.selectSiteFolder"), defaultPath: await exportDefault() });
-    } catch (e: any) {
-      reportExportError(t("collection.export.siteFailed", { error: errorText(e) }));
-      return;
-    }
-    if (!outputDir) return;
-    rememberExportDir(outputDir);
-    await runSiteExport(outputDir);
-  }
-
-  /** Export the static site into `outputDir` and report the outcome. A
-   *  bypass re-runs the whole site so its index links every page. */
-  async function runSiteExport(outputDir: string, bypass = false) {
-    try {
-      setBusyMessage(t("collection.export.siteBusy"));
-      setBusyDetail(t("collection.export.outputFolder", { path: outputDir }));
-      setExportStatus(t("collection.export.siteStatus"));
-      const result = await ipc.exportCollectionStaticSite(
-        props.path,
-        activeView(),
-        outputDir,
-        bypass || undefined,
-        exportLinkedFiles(),
-      );
-      reportBatchResult(result, "collection.export.siteDone", {
-        bypass: bypass ? undefined : { kind: "site", outputDir },
-        afterBypass: bypass,
-      });
-    } catch (e: any) {
-      const msg = errorText(e);
-      reportExportError(t("collection.export.siteFailed", { error: msg }));
-    } finally {
-      setBusyMessage(null);
-      setBusyDetail(undefined);
-    }
-  }
-
-  async function exportAllMarkdown() {
-    setShowExportMenu(false);
-    try {
-      const outputDir = await ipc.pickExportFolder({ title: t("collection.export.selectMarkdownFolder"), defaultPath: await exportDefault() });
-      if (!outputDir) return;
-      rememberExportDir(outputDir as string);
-      setBusyMessage(t("collection.export.markdownBusy"));
-      setBusyDetail(t("collection.export.outputFolder", { path: String(outputDir) }));
-      setExportStatus(t("collection.export.markdownStatus"));
-      const result = await ipc.exportCollectionBatchMarkdown(
-        props.path,
-        activeView(),
-        outputDir as string,
-        "preserve",
-        exportReviewMode(),
-        exportLinkedFiles(),
-      );
-      reportBatchResult(result, "collection.export.markdownDone");
-    } catch (e: any) {
-      const msg = errorText(e);
-      reportExportError(t("collection.export.markdownFailed", { error: msg }));
-    } finally {
-      setBusyMessage(null);
-      setBusyDetail(undefined);
-    }
-  }
-
   function handleRowContext(e: MouseEvent, filePath: string, fileName: string) {
     e.preventDefault();
     setRowContextMenu({ x: e.clientX, y: e.clientY, filePath, fileName });
-  }
-
-  function collectionName(): string {
-    const p = props.path;
-    const slash = p.lastIndexOf("/");
-    const dot = p.lastIndexOf(".");
-    return p.slice(slash + 1, dot > slash ? dot : undefined);
   }
 
   return (
@@ -1153,14 +769,9 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
           Scroll, Mycelial) have nothing to act on here and are left out. */}
       <PaneNavBar tabId={props.tabId} />
       <div class="collection-table">
-        <BusyOverlay
-          visible={busyMessage() !== null}
-          message={busyMessage() ?? ""}
-          detail={busyDetail()}
-        />
-        {/* Collection settings (Characteristics / Style / Book) now live in the
-            right panel's collection tab bar — see `CollectionSettings`. This view
-            is the table + views + export only. */}
+        {/* The collection's settings and its exports live in the right
+            panel's collection tabs (see `CollectionSettings`). This view is
+            the table and its views. */}
         <Show when={data()}>
           {(d) => (
             <>
@@ -1321,104 +932,6 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
                       {t("columnFilter.clearAll")}
                     </button>
                   </Show>
-                  <div class="collection-table__export-wrapper">
-                    <button
-                      class="collection-table__toolbar-btn"
-                      ref={exportBtnRef}
-                      onClick={() => setShowExportMenu(!showExportMenu())}
-                      title={t("collection.table.exportTitle")}
-                    >
-                      {t("collection.table.export")}
-                    </button>
-                    <Show when={showExportMenu()}>
-                      <Portal>
-                      <div
-                        class="collection-table__export-menu"
-                        ref={(el) => anchorPanelMenu(exportBtnRef, el)}
-                        use:clickOutside={{
-                          onDismiss: () => setShowExportMenu(false),
-                          ignore: exportBtnRef,
-                        }}
-                      >
-                        <button
-                          class="context-menu__item"
-                          onClick={() => exportDelimited("comma")}
-                        >
-                          {t("collection.table.exportCsv")}
-                        </button>
-                        <button
-                          class="context-menu__item"
-                          onClick={() => exportDelimited("tab")}
-                        >
-                          {t("collection.table.exportTsv")}
-                        </button>
-                        <div class="context-menu__separator" />
-                        <div class="collection-table__export-menu-field">
-                          <label class="collection-table__export-menu-label">{t("collection.table.pdfStandard")}</label>
-                          <Dropdown<ipc.PdfStandardPreset>
-                            class="dropdown--block"
-                            value={exportPdfStandard()}
-                            options={[
-                              { value: "standard", label: t("collection.table.pdfStandard.standard") },
-                              { value: "pdf-a4", label: t("collection.table.pdfStandard.pdfa4") },
-                              { value: "pdf-ua1", label: t("collection.table.pdfStandard.pdfua1") },
-                              { value: "pdf-a2a-ua1", label: t("collection.table.pdfStandard.pdfa2aua1") },
-                            ]}
-                            onChange={setExportPdfStandard}
-                            ariaLabel={t("collection.table.pdfStandard")}
-                          />
-                        </div>
-                        <div class="collection-table__export-menu-field">
-                          <label class="collection-table__export-menu-label">{t("collection.table.reviewMarkup")}</label>
-                          <Dropdown<ipc.ReviewMarkupMode>
-                            class="dropdown--block"
-                            value={exportReviewMode()}
-                            options={[
-                              { value: "keep", label: t("collection.table.reviewMarkup.keep") },
-                              { value: "accept", label: t("collection.table.reviewMarkup.accept") },
-                              { value: "reject", label: t("collection.table.reviewMarkup.reject") },
-                            ]}
-                            onChange={setExportReviewMode}
-                            ariaLabel={t("collection.table.reviewMarkup")}
-                          />
-                        </div>
-                        <LinkedFilesFields
-                          value={exportLinkedFiles()}
-                          onChange={setLinkedFilesChoice}
-                          classes={{
-                            field: "collection-table__export-menu-field",
-                            label: "collection-table__export-menu-label",
-                            checkbox: "collection-table__export-menu-label",
-                          }}
-                        />
-                        <button
-                          class="context-menu__item"
-                          onClick={exportAllPdf}
-                        >
-                          {t("collection.table.exportPdfFiles")}
-                        </button>
-                        <button
-                          class="context-menu__item"
-                          onClick={exportAsBook}
-                        >
-                          {t("collection.table.exportBook")}
-                        </button>
-                        <button
-                          class="context-menu__item"
-                          onClick={exportStaticSite}
-                        >
-                          {t("collection.table.exportHtml")}
-                        </button>
-                        <button
-                          class="context-menu__item"
-                          onClick={exportAllMarkdown}
-                        >
-                          {t("collection.table.exportMarkdown")}
-                        </button>
-                      </div>
-                      </Portal>
-                    </Show>
-                  </div>
                 </div>
               </div>
 
@@ -1709,63 +1222,6 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
           )}
         </Show>
 
-        {/* Export status */}
-        <Show when={exportStatus()}>
-          <div class="collection-table__export-status">
-            {exportStatus()}
-          </div>
-        </Show>
-        <Show when={exportReport()}>
-          {(report) => (
-          <div class="collection-table__export-error" role="alert">
-            <div class="collection-table__export-error-body">
-              <pre class="collection-table__export-error-text">{report().message}</pre>
-              <Show when={report().notes?.length}>
-                <ul class="collection-table__export-error-notes">
-                  <For each={report().notes}>
-                    {(note) => (
-                      <li>
-                        <button
-                          type="button"
-                          class="collection-table__link collection-table__export-error-note"
-                          title={t("collection.export.openNoteTitle", { name: note.name })}
-                          onClick={() =>
-                            openRowNote(note.path, note.name, { newTab: true, editingMode: "source" })
-                          }
-                        >
-                          {note.name}
-                        </button>
-                        <Show when={note.reason}>
-                          <span class="collection-table__export-error-reason">{note.reason}</span>
-                        </Show>
-                      </li>
-                    )}
-                  </For>
-                </ul>
-              </Show>
-              <Show when={report().bypass}>
-                <button
-                  type="button"
-                  class="btn btn--secondary btn--sm"
-                  title={t("collection.export.bypassErrorsTitle")}
-                  onClick={bypassFromBanner}
-                >
-                  {t("collection.export.bypassErrors")}
-                </button>
-              </Show>
-            </div>
-            <button
-              type="button"
-              class="collection-table__export-error-close"
-              aria-label={t("collection.table.dismissError")}
-              title={t("common.dismiss")}
-              onClick={() => setExportReport(null)}
-            >
-              ✕
-            </button>
-          </div>
-          )}
-        </Show>
       </div>
     </div>
   );

@@ -1981,7 +1981,7 @@ export interface BookExportOverrides {
   /// A note name. When set, each chapter holds only the passages that link
   /// to it; notes without one are left out (see `withoutPassages`).
   passagesLinkingTo?: string;
-  /// Overrides the collection's stored `linked_files`.
+  /// Overrides the collection's saved `export.linked_files`.
   linkedFiles?: LinkedFilesOptions;
 }
 

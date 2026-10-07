@@ -33,8 +33,10 @@ use crate::typst_pipeline::suggestion::{count_suggestions, resolve_all_suggestio
 /// intact for keep (the compiler renders them).
 const BLOCK_REVIEW_CALLS: &[&str] = &["annotation"];
 
-/// How the export should treat the collaboration review layer.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// How the export should treat the collaboration review layer. Stored in a
+/// collection's `export:` settings as `accept` / `reject` / `keep`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum ReviewMarkupMode {
     /// Take every suggested change; drop block notes. A clean published copy.
     Accept,

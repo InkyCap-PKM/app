@@ -1,3 +1,5 @@
+import type { PdfStandardPreset, ReviewMarkupMode } from "./ipc";
+
 // Property values mirror Rust's PropertyValue enum
 export type PropertyValue =
   | string
@@ -207,6 +209,8 @@ export interface CollectionStyle {
 
 export interface CollectionFile {
   icon?: string | null;
+  /** The user's own plain-text note about the collection. Never exported. */
+  description?: string | null;
   typst_template?: string | null;
   bibliography_style?: string | null;
   bibliography_file?: string | null;
@@ -216,6 +220,8 @@ export interface CollectionFile {
    *  styling the Style Overrides UI doesn't expose. */
   custom_typst?: string | null;
   book?: BookExportConfig | null;
+  /** The Export tab's saved choices. Absent until the user changes one. */
+  export?: CollectionExportConfig | null;
   filters?: FilterGroup | null;
   formulas?: Record<string, string> | null;
   summaries?: Record<string, string> | null;
@@ -284,9 +290,21 @@ export interface BookExportConfig {
   /** When false, the CRediT contributions statement is omitted from the book
    *  export (the byline still renders). Defaults to true when unset. */
   include_credit_statement?: boolean | null;
-  /** What the book does with links to notebox files, and what it copies
-   *  beside the PDF. Unset: links stay as written, nothing is copied. */
+}
+
+/** The kinds of output a collection's Export tab can make. Mirrors the Rust
+ *  `CollectionExportFormat`. */
+export type CollectionExportFormat = "pdf_files" | "book" | "site" | "markdown" | "table";
+
+/** The saved choices of a collection's Export tab, shared by every format
+ *  that uses them. Mirrors the Rust `CollectionExportConfig`; unset fields
+ *  take the format's default (see `resolveExportChoices`). */
+export interface CollectionExportConfig {
+  format?: CollectionExportFormat | null;
+  pdf_standard?: PdfStandardPreset | null;
+  review_mode?: ReviewMarkupMode | null;
   linked_files?: LinkedFilesOptions | null;
+  table_delimiter?: "comma" | "tab" | null;
 }
 
 /** What an export does with links to notebox files (a PDF, a spreadsheet).
