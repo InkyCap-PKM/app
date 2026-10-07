@@ -1,73 +1,10 @@
 import { EditorView, ViewPlugin } from "@codemirror/view";
 import * as ipc from "../../lib/ipc";
-import { typstStringEscape } from "../../lib/typst";
 import { fileToBase64 } from "../../lib/file-bytes";
 import { ensureNoteboxImports } from "../../lib/notebox-import-check";
 import { activeNotePath } from "../../stores/tabs";
 import { pasteUrlHandler } from "./paste-url";
-import { protectedRangesField } from "./visual-plugin";
-
-const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp"]);
-
-function getExtension(filename: string): string {
-  const dot = filename.lastIndexOf(".");
-  return dot >= 0 ? filename.slice(dot + 1).toLowerCase() : "";
-}
-
-function clampPastProtected(view: EditorView, pos: number): number {
-  const ranges = view.state.field(protectedRangesField, false);
-  if (!ranges || ranges.length === 0) return pos;
-  let p = pos;
-  let prev = -1;
-  while (p !== prev) {
-    prev = p;
-    for (const r of ranges) {
-      if (p >= r.from && p < r.to) p = r.to;
-    }
-  }
-  return p;
-}
-
-const NOTE_EXTS = new Set(["typ"]);
-const VIDEO_EXTS = new Set(["mp4", "webm", "mov", "mkv", "ogv", "m4v"]);
-const AUDIO_EXTS = new Set(["mp3", "wav", "ogg", "oga", "m4a", "flac", "aac", "opus"]);
-
-function attachmentMarkup(relativePath: string): string {
-  const ext = getExtension(relativePath);
-  if (IMAGE_EXTS.has(ext)) {
-    return `#image("/${typstStringEscape(relativePath)}")`;
-  }
-  if (VIDEO_EXTS.has(ext)) {
-    return `#video("/${typstStringEscape(relativePath)}")`;
-  }
-  if (AUDIO_EXTS.has(ext)) {
-    return `#audio("/${typstStringEscape(relativePath)}")`;
-  }
-  if (NOTE_EXTS.has(ext)) {
-    const basename = relativePath.split("/").pop() ?? relativePath;
-    const stem = basename.replace(/\.typ$/, "");
-    return `#wikilink("${typstStringEscape(stem)}")`;
-  }
-  const filename = relativePath.split("/").pop() ?? relativePath;
-  return `#link("/${typstStringEscape(relativePath)}")[${filename}]`;
-}
-
-function insertAttachment(view: EditorView, relativePath: string, pos: number) {
-  const body = attachmentMarkup(relativePath);
-
-  // Pin past any prelude (#import / #note / #bibliography) and normalize
-  // to its own line — block-level markup can't share a line with prose.
-  const clamped = clampPastProtected(view, pos);
-  const line = view.state.doc.lineAt(clamped);
-  const onLineStart = clamped === line.from;
-  const insertPos = onLineStart ? clamped : line.to;
-  const insert = onLineStart ? `${body}\n` : `\n${body}`;
-
-  view.dispatch({
-    changes: { from: insertPos, insert },
-    selection: { anchor: insertPos + insert.length },
-  });
-}
+import { fileExtension, insertAttachmentAt } from "../../lib/attachment-insert";
 
 /** Copy a dropped file into the notebox and insert markup for it. Resolves
  *  with the saved path, or `null` if the copy failed. */
@@ -81,7 +18,7 @@ async function handleDroppedFile(
     const savedName = await ipc.copyBytesIntoNotebox(file.name, base64, {
       currentNote: activeNotePath(),
     });
-    insertAttachment(view, savedName, pos);
+    await insertAttachmentAt(view, savedName, pos);
     return savedName;
   } catch (err) {
     console.error("[drag-drop] handleDroppedFile failed:", err);
@@ -107,7 +44,7 @@ async function handleDroppedUri(
     const savedName = await ipc.copyPathIntoNotebox(absPath, {
       currentNote: activeNotePath(),
     });
-    insertAttachment(view, savedName, pos);
+    await insertAttachmentAt(view, savedName, pos);
     return savedName;
   } catch (err) {
     console.error("[drag-drop] copyPathIntoNotebox failed:", absPath, err);
@@ -115,12 +52,18 @@ async function handleDroppedUri(
   }
 }
 
-/** Once every dropped file is copied, check any Typst files among them for
- *  the InkyCap import line. */
-function afterDrop(copies: Promise<string | null>[]): void {
-  void Promise.all(copies).then((saved) =>
-    ensureNoteboxImports(saved.filter((p): p is string => p !== null)),
-  );
+/** Bring dropped items in one at a time, so each can ask its own question
+ *  (how to place a PDF), then check any Typst files among them for the
+ *  InkyCap import line. */
+function dropInOrder<T>(items: T[], bringIn: (item: T) => Promise<string | null>): void {
+  void (async () => {
+    const saved: string[] = [];
+    for (const item of items) {
+      const path = await bringIn(item);
+      if (path !== null) saved.push(path);
+    }
+    await ensureNoteboxImports(saved);
+  })();
 }
 
 function parseUriList(raw: string): string[] {
@@ -133,10 +76,9 @@ function parseUriList(raw: string): string[] {
 async function handlePastedImage(view: EditorView, file: File) {
   try {
     const base64 = await fileToBase64(file);
-    const name = file.name || `pasted-${Date.now()}.${getExtension(file.type.split("/")[1] ?? "png")}`;
+    const name = file.name || `pasted-${Date.now()}.${fileExtension(file.type.split("/")[1] ?? "png")}`;
     const savedName = await ipc.copyBytesIntoNotebox(name, base64);
-    const pos = view.state.selection.main.from;
-    insertAttachment(view, savedName, pos);
+    await insertAttachmentAt(view, savedName, view.state.selection.main.from);
   } catch (err) {
     console.error("[paste] handlePastedImage failed:", err);
   }
@@ -149,7 +91,7 @@ async function handleClipboardPasteFallback(view: EditorView) {
   try {
     const saved = await ipc.pasteClipboardIntoNotebox({ currentNote: activeNotePath() });
     for (const rel of saved) {
-      insertAttachment(view, rel, view.state.selection.main.from);
+      await insertAttachmentAt(view, rel, view.state.selection.main.from);
     }
     await ensureNoteboxImports(saved);
   } catch (err) {
@@ -212,27 +154,27 @@ export const dragDropHandler = ViewPlugin.fromClass(
         const noteboxPath = cd.getData("application/x-inkycap-notebox-path");
         if (noteboxPath) {
           event.preventDefault();
-          insertAttachment(view, noteboxPath, pos);
+          void insertAttachmentAt(view, noteboxPath, pos);
           return true;
         }
 
         if (cd.files && cd.files.length > 0) {
           event.preventDefault();
-          afterDrop(Array.from(cd.files).map((file) => handleDroppedFile(view, file, pos)));
+          dropInOrder(Array.from(cd.files), (file) => handleDroppedFile(view, file, pos));
           return true;
         }
 
         const uriList = cd.getData("text/uri-list");
         if (uriList) {
           event.preventDefault();
-          afterDrop(parseUriList(uriList).map((uri) => handleDroppedUri(view, uri, pos)));
+          dropInOrder(parseUriList(uriList), (uri) => handleDroppedUri(view, uri, pos));
           return true;
         }
 
         const text = cd.getData("text/plain");
         if (text && text.trim().startsWith("file://")) {
           event.preventDefault();
-          afterDrop(parseUriList(text).map((uri) => handleDroppedUri(view, uri, pos)));
+          dropInOrder(parseUriList(text), (uri) => handleDroppedUri(view, uri, pos));
           return true;
         }
 

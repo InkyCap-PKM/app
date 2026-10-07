@@ -55,9 +55,10 @@ pub async fn export_via_pandoc(
     format: String,
     metadata_mode: String,
     review_mode: Option<String>,
+    linked_files: Option<super::LinkedFilesOptions>,
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
-) -> Result<(), InkyCapError> {
+) -> Result<Option<super::CompanionReport>, InkyCapError> {
     crate::commands::export::destination::require_export_destination(&state, &window, &output_path)
         .await?;
     let session = state.session(window.label()).await;
@@ -84,6 +85,11 @@ pub async fn export_via_pandoc(
     // Resolve the review layer per the user's choice (accept/reject collapse to
     // clean text; keep leaves the marks for the real compiler to render).
     let content = super::helpers::apply_review_mode(&raw_content, review_mode.as_deref());
+    let mut companion = super::companion::CompanionFiles::beside_file(
+        linked_files,
+        std::path::Path::new(&output_path),
+    );
+    let content = companion.prepare_note(&storage, &path_buf, &content);
 
     // Compile the note to HTML with the *real* Typst compiler, then let Pandoc
     // convert from HTML — a format it fully supports. This sidesteps Pandoc's
@@ -184,7 +190,7 @@ pub async fn export_via_pandoc(
         }
     }
 
-    Ok(())
+    companion.copy().await
 }
 
 /// Pandoc's HTML reader sizes images from the `width`/`height` *attributes*,

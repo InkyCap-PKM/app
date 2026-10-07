@@ -1434,9 +1434,11 @@ fn rewrite_bracket_wikilinks(content: &str, old_stem: &str, new_stem: &str) -> S
 
 /// Rewrite the first string argument of calls starting with `prefix` (for
 /// example `#wikilink("`) when it matches `old_stem` (case-insensitive).
-/// Other arguments (`display:`, `label:`) are preserved untouched. A match
-/// straight after a letter, digit, `-` or `_` is part of a longer name
-/// (`my-link-ref(`) and is left alone.
+/// Other arguments (`display:`, `label:`) are preserved untouched. For a
+/// code-mode prefix (no leading `#`), a match straight after a letter, digit,
+/// `-` or `_` is part of a longer name (`my-link-ref(`) and is left alone. A
+/// `#` prefix always starts a call, even straight after a word
+/// (`参见#wikilink("…")`), so it has no such check.
 fn rewrite_first_arg_calls(content: &str, prefix: &str, old_stem: &str, new_stem: &str) -> String {
     let old_lower = old_stem.to_lowercase();
     let escaped_new = typst_string_escape(new_stem);
@@ -1444,12 +1446,15 @@ fn rewrite_first_arg_calls(content: &str, prefix: &str, old_stem: &str, new_stem
     let mut result = String::with_capacity(content.len());
     let mut remaining = content;
 
+    let check_longer_name = !prefix.starts_with('#');
+
     while let Some(start) = remaining.find(prefix) {
-        let part_of_longer_name = remaining[..start]
-            .chars()
-            .next_back()
-            .or_else(|| result.chars().next_back())
-            .is_some_and(|c| c.is_alphanumeric() || c == '-' || c == '_');
+        let part_of_longer_name = check_longer_name
+            && remaining[..start]
+                .chars()
+                .next_back()
+                .or_else(|| result.chars().next_back())
+                .is_some_and(|c| c.is_alphanumeric() || c == '-' || c == '_');
         result.push_str(&remaining[..start + prefix.len()]);
         remaining = &remaining[start + prefix.len()..];
         if part_of_longer_name {
@@ -2118,6 +2123,18 @@ mod tests {
         assert_eq!(
             result,
             "#note(derived-from: (link-ref(\"New Note\"), link-ref(\"Other\")), x: my-link-ref(\"Old Note\"))"
+        );
+    }
+
+    #[test]
+    fn test_update_wikilinks_func_form_after_word() {
+        // A `#` call is valid straight after text, as in scripts written
+        // without spaces between words.
+        let content = r#"参见#wikilink("Old Note")，x#wikilink("Old Note")"#;
+        let result = update_wikilinks_in_content(content, "Old Note", "New Note");
+        assert_eq!(
+            result,
+            r#"参见#wikilink("New Note")，x#wikilink("New Note")"#
         );
     }
 

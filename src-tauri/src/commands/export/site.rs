@@ -22,6 +22,7 @@ pub async fn export_collection_static_site(
     view_name: String,
     output_dir: String,
     bypass_errors: Option<bool>,
+    linked_files: Option<super::LinkedFilesOptions>,
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
 ) -> Result<super::BatchExportResult, InkyCapError> {
@@ -68,6 +69,11 @@ pub async fn export_collection_static_site(
     let mut exported = Vec::new();
     let mut skipped_notes = Vec::new();
     let mut bypassed_count = 0;
+    let mut companion = super::companion::CompanionFiles::for_collection(
+        linked_files,
+        &output_dir,
+        &collection_path_buf,
+    );
     // Stems that actually produced a page, so the index links only to files
     // that exist (a skipped note must not appear as a dead nav link).
     let mut exported_stems: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -81,6 +87,7 @@ pub async fn export_collection_static_site(
                 continue;
             }
         };
+        let content = companion.prepare_note(&storage, &note_path_buf, &content);
         let content = crate::notebox_package::ensure_import(&content);
         let content = rewrite_wikilinks_to_links(&content, &name_to_file);
         let content = style_injection::inject_style_rules(
@@ -192,6 +199,7 @@ pub async fn export_collection_static_site(
             files: exported,
             skipped_notes,
             bypassed_count,
+            companion: None,
         });
     }
 
@@ -210,6 +218,7 @@ pub async fn export_collection_static_site(
         files: exported,
         skipped_notes,
         bypassed_count,
+        companion: companion.copy().await?,
     })
 }
 

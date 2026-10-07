@@ -6,6 +6,8 @@ import { Dropdown } from "./Dropdown";
 import { CircleCheck, OctagonAlert, TriangleAlert } from "lucide-solid";
 import { t } from "../lib/i18n";
 import { errorText } from "../lib/errors";
+import type { LinkedFilesOptions } from "../lib/types";
+import LinkedFilesFields, { DEFAULT_LINKED_FILES, companionSummary } from "./LinkedFilesFields";
 
 export type ExportFormat = "pdf" | "typ" | "typst-html" | "markdown" | "odt" | "docx" | "latex" | "pandoc-pdf";
 export type MetadataMode = "exclude" | "properties";
@@ -72,7 +74,7 @@ const ExportDialog: Component = () => {
   const [error, setError] = createSignal<string | null>(null);
   const [success, setSuccess] = createSignal<string | null>(null);
   const [pandocAvailable, setPandocAvailable] = createSignal<boolean | null>(null);
-  const [extractFigures, setExtractFigures] = createSignal(false);
+  const [linkedFiles, setLinkedFiles] = createSignal<LinkedFilesOptions>(DEFAULT_LINKED_FILES);
   const [stripWikilinks, setStripWikilinks] = createSignal(false);
   const [markdownPreserveTypst, setMarkdownPreserveTypst] = createSignal(true);
   const [pdfStandard, setPdfStandard] = createSignal<PdfStandardPreset>("standard");
@@ -100,6 +102,7 @@ const ExportDialog: Component = () => {
     setIncludeBibliography(true);
     setReviewMode("keep");
     setReviewMarkupCount(0);
+    setLinkedFiles(DEFAULT_LINKED_FILES);
     setVisible(true);
 
     ipc.detectPandoc().then((path) => setPandocAvailable(path !== null));
@@ -137,6 +140,12 @@ const ExportDialog: Component = () => {
     return METADATA_HINT_KEYS[fmt]?.[mode];
   }
 
+  /** Report a finished export, and where its files were copied. */
+  function exported(outputPath: string, report?: ipc.CompanionReport | null) {
+    const copied = companionSummary(report);
+    setSuccess(t("export.exportedTo", { path: outputPath }) + (copied ? `\n${copied}` : ""));
+  }
+
   async function doExport() {
     const fmt = format();
     const info = FORMAT_INFO[fmt];
@@ -171,12 +180,10 @@ const ExportDialog: Component = () => {
         setExporting(true);
         const std = pdfStandard() === "standard" ? undefined : pdfStandard();
         const includeBib = includeBibliography() ? undefined : false;
-        if (collectionPath()) {
-          await ipc.exportCollectionNotePdf(filePath(), collectionPath()!, outputPath, metadataMode(), std, includeBib, reviewMode());
-        } else {
-          await ipc.exportNotePdfToFile(filePath(), outputPath, metadataMode(), std, includeBib, reviewMode());
-        }
-        setSuccess(t("export.exportedTo", { path: outputPath }));
+        const report = collectionPath()
+          ? await ipc.exportCollectionNotePdf(filePath(), collectionPath()!, outputPath, metadataMode(), std, includeBib, reviewMode(), linkedFiles())
+          : await ipc.exportNotePdfToFile(filePath(), outputPath, metadataMode(), std, includeBib, reviewMode(), linkedFiles());
+        exported(outputPath, report);
       } else if (fmt === "markdown") {
         const outputPath = await ipc.pickExportFile({
           defaultPath: await exportDefault(`${fileName()}.md`),
@@ -186,13 +193,14 @@ const ExportDialog: Component = () => {
         await rememberExportFile(outputPath);
 
         setExporting(true);
-        await ipc.exportNoteMarkdownToFile(
+        const report = await ipc.exportNoteMarkdownToFile(
           filePath(),
           outputPath,
           markdownPreserveTypst() ? "preserve" : "omit",
           reviewMode(),
+          linkedFiles(),
         );
-        setSuccess(t("export.exportedTo", { path: outputPath }));
+        exported(outputPath, report);
       } else if (fmt === "typst-html") {
         const outputPath = await ipc.pickExportFile({
           defaultPath: await exportDefault(`${fileName()}.html`),
@@ -203,8 +211,8 @@ const ExportDialog: Component = () => {
 
         setExporting(true);
         const includeBib = includeBibliography() ? undefined : false;
-        await ipc.exportNoteHtml(filePath(), outputPath, metadataMode(), stripWikilinks(), includeBib, reviewMode());
-        setSuccess(t("export.exportedTo", { path: outputPath }));
+        const report = await ipc.exportNoteHtml(filePath(), outputPath, metadataMode(), stripWikilinks(), includeBib, reviewMode(), linkedFiles());
+        exported(outputPath, report);
       } else {
         // Pandoc formats (including pandoc-pdf)
         const outputPath = await ipc.pickExportFile({
@@ -215,23 +223,8 @@ const ExportDialog: Component = () => {
         await rememberExportFile(outputPath);
 
         setExporting(true);
-        await ipc.exportViaPandoc(filePath(), outputPath, fmt, metadataMode(), reviewMode());
-        setSuccess(t("export.exportedTo", { path: outputPath }));
-      }
-
-      if (extractFigures()) {
-        const outputPath = await ipc.pickExportFile({
-          defaultPath: await exportDefault(`${fileName()}-figures`),
-        });
-        if (outputPath) {
-          await rememberExportFile(outputPath);
-          const dir = outputPath.replace(/\/[^/]*$/, "");
-          const figDir = `${dir}/${fileName()}-figures`;
-          const figures = await ipc.exportFigures(filePath(), figDir);
-          if (figures.length > 0) {
-            setSuccess((prev) => `${prev}\n${t("export.extractedFigures", { count: figures.length, dir: figDir })}`);
-          }
-        }
+        const report = await ipc.exportViaPandoc(filePath(), outputPath, fmt, metadataMode(), reviewMode(), linkedFiles());
+        exported(outputPath, report);
       }
     } catch (e: unknown) {
       setError(errorText(e) || t("export.exportFailed"));
@@ -368,16 +361,20 @@ const ExportDialog: Component = () => {
               </div>
             </Show>
 
-            <div class="export-dialog__field">
-              <label class="export-dialog__checkbox">
-                <input
-                  type="checkbox"
-                  checked={extractFigures()}
-                  onChange={(e) => setExtractFigures(e.currentTarget.checked)}
-                />
-                {t("export.extractFigures")}
-              </label>
-            </div>
+            {/* A self-contained .typ already carries its images and keeps
+                links as written, so the file choices don't apply to it. */}
+            <Show when={format() !== "typ"}>
+              <LinkedFilesFields
+                value={linkedFiles()}
+                onChange={setLinkedFiles}
+                classes={{
+                  field: "export-dialog__field",
+                  label: "",
+                  checkbox: "export-dialog__checkbox",
+                  hint: "export-dialog__hint",
+                }}
+              />
+            </Show>
 
             <Show when={format() === "typst-html"}>
               <div class="export-dialog__field">

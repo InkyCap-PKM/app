@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use tauri::State;
 
@@ -11,6 +11,7 @@ use crate::typst_pipeline::package_fetch::compile_with_auto_packages;
 use crate::typst_pipeline::source_structure;
 use crate::typst_pipeline::style_injection;
 
+use super::companion::{CompanionFiles, CompanionReport, LinkedFilesOptions};
 use super::helpers::{
     apply_review_mode, args_has_named_arg, find_matching_paren, inject_document_metadata,
     parse_date_to_typst_datetime, parse_first_string_arg, parse_named_string_arg,
@@ -72,9 +73,10 @@ pub async fn export_note_pdf_to_file(
     pdf_standard: Option<PdfStandardPreset>,
     include_bibliography: Option<bool>,
     review_mode: Option<String>,
+    linked_files: Option<LinkedFilesOptions>,
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
-) -> Result<(), InkyCapError> {
+) -> Result<Option<CompanionReport>, InkyCapError> {
     crate::commands::export::destination::require_export_destination(&state, &window, &output_path)
         .await?;
     let session = state.session(window.label()).await;
@@ -82,6 +84,8 @@ pub async fn export_note_pdf_to_file(
     let path_buf = PathBuf::from(&path);
     let content = storage.read_file(&path_buf).await?;
     let content = apply_review_mode(&content, review_mode.as_deref());
+    let mut companion = CompanionFiles::beside_file(linked_files, Path::new(&output_path));
+    let content = companion.prepare_note(&storage, &path_buf, &content);
     let content = crate::notebox_package::ensure_import(&content);
 
     let source = if metadata_mode == "properties" {
@@ -104,22 +108,24 @@ pub async fn export_note_pdf_to_file(
     )
     .await;
 
-    let mut compiler = session.typst_compiler.lock().await;
-    let compiler = compiler.as_mut().ok_or(InkyCapError::NoteboxNotOpen)?;
-    compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
-
     let standard = pdf_standard.unwrap_or_default();
     let source = ensure_document_date_for_standard(source, standard);
     check_pdf_standard_requirements(&source, standard)?;
-    let pdf_bytes = compile_with_auto_packages(compiler, |c| {
-        c.compile_pdf(&path_buf, source.clone(), standard)
-    })
-    .await
-    .map_err(|e| InkyCapError::ExportFailed(e.to_string()))?;
+    let pdf_bytes = {
+        let mut guard = session.typst_compiler.lock().await;
+        let compiler = guard.as_mut().ok_or(InkyCapError::NoteboxNotOpen)?;
+        compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
+        compile_with_auto_packages(compiler, |c| {
+            c.compile_pdf(&path_buf, source.clone(), standard)
+        })
+        .await
+        .map_err(|e| InkyCapError::ExportFailed(e.to_string()))?
+    };
 
     tokio::fs::write(&output_path, &pdf_bytes)
         .await
-        .map_err(|e| InkyCapError::ExportFailed(format!("Failed to write PDF: {}", e)))
+        .map_err(|e| InkyCapError::ExportFailed(format!("Failed to write PDF: {}", e)))?;
+    companion.copy().await
 }
 
 // ── Collection-level PDF export ─────────────────────────────────
@@ -135,9 +141,10 @@ pub async fn export_collection_note_pdf(
     pdf_standard: Option<PdfStandardPreset>,
     include_bibliography: Option<bool>,
     review_mode: Option<String>,
+    linked_files: Option<LinkedFilesOptions>,
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
-) -> Result<(), InkyCapError> {
+) -> Result<Option<CompanionReport>, InkyCapError> {
     crate::commands::export::destination::require_export_destination(&state, &window, &output_path)
         .await?;
     let session = state.session(window.label()).await;
@@ -147,6 +154,8 @@ pub async fn export_collection_note_pdf(
 
     let content = storage.read_file(&note_path_buf).await?;
     let content = apply_review_mode(&content, review_mode.as_deref());
+    let mut companion = CompanionFiles::beside_file(linked_files, Path::new(&output_path));
+    let content = companion.prepare_note(&storage, &note_path_buf, &content);
     let content = crate::notebox_package::ensure_import(&content);
     let collection_content = storage.read_file(&collection_path_buf).await?;
     let base = crate::collection_parser::model::parse_collection_file(&collection_content)?;
@@ -190,18 +199,18 @@ pub async fn export_collection_note_pdf(
     )
     .await;
 
-    let mut compiler = session.typst_compiler.lock().await;
-    let compiler = compiler.as_mut().ok_or(InkyCapError::NoteboxNotOpen)?;
-    compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
-
     let resolved_template = base
         .typst_template
         .as_deref()
         .map(|t| resolve_template_path_with_root(t, notebox_root_ref));
+    drop(notebox_root);
 
     let standard = pdf_standard.unwrap_or_default();
     let source = ensure_document_date_for_standard(source, standard);
     check_pdf_standard_requirements(&source, standard)?;
+    let mut guard = session.typst_compiler.lock().await;
+    let compiler = guard.as_mut().ok_or(InkyCapError::NoteboxNotOpen)?;
+    compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
     let pdf_bytes: Vec<u8> = if let Some(ref template) = resolved_template {
         compiler
             .compile_pdf_with_template(
@@ -224,12 +233,12 @@ pub async fn export_collection_note_pdf(
         compiler.set_bibliography_style(None);
         result?
     };
+    drop(guard);
 
     tokio::fs::write(&output_path, &pdf_bytes)
         .await
         .map_err(|e| InkyCapError::ExportFailed(format!("Failed to write PDF: {}", e)))?;
-
-    Ok(())
+    companion.copy().await
 }
 
 /// Batch-export all notes in a collection to PDF files in the given output
@@ -251,6 +260,7 @@ pub async fn export_collection_batch_pdf(
     review_mode: Option<String>,
     only_files: Option<Vec<String>>,
     bypass_errors: Option<bool>,
+    linked_files: Option<LinkedFilesOptions>,
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
 ) -> Result<super::BatchExportResult, InkyCapError> {
@@ -289,6 +299,8 @@ pub async fn export_collection_batch_pdf(
     let mut exported = Vec::new();
     let mut skipped_notes = Vec::new();
     let mut bypassed_count = 0;
+    let mut companion =
+        CompanionFiles::for_collection(linked_files, &output_dir, &collection_path_buf);
 
     for row in &data.rows {
         if let Some(only) = &only_files {
@@ -306,6 +318,7 @@ pub async fn export_collection_batch_pdf(
         };
 
         let content = apply_review_mode(&content, review_mode.as_deref());
+        let content = companion.prepare_note(&storage, &note_path_buf, &content);
         let content = crate::notebox_package::ensure_import(&content);
         let source = if metadata_mode.as_deref() == Some("properties") {
             inject_document_metadata(&content)
@@ -387,12 +400,16 @@ pub async fn export_collection_batch_pdf(
         exported.push(crate::storage::to_frontend_string(&pdf_path));
     }
 
+    drop(notebox_root);
+    let companion = companion.copy().await?;
+
     // Even when every note failed, the list comes back as a normal result so
     // the user can open each note or choose to bypass the errors.
     Ok(super::BatchExportResult {
         files: exported,
         skipped_notes,
         bypassed_count,
+        companion,
     })
 }
 
@@ -429,6 +446,8 @@ pub struct BookExportOverrides {
     /// link to it, not the whole note. Notes with no such passage are left
     /// out and listed in [`BookExportResult::without_passages`].
     pub passages_linking_to: Option<String>,
+    /// Overrides the `book:` block's `linked_files`.
+    pub linked_files: Option<LinkedFilesOptions>,
 }
 
 /// Detected user-label collision returned to the frontend so the UI can
@@ -493,6 +512,11 @@ pub async fn export_collection_book_pdf(
         .as_ref()
         .and_then(|o| o.passages_linking_to.as_deref())
         .and_then(crate::link_index::link_name_key);
+    let linked_files = overrides
+        .as_ref()
+        .and_then(|o| o.linked_files)
+        .or_else(|| base.book.as_ref().and_then(|b| b.linked_files));
+    let mut companion = CompanionFiles::beside_file(linked_files, Path::new(&output_path));
     let mut without_passages: Vec<String> = Vec::new();
     let mut options = BookExportOptions::from_config(base.book.as_ref());
     if let Some(ov) = overrides {
@@ -547,6 +571,7 @@ pub async fn export_collection_book_pdf(
         let note_path_buf = PathBuf::from(&row.file_path);
         let content = storage.read_file(&note_path_buf).await?;
         let content = apply_review_mode(&content, review_mode.as_deref());
+        let content = companion.prepare_note(&storage, &note_path_buf, &content);
         let stem = note_path_buf
             .file_stem()
             .map(|s| s.to_string_lossy().into_owned())
@@ -589,7 +614,7 @@ pub async fn export_collection_book_pdf(
         });
     }
 
-    if notes.is_empty() {
+    if passages_target.is_some() && notes.is_empty() {
         return Err(InkyCapError::ExportFailed(
             "No note in the collection has a passage linking to the chosen note.".to_string(),
         ));
@@ -760,8 +785,10 @@ pub async fn export_collection_book_pdf(
         heading_numbering_pattern.as_deref(),
     );
 
-    let mut compiler = session.typst_compiler.lock().await;
-    let compiler = compiler.as_mut().ok_or(InkyCapError::NoteboxNotOpen)?;
+    let mut compiler_guard = session.typst_compiler.lock().await;
+    let compiler = compiler_guard
+        .as_mut()
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
     compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
 
     if let Some(ref style) = base.bibliography_style {
@@ -810,9 +837,11 @@ pub async fn export_collection_book_pdf(
                 message: Some(message),
                 bypassed: false,
                 without_passages,
+                companion: None,
             });
         }
     };
+    drop(compiler_guard);
 
     tokio::fs::write(&output_path, &output.bytes)
         .await
@@ -824,6 +853,7 @@ pub async fn export_collection_book_pdf(
         message: None,
         bypassed: output.bypassed,
         without_passages,
+        companion: companion.copy().await?,
     })
 }
 
@@ -875,6 +905,8 @@ pub struct BookExportResult {
     /// Stems of notes left out of a passages-only book because they hold no
     /// passage linking to the chosen note.
     pub without_passages: Vec<String>,
+    /// The files copied into the folder beside the book.
+    pub companion: Option<CompanionReport>,
 }
 
 /// Extract a `title:` value from the leading `#note(...)` call of a note's

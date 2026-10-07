@@ -6,8 +6,6 @@ use crate::errors::InkyCapError;
 use crate::state::AppState;
 use crate::storage::traits::NoteboxStorage;
 
-use super::helpers::extract_image_paths;
-
 // ── Self-contained .typ export ──────────────────────────────────
 
 /// Export a note as a self-contained `.typ` file with the `inkycap-notebox`
@@ -28,47 +26,36 @@ pub async fn export_self_contained_typ(
     let path_buf = PathBuf::from(&path);
     let content = storage.read_file(&path_buf).await?;
     let content = super::helpers::apply_review_mode(&content, review_mode.as_deref());
-    let notebox_root = session.notebox_root.read().await;
-    let root = notebox_root
-        .as_ref()
-        .ok_or(InkyCapError::NoteboxNotOpen)?
-        .clone();
-    drop(notebox_root);
-
     let output = PathBuf::from(&output_path);
     let output_dir = output
         .parent()
         .ok_or_else(|| InkyCapError::ExportFailed("Invalid output path".into()))?;
 
-    let image_paths = extract_image_paths(&content);
-    let mut rewritten = content.clone();
-    for img_path in &image_paths {
-        let abs_img = if let Some(stripped) = img_path.strip_prefix('/') {
-            root.join(stripped)
-        } else {
-            path_buf.parent().unwrap_or(&root).join(img_path)
+    // Relative paths become root-absolute (`/notes/fig.png`), and each image
+    // is copied to the same place under the output folder. Compiling the
+    // exported file takes its own folder as the root, so they resolve there.
+    let note_dir = crate::commands::file_ops::notebox_relative_path(&path_buf, &storage)
+        .parent()
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_default();
+    let rewritten = crate::typst_pipeline::path_rebase::rebase_relative_paths(&content, &note_dir);
+    for rel in crate::typst_pipeline::path_rebase::referenced_image_paths(&rewritten, &note_dir) {
+        // Resolving through the storage keeps every copy inside the notebox.
+        let Ok(source) = storage.resolve_path(std::path::Path::new(&rel)) else {
+            continue;
         };
-        if abs_img.exists() {
-            let rel = img_path.strip_prefix('/').unwrap_or(img_path.as_str());
-            let dest = output_dir.join(rel);
-            if let Some(parent) = dest.parent() {
-                tokio::fs::create_dir_all(parent).await.map_err(|e| {
-                    InkyCapError::ExportFailed(format!("Failed to create asset dir: {e}"))
-                })?;
-            }
-            tokio::fs::copy(&abs_img, &dest).await.map_err(|e| {
-                InkyCapError::ExportFailed(format!(
-                    "Failed to copy asset {}: {e}",
-                    abs_img.display()
-                ))
-            })?;
-            if img_path.starts_with('/') {
-                rewritten = rewritten.replace(
-                    &format!("#image(\"{img_path}\")"),
-                    &format!("#image(\"{rel}\")"),
-                );
-            }
+        if !source.is_file() {
+            continue;
         }
+        let dest = output_dir.join(&rel);
+        if let Some(parent) = dest.parent() {
+            tokio::fs::create_dir_all(parent).await.map_err(|e| {
+                InkyCapError::ExportFailed(format!("Failed to create asset dir: {e}"))
+            })?;
+        }
+        tokio::fs::copy(&source, &dest)
+            .await
+            .map_err(|e| InkyCapError::ExportFailed(format!("Failed to copy asset {rel}: {e}")))?;
     }
 
     let inlined = inline_package(&rewritten);
@@ -107,54 +94,4 @@ pub(super) fn inline_package(source: &str) -> String {
     }
 
     result
-}
-
-// ── Figure extraction ───────────────────────────────────────────
-
-/// Export figures from a note to a target directory.
-#[tauri::command]
-pub async fn export_figures(
-    path: String,
-    output_dir: String,
-    state: State<'_, AppState>,
-    window: tauri::WebviewWindow,
-) -> Result<Vec<String>, InkyCapError> {
-    crate::commands::export::destination::require_export_destination(&state, &window, &output_dir)
-        .await?;
-    let session = state.session(window.label()).await;
-    let storage = session.get_storage().await?;
-    let path_buf = PathBuf::from(&path);
-    let notebox_root = session.notebox_root.read().await;
-    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
-
-    let content = storage.read_file(&path_buf).await?;
-    let image_paths = extract_image_paths(&content);
-
-    let output_dir = PathBuf::from(&output_dir);
-    tokio::fs::create_dir_all(&output_dir)
-        .await
-        .map_err(|e| InkyCapError::ExportFailed(format!("Failed to create output dir: {}", e)))?;
-
-    let mut exported = Vec::new();
-    for img_path in &image_paths {
-        let abs_img = if let Some(stripped) = img_path.strip_prefix('/') {
-            root.join(stripped)
-        } else {
-            path_buf.parent().unwrap_or(root).join(img_path)
-        };
-
-        if abs_img.exists() {
-            let file_name = abs_img
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "unknown".to_string());
-            let dest = output_dir.join(&file_name);
-            tokio::fs::copy(&abs_img, &dest).await.map_err(|e| {
-                InkyCapError::ExportFailed(format!("Failed to copy {}: {}", file_name, e))
-            })?;
-            exported.push(file_name);
-        }
-    }
-
-    Ok(exported)
 }

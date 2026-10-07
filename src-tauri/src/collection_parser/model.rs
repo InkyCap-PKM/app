@@ -316,6 +316,11 @@ pub struct BookExportConfig {
     /// multi-author byline still renders. Defaults to `true` when unset.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_credit_statement: Option<bool>,
+    /// What the book does with links to notebox files, and whether it copies
+    /// them and the images into a folder beside the PDF. Unset means links
+    /// stay as written and nothing is copied.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub linked_files: Option<crate::models::export::LinkedFilesOptions>,
 }
 
 /// One contributor to a collection — drives the Book Metadata byline and

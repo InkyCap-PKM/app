@@ -22,6 +22,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { noteboxRootDefault } from "../lib/dialog-defaults";
 import type {
   BookExportConfig,
+  LinkedFilesOptions,
   BibliographyMode,
   CollectionFile,
   CollectionStyle,
@@ -40,6 +41,7 @@ import { Dropdown } from "./Dropdown";
 import { LengthInput } from "./LengthInput";
 import { PresetSelect, type PresetOption } from "./PresetSelect";
 import HelpButton from "./HelpButton";
+import LinkedFilesFields, { DEFAULT_LINKED_FILES } from "./LinkedFilesFields";
 import CustomTypstModal from "./CustomTypstModal";
 import { useI18n } from "../lib/i18n";
 
@@ -525,6 +527,10 @@ const CollectionBookEditor: Component<{
     "internal" | "external" | "plain"
   >(cfg().wikilink_mode ?? "internal");
 
+  const [linkedFiles, setLinkedFiles] = createSignal<LinkedFilesOptions>(
+    cfg().linked_files ?? DEFAULT_LINKED_FILES,
+  );
+
   const initialNumbering = cfg().page_numbering;
   const [pageStyle, setPageStyle] = createSignal<PageStyle>(
     initialNumbering?.style ?? "roman_then_arabic",
@@ -560,6 +566,7 @@ const CollectionBookEditor: Component<{
       page_numbering: pageNumbering,
       bibliography_mode: bibMode(),
       include_credit_statement: includeCreditStatement(),
+      linked_files: linkedFiles(),
     };
   }
 
@@ -824,6 +831,22 @@ const CollectionBookEditor: Component<{
           ariaLabel={t("collection.book.wikilinkResolutionAria")}
         />
       </div>
+
+      <div class="collection-meta__section-label">
+        {t("export.linkedFiles.section")}
+      </div>
+      <LinkedFilesFields
+        value={linkedFiles()}
+        onChange={(v) => {
+          setLinkedFiles(v);
+          flush();
+        }}
+        classes={{
+          field: "collection-meta__row",
+          label: "collection-meta__label",
+          checkbox: "collection-meta__inline-check",
+        }}
+      />
 
       <div class="collection-meta__section-label">
         {t("collection.book.pageNumbering")}

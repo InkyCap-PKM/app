@@ -21,6 +21,7 @@ use tauri::State;
 use crate::collection_parser::filter::{evaluate_filter_group, FilterContext};
 use crate::collection_parser::model::FilterGroup;
 use crate::errors::InkyCapError;
+use crate::link_index::LinkIndex;
 use crate::scanner::property_index::PropertyIndex;
 use crate::state::{AppState, NoteboxSession};
 
@@ -78,14 +79,16 @@ pub(crate) async fn load_exclusion_group(root: &Path) -> Option<FilterGroup> {
 /// The set of note paths the exclusion rules match. `self_path` for the
 /// evaluator's `this.file.*` references is the exclusions file itself; those
 /// references have no real meaning outside a collection, but pointing them at
-/// a stable file keeps their behaviour deterministic.
+/// a stable file keeps their behaviour deterministic. `links` serves
+/// `file.links` and `file.backlinks`, as it does in collections.
 pub(crate) fn excluded_note_paths(
     index: &PropertyIndex,
+    links: &LinkIndex,
     group: &FilterGroup,
     root: &Path,
 ) -> HashSet<PathBuf> {
     let self_path = exclusions_path(root);
-    let ctx = FilterContext::new(&self_path);
+    let ctx = FilterContext::new(&self_path).with_links(links);
     index
         .notes
         .iter()
@@ -110,10 +113,13 @@ async fn build_info(
         .filter_map(|m| m.as_str().map(String::from))
         .collect();
 
+    let group = load_exclusion_group(root).await;
+    // Link index before property index: the documented lock order.
+    let links = session.link_index.read().await;
     let index = session.property_index.read().await;
     let note_count = index.notes.len();
-    let excluded_count = match load_exclusion_group(root).await {
-        Some(group) => excluded_note_paths(&index, &group, root).len(),
+    let excluded_count = match group {
+        Some(group) => excluded_note_paths(&index, &links, &group, root).len(),
         None => 0,
     };
 
@@ -212,7 +218,7 @@ mod tests {
             note("/nb/standup.typ", vec!["worklog"]),
             note("/nb/dentist.typ", vec!["reminder", "health"]),
         ]);
-        let excluded = excluded_note_paths(&index, &group, Path::new("/nb"));
+        let excluded = excluded_note_paths(&index, &LinkIndex::new(), &group, Path::new("/nb"));
         assert_eq!(excluded.len(), 2);
         assert!(excluded.contains(&PathBuf::from("/nb/standup.typ")));
         assert!(excluded.contains(&PathBuf::from("/nb/dentist.typ")));

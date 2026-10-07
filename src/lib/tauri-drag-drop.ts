@@ -17,12 +17,9 @@
 
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { activeEditorView } from "../stores/editor";
-import { protectedRangesField } from "../editor/typst-decorations/visual-plugin";
 import { getLastDragPos } from "../editor/typst-decorations/drag-drop";
-import { noteBodyStart } from "../editor/typst-decorations/note-header";
-import type { EditorState } from "@codemirror/state";
-import type { EditorView } from "@codemirror/view";
 import { activeNotePath } from "../stores/tabs";
+import { insertAttachmentAt } from "./attachment-insert";
 import { bringFilesIntoNotebox, incomingFromPath, type IncomingFile } from "./incoming-files";
 import {
   clearExternalDrop,
@@ -31,65 +28,6 @@ import {
   takeNativeDropFolder,
   uninstallExternalDropTracking,
 } from "./external-drop";
-
-const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp"]);
-
-function getExtension(name: string): string {
-  const dot = name.lastIndexOf(".");
-  return dot >= 0 ? name.slice(dot + 1).toLowerCase() : "";
-}
-
-/// Clamp `pos` past the note's header (imports, `#note(...)` and other top
-/// matter), then past any range the visual editor locks (such as hidden
-/// comments), so a drop never lands inside hidden source.
-function clampPastProtected(state: EditorState, pos: number): number {
-  // The header scan works in both source and visual mode.
-  const bodyStart = noteBodyStart(state);
-  let p = pos < bodyStart ? bodyStart : pos;
-
-  // The visual editor's locked ranges (present only in visual mode).
-  const ranges = state.field(protectedRangesField, false);
-  if (ranges && ranges.length > 0) {
-    let prev = -1;
-    while (p !== prev) {
-      prev = p;
-      for (const r of ranges) {
-        if (p >= r.from && p < r.to) p = r.to;
-      }
-    }
-  }
-  return p;
-}
-
-/// Build markup for a saved attachment.
-/// `relativePath` is notebox-root-relative (e.g. `assets/Foo.png`) — what
-/// `copy_path_into_notebox` returns since the SEC-1 / path-fix work.
-/// We emit it with a leading `/` so Typst's compiler reads it as
-/// project-root-relative (works in reading view + export), while the
-/// visual editor's `resolveEmbedPath` also handles the slash form.
-const NOTE_EXTS = new Set(["typ"]);
-const VIDEO_EXTS = new Set(["mp4", "webm", "mov", "mkv", "ogv", "m4v"]);
-const AUDIO_EXTS = new Set(["mp3", "wav", "ogg", "oga", "m4a", "flac", "aac", "opus"]);
-
-function attachmentMarkup(relativePath: string): string {
-  const ext = getExtension(relativePath);
-  if (IMAGE_EXTS.has(ext)) {
-    return `#image("/${relativePath}")`;
-  }
-  if (VIDEO_EXTS.has(ext)) {
-    return `#video("/${relativePath}")`;
-  }
-  if (AUDIO_EXTS.has(ext)) {
-    return `#audio("/${relativePath}")`;
-  }
-  if (NOTE_EXTS.has(ext)) {
-    const basename = relativePath.split("/").pop() ?? relativePath;
-    const stem = basename.replace(/\.typ$/, "");
-    return `#wikilink("${stem}")`;
-  }
-  const filename = relativePath.split("/").pop() ?? relativePath;
-  return `#link("/${relativePath}")[${filename}]`;
-}
 
 interface DropCoords {
   x: number;
@@ -136,29 +74,6 @@ function resolveDropTarget(coordsHint: DropCoords | null) {
   }
 
   return { view, dropPos };
-}
-
-/// Insert markup for an already-saved attachment at `dropPos`. Pins past
-/// the document's `#import` / `#note` / `#bibliography` prelude and
-/// normalizes to its own line — block-level markup like `#image(...)`
-/// can't share a line with prose. Returns the dispatched insert length
-/// so the caller can advance `dropPos` for the next attachment.
-function insertSavedAttachment(
-  view: EditorView,
-  dropPos: number | null,
-  savedRelativePath: string,
-): { newDropPos: number | null } {
-  const body = attachmentMarkup(savedRelativePath);
-  const rawPos = dropPos ?? view.state.selection.main.from;
-  const clamped = clampPastProtected(view.state, rawPos);
-  const line = view.state.doc.lineAt(clamped);
-  const onLineStart = clamped === line.from;
-  const insertPos = onLineStart ? clamped : line.to;
-  const insert = onLineStart ? `${body}\n` : `\n${body}`;
-  view.dispatch({ changes: { from: insertPos, to: insertPos, insert } });
-  return {
-    newDropPos: dropPos !== null ? insertPos + insert.length : null,
-  };
 }
 
 async function handleTauriDrop(
@@ -213,10 +128,11 @@ async function dropIntoEditor(
   target: NonNullable<ReturnType<typeof resolveDropTarget>>,
   files: IncomingFile[],
 ): Promise<void> {
-  let { view, dropPos } = target;
+  const { view, dropPos } = target;
   const saved = await bringFilesIntoNotebox(files, { currentNote: activeNotePath() });
+  let pos = dropPos ?? view.state.selection.main.from;
   for (const rel of saved ?? []) {
-    ({ newDropPos: dropPos } = insertSavedAttachment(view, dropPos, rel));
+    pos = await insertAttachmentAt(view, rel, pos);
   }
 }
 

@@ -29,6 +29,8 @@ import {
   activeTabId,
   getCachedEditorState,
   setCachedEditorState,
+  markCachedEditorStateSaved,
+  getCachedSavedText,
   getCachedScroll,
   setCachedScroll,
   getCachedReadingScroll,
@@ -434,6 +436,13 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
       usedCachedState = true;
       currentPath = props.path;
       setDocText(editorHandle.getText());
+      // A restored buffer that is known to be saved counts as saved, so an
+      // editor hidden again before the note is read from disk doesn't write
+      // this older text over a newer file (a rename's link rewrite, say).
+      const savedText = getCachedSavedText(props.tabId, props.path);
+      if (savedText !== undefined && savedText === editorHandle.getText()) {
+        lastSaved = savedText;
+      }
       if (currentMode() === "live") {
         // Parse-aware full rebuild, not a bare ensureParsed(). The restored
         // state re-runs visualField.create() against a tree the (just-started)
@@ -458,7 +467,15 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
       // Scroll is tracked live in mountEditor instead (see setCachedScroll).
       if (currentPath) {
         try {
-          setCachedEditorState(props.tabId, currentPath, editorHandle.serializeState());
+          const path = currentPath;
+          const text = editorHandle.getText();
+          const json = editorHandle.serializeState();
+          setCachedEditorState(props.tabId, path, json);
+          // Once the save queued at teardown lands, note that this text is on
+          // disk, so a later restore can tell whether the file changed since.
+          void writeQueue.then(() => {
+            if (lastSaved === text) markCachedEditorStateSaved(props.tabId, path, json, text);
+          });
         } catch (err) {
           console.error("[TypstEditor] failed to cache editor state:", err);
         }
@@ -741,7 +758,11 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
       // the user's most recent doc (possibly with unsaved edits and a live
       // undo stack). Don't call setText() — that would reset history and
       // discard those edits. Just reconcile the dirty flag against disk.
-      const restoredFromCache = usedCachedState;
+      // A restored buffer is set aside when its text had been saved and the
+      // note on disk has changed since: the disk version is newer.
+      const savedText = getCachedSavedText(props.tabId, path);
+      const changedWhileAway = savedText !== undefined && savedText !== doc;
+      const restoredFromCache = usedCachedState && !changedWhileAway;
       usedCachedState = false;
 
       if (restoredFromCache && editorHandle) {

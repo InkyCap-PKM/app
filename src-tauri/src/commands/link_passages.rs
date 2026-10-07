@@ -7,14 +7,14 @@
 //! rebased to the notebox root, so text copied into a note in another folder
 //! still finds its files.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Instant;
 
 use tauri::State;
 
 use crate::errors::InkyCapError;
 use crate::link_index::note_stem;
-use crate::state::{AppState, NoteboxSession};
+use crate::state::AppState;
 use crate::storage::sanitize_notebox_arg;
 use crate::storage::traits::NoteboxStorage;
 use crate::typst_pipeline::link_passages::{self, LinkPassage};
@@ -38,7 +38,10 @@ pub async fn get_link_passages(
 
     let content = storage.read_file(&source).await?;
     let mut passages = link_passages::inbound_passages(&content, &note_stem(&target));
-    let note_dir = note_dir_in_notebox(&session, &source).await;
+    let note_dir = crate::commands::file_ops::notebox_relative_path(&source, &storage)
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_default();
     for p in &mut passages {
         rebase_passage(p, &note_dir);
     }
@@ -66,16 +69,6 @@ pub fn note_with_derived_from(content: String, source_name: String) -> Option<St
 #[tauri::command]
 pub fn wikilink_names(content: String) -> Vec<String> {
     link_passages::wikilink_names(&content)
-}
-
-/// The folder holding `path`, relative to the notebox root (empty at the
-/// root or when the root is unknown).
-async fn note_dir_in_notebox(session: &NoteboxSession, path: &Path) -> PathBuf {
-    let root = session.notebox_root.read().await.clone();
-    path.parent()
-        .and_then(|dir| root.as_deref().and_then(|r| dir.strip_prefix(r).ok()))
-        .map(Path::to_path_buf)
-        .unwrap_or_default()
 }
 
 fn rebase_passage(passage: &mut LinkPassage, note_dir: &Path) {

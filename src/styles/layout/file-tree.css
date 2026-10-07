@@ -136,7 +136,7 @@ svg.lucide {
 }
 
 .sidebar-item__icon,
-.search-panel__group-chevron {
+.row-chevron {
   flex-shrink: 0;
   font-size: var(--text-base);
   color: var(--fg-muted);

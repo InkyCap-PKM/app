@@ -32,10 +32,18 @@ let closeOpenMenu: (() => void) | null = null;
 /**
  * Show a context menu at viewport coordinates `(x, y)`. Only one menu built
  * here is open at a time — a second right-click moves it. Dismisses on outside
- * click, Escape, scroll, or after an item runs.
+ * click, Escape, scroll, or after an item runs; `onDismiss` runs when it
+ * closes without an item having run.
  */
-export function showContextMenu(x: number, y: number, entries: ContextMenuEntry[]): void {
+export function showContextMenu(
+  x: number,
+  y: number,
+  entries: ContextMenuEntry[],
+  options: { onDismiss?: () => void } = {},
+): void {
   closeOpenMenu?.();
+  // Set once an item runs; otherwise closing the menu is a dismissal.
+  let chosen = false;
 
   const menu = document.createElement("div");
   menu.className = "context-menu";
@@ -47,6 +55,7 @@ export function showContextMenu(x: number, y: number, entries: ContextMenuEntry[
     document.removeEventListener("keydown", onDocKey, true);
     window.removeEventListener("scroll", close, true);
     if (closeOpenMenu === close) closeOpenMenu = null;
+    if (!chosen) options.onDismiss?.();
   };
   closeOpenMenu = close;
 
@@ -69,6 +78,7 @@ export function showContextMenu(x: number, y: number, entries: ContextMenuEntry[
       item.setAttribute("role", "menuitem");
       item.textContent = entry.label;
       item.addEventListener("click", () => {
+        chosen = true;
         close();
         entry.run();
       });

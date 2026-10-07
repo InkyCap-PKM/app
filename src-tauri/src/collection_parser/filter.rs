@@ -1,6 +1,6 @@
 use crate::errors::InkyCapError;
 use crate::link_index::{link_name_key, note_stem, LinkIndex};
-use crate::models::note::{NoteMetadata, PropertyValue};
+use crate::models::note::{NoteId, NoteMetadata, PropertyValue};
 use chrono::Local;
 use std::path::Path;
 
@@ -444,38 +444,54 @@ impl<'a> FilterContext<'a> {
 }
 
 /// `file.links` (notes this note links to) and `file.backlinks` (notes that
-/// link to it), as lists of note names.
-fn is_link_list(prop: &PropertyRef) -> bool {
-    matches!(prop, PropertyRef::File(f) if f == "links" || f == "backlinks")
+/// link to it), as lists of note names. Returns the field name when `prop` is
+/// one of them.
+fn link_list_field(prop: &PropertyRef) -> Option<&str> {
+    match prop {
+        PropertyRef::File(f) if f == "links" || f == "backlinks" => Some(f.as_str()),
+        _ => None,
+    }
+}
+
+/// The notes behind a `file.links` / `file.backlinks` field, borrowed from the
+/// link index. Empty without one.
+fn linked_paths<'a>(field: &str, note: &NoteMetadata, ctx: &FilterContext<'a>) -> &'a [NoteId] {
+    let Some(links) = ctx.links else {
+        return &[];
+    };
+    let map = if field == "links" {
+        &links.forward
+    } else {
+        &links.backward
+    };
+    map.get(&note.path).map(Vec::as_slice).unwrap_or(&[])
 }
 
 fn link_list(field: &str, note: &NoteMetadata, ctx: &FilterContext<'_>) -> PropertyValue {
-    let Some(links) = ctx.links else {
-        return PropertyValue::List(Vec::new());
-    };
-    let paths = if field == "links" {
-        links.get_forward_links(&note.path)
-    } else {
-        links.get_backlinks(&note.path)
-    };
-    let mut names: Vec<String> = paths.iter().map(|p| note_stem(p)).collect();
+    let mut names: Vec<String> = linked_paths(field, note, ctx)
+        .iter()
+        .map(|p| note_stem(p))
+        .collect();
     names.sort();
     names.dedup();
     PropertyValue::List(names.into_iter().map(PropertyValue::String).collect())
 }
 
-/// Whether a link list holds `needle`, compared the way wikilinks resolve:
-/// ignoring case, surrounding `[[ ]]`, and any `::heading` suffix.
-fn link_list_contains(list: &PropertyValue, needle: &str) -> bool {
+/// Whether a link field holds `needle`, compared the way wikilinks resolve:
+/// ignoring case, surrounding `[[ ]]`, and any `::heading` suffix. Checks the
+/// link index directly rather than building the name list.
+fn link_list_contains(
+    field: &str,
+    note: &NoteMetadata,
+    ctx: &FilterContext<'_>,
+    needle: &str,
+) -> bool {
     let Some(needle) = link_name_key(needle) else {
         return false;
     };
-    match list {
-        PropertyValue::List(items) => items.iter().any(|item| {
-            matches!(item, PropertyValue::String(s) if link_name_key(s).as_deref() == Some(needle.as_str()))
-        }),
-        _ => false,
-    }
+    linked_paths(field, note, ctx)
+        .iter()
+        .any(|p| link_name_key(&note_stem(p)).as_deref() == Some(needle.as_str()))
 }
 
 /// Resolve a property reference to a value from a note's metadata.
@@ -676,20 +692,21 @@ pub fn evaluate(expr: &FilterExpr, note: &NoteMetadata, ctx: &FilterContext<'_>)
             method,
             args,
         } => {
-            let target_val = resolve_property(target, note, ctx);
+            let link_field = link_list_field(target);
             match method.as_str() {
-                "contains" => {
-                    if let Some(Value::String(needle)) = args.first() {
-                        if is_link_list(target) {
-                            link_list_contains(&target_val, needle)
-                        } else {
-                            target_val.contains(needle)
-                        }
-                    } else {
-                        false
+                "contains" => match (args.first(), link_field) {
+                    (Some(Value::String(needle)), Some(field)) => {
+                        link_list_contains(field, note, ctx, needle)
                     }
-                }
-                "isEmpty" => target_val.is_empty(),
+                    (Some(Value::String(needle)), None) => {
+                        resolve_property(target, note, ctx).contains(needle)
+                    }
+                    _ => false,
+                },
+                "isEmpty" => match link_field {
+                    Some(field) => linked_paths(field, note, ctx).is_empty(),
+                    None => resolve_property(target, note, ctx).is_empty(),
+                },
                 _ => false,
             }
         }

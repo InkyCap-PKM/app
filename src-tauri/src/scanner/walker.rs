@@ -175,6 +175,11 @@ pub(crate) fn note_to_cached_file(
         }
     }
 
+    let attachments = crate::link_index::attachment_references_in(
+        relative_path.parent().unwrap_or(Path::new("")),
+        content,
+    );
+
     CachedFile {
         path: relative_path,
         mtime,
@@ -187,6 +192,7 @@ pub(crate) fn note_to_cached_file(
         agenda_markers: note.agenda_markers.clone(),
         unresolved_suggestions: note.unresolved_suggestions as u32,
         recurrence: note.recurrence.clone(),
+        attachments,
         content: Some(content.to_string()),
     }
 }
@@ -501,7 +507,7 @@ pub async fn scan_notebox_cached(
                         link_index.set_forward_links(path.clone(), note.links.clone());
                         link_index
                             .attachments
-                            .record(path.clone(), notebox_root, &content);
+                            .set(path.clone(), cached.attachments.clone());
                         notes.push(note);
                         contents.push((path.clone(), content));
                         stats.cache_hits += 1;
@@ -527,12 +533,11 @@ pub async fn scan_notebox_cached(
             enrich_with_query(&mut note, qr);
 
             link_index.set_forward_links(path.clone(), note.links.clone());
+            let cached = note_to_cached_file(&note, relpath, stat.mtime, stat.size, &content);
             link_index
                 .attachments
-                .record(path.clone(), notebox_root, &content);
-            to_upsert.push(note_to_cached_file(
-                &note, relpath, stat.mtime, stat.size, &content,
-            ));
+                .set(path.clone(), cached.attachments.clone());
+            to_upsert.push(cached);
             notes.push(note);
             contents.push((path.clone(), content));
             stats.cache_misses += 1;
@@ -605,6 +610,7 @@ mod tests {
             agenda_markers: Vec::new(),
             recurrence: None,
             unresolved_suggestions: 0,
+            attachments: Vec::new(),
             content: Some(CONTENT.to_string()),
         };
         cache.upsert_file(&root, &entry).unwrap();

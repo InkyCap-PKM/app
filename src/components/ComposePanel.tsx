@@ -16,6 +16,7 @@ import * as ipc from "../lib/ipc";
 import { t, useI18n } from "../lib/i18n";
 import { createDragReorder } from "../lib/drag-reorder";
 import { pathEquals } from "../lib/paths";
+import { typstStringEscape } from "../lib/typst";
 import { CopyQuoteIcon } from "./icons";
 import { registerRightPanel } from "./right-panel-registry";
 import { externalReload } from "../editor/typst-decorations/visual-plugin";
@@ -279,13 +280,8 @@ function uniqueNames(cards: ComposeCard[]): string[] {
   return [...new Set(cards.map((c) => c.source.name))];
 }
 
-/** A Typst string literal holding `text`. */
-function typstString(text: string): string {
-  return `"${text.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
-}
-
 function wikilinkMarkup(name: string): string {
-  return `#wikilink(${typstString(name)})`;
+  return `#wikilink("${typstStringEscape(name)}")`;
 }
 
 /** A block quote of `source` attributed to a link to note `name`. */

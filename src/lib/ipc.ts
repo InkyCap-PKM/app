@@ -61,6 +61,7 @@ import type {
   AnnotationScope,
   TocPlacement,
   BibliographyMode,
+  LinkedFilesOptions,
 } from "./types";
 
 export async function getSavedNoteboxPath(): Promise<string | null> {
@@ -1805,6 +1806,13 @@ export type PdfStandardPreset = "standard" | "pdf-a4" | "pdf-ua1" | "pdf-a2a-ua1
 /// `ReviewMarkupMode::from_opt` on the Rust side.
 export type ReviewMarkupMode = "accept" | "reject" | "keep";
 
+/// What an export copied into the folder beside it (see `LinkedFilesOptions`).
+/// Exports return `null` when nothing was copied.
+export interface CompanionReport {
+  folder: string;
+  copied: number;
+}
+
 export async function exportNotePdfToFile(
   path: string,
   outputPath: string,
@@ -1812,14 +1820,16 @@ export async function exportNotePdfToFile(
   pdfStandard?: PdfStandardPreset,
   includeBibliography?: boolean,
   reviewMode?: ReviewMarkupMode,
-): Promise<void> {
-  return invoke<void>("export_note_pdf_to_file", {
+  linkedFiles?: LinkedFilesOptions,
+): Promise<CompanionReport | null> {
+  return invoke<CompanionReport | null>("export_note_pdf_to_file", {
     path,
     outputPath,
     metadataMode,
     pdfStandard: pdfStandard ?? null,
     includeBibliography: includeBibliography ?? null,
     reviewMode: reviewMode ?? null,
+    linkedFiles: linkedFiles ?? null,
   });
 }
 
@@ -1842,14 +1852,16 @@ export async function exportNoteHtml(
   stripWikilinks: boolean = false,
   includeBibliography?: boolean,
   reviewMode?: ReviewMarkupMode,
-): Promise<void> {
-  return invoke<void>("export_note_html", {
+  linkedFiles?: LinkedFilesOptions,
+): Promise<CompanionReport | null> {
+  return invoke<CompanionReport | null>("export_note_html", {
     path,
     outputPath,
     metadataMode,
     stripWikilinks,
     includeBibliography: includeBibliography ?? null,
     reviewMode: reviewMode ?? null,
+    linkedFiles: linkedFiles ?? null,
   });
 }
 
@@ -1868,8 +1880,9 @@ export async function exportCollectionNotePdf(
   pdfStandard?: PdfStandardPreset,
   includeBibliography?: boolean,
   reviewMode?: ReviewMarkupMode,
-): Promise<void> {
-  return invoke<void>("export_collection_note_pdf", {
+  linkedFiles?: LinkedFilesOptions,
+): Promise<CompanionReport | null> {
+  return invoke<CompanionReport | null>("export_collection_note_pdf", {
     notePath,
     collectionPath,
     outputPath,
@@ -1877,6 +1890,7 @@ export async function exportCollectionNotePdf(
     pdfStandard: pdfStandard ?? null,
     includeBibliography: includeBibliography ?? null,
     reviewMode: reviewMode ?? null,
+    linkedFiles: linkedFiles ?? null,
   });
 }
 
@@ -1890,6 +1904,7 @@ export interface BatchExportResult {
   files: string[];
   skippedNotes: SkippedNote[];
   bypassedCount: number;
+  companion: CompanionReport | null;
 }
 
 /// A note a batch export left out, and why.
@@ -1913,6 +1928,7 @@ export async function exportCollectionBatchPdf(
   reviewMode?: ReviewMarkupMode,
   onlyFiles?: string[],
   bypassErrors?: boolean,
+  linkedFiles?: LinkedFilesOptions,
 ): Promise<BatchExportResult> {
   return invoke<BatchExportResult>("export_collection_batch_pdf", {
     collectionPath,
@@ -1924,6 +1940,7 @@ export async function exportCollectionBatchPdf(
     reviewMode: reviewMode ?? null,
     onlyFiles: onlyFiles ?? null,
     bypassErrors: bypassErrors ?? null,
+    linkedFiles: linkedFiles ?? null,
   });
 }
 
@@ -1964,6 +1981,8 @@ export interface BookExportOverrides {
   /// A note name. When set, each chapter holds only the passages that link
   /// to it; notes without one are left out (see `withoutPassages`).
   passagesLinkingTo?: string;
+  /// Overrides the collection's stored `linked_files`.
+  linkedFiles?: LinkedFilesOptions;
 }
 
 /// Outcome of a book export. `outputPath` is set when the PDF was written.
@@ -1981,6 +2000,8 @@ export interface BookExportResult {
   /// Stems of notes left out of a passages-only book for having no passage
   /// linking to the chosen note.
   withoutPassages: string[];
+  /// The files copied into the folder beside the book.
+  companion: CompanionReport | null;
 }
 
 /// `bypassErrors` keeps errored markup as plain text instead of failing; the
@@ -2160,12 +2181,14 @@ export async function exportCollectionStaticSite(
   viewName: string,
   outputDir: string,
   bypassErrors?: boolean,
+  linkedFiles?: LinkedFilesOptions,
 ): Promise<BatchExportResult> {
   return invoke<BatchExportResult>("export_collection_static_site", {
     collectionPath,
     viewName,
     outputDir,
     bypassErrors: bypassErrors ?? null,
+    linkedFiles: linkedFiles ?? null,
   });
 }
 
@@ -2200,21 +2223,16 @@ export async function exportViaPandoc(
   format: string,
   metadataMode: string = "exclude",
   reviewMode?: ReviewMarkupMode,
-): Promise<void> {
-  return invoke<void>("export_via_pandoc", {
+  linkedFiles?: LinkedFilesOptions,
+): Promise<CompanionReport | null> {
+  return invoke<CompanionReport | null>("export_via_pandoc", {
     path,
     outputPath,
     format,
     metadataMode,
     reviewMode: reviewMode ?? null,
+    linkedFiles: linkedFiles ?? null,
   });
-}
-
-export async function exportFigures(
-  path: string,
-  outputDir: string,
-): Promise<string[]> {
-  return invoke<string[]>("export_figures", { path, outputDir });
 }
 
 // Typst compile pipeline (Phase 1 — reading mode)
@@ -2389,12 +2407,14 @@ export async function exportNoteMarkdownToFile(
   outputPath: string,
   unconvertibleMode: UnconvertibleMode,
   reviewMode?: ReviewMarkupMode,
-): Promise<void> {
-  return invoke<void>("export_note_markdown_to_file", {
+  linkedFiles?: LinkedFilesOptions,
+): Promise<CompanionReport | null> {
+  return invoke<CompanionReport | null>("export_note_markdown_to_file", {
     path,
     outputPath,
     unconvertibleMode,
     reviewMode: reviewMode ?? null,
+    linkedFiles: linkedFiles ?? null,
   });
 }
 
@@ -2404,6 +2424,7 @@ export async function exportCollectionBatchMarkdown(
   outputDir: string,
   unconvertibleMode: UnconvertibleMode,
   reviewMode?: ReviewMarkupMode,
+  linkedFiles?: LinkedFilesOptions,
 ): Promise<BatchExportResult> {
   return invoke<BatchExportResult>("export_collection_batch_markdown", {
     collectionPath,
@@ -2411,6 +2432,7 @@ export async function exportCollectionBatchMarkdown(
     outputDir,
     unconvertibleMode,
     reviewMode: reviewMode ?? null,
+    linkedFiles: linkedFiles ?? null,
   });
 }
 

@@ -490,16 +490,6 @@ pub(super) fn args_has_named_arg(args: &str, name: &str) -> bool {
     }
 }
 
-// ── Image path extraction ───────────────────────────────────────
-
-/// Extract all `#image(...)` paths from a Typst source file.
-pub(super) fn extract_image_paths(source: &str) -> Vec<String> {
-    let re = regex::Regex::new(r#"#image\("([^"]*)""#).unwrap();
-    re.captures_iter(source)
-        .map(|cap| cap[1].to_string())
-        .collect()
-}
-
 // ── HTML asset localization ─────────────────────────────────────
 
 /// Make exported HTML self-contained: copy every notebox asset referenced by a

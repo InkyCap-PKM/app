@@ -133,6 +133,10 @@ interface CachedEditorState {
   scroll?: StateEffect<unknown>;
   /** Pixel scroll offset of the reading-mode container (`.typst-reading`). */
   readingScrollTop?: number;
+  /** The text of `json` once it is known to be saved to disk. A restore that
+   *  finds the note on disk no longer matching it knows the file changed
+   *  while the tab was away (a link rewrite on rename, sync, another app). */
+  savedText?: string;
 }
 const editorStateCache = new Map<string, CachedEditorState>();
 
@@ -161,7 +165,28 @@ export function getCachedScroll(tabId: string, path: string): StateEffect<unknow
 }
 
 export function setCachedEditorState(tabId: string, path: string, json: unknown): void {
-  patchCacheEntry(tabId, path, { json });
+  patchCacheEntry(tabId, path, { json, savedText: undefined });
+}
+
+/** Record that the cached state `json` holds `text` and that `text` is now on
+ *  disk. Ignored if the tab has cached a different state since. */
+export function markCachedEditorStateSaved(
+  tabId: string,
+  path: string,
+  json: unknown,
+  text: string,
+): void {
+  const entry = editorStateCache.get(tabId);
+  if (!entry || entry.json !== json || !pathEquals(entry.path, path)) return;
+  entry.savedText = text;
+}
+
+/** The saved text of a tab's cached state (see `markCachedEditorStateSaved`),
+ *  or undefined when it isn't known to have reached disk. */
+export function getCachedSavedText(tabId: string, path: string): string | undefined {
+  const entry = editorStateCache.get(tabId);
+  if (!entry || !pathEquals(entry.path, path)) return undefined;
+  return entry.savedText;
 }
 
 /** Cache the source/live-mode scroll position. Captured *continuously* while
@@ -781,7 +806,7 @@ export function renameTabPath(from: string, to: string) {
   // cached undo history isn't thrown away on rename.
   for (const [tabId, entry] of editorStateCache.entries()) {
     if (pathEquals(entry.path, from)) {
-      editorStateCache.set(tabId, { path: to, json: entry.json });
+      editorStateCache.set(tabId, { ...entry, path: to });
     }
   }
 

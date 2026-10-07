@@ -18,6 +18,7 @@ use std::time::SystemTime;
 use regex::Regex;
 use serde::Serialize;
 
+use crate::typst_pipeline::book_wrapper::escape_typst_markup;
 use crate::typst_pipeline::syntax::{ast, parse, LinkedNode, SyntaxKind};
 
 /// Names tried in order when no `bibliographyPath` setting is configured.
@@ -1065,24 +1066,6 @@ fn wrap_formatting(text: &str, fmt: &hayagriva::Formatting) -> String {
         s = format!("_{s}_");
     }
     s
-}
-
-/// Escape the characters that carry markup meaning in Typst content mode, so a
-/// rendered reference string becomes literal text. Hyphens, periods, commas,
-/// and parentheses are intentionally left alone — they're common in citations
-/// and benign in markup.
-fn escape_typst_markup(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for c in text.chars() {
-        if matches!(
-            c,
-            '\\' | '*' | '_' | '`' | '$' | '#' | '<' | '>' | '@' | '[' | ']'
-        ) {
-            out.push('\\');
-        }
-        out.push(c);
-    }
-    out
 }
 
 /// Escape a string for embedding inside a Typst `"..."` string literal.

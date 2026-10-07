@@ -32,8 +32,6 @@ import {
   CaseSensitive,
   X,
   Settings2,
-  ChevronDown,
-  ChevronRight,
   ListChevronsUpDown,
   ListChevronsDownUp,
   LayersPlus,
@@ -46,6 +44,7 @@ import type { SearchResult, AnnotationScope } from "../lib/types";
 import { pathEquals } from "../lib/paths";
 import { clickOutside, dismissOnEscape } from "../lib/clickOutside";
 import * as ipc from "../lib/ipc";
+import RowChevron from "./RowChevron";
 import { useI18n, tPlural } from "../lib/i18n";
 import { openTab } from "../stores/tabs";
 import { indexReady } from "../stores/notebox";
@@ -1191,19 +1190,10 @@ const SearchPanel: Component = () => {
             return (
               <div class="search-panel__file-group">
                 <div class="search-panel__result-file">
-                  <button
-                    class="search-panel__group-chevron"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleFileExpansion(group.path);
-                    }}
-                    title={expanded() ? t("search.collapse") : t("search.expand")}
-                    aria-expanded={expanded()}
-                  >
-                    <Show when={expanded()} fallback={<ChevronRight size={14} />}>
-                      <ChevronDown size={14} />
-                    </Show>
-                  </button>
+                  <RowChevron
+                    expanded={expanded()}
+                    onToggle={() => toggleFileExpansion(group.path)}
+                  />
                   <span
                     class="search-panel__file-label"
                     onClick={(e) => openResult(group.matches[0], e)}

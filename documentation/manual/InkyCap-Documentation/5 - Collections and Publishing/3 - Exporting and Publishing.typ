@@ -52,7 +52,8 @@ Depending on the format you choose, a few options appear:
 
 - *Note metadata* (PDF, HTML, and Pandoc formats). Choose *Exclude metadata* (the default) to keep your note's #wikilink("6 - Note Properties", display: "properties") out of the file, or *Include as document properties* to record the title, author, date, and keywords as the document's own properties (so they show up in a PDF's metadata, a web page's `<head>`, or word processor's File Properties).
 - *Include bibliography in output* (PDF and HTML only). On by default. When on, your reference list appears at the end. When off, citations still resolve normally but the rendered bibliography is left out. See #wikilink("7 - Citations and Bibliography").
-- *Extract figures alongside export* (all formats). When on, InkyCap also writes a folder of your figure images beside the export.
+- *Links to files* (all formats except self-contained Typst). Decides what links to files in your notebox, such as a linked PDF, become. *Keep as written* (the default) leaves them as the note has them, which may not open once the export leaves your notebox. *File name only* turns each link into plain text. *Link to copies beside the export* copies the linked files into a folder named after the export (`paper-files` for `paper.pdf`) and points the links there; keep that folder with the export when you share it.
+- *Copy images beside the export* (all formats except self-contained Typst). Puts every image the note uses into that same folder, which is handy for sending a publisher your figures.
 - *Remove internal links (wikilinks)* (HTML only) strips the in-note links so the page reads as standalone prose.
 - *Preserve unconvertible Typst markup (as code blocks)* (Markdown only). On by default. Markdown cannot represent every Typst construct, so anything it cannot translate is wrapped in a code block rather than lost. Turn it off for a cleaner file if you do not mind dropping those bits.
 

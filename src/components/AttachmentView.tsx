@@ -125,11 +125,19 @@ const AttachmentView: Component<{ path: string; tabId: string }> = (props) => {
 
 type Fallback = (detail?: string) => ReturnType<Component>;
 
-/** Load a `blob:` URL for the view's lifetime and release it afterwards. A
- *  failed load leaves the reason in the resource's `error`. */
+/** Load a `blob:` URL for the view's lifetime and release it afterwards,
+ *  including when the load only finishes after the view has closed. A failed
+ *  load leaves the reason in the resource's `error`. */
 function useObjectUrl(load: () => Promise<string>) {
-  const [url] = createResource(load);
+  let closed = false;
+  const [url] = createResource(async () => {
+    const u = await load();
+    if (!closed) return u;
+    URL.revokeObjectURL(u);
+    return undefined;
+  });
   onCleanup(() => {
+    closed = true;
     const u = url.error ? undefined : url();
     if (u) URL.revokeObjectURL(u);
   });
@@ -236,34 +244,39 @@ const MediaView: Component<{ source: string; video: boolean; fallback: Fallback 
 };
 
 /** Each PDF page is drawn when it comes within a screen of the visible part
- *  of the scroller. Until then it holds the first page's proportions so the
- *  scroll length is about right from the start. */
+ *  of the scroller, and its drawing is let go again once it moves further
+ *  away, so a long PDF holds only the pages around the view. Until drawn, a
+ *  page holds the first page's proportions so the scroll length is about
+ *  right from the start. */
 const PdfView: Component<{
   path: string;
   tabId: string;
   zoom: number;
   fallback: Fallback;
 }> = (props) => {
-  const t = useI18n();
   const [count] = createResource(() => ipc.getPdfPageCount(props.path));
   const [firstPage] = createResource(
     () => (count() ?? 0) > 0,
     () => ipc.renderPdfPage(props.path, 1),
   );
+  const queue = createPageQueue(props.path);
   const [observer, setObserver] = createSignal<IntersectionObserver>();
-  onCleanup(() => observer()?.disconnect());
+  onCleanup(() => {
+    observer()?.disconnect();
+    queue.close();
+  });
 
-  // Pages announce themselves to the observer; it tells each one, once, that
-  // it is close enough to draw.
+  // Pages register with the observer; it tells each one whenever it moves
+  // into or out of drawing range.
   const watchScroller = (el: HTMLDivElement) => {
     attachReadingZoomWheel(el, props.tabId);
     setObserver(
       new IntersectionObserver(
-        (entries, obs) => {
+        (entries) => {
           for (const entry of entries) {
-            if (!entry.isIntersecting) continue;
-            obs.unobserve(entry.target);
-            entry.target.dispatchEvent(new Event(PAGE_NEAR_EVENT));
+            entry.target.dispatchEvent(
+              new CustomEvent<boolean>(PAGE_RANGE_EVENT, { detail: entry.isIntersecting }),
+            );
           }
         },
         { root: el, rootMargin: "100% 0px" },
@@ -283,12 +296,12 @@ const PdfView: Component<{
                 <For each={Array.from({ length: count() ?? 0 }, (_, i) => i + 1)}>
                   {(page) => (
                     <PdfPage
-                      path={props.path}
                       page={page}
                       initial={page === 1 ? first() : undefined}
                       shape={first()}
                       zoom={props.zoom}
                       observer={observer()}
+                      queue={queue}
                     />
                   )}
                 </For>
@@ -301,37 +314,102 @@ const PdfView: Component<{
   );
 };
 
-/** Sent to a page element when it nears the visible part of the scroller. */
-const PAGE_NEAR_EVENT = "attachment-view:page-near";
+/** Sent to a page element when it moves into (`detail: true`) or out of
+ *  (`detail: false`) drawing range. */
+const PAGE_RANGE_EVENT = "attachment-view:page-range";
+
+type PageQueue = ReturnType<typeof createPageQueue>;
+
+/** Draws a PDF's pages one at a time, in the order they were asked for.
+ *  Pages share the compiler with the note being edited, so drawing them one
+ *  by one keeps live preview from waiting behind a whole screen of pages.
+ *  A page that leaves drawing range before its turn is dropped, and nothing
+ *  more is drawn once the view closes. */
+function createPageQueue(path: string) {
+  const waiting = new Map<number, (frame: TypstFrame | Error) => void>();
+  let busy = false;
+  let closed = false;
+
+  const next = () => {
+    if (busy || closed) return;
+    const first = waiting.entries().next();
+    if (first.done) return;
+    const [page, done] = first.value;
+    waiting.delete(page);
+    busy = true;
+    ipc
+      .renderPdfPage(path, page)
+      .then(
+        (frame) => !closed && done(frame),
+        (err) => !closed && done(err instanceof Error ? err : new Error(errorText(err))),
+      )
+      .finally(() => {
+        busy = false;
+        next();
+      });
+  };
+
+  return {
+    request(page: number, done: (frame: TypstFrame | Error) => void) {
+      waiting.set(page, done);
+      next();
+    },
+    cancel(page: number) {
+      waiting.delete(page);
+    },
+    close() {
+      closed = true;
+      waiting.clear();
+    },
+  };
+}
 
 const PdfPage: Component<{
-  path: string;
   page: number;
   initial?: TypstFrame;
   shape: TypstFrame;
   zoom: number;
   observer?: IntersectionObserver;
+  queue: PageQueue;
 }> = (props) => {
   const t = useI18n();
   const [frame, setFrame] = createSignal<TypstFrame | undefined>(props.initial);
   const [failed, setFailed] = createSignal(false);
-  const size = () => frame() ?? props.shape;
+  // Once drawn, a page keeps its own size after its drawing is let go, so
+  // pages above the view don't shift it when they are released.
+  type PageSize = Pick<TypstFrame, "width_pt" | "height_pt">;
+  const sizeOf = (f?: TypstFrame): PageSize | undefined =>
+    f && { width_pt: f.width_pt, height_pt: f.height_pt };
+  const [drawnSize, setDrawnSize] = createSignal<PageSize | undefined>(sizeOf(props.initial));
+  const size = () => frame() ?? drawnSize() ?? props.shape;
+  let inRange = false;
   let el: HTMLDivElement | undefined;
 
-  const draw = () => {
-    ipc
-      .renderPdfPage(props.path, props.page)
-      .then(setFrame)
-      .catch((err) => {
-        console.error("[attachment-view] page failed", props.page, err);
-        setFailed(true);
+  const onRange = (event: Event) => {
+    inRange = (event as CustomEvent<boolean>).detail;
+    if (!inRange) {
+      props.queue.cancel(props.page);
+      setFrame(undefined);
+    } else if (!frame() && !failed()) {
+      props.queue.request(props.page, (result) => {
+        // The page may have left range while it was being drawn.
+        if (!inRange) return;
+        if (result instanceof Error) {
+          console.error("[attachment-view] page failed", props.page, result);
+          setFailed(true);
+        } else {
+          setFrame(result);
+          setDrawnSize(sizeOf(result));
+        }
       });
+    }
   };
 
   onMount(() => {
-    if (props.initial || !el) return;
-    el.addEventListener(PAGE_NEAR_EVENT, draw, { once: true });
+    if (!el) return;
+    el.addEventListener(PAGE_RANGE_EVENT, onRange);
     props.observer?.observe(el);
+    onCleanup(() => props.observer?.unobserve(el!));
   });
 
   return (

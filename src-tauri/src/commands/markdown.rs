@@ -372,9 +372,10 @@ pub async fn export_note_markdown_to_file(
     output_path: String,
     unconvertible_mode: UnconvertibleMode,
     review_mode: Option<String>,
+    linked_files: Option<crate::commands::export::LinkedFilesOptions>,
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
-) -> Result<(), InkyCapError> {
+) -> Result<Option<crate::commands::export::CompanionReport>, InkyCapError> {
     crate::commands::export::destination::require_export_destination(&state, &window, &output_path)
         .await?;
     let session = state.session(window.label()).await;
@@ -383,6 +384,11 @@ pub async fn export_note_markdown_to_file(
     let content = storage.read_file(&path_buf).await?;
     let content =
         crate::commands::export::helpers::apply_review_mode(&content, review_mode.as_deref());
+    let mut companion = crate::commands::export::companion::CompanionFiles::beside_file(
+        linked_files,
+        std::path::Path::new(&output_path),
+    );
+    let content = companion.prepare_note(&storage, &path_buf, &content);
 
     let options = TypstToMarkdownOptions {
         unconvertible: unconvertible_mode,
@@ -395,7 +401,7 @@ pub async fn export_note_markdown_to_file(
             InkyCapError::ExportFailed(format!("Failed to write {}: {}", output_path, e))
         })?;
 
-    Ok(())
+    companion.copy().await
 }
 
 /// Batch export all notes in a collection view as markdown files. A note that
@@ -407,6 +413,7 @@ pub async fn export_collection_batch_markdown(
     output_dir: String,
     unconvertible_mode: UnconvertibleMode,
     review_mode: Option<String>,
+    linked_files: Option<crate::commands::export::LinkedFilesOptions>,
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
 ) -> Result<crate::commands::export::BatchExportResult, InkyCapError> {
@@ -434,6 +441,11 @@ pub async fn export_collection_batch_markdown(
 
     let mut exported = Vec::new();
     let mut skipped_notes = Vec::new();
+    let mut companion = crate::commands::export::companion::CompanionFiles::for_collection(
+        linked_files,
+        &output_dir_buf,
+        std::path::Path::new(&collection_path),
+    );
 
     for row in &collection.rows {
         let file_path = PathBuf::from(&row.file_path);
@@ -447,6 +459,7 @@ pub async fn export_collection_batch_markdown(
 
         let content =
             crate::commands::export::helpers::apply_review_mode(&content, review_mode.as_deref());
+        let content = companion.prepare_note(&storage, &file_path, &content);
         let markdown = typst_to_markdown(&content, &options);
         let md_name = row.file_name.strip_suffix(".typ").unwrap_or(&row.file_name);
         let output_file = output_dir_buf.join(format!("{}.md", md_name));
@@ -461,5 +474,6 @@ pub async fn export_collection_batch_markdown(
         files: exported,
         skipped_notes,
         bypassed_count: 0,
+        companion: companion.copy().await?,
     })
 }

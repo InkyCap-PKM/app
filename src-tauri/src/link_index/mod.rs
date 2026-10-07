@@ -20,7 +20,7 @@ use std::path::PathBuf;
 use crate::models::note::NoteId;
 
 mod attachments;
-pub use attachments::AttachmentRefs;
+pub use attachments::{references_in as attachment_references_in, AttachmentRefs};
 
 /// Tracks forward (outgoing) and backward (incoming) links between notes.
 pub struct LinkIndex {

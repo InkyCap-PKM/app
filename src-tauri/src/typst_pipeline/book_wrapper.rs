@@ -1020,8 +1020,8 @@ pub fn book_diagnostic_note_stems(source: &str, diagnostics: &[TypstDiagnostic])
 /// Escape user-provided text for Typst content/markup context. Backslashes
 /// and the small set of markup-active characters are escaped so authored
 /// titles like `# C* algebras` survive verbatim instead of being parsed as
-/// markup.
-fn escape_typst_markup(s: &str) -> String {
+/// markup. Shared by every place that writes plain text into markup.
+pub(crate) fn escape_typst_markup(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for ch in s.chars() {
         match ch {

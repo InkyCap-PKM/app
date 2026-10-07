@@ -81,7 +81,8 @@
   border-radius: var(--radius-sm);
 }
 
-.search-panel__group-chevron {
+/* Shared row caret (RowChevron): a bare button sized like a row icon. */
+.row-chevron {
   background: none;
   border: none;
   cursor: pointer;

@@ -23,9 +23,10 @@ pub async fn export_note_html(
     strip_wikilinks: Option<bool>,
     include_bibliography: Option<bool>,
     review_mode: Option<String>,
+    linked_files: Option<super::LinkedFilesOptions>,
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
-) -> Result<(), InkyCapError> {
+) -> Result<Option<super::CompanionReport>, InkyCapError> {
     crate::commands::export::destination::require_export_destination(&state, &window, &output_path)
         .await?;
     let session = state.session(window.label()).await;
@@ -33,6 +34,11 @@ pub async fn export_note_html(
     let path_buf = PathBuf::from(&path);
     let content = storage.read_file(&path_buf).await?;
     let content = apply_review_mode(&content, review_mode.as_deref());
+    let mut companion = super::companion::CompanionFiles::beside_file(
+        linked_files,
+        std::path::Path::new(&output_path),
+    );
+    let content = companion.prepare_note(&storage, &path_buf, &content);
     let content = crate::notebox_package::ensure_import(&content);
 
     let raw_metadata = if metadata_mode == "properties" {
@@ -65,14 +71,14 @@ pub async fn export_note_html(
     )
     .await;
 
-    let mut compiler = session.typst_compiler.lock().await;
-    let compiler = compiler.as_mut().ok_or(InkyCapError::NoteboxNotOpen)?;
-    compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
-
-    let result =
+    let result = {
+        let mut guard = session.typst_compiler.lock().await;
+        let compiler = guard.as_mut().ok_or(InkyCapError::NoteboxNotOpen)?;
+        compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
         compile_with_auto_packages(compiler, |c| c.compile_html(&path_buf, source.clone()))
             .await
-            .map_err(|e| InkyCapError::ExportFailed(e.to_string()))?;
+            .map_err(|e| InkyCapError::ExportFailed(e.to_string()))?
+    };
 
     if !result.ok {
         let msgs: Vec<_> = result
@@ -112,7 +118,7 @@ pub async fn export_note_html(
         inject_html_metadata(&output_path, &raw_metadata).await?;
     }
 
-    Ok(())
+    companion.copy().await
 }
 
 /// Inject `<meta>` tags into an HTML file's `<head>`.

@@ -34,6 +34,7 @@ import RuleIcon from "./RuleIcon";
 import { LibraryPlusIcon } from "./icons";
 import type { CollectionInfo, FileTreeNode, PropertyType } from "../lib/types";
 import * as ipc from "../lib/ipc";
+import { renameFile } from "../lib/rename-file";
 import { REVEAL_IN_FILE_TREE_EVENT } from "../lib/file-tree-reveal";
 import { pathEquals, pathStartsWith } from "../lib/paths";
 import { isLinux } from "../lib/platform";
@@ -1357,13 +1358,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     if (!oldPath || !newName) return;
 
     try {
-      await flushEditorsAt(oldPath);
-      const settings = await ipc.getSettings();
-      if (settings.files.auto_update_links_on_rename) {
-        await ipc.renameAndUpdateLinks(oldPath, newName);
-      } else {
-        await ipc.renameFile(oldPath, newName);
-      }
+      await renameFile(oldPath, newName);
       refresh();
     } catch (e) {
       toastError(t("leftSidebar.renameFailed"), e);

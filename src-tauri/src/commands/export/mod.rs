@@ -6,9 +6,10 @@
 //! - Static site generation for collections
 //! - Pandoc-based multi-format export (HTML, DOCX, ODT, LaTeX)
 //! - CSV export for collection table data
-//! - Figure/asset extraction
+//! - Copying the files a note uses beside its export (`companion`)
 
 pub(crate) mod assets;
+pub(crate) mod companion;
 pub(crate) mod csv;
 pub(crate) mod destination;
 pub(crate) mod helpers;
@@ -21,7 +22,8 @@ pub(crate) mod site;
 // Preserves the public API surface: all callers continue to use
 // `commands::export::function_name` unchanged.
 
-pub use assets::{export_figures, export_self_contained_typ};
+pub use assets::export_self_contained_typ;
+pub use companion::{CompanionReport, FileLinkMode, LinkedFilesOptions};
 pub use csv::{export_collection_csv, export_collection_csv_to_file};
 pub use destination::{pick_export_file, pick_export_folder};
 pub use helpers::{resolve_template_path, resolve_template_path_with_root};
@@ -40,12 +42,14 @@ pub use site::export_collection_static_site;
 /// so the caller can show them and let the user open each one to fix it.
 /// `bypassed_count` is how many notes were exported with their errors kept as
 /// plain text, which only happens when the caller asked to bypass errors.
+/// `companion` reports the files copied into the folder beside the export.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BatchExportResult {
     pub files: Vec<String>,
     pub skipped_notes: Vec<SkippedNote>,
     pub bypassed_count: usize,
+    pub companion: Option<companion::CompanionReport>,
 }
 
 /// A note a batch export left out, and why.
@@ -100,19 +104,6 @@ mod tests {
     };
     use super::pdf::{check_pdf_standard_requirements, ensure_document_date_for_standard};
     use crate::typst_pipeline::compiler::PdfStandardPreset;
-
-    #[test]
-    fn extract_image_paths_finds_all() {
-        let source = r#"
-= My Note
-
-#image("figures/fig1.png")
-Some text.
-#image("/assets/photo.jpg", width: 80%)
-"#;
-        let paths = extract_image_paths(source);
-        assert_eq!(paths, vec!["figures/fig1.png", "/assets/photo.jpg"]);
-    }
 
     /// Notes import the inkycap-notebox library via the canonical
     /// `/.inkycap/notebox.typ` path; `inline_package` must replace that line

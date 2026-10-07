@@ -2,7 +2,7 @@
 // for the active file.
 
 import { Component, createEffect, createMemo, createResource, createSignal, For, Show, onCleanup, onMount, untrack } from "solid-js";
-import { getActiveTab, openTab, closeTab } from "../stores/tabs";
+import { getActiveTab, openTab } from "../stores/tabs";
 import {
   mycelialStateFor,
   hoveredGraphNode,
@@ -13,9 +13,11 @@ import { normalizePath } from "../lib/paths";
 import { compareName, compareZid } from "../lib/sort";
 import { createNoteForTarget } from "../lib/wikilink-nav";
 import * as ipc from "../lib/ipc";
+import { renameFile } from "../lib/rename-file";
+import RowChevron from "./RowChevron";
 import { revealInFileTree } from "../lib/file-tree-reveal";
 import { copyInkycapLink } from "../lib/copy-inkycap-link";
-import type { LinkPassage, OutboundLink, PotentialLink } from "../lib/ipc";
+import type { OutboundLink, PotentialLink } from "../lib/ipc";
 import type { SearchResult } from "../lib/types";
 import { indexReady, bumpPropertyVersion } from "../stores/notebox";
 import { moveActiveFileInteractive } from "../lib/move-file";
@@ -163,12 +165,51 @@ function defaultForKey(key: string): PropertyValue {
   return "";
 }
 
-/** Extended link info with multi-line context for the Links pane. */
-interface BacklinkWithContext extends LinkInfo {
-  /** Passages in the linking note around its links to this one. Empty when
-   *  it links only from its properties; absent when they couldn't be read. */
-  passages?: LinkPassage[];
-}
+/** The passages in `source` around its links to `target`, shown under an
+ *  Inbound row whose preview is open. They load only while shown, and again
+ *  each time the row is rebuilt (after a save or reindex), so closed rows
+ *  cost nothing. */
+const BacklinkPassages: Component<{
+  source: string;
+  target?: string;
+  showContext: boolean;
+}> = (props) => {
+  const t = useI18n();
+  const [passages] = createResource(
+    () => (props.target ? { source: props.source, target: props.target } : undefined),
+    ({ source, target }) => ipc.getLinkPassages(source, target).catch(() => undefined),
+  );
+  return (
+    <>
+      <For each={passages() ?? []}>
+        {(p) => (
+          <>
+            <Show when={props.showContext && p.before}>
+              {(b) => (
+                <div class="link-context link-context--ctx link-context--passage">
+                  {b().text}
+                </div>
+              )}
+            </Show>
+            <div class="link-context link-context--match link-context--passage">
+              {p.paragraph.text}
+            </div>
+            <Show when={props.showContext && p.after}>
+              {(a) => (
+                <div class="link-context link-context--ctx link-context--passage">
+                  {a().text}
+                </div>
+              )}
+            </Show>
+          </>
+        )}
+      </For>
+      <Show when={passages()?.length === 0}>
+        <div class="link-context">{t("rightPanel.linkedInProperties")}</div>
+      </Show>
+    </>
+  );
+};
 
 const RightPanel: Component = () => {
   const t = useI18n();
@@ -528,27 +569,17 @@ const RightPanel: Component = () => {
 
   const [backlinks, { refetch: refetchBacklinks }] = createResource(
     () => activeFileTab()?.path,
-    async (path): Promise<BacklinkWithContext[]> => {
+    async (path): Promise<LinkInfo[]> => {
       if (!path) return [];
       try {
         const links = await ipc.getBacklinks(path);
         // Deduplicate by path — a note may link to us multiple times
         const seen = new Set<string>();
-        const unique = links.filter((link) => {
+        return links.filter((link) => {
           if (seen.has(link.path)) return false;
           seen.add(link.path);
           return true;
         });
-        return await Promise.all(
-          unique.map(async (link) => {
-            try {
-              const passages = await ipc.getLinkPassages(link.path, path);
-              return { ...link, passages };
-            } catch {
-              return { ...link };
-            }
-          }),
-        );
       } catch {
         return [];
       }
@@ -1139,10 +1170,7 @@ const RightPanel: Component = () => {
     });
     if (!newName || newName === oldName) return;
     try {
-      await flushEditorsAt(tab.path);
-      const newPath = await ipc.renameAndUpdateLinks(tab.path, newName);
-      closeTab(tab.id);
-      openTab({ type: "file", title: newName, path: newPath }, { forceNewTab: true });
+      await renameFile(tab.path, newName);
     } catch (err) {
       toastError(t("statusBar.renameFailed"), err);
     }
@@ -1583,22 +1611,10 @@ const RightPanel: Component = () => {
                                     <span class="mycelial-context__chevron-spacer" />
                                   }
                                 >
-                                  <button
-                                    class="search-panel__group-chevron"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      toggleExpanded(note.path);
-                                    }}
-                                    title={expanded() ? t("search.collapse") : t("search.expand")}
-                                    aria-expanded={expanded()}
-                                  >
-                                    <Show
-                                      when={expanded()}
-                                      fallback={<ChevronRight size={14} />}
-                                    >
-                                      <ChevronDown size={14} />
-                                    </Show>
-                                  </button>
+                                  <RowChevron
+                                    expanded={expanded()}
+                                    onToggle={() => toggleExpanded(note.path)}
+                                  />
                                 </Show>
                                 <span
                                   class="search-panel__file-label"
@@ -2083,7 +2099,12 @@ const RightPanel: Component = () => {
                               }
                               title={t("rightPanel.rowTitle.full")}
                             >
-                              <span class="sidebar-item__icon"><NoteIcon /></span>
+                              <RowChevron
+                                expanded={expanded()}
+                                onToggle={() =>
+                                  toggleLinksPreviewOverride(`inbound::${link.path}`)
+                                }
+                              />
                               <span class="sidebar-item__label">{link.name}</span>
                             </div>
                             <Show when={expanded()}>
@@ -2109,32 +2130,11 @@ const RightPanel: Component = () => {
                                   </Show>
                                 }
                               >
-                                <For each={link.passages ?? []}>
-                                  {(p) => (
-                                    <>
-                                      <Show when={linksShowMoreContext() && p.before}>
-                                        {(b) => (
-                                          <div class="link-context link-context--ctx link-context--passage">
-                                            {b().text}
-                                          </div>
-                                        )}
-                                      </Show>
-                                      <div class="link-context link-context--match link-context--passage">
-                                        {p.paragraph.text}
-                                      </div>
-                                      <Show when={linksShowMoreContext() && p.after}>
-                                        {(a) => (
-                                          <div class="link-context link-context--ctx link-context--passage">
-                                            {a().text}
-                                          </div>
-                                        )}
-                                      </Show>
-                                    </>
-                                  )}
-                                </For>
-                                <Show when={link.passages?.length === 0}>
-                                  <div class="link-context">{t("rightPanel.linkedInProperties")}</div>
-                                </Show>
+                                <BacklinkPassages
+                                  source={link.path}
+                                  target={activeFileTab()?.path}
+                                  showContext={linksShowMoreContext()}
+                                />
                               </Show>
                             </Show>
                           </div>
@@ -2322,6 +2322,12 @@ const RightPanel: Component = () => {
                               }
                               title={t("rightPanel.rowTitle.full")}
                             >
+                              <RowChevron
+                                expanded={expanded()}
+                                onToggle={() =>
+                                  toggleLinksPreviewOverride(`potential::${link.path}`)
+                                }
+                              />
                               <span class="sidebar-item__icon"><NoteIcon /></span>
                               <span class="sidebar-item__label">{link.name}</span>
                             </div>

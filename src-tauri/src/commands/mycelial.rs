@@ -225,9 +225,12 @@ pub async fn get_mycelial_data(
         crate::commands::mycelial_exclusions::load_exclusion_group(storage.root()).await;
     let (excluded, center_excluded) = match &exclusion_group {
         Some(group) => {
+            // Link index before property index: the documented lock order.
+            let links = session.link_index.read().await;
             let prop_index = session.property_index.read().await;
             let mut set = crate::commands::mycelial_exclusions::excluded_note_paths(
                 &prop_index,
+                &links,
                 group,
                 storage.root(),
             );

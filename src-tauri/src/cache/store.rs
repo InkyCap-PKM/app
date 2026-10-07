@@ -38,6 +38,10 @@ pub struct CachedFile {
     /// "still awaiting accept/reject" signal, cached so the indicator survives
     /// app restarts without recompiling every note.
     pub unresolved_suggestions: u32,
+    /// Notebox files the note references (images, PDFs, media, data files),
+    /// as notebox-relative paths. Cached so opening a notebox needn't parse
+    /// unchanged notes again to list what uses each attachment.
+    pub attachments: Vec<String>,
     /// Full file content, cached so subsequent notebox opens can skip disk reads
     /// for unchanged files. `None` for legacy cache entries created before
     /// content caching was added.
@@ -53,7 +57,7 @@ pub struct MetadataCache {
 
 /// The `files` columns both loaders select, in [`FileRow`] order.
 const FILE_COLUMNS: &str = "path, mtime, size, properties_json, title, content, agenda_json, \
-                            unresolved_suggestions, recurrence_json";
+                            unresolved_suggestions, recurrence_json, attachments_json";
 
 /// One `files` row as read from SQLite, before its JSON columns are decoded.
 type FileRow = (
@@ -65,6 +69,7 @@ type FileRow = (
     Option<String>,
     String,
     i64,
+    String,
     String,
 );
 
@@ -79,6 +84,7 @@ fn read_file_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<FileRow> {
         row.get(6)?,
         row.get(7)?,
         row.get(8)?,
+        row.get(9)?,
     ))
 }
 
@@ -95,6 +101,7 @@ fn cached_file_from_row(row: FileRow) -> Result<CachedFile> {
         agenda_json,
         unresolved_suggestions,
         recurrence_json,
+        attachments_json,
     ) = row;
     let properties: HashMap<String, PropertyValue> = serde_json::from_str(&properties_json)
         .map_err(|e| InkyCapError::Cache(format!("corrupt properties_json for {path}: {e}")))?;
@@ -103,6 +110,7 @@ fn cached_file_from_row(row: FileRow) -> Result<CachedFile> {
     // file anyway. Same degrade-to-default policy for the recurrence rule.
     let agenda_markers = serde_json::from_str(&agenda_json).unwrap_or_default();
     let recurrence = serde_json::from_str(&recurrence_json).unwrap_or_default();
+    let attachments = serde_json::from_str(&attachments_json).unwrap_or_default();
     Ok(CachedFile {
         path: PathBuf::from(&path),
         mtime,
@@ -115,6 +123,7 @@ fn cached_file_from_row(row: FileRow) -> Result<CachedFile> {
         agenda_markers,
         recurrence,
         unresolved_suggestions: unresolved_suggestions.max(0) as u32,
+        attachments,
         content,
     })
 }
@@ -340,8 +349,8 @@ impl MetadataCache {
         let tx = conn.transaction()?;
         {
             let mut upsert_file = tx.prepare(
-                "INSERT INTO files (notebox_id, path, mtime, size, properties_json, title, content, agenda_json, unresolved_suggestions, recurrence_json) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) \
+                "INSERT INTO files (notebox_id, path, mtime, size, properties_json, title, content, agenda_json, unresolved_suggestions, recurrence_json, attachments_json) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) \
                  ON CONFLICT(notebox_id, path) DO UPDATE SET \
                     mtime = excluded.mtime, \
                     size = excluded.size, \
@@ -350,7 +359,8 @@ impl MetadataCache {
                     content = excluded.content, \
                     agenda_json = excluded.agenda_json, \
                     unresolved_suggestions = excluded.unresolved_suggestions, \
-                    recurrence_json = excluded.recurrence_json",
+                    recurrence_json = excluded.recurrence_json, \
+                    attachments_json = excluded.attachments_json",
             )?;
             let mut delete_tags =
                 tx.prepare("DELETE FROM file_tags WHERE notebox_id = ?1 AND path = ?2")?;
@@ -369,6 +379,7 @@ impl MetadataCache {
                 let properties_json = serde_json::to_string(&file.properties)?;
                 let agenda_json = serde_json::to_string(&file.agenda_markers)?;
                 let recurrence_json = serde_json::to_string(&file.recurrence)?;
+                let attachments_json = serde_json::to_string(&file.attachments)?;
 
                 upsert_file.execute(params![
                     notebox_id,
@@ -381,6 +392,7 @@ impl MetadataCache {
                     agenda_json,
                     file.unresolved_suggestions as i64,
                     recurrence_json,
+                    attachments_json,
                 ])?;
 
                 delete_tags.execute(params![notebox_id, &path_str])?;
@@ -505,6 +517,7 @@ mod tests {
             agenda_markers: Vec::new(),
             recurrence: None,
             unresolved_suggestions: 1,
+            attachments: vec!["Assets/map.png".to_string()],
             content: Some("#note(title: \"Fourth Space\")\n".to_string()),
         }
     }

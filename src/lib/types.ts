@@ -284,6 +284,21 @@ export interface BookExportConfig {
   /** When false, the CRediT contributions statement is omitted from the book
    *  export (the byline still renders). Defaults to true when unset. */
   include_credit_statement?: boolean | null;
+  /** What the book does with links to notebox files, and what it copies
+   *  beside the PDF. Unset: links stay as written, nothing is copied. */
+  linked_files?: LinkedFilesOptions | null;
+}
+
+/** What an export does with links to notebox files (a PDF, a spreadsheet).
+ *  Mirrors `FileLinkMode` in src-tauri/src/models/export.rs. */
+export type FileLinkMode = "as-written" | "file-name" | "copies";
+
+/** How an export treats the files a note uses: its links to files, and
+ *  whether its images are copied into the folder beside the export too.
+ *  Mirrors `LinkedFilesOptions` (snake_case, as stored in a collection). */
+export interface LinkedFilesOptions {
+  links: FileLinkMode;
+  copy_images: boolean;
 }
 
 // User settings (mirrors Rust UserSettings struct)

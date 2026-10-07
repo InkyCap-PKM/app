@@ -16,7 +16,14 @@ use crate::typst_pipeline::path_rebase::referenced_notebox_paths;
 
 /// Calls whose first argument can name a notebox file. A note whose source
 /// contains none of these is skipped without parsing it.
-const PATH_CALL_MARKERS: &[&str] = &["image(", "read(", "bibliography(", "video(", "audio("];
+const PATH_CALL_MARKERS: &[&str] = &[
+    "image(",
+    "read(",
+    "bibliography(",
+    "video(",
+    "audio(",
+    "link(",
+];
 
 /// Note → the notebox files it references, as notebox-relative paths with
 /// `/` separators and no leading slash (`Assets/fig.png`).
@@ -25,21 +32,34 @@ pub struct AttachmentRefs {
     by_note: HashMap<NoteId, Vec<String>>,
 }
 
+/// The notebox files `content` references, as notebox-relative paths.
+/// `note_dir` is the note's folder relative to the notebox root, which
+/// relative paths in its source are anchored to.
+pub fn references_in(note_dir: &Path, content: &str) -> Vec<String> {
+    if PATH_CALL_MARKERS.iter().any(|m| content.contains(m)) {
+        referenced_notebox_paths(content, note_dir)
+    } else {
+        Vec::new()
+    }
+}
+
 impl AttachmentRefs {
     /// Record the files `note` references, replacing what was recorded for it
     /// before. `note` is the note's absolute path inside `notebox_root`; its
     /// folder is what relative paths in its source are anchored to.
     pub fn record(&mut self, note: NoteId, notebox_root: &Path, content: &str) {
-        let refs = if PATH_CALL_MARKERS.iter().any(|m| content.contains(m)) {
-            let note_dir = note
-                .strip_prefix(notebox_root)
-                .ok()
-                .and_then(Path::parent)
-                .unwrap_or(Path::new(""));
-            referenced_notebox_paths(content, note_dir)
-        } else {
-            Vec::new()
-        };
+        let note_dir = note
+            .strip_prefix(notebox_root)
+            .ok()
+            .and_then(Path::parent)
+            .unwrap_or(Path::new(""));
+        let refs = references_in(note_dir, content);
+        self.set(note, refs);
+    }
+
+    /// Record `refs` (from [`references_in`], or the metadata cache) as the
+    /// files `note` references, replacing what was recorded for it before.
+    pub fn set(&mut self, note: NoteId, refs: Vec<String>) {
         if refs.is_empty() {
             self.by_note.remove(&note);
         } else {

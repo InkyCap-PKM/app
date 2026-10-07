@@ -28,6 +28,36 @@ use typst::syntax::{ast, parse, LinkedNode, SyntaxKind};
 /// same notebox-root-absolute convention as `image`.
 const PATH_BEARING_CALLS: &[&str] = &["image", "read", "bibliography", "video", "audio"];
 
+/// `link`'s first argument is a URL, not a path, so a relative value
+/// (`"pic.pdf"`, `"mailto:…"`) is never a notebox file. Only the
+/// notebox-root-absolute form InkyCap writes (`"/Assets/paper.pdf"`) names
+/// one, and only that form is read, renamed or moved along with the file.
+/// Relative rebasing leaves `link` alone.
+const LINK_CALL: &str = "link";
+
+/// Whether a call to `name` names a notebox file with first argument `value`:
+/// any path for the path-bearing calls, a root-absolute one for `link`.
+fn names_notebox_file(name: &str, value: &str) -> bool {
+    if PATH_BEARING_CALLS.contains(&name) {
+        return true;
+    }
+    name == LINK_CALL && is_root_absolute(value)
+}
+
+/// `/Assets/x.pdf`, but not a protocol-relative URL like `//example.org`.
+fn is_root_absolute(value: &str) -> bool {
+    value.starts_with('/') && !value.starts_with("//")
+}
+
+/// The callee name of a function call node, when it is a plain identifier.
+fn callee_name<'a>(node: &'a LinkedNode<'a>) -> Option<&'a str> {
+    let call = node.cast::<ast::FuncCall>()?;
+    match call.callee() {
+        ast::Expr::Ident(ident) => Some(ident.get().as_str()),
+        _ => None,
+    }
+}
+
 /// Rewrite relative path arguments to notebox-root-absolute paths.
 ///
 /// - `source`: the note's Typst source.
@@ -62,8 +92,9 @@ pub fn rebase_relative_paths(source: &str, note_dir: &Path) -> String {
 }
 
 /// The notebox files `source` references through path-bearing calls
-/// (`image`, `read`, `bibliography`, `video`, `audio`), as notebox-relative
-/// paths with `/` separators and no leading slash (`Assets/fig.png`).
+/// (`image`, `read`, `bibliography`, `video`, `audio`) and root-absolute
+/// `link`s, as notebox-relative paths with `/` separators and no leading
+/// slash (`Assets/fig.png`).
 ///
 /// Absolute arguments (`/Assets/fig.png`) are taken as written; relative ones
 /// are anchored at `note_dir`, the note's notebox-relative folder. URLs,
@@ -71,10 +102,25 @@ pub fn rebase_relative_paths(source: &str, note_dir: &Path) -> String {
 /// function calls) are skipped, since their target can't be known from the
 /// source alone. Each path appears once, in order of first appearance.
 pub fn referenced_notebox_paths(source: &str, note_dir: &Path) -> Vec<String> {
+    referenced_paths_where(source, note_dir, &names_notebox_file)
+}
+
+/// Like [`referenced_notebox_paths`], for `image` calls only: the figures a
+/// note places (including PDF pages placed as images).
+pub fn referenced_image_paths(source: &str, note_dir: &Path) -> Vec<String> {
+    referenced_paths_where(source, note_dir, &|name, _| name == "image")
+}
+
+/// The notebox paths of calls `accept(callee, first argument)` lets through.
+fn referenced_paths_where(
+    source: &str,
+    note_dir: &Path,
+    accept: &dyn Fn(&str, &str) -> bool,
+) -> Vec<String> {
     let root = parse(source);
     let link = LinkedNode::new(&root);
     let mut raw = Vec::new();
-    collect_paths(&link, &mut raw);
+    collect_paths(&link, accept, &mut raw);
     let mut out: Vec<String> = Vec::new();
     for value in raw {
         if let Some(rel) = resolve_notebox_rel(&value, note_dir) {
@@ -102,20 +148,20 @@ fn resolve_notebox_rel(value: &str, note_dir: &Path) -> Option<String> {
     (!resolved.is_empty()).then_some(resolved)
 }
 
-fn collect_paths(node: &LinkedNode<'_>, out: &mut Vec<String>) {
+fn collect_paths(
+    node: &LinkedNode<'_>,
+    accept: &dyn Fn(&str, &str) -> bool,
+    out: &mut Vec<String>,
+) {
     if node.kind() == SyntaxKind::FuncCall {
-        if let Some(call) = node.cast::<ast::FuncCall>() {
-            if let ast::Expr::Ident(ident) = call.callee() {
-                if PATH_BEARING_CALLS.contains(&ident.as_str()) {
-                    if let Some(p) = first_string_arg_value(node) {
-                        out.push(p);
-                    }
-                }
+        if let (Some(name), Some(p)) = (callee_name(node), first_string_arg_value(node)) {
+            if accept(name, &p) {
+                out.push(p);
             }
         }
     }
     for child in node.children() {
-        collect_paths(&child, out);
+        collect_paths(&child, accept, out);
     }
 }
 
@@ -344,8 +390,9 @@ pub fn count_absolute_prefix_matches(source: &str, segment: &str) -> usize {
     count
 }
 
-/// Rewrite path-bearing calls (`image`/`read`/`bibliography`) whose
-/// first string argument references the attachment at notebox-relative
+/// Rewrite path-bearing calls (`image`/`read`/`bibliography`/`video`/
+/// `audio`, and root-absolute `link`s) whose first string argument
+/// references the attachment at notebox-relative
 /// `old_rel`, repointing them at `new_rel`. Used when a collaborative
 /// attachment is renamed on import to dodge a filename collision: every member
 /// note that referenced it is updated in lockstep so it still resolves.
@@ -391,13 +438,9 @@ fn collect_rename_edits(
     edits: &mut Vec<(std::ops::Range<usize>, String)>,
 ) {
     if node.kind() == SyntaxKind::FuncCall {
-        if let Some(call) = node.cast::<ast::FuncCall>() {
-            if let ast::Expr::Ident(ident) = call.callee() {
-                if PATH_BEARING_CALLS.contains(&ident.as_str()) {
-                    if let Some(edit) = match_rename_arg(node, old_norm, new_abs, note_dir) {
-                        edits.push(edit);
-                    }
-                }
+        if let Some(name) = callee_name(node) {
+            if let Some(edit) = match_rename_arg(node, name, old_norm, new_abs, note_dir) {
+                edits.push(edit);
             }
         }
     }
@@ -408,11 +451,15 @@ fn collect_rename_edits(
 
 fn match_rename_arg(
     call_node: &LinkedNode<'_>,
+    name: &str,
     old_norm: &str,
     new_abs: &str,
     note_dir: &Path,
 ) -> Option<(std::ops::Range<usize>, String)> {
     let (node, value) = first_string_arg(call_node)?;
+    if !names_notebox_file(name, &value) {
+        return None;
+    }
     // Resolve the argument to the same notebox-relative shape as `old_norm`.
     let resolved = resolve_notebox_rel(&value, note_dir)?;
     if resolved != old_norm {
@@ -429,12 +476,10 @@ fn collect_prefix_edits(
     edits: &mut Vec<(std::ops::Range<usize>, String)>,
 ) {
     if node.kind() == SyntaxKind::FuncCall {
-        if let Some(call) = node.cast::<ast::FuncCall>() {
-            if let ast::Expr::Ident(ident) = call.callee() {
-                if PATH_BEARING_CALLS.contains(&ident.as_str()) {
-                    if let Some(edit) = match_prefix_arg(node, needle, replacement_prefix) {
-                        edits.push(edit);
-                    }
+        if let Some(name) = callee_name(node) {
+            if PATH_BEARING_CALLS.contains(&name) || name == LINK_CALL {
+                if let Some(edit) = match_prefix_arg(node, needle, replacement_prefix) {
+                    edits.push(edit);
                 }
             }
         }
@@ -446,13 +491,11 @@ fn collect_prefix_edits(
 
 fn count_prefix_matches(node: &LinkedNode<'_>, needle: &str, count: &mut usize) {
     if node.kind() == SyntaxKind::FuncCall {
-        if let Some(call) = node.cast::<ast::FuncCall>() {
-            if let ast::Expr::Ident(ident) = call.callee() {
-                if PATH_BEARING_CALLS.contains(&ident.as_str())
-                    && first_string_arg_starts_with(node, needle)
-                {
-                    *count += 1;
-                }
+        if let Some(name) = callee_name(node) {
+            if (PATH_BEARING_CALLS.contains(&name) || name == LINK_CALL)
+                && first_string_arg_starts_with(node, needle)
+            {
+                *count += 1;
             }
         }
     }
@@ -504,6 +547,107 @@ fn match_prefix_arg(
     let escaped = escape_typst_string(&rewritten);
     let replacement = format!("\"{escaped}\"");
     Some((node.range(), replacement))
+}
+
+/// What an export does with one link to a notebox file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FileLinkExport {
+    /// Leave the link as written.
+    Keep,
+    /// Point the link at another URL (a copy beside the export).
+    Retarget(String),
+    /// Replace the link with its text: the link body, or the file name when
+    /// the link has none.
+    PlainText,
+}
+
+/// Rewrite every `link` to a notebox file (root-absolute first argument, see
+/// [`LINK_CALL`]) as `decide` says. `decide` receives the file's
+/// notebox-relative path without the leading slash (`Assets/paper.pdf`).
+/// Other links and calls are left untouched.
+pub fn rewrite_file_links(source: &str, mut decide: impl FnMut(&str) -> FileLinkExport) -> String {
+    let root = parse(source);
+    let link = LinkedNode::new(&root);
+    let mut edits: Vec<(std::ops::Range<usize>, String)> = Vec::new();
+    collect_file_link_edits(&link, source, &mut decide, &mut edits);
+    if edits.is_empty() {
+        return source.to_string();
+    }
+    edits.sort_by_key(|b| std::cmp::Reverse(b.0.start));
+    let mut out = source.to_string();
+    for (range, replacement) in edits {
+        out.replace_range(range, &replacement);
+    }
+    out
+}
+
+fn collect_file_link_edits(
+    node: &LinkedNode<'_>,
+    source: &str,
+    decide: &mut dyn FnMut(&str) -> FileLinkExport,
+    edits: &mut Vec<(std::ops::Range<usize>, String)>,
+) {
+    if node.kind() == SyntaxKind::FuncCall && callee_name(node) == Some(LINK_CALL) {
+        if let Some((dest_node, dest)) = first_string_arg(node) {
+            if is_root_absolute(&dest) {
+                match decide(dest.trim_start_matches('/')) {
+                    FileLinkExport::Keep => {}
+                    FileLinkExport::Retarget(url) => {
+                        let escaped = escape_typst_string(&url);
+                        edits.push((dest_node.range(), format!("\"{escaped}\"")));
+                    }
+                    FileLinkExport::PlainText => {
+                        edits.push(link_as_text(node, source, &dest));
+                    }
+                }
+                // The call is handled whole; a link inside a link body is
+                // not a case worth descending for.
+                return;
+            }
+        }
+    }
+    for child in node.children() {
+        collect_file_link_edits(&child, source, decide, edits);
+    }
+}
+
+/// The edit that replaces the `link` call at `call_node` with its text. In
+/// markup, `#link("/a.pdf")[Paper]` becomes `Paper` and a link without a
+/// body becomes the escaped file name; in code, the call becomes its content
+/// block or the file name as a string.
+fn link_as_text(
+    call_node: &LinkedNode<'_>,
+    source: &str,
+    dest: &str,
+) -> (std::ops::Range<usize>, String) {
+    let range = call_node.range();
+    let body = call_node
+        .children()
+        .find(|c| c.kind() == SyntaxKind::Args)
+        .and_then(|args| {
+            args.children()
+                .find(|c| c.kind() == SyntaxKind::ContentBlock)
+        })
+        .map(|block| &source[block.range()]);
+    let file_name = dest.rsplit('/').next().unwrap_or(dest);
+    let in_markup = range.start > 0
+        && source.as_bytes()[range.start - 1] == b'#'
+        && call_node.parent_kind() == Some(SyntaxKind::Markup);
+    if in_markup {
+        let start = range.start - 1;
+        let text = match body {
+            // Drop the brackets: `[Paper]` → `Paper`.
+            Some(block) => block[1..block.len() - 1].to_string(),
+            None => crate::typst_pipeline::book_wrapper::escape_typst_markup(file_name),
+        };
+        (start..range.end, text)
+    } else {
+        let text = match body {
+            Some(block) => block.to_string(),
+            None => format!("\"{}\"", escape_typst_string(file_name)),
+        };
+        (range, text)
+    }
 }
 
 /// Escape a string for inclusion in a Typst string literal. Typst's
@@ -787,5 +931,77 @@ mod tests {
         let src = "#image(\"/媒体/写真.png\")";
         let out = rename(src, "媒体/写真.png", "媒体/写真-x.png", "");
         assert_eq!(out, "#image(\"/媒体/写真-x.png\")");
+    }
+
+    fn file_links(src: &str, decide: FileLinkExport) -> String {
+        rewrite_file_links(src, |_| decide.clone())
+    }
+
+    #[test]
+    fn referenced_includes_root_absolute_links_only() {
+        let src = "#link(\"/Assets/a.pdf\")[A] #link(\"rel.pdf\") #link(\"https://x.org\") #link(\"//x.org\") #link(\"mailto:a@b.c\")";
+        assert_eq!(referenced(src, ""), vec!["Assets/a.pdf".to_string()]);
+    }
+
+    #[test]
+    fn file_links_retarget_only_notebox_links() {
+        let src = "See #link(\"/Assets/a b.pdf\")[the paper] and #link(\"https://x.org\")[web].";
+        let out = rewrite_file_links(src, |rel| {
+            assert_eq!(rel, "Assets/a b.pdf");
+            FileLinkExport::Retarget("note-files/a%20b.pdf".to_string())
+        });
+        assert_eq!(
+            out,
+            "See #link(\"note-files/a%20b.pdf\")[the paper] and #link(\"https://x.org\")[web]."
+        );
+    }
+
+    #[test]
+    fn file_links_as_plain_text_in_markup() {
+        assert_eq!(
+            file_links(
+                "See #link(\"/Assets/a.pdf\")[the *paper*].",
+                FileLinkExport::PlainText
+            ),
+            "See the *paper*."
+        );
+        assert_eq!(
+            file_links(
+                "See #link(\"/Assets/my_file.pdf\") here.",
+                FileLinkExport::PlainText
+            ),
+            "See my\\_file.pdf here."
+        );
+    }
+
+    #[test]
+    fn file_links_as_plain_text_in_code() {
+        assert_eq!(
+            file_links("#box(link(\"/a.pdf\")[A])", FileLinkExport::PlainText),
+            "#box([A])"
+        );
+        assert_eq!(
+            file_links("#box(link(\"/d/a.pdf\"))", FileLinkExport::PlainText),
+            "#box(\"a.pdf\")"
+        );
+    }
+
+    #[test]
+    fn file_links_keep_leaves_source_alone() {
+        let src = "#link(\"/Assets/a.pdf\")[A]";
+        assert_eq!(file_links(src, FileLinkExport::Keep), src);
+    }
+
+    #[test]
+    fn rename_and_prefix_rewrites_cover_file_links() {
+        let src = "#link(\"/assets/a.pdf\")[A] #link(\"assets/a.pdf\")[B]";
+        assert_eq!(
+            rewrite_referenced_path(src, "assets/a.pdf", "assets/b.pdf", Path::new("")),
+            "#link(\"/assets/b.pdf\")[A] #link(\"assets/a.pdf\")[B]"
+        );
+        assert_eq!(
+            replace_absolute_prefix(src, "assets", "media"),
+            "#link(\"/media/a.pdf\")[A] #link(\"assets/a.pdf\")[B]"
+        );
     }
 }

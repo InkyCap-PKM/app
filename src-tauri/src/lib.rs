@@ -478,7 +478,6 @@ pub fn run() {
             commands::export::pandoc::detect_pandoc,
             commands::export::pandoc::export_via_pandoc,
             commands::export::count_note_review_markup,
-            commands::export::assets::export_figures,
             commands::export::destination::pick_export_file,
             commands::export::destination::pick_export_folder,
             commands::typst::compile_typst_svg,

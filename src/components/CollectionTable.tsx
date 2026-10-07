@@ -18,7 +18,9 @@ import type {
   SortRule,
   FilterGroup,
   ViewDef,
+  LinkedFilesOptions,
 } from "../lib/types";
+import LinkedFilesFields, { DEFAULT_LINKED_FILES, companionSummary } from "./LinkedFilesFields";
 import * as ipc from "../lib/ipc";
 import { openTab, type EditingMode } from "../stores/tabs";
 import { propertyVersion, fileTreeVersion } from "../stores/notebox";
@@ -301,6 +303,11 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
   const [showExportMenu, setShowExportMenu] = createSignal(false);
   const [exportPdfStandard, setExportPdfStandard] = createSignal<ipc.PdfStandardPreset>("standard");
   const [exportReviewMode, setExportReviewMode] = createSignal<ipc.ReviewMarkupMode>("keep");
+  // The menu's choice for files the notes use; until changed, the book
+  // settings' saved choice, so every export from here starts from it.
+  const [linkedFilesChoice, setLinkedFilesChoice] = createSignal<LinkedFilesOptions | null>(null);
+  const exportLinkedFiles = (): LinkedFilesOptions =>
+    linkedFilesChoice() ?? collectionFile()?.book?.linked_files ?? DEFAULT_LINKED_FILES;
   const [exportStatus, setExportStatusRaw] = createSignal<string | null>(null);
   // A new export's status replaces the previous export's error report, so a
   // stale report doesn't linger after the user fixes the notes and re-exports.
@@ -851,7 +858,8 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
     const bypassed = result.bypassedCount
       ? tPlural("collection.export.bypassedSuffix", result.bypassedCount)
       : "";
-    setExportStatus(tPlural(doneKey, result.files.length) + bypassed);
+    const copied = companionSummary(result.companion);
+    setExportStatus(tPlural(doneKey, result.files.length) + bypassed + (copied ? ` ${copied}` : ""));
     setTimeout(() => setExportStatus(null), 4000);
   }
 
@@ -906,6 +914,7 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
         reviewMode,
         onlyFiles,
         bypass || undefined,
+        exportLinkedFiles(),
       );
       const canBypass = !std && !bypass;
       reportBatchResult(result, "collection.export.pdfDone", {
@@ -960,14 +969,12 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
       await rememberExportFile(outputPath);
       const std = exportPdfStandard() === "standard" ? undefined : exportPdfStandard();
       const rm = exportReviewMode() === "keep" ? undefined : exportReviewMode();
-      const overrides: ipc.BookExportOverrides | undefined =
-        std || rm || passagesLinkingTo
-          ? {
-              pdfStandard: std,
-              reviewMode: rm,
-              passagesLinkingTo,
-            }
-          : undefined;
+      const overrides: ipc.BookExportOverrides = {
+        pdfStandard: std,
+        reviewMode: rm,
+        passagesLinkingTo,
+        linkedFiles: exportLinkedFiles(),
+      };
 
       // Retry loop: each round either writes the PDF or reports notes that
       // failed to compile. The user decides whether to exclude those and retry.
@@ -999,7 +1006,8 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
           setExportStatus(
             t("collection.export.bookDone", { path: result.outputPath, omitted }) +
               withoutPassages +
-              bypassed,
+              bypassed +
+              (companionSummary(result.companion) ? ` ${companionSummary(result.companion)}` : ""),
           );
           setTimeout(() => setExportStatus(null), 4000);
           return;
@@ -1084,6 +1092,7 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
         activeView(),
         outputDir,
         bypass || undefined,
+        exportLinkedFiles(),
       );
       reportBatchResult(result, "collection.export.siteDone", {
         bypass: bypass ? undefined : { kind: "site", outputDir },
@@ -1113,6 +1122,7 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
         outputDir as string,
         "preserve",
         exportReviewMode(),
+        exportLinkedFiles(),
       );
       reportBatchResult(result, "collection.export.markdownDone");
     } catch (e: any) {
@@ -1372,6 +1382,15 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
                             ariaLabel={t("collection.table.reviewMarkup")}
                           />
                         </div>
+                        <LinkedFilesFields
+                          value={exportLinkedFiles()}
+                          onChange={setLinkedFilesChoice}
+                          classes={{
+                            field: "collection-table__export-menu-field",
+                            label: "collection-table__export-menu-label",
+                            checkbox: "collection-table__export-menu-label",
+                          }}
+                        />
                         <button
                           class="context-menu__item"
                           onClick={exportAllPdf}
