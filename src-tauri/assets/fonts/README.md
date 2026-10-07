@@ -8,16 +8,17 @@ mapping the resolver injects into CSS and Typst.
 
 ## Bundled set
 
-| Role | Family (resolver constant) | Files | Source | License |
-|---|---|---|---|---|
-| Interface | `BUNDLED_INTERFACE` = `Inter` | Inter-{Regular,Italic,Bold,BoldItalic}.ttf | https://rsms.me/inter/ | OFL |
-| Text | `BUNDLED_TEXT` = `Junicode` | Junicode-{Regular,Italic,Bold,BoldItalic}.ttf | https://github.com/psb1558/Junicode-font | OFL |
+| Role | Family (resolver constant) | Version | Files | Source | License |
+|---|---|---|---|---|---|
+| Interface, Editor | `BUNDLED_INTERFACE` = `Inter` | 4.1 | Inter-{Regular,Italic,Bold,BoldItalic}.ttf | https://github.com/rsms/inter/releases | OFL |
+| Text | `BUNDLED_TEXT` = `Junicode` | 2.226 | Junicode-{Regular,Italic,Bold,BoldItalic}.ttf | https://github.com/psb1558/Junicode-font/releases | OFL |
+| Monospace | `BUNDLED_MONO` = `JuliaMono` | 0.63.2 | JuliaMono-{Regular,RegularItalic,Bold,BoldItalic}.ttf | https://github.com/cormullion/juliamono/releases | OFL |
+| Verse | `BUNDLED_VERSE` = `iA Writer Duo S` | 2.000 | iAWriterDuoS-{Regular,Italic,Bold,BoldItalic}.ttf | https://github.com/iaolo/iA-Fonts | OFL |
 
-Monospace has no bundled face — the Monospace row offers System and
-Custom only. Code/PKM users routinely have strong opinions about
-their mono font, and the System option already produces a sane result
-on every desktop (e.g. Ubuntu Mono on GNOME via gsettings, SF Mono on
-macOS, Consolas on Windows).
+When updating a font, take the static TTF files from the upstream
+release, check that the family and style names inside the new files
+match the old ones (for example with `fc-query`), and update the
+Version column above.
 
 OTF and TTF are interchangeable as far as Typst's font loader is
 concerned (both are OpenType containers); the extensions in
