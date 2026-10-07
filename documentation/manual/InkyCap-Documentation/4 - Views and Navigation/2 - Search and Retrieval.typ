@@ -105,7 +105,7 @@ A query you run often can be saved so you don't need to retype it. Run the searc
 
 == Quick Open: jump straight to a file
 
-When you already know roughly _which_ note you want, you don't need full search. Press `Ctrl+O` for *Quick Open*, a fast file finder. Start typing part of a file's name and InkyCap matches it loosely: a note whose name is exactly what you typed comes first, then names that contain your letters in one unbroken run, then names where those letters are scattered further apart. Ties go to the most recently edited note. An empty box lists your files newest-first. Use the arrow keys (or `Page Up` / `Page Down`, `Home` / `End`) to move the selection and `Enter` to open it. If a file lives in a folder, the folder is shown beside its name.
+When you already know roughly _which_ note you want, you don't need full search. Press `Ctrl+O` for *Quick Open*, a fast file finder. Start typing part of a file's name and InkyCap matches it loosely: a note whose name is exactly what you typed comes first, then names that contain your letters in one unbroken run, then names where those letters are scattered further apart. Ties go to the most recently edited note. An empty box lists your notes newest-first. Quick Open lists notes only; to open a PDF, image, or other attachment, use the file tree or the note that uses it. Use the arrow keys (or `Page Up` / `Page Down`, `Home` / `End`) to move the selection and `Enter` to open it. If a file lives in a folder, the folder is shown beside its name.
 
 Think of Quick Open as "go to file" and the Search panel as "find this text".
 

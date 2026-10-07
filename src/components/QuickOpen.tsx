@@ -11,7 +11,7 @@ import {
   Show,
   on,
 } from "solid-js";
-import { fileList, type FileEntry } from "../stores/filelist";
+import { fileList, isNoteFile, type FileEntry } from "../stores/filelist";
 import {
   fuzzyMatch,
   substringMatch,
@@ -145,7 +145,9 @@ const QuickOpen: Component<QuickOpenProps> = (props) => {
   // first; non-empty query → fuzzy matches ordered by score.
   const results = createMemo((): ScoredEntry[] => {
     const q = query().trim();
-    const files = fileList();
+    // Notes only: attachments (PDFs, images, media) open from the file tree
+    // or the notes that use them.
+    const files = fileList().filter(isNoteFile);
 
     if (q.length === 0) {
       // Browse mode: newest edits at the top, oldest at the bottom. A stable

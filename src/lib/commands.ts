@@ -30,7 +30,7 @@ import { attachmentZooms } from "./media-src";
 import { toggleTheme } from "../stores/theme";
 import { toggleDistractionFree, toggleLeftCollapsed, toggleRightCollapsed } from "../stores/layout";
 import { toggleScroll, isEnabled as isScrollEnabled } from "../stores/journal-scroll";
-import { fileList } from "../stores/filelist";
+import { fileList, isNoteFile } from "../stores/filelist";
 import { cycleRegion, focusEditor } from "./focus-regions";
 import { openEditorReplace } from "../editor/search-panel";
 import { updateSetting, settings } from "../stores/settings";
@@ -698,7 +698,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
       // window). Fall back to the most recently modified note so the scroll
       // still has a starting point instead of silently doing nothing.
       const mostRecent = fileList()
-        .filter((e) => /\.typ$/i.test(e.name))
+        .filter(isNoteFile)
         .sort((a, b) => b.modified_time - a.modified_time)[0];
       if (!mostRecent) return; // no notes to anchor
       const tabId = openTab({

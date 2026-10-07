@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { folderPaths, type FileEntry } from "./filelist";
+import { folderPaths, isNoteFile, type FileEntry } from "./filelist";
 
 /** A file list entry; only `folder` matters here. */
 function entry(folder: string): FileEntry {
@@ -22,5 +22,20 @@ describe("folderPaths", () => {
       "2 Box",
       "10 Box",
     ]);
+  });
+});
+
+describe("isNoteFile", () => {
+  const entry = (name: string): FileEntry => ({ path: `/box/${name}`, name, folder: "", modified_time: 0 });
+
+  it("accepts Typst notes, whatever the extension's case", () => {
+    expect(isNoteFile(entry("Draft.typ"))).toBe(true);
+    expect(isNoteFile(entry("Draft.TYP"))).toBe(true);
+  });
+
+  it("rejects attachments", () => {
+    for (const name of ["paper.pdf", "figure.png", "talk.mp4", "notes.typ.bak"]) {
+      expect(isNoteFile(entry(name))).toBe(false);
+    }
   });
 });

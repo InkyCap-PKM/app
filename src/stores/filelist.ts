@@ -17,6 +17,12 @@ export interface FileEntry {
 
 const [fileList, setFileList] = createSignal<FileEntry[]>([]);
 
+/** Whether a file is a note (a `.typ` file) rather than an attachment such as
+ *  a PDF or an image. The file list holds both. */
+export function isNoteFile(entry: FileEntry): boolean {
+  return /\.typ$/i.test(entry.name);
+}
+
 /** Flatten a file tree into a flat list of file entries. */
 export function buildFileList(tree: FileTreeNode[], basePath = "") {
   const entries: FileEntry[] = [];
