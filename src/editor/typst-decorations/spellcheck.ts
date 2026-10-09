@@ -36,6 +36,7 @@ import {
   type Range,
 } from "@codemirror/state";
 import {
+  Direction,
   EditorView,
   type LayerMarker,
   layer,
@@ -175,10 +176,31 @@ function findMisspellings(view: EditorView): MisspellingSet {
 const spellcheckPlugin = ViewPlugin.fromClass(
   class {
     misspellings: MisspellingSet;
+    /**
+     * The vertical stretch of the scroller, in its own scroll coordinates,
+     * that the underline layer last covered. Null until the first draw, and
+     * again once a redraw has been asked for.
+     */
+    drawnBand: { top: number; bottom: number } | null = null;
     private timer: ReturnType<typeof setTimeout> | null = null;
+    private readonly onScroll: () => void;
 
-    constructor(view: EditorView) {
+    constructor(readonly view: EditorView) {
       this.misspellings = findMisspellings(view);
+      // CodeMirror reports a whole line as visible even when only part of a
+      // long wrapped paragraph is on screen, so scrolling inside one line
+      // never triggers a redraw on its own. Ask for one when the user
+      // scrolls past the stretch that was drawn.
+      this.onScroll = () => {
+        const band = this.drawnBand;
+        if (!band) return;
+        const { scrollTop, clientHeight } = view.scrollDOM;
+        if (scrollTop < band.top || scrollTop + clientHeight > band.bottom) {
+          this.drawnBand = null;
+          view.dispatch({ effects: spellRedraw.of(null) });
+        }
+      };
+      view.scrollDOM.addEventListener("scroll", this.onScroll, { passive: true });
     }
 
     update(update: ViewUpdate) {
@@ -208,6 +230,7 @@ const spellcheckPlugin = ViewPlugin.fromClass(
 
     destroy() {
       if (this.timer) clearTimeout(this.timer);
+      this.view.scrollDOM.removeEventListener("scroll", this.onScroll);
     }
   },
 );
@@ -222,6 +245,12 @@ const WAVE_HEIGHT = 3;
 const WAVE_GAP = 1;
 /** Rough height of a line of text, as a multiple of its font size. */
 const TEXT_HEIGHT_RATIO = 1.2;
+/**
+ * How far past the top and bottom of the screen squiggles are drawn, as a
+ * share of the screen's height. Each squiggle is costly to paint, so this
+ * stays small; scrolling past it triggers a redraw.
+ */
+const UNDERLINE_MARGIN_SCREENS = 0.25;
 
 /** Wavy squiggle, used as a mask so the colour stays a theme token. */
 const WAVE_MASK =
@@ -238,26 +267,96 @@ function fontSizeAt(view: EditorView, pos: number): number {
 }
 
 /**
- * Thin squiggle bars covering one flagged word, one per visual line, since a
- * word can wrap. `RectangleMarker.forRange` does the hard part (horizontal
- * extent, wrapping, right-to-left text); we keep its horizontal geometry and
- * replace the vertical box with a bar sitting just under the glyphs. Its boxes
- * are as tall as the line, which with generous line spacing leaves the text
- * centred inside them, so the glyph bottom is the box centre plus half the
- * text's own height.
+ * The screen point that layer coordinates are measured from. Mirrors the
+ * calculation `RectangleMarker.forRange` uses internally, which CodeMirror
+ * does not export.
  */
-function underlineMarkers(view: EditorView, from: number, to: number): LayerMarker[] {
+function layerOrigin(view: EditorView): { left: number; top: number } {
+  const scroller = view.scrollDOM;
+  const rect = scroller.getBoundingClientRect();
+  const left =
+    view.textDirection === Direction.LTR
+      ? rect.left
+      : rect.right - scroller.clientWidth * view.scaleX;
+  return {
+    left: left - scroller.scrollLeft * view.scaleX,
+    top: rect.top - scroller.scrollTop * view.scaleY,
+  };
+}
+
+/** A squiggle bar sitting just under the glyphs of a box of text. */
+function squiggleUnder(
+  box: { left: number; top: number; width: number | null; height: number },
+  fontSize: number,
+): RectangleMarker {
+  // With generous line spacing the text sits centred in its box, so the
+  // glyph bottom is the box centre plus half the text's own height.
+  const textHeight = Math.min(box.height, fontSize * TEXT_HEIGHT_RATIO);
+  const top = box.top + box.height / 2 + textHeight / 2 + WAVE_GAP;
+  return new RectangleMarker("cm-spell-underline", box.left, top, box.width, WAVE_HEIGHT);
+}
+
+/**
+ * Squiggle bars covering one flagged word. The usual case, a word on one
+ * visual line, is placed from the positions of its first and last
+ * characters. `RectangleMarker.forRange` handles wrapping properly but costs
+ * about 25 times as much per word, which adds up to seconds when a screen
+ * holds hundreds of flagged words, so it is kept for words that wrap.
+ */
+function underlineMarkers(
+  view: EditorView,
+  origin: { left: number; top: number },
+  from: number,
+  to: number,
+): LayerMarker[] {
   const fontSize = fontSizeAt(view, from);
-  const boxes = RectangleMarker.forRange(
-    view,
-    "cm-spell-underline",
-    EditorSelection.range(from, to),
+  const start = view.coordsAtPos(from, 1);
+  const end = view.coordsAtPos(to, -1);
+  if (start && end && end.top < start.bottom && start.top < end.bottom) {
+    // Right-to-left text puts the start on the right, hence min and max.
+    const left = Math.min(start.left, end.left);
+    const right = Math.max(start.left, end.left);
+    const top = Math.min(start.top, end.top);
+    const bottom = Math.max(start.bottom, end.bottom);
+    return [
+      squiggleUnder(
+        { left: left - origin.left, top: top - origin.top, width: right - left, height: bottom - top },
+        fontSize,
+      ),
+    ];
+  }
+  return RectangleMarker.forRange(view, "cm-spell-underline", EditorSelection.range(from, to)).map(
+    (box) => squiggleUnder(box, fontSize),
   );
-  return boxes.map((box) => {
-    const textHeight = Math.min(box.height, fontSize * TEXT_HEIGHT_RATIO);
-    const top = box.top + box.height / 2 + textHeight / 2 + WAVE_GAP;
-    return new RectangleMarker("cm-spell-underline", box.left, top, box.width, WAVE_HEIGHT);
-  });
+}
+
+/**
+ * The stretch of the document worth underlining: what is on screen plus a
+ * margin above and below, so small scrolls find the squiggles already drawn.
+ * Also records that stretch on the plugin so scrolling past it asks for a
+ * redraw.
+ */
+function underlineWindow(
+  view: EditorView,
+  plugin: { drawnBand: { top: number; bottom: number } | null },
+): { from: number; to: number } {
+  const scroller = view.scrollDOM;
+  const { scrollTop, clientHeight } = scroller;
+  const band = clientHeight * UNDERLINE_MARGIN_SCREENS;
+  plugin.drawnBand = { top: scrollTop - band, bottom: scrollTop + clientHeight + band };
+
+  const screen = scroller.getBoundingClientRect();
+  const content = view.contentDOM.getBoundingClientRect();
+  const margin = screen.height * UNDERLINE_MARGIN_SCREENS;
+  const top = Math.max(screen.top - margin, content.top);
+  const bottom = Math.min(screen.bottom + margin, content.bottom);
+  if (bottom <= top) return { from: 0, to: 0 };
+  // Probing both edges of the text column covers right-to-left lines,
+  // whose visual start is on the right.
+  const xs = [content.left + 1, content.right - 1];
+  const tops = xs.map((x) => view.posAtCoords({ x, y: top + 1 }, false));
+  const bottoms = xs.map((x) => view.posAtCoords({ x, y: bottom - 1 }, false));
+  return { from: Math.min(...tops), to: Math.max(...bottoms) };
 }
 
 const spellUnderlineLayer = layer({
@@ -271,13 +370,19 @@ const spellUnderlineLayer = layer({
       tr.effects.some((e) => e.is(rebuildSpell) || e.is(spellRedraw)),
     ),
   markers: (view) => {
-    const flagged = view.plugin(spellcheckPlugin)?.misspellings;
-    if (!flagged) return [];
+    const plugin = view.plugin(spellcheckPlugin);
+    if (!plugin) return [];
+    const area = underlineWindow(view, plugin);
+    const origin = layerOrigin(view);
     const markers: LayerMarker[] = [];
     for (const { from, to } of view.visibleRanges) {
-      flagged.between(from, to, (wordFrom, wordTo) => {
-        markers.push(...underlineMarkers(view, wordFrom, wordTo));
-      });
+      plugin.misspellings.between(
+        Math.max(from, area.from),
+        Math.min(to, area.to),
+        (wordFrom, wordTo) => {
+          markers.push(...underlineMarkers(view, origin, wordFrom, wordTo));
+        },
+      );
     }
     return markers;
   },
