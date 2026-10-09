@@ -15,6 +15,7 @@ import { createNoteForTarget } from "../lib/wikilink-nav";
 import * as ipc from "../lib/ipc";
 import { renameFile } from "../lib/rename-file";
 import RowChevron from "./RowChevron";
+import { BacklinkPassages, LinePreview, type LinePreviewData } from "./LinkPreviews";
 import { revealInFileTree } from "../lib/file-tree-reveal";
 import { copyInkycapLink } from "../lib/copy-inkycap-link";
 import type { OutboundLink, PotentialLink } from "../lib/ipc";
@@ -167,52 +168,6 @@ function defaultForKey(key: string): PropertyValue {
   if (knownType) return defaultForType(knownType);
   return "";
 }
-
-/** The passages in `source` around its links to `target`, shown under an
- *  Inbound row whose preview is open. They load only while shown, and again
- *  each time the row is rebuilt (after a save or reindex), so closed rows
- *  cost nothing. */
-const BacklinkPassages: Component<{
-  source: string;
-  target?: string;
-  showContext: boolean;
-}> = (props) => {
-  const t = useI18n();
-  const [passages] = createResource(
-    () => (props.target ? { source: props.source, target: props.target } : undefined),
-    ({ source, target }) => ipc.getLinkPassages(source, target).catch(() => undefined),
-  );
-  return (
-    <>
-      <For each={passages() ?? []}>
-        {(p) => (
-          <>
-            <Show when={props.showContext && p.before}>
-              {(b) => (
-                <div class="link-context link-context--ctx link-context--passage">
-                  {b().text}
-                </div>
-              )}
-            </Show>
-            <div class="link-context link-context--match link-context--passage">
-              {p.paragraph.text}
-            </div>
-            <Show when={props.showContext && p.after}>
-              {(a) => (
-                <div class="link-context link-context--ctx link-context--passage">
-                  {a().text}
-                </div>
-              )}
-            </Show>
-          </>
-        )}
-      </For>
-      <Show when={passages()?.length === 0}>
-        <div class="link-context">{t("rightPanel.linkedInProperties")}</div>
-      </Show>
-    </>
-  );
-};
 
 const RightPanel: Component = () => {
   const t = useI18n();
@@ -799,12 +754,13 @@ const RightPanel: Component = () => {
       context_before?: string[];
       context_after?: string[];
     },
-  ): { line: string; before: string[]; after: string[] } | undefined {
+  ): LinePreviewData | undefined {
     if (filterActive()) {
       const m = searchMatchFor(link.path);
       if (m) {
         return {
           line: m.line_text,
+          ranges: m.match_ranges,
           before: m.context_before ?? [],
           after: m.context_after ?? [],
         };
@@ -821,12 +777,14 @@ const RightPanel: Component = () => {
   /// link logic, not by the user's query.
   function nativePreview(link: {
     line?: string;
+    marks?: [number, number][];
     context_before?: string[];
     context_after?: string[];
-  }): { line: string; before: string[]; after: string[] } | undefined {
+  }): LinePreviewData | undefined {
     if (!link.line) return undefined;
     return {
       line: link.line,
+      ranges: link.marks ?? [],
       before: link.context_before ?? [],
       after: link.context_after ?? [],
     };
@@ -2117,19 +2075,7 @@ const RightPanel: Component = () => {
                                 fallback={
                                   <Show when={preview()}>
                                     {(p) => (
-                                      <>
-                                        <Show when={linksShowMoreContext() && p().before.length}>
-                                          <For each={p().before}>
-                                            {(l) => <div class="link-context link-context--ctx">{l}</div>}
-                                          </For>
-                                        </Show>
-                                        <div class="link-context link-context--match">{p().line}</div>
-                                        <Show when={linksShowMoreContext() && p().after.length}>
-                                          <For each={p().after}>
-                                            {(l) => <div class="link-context link-context--ctx">{l}</div>}
-                                          </For>
-                                        </Show>
-                                      </>
+                                      <LinePreview preview={p()} showContext={linksShowMoreContext()} />
                                     )}
                                   </Show>
                                 }
@@ -2245,19 +2191,7 @@ const RightPanel: Component = () => {
                             </div>
                             <Show when={expanded() && preview()}>
                               {(p) => (
-                                <>
-                                  <Show when={linksShowMoreContext() && p().before.length}>
-                                    <For each={p().before}>
-                                      {(l) => <div class="link-context link-context--ctx">{l}</div>}
-                                    </For>
-                                  </Show>
-                                  <div class="link-context link-context--match">{p().line}</div>
-                                  <Show when={linksShowMoreContext() && p().after.length}>
-                                    <For each={p().after}>
-                                      {(l) => <div class="link-context link-context--ctx">{l}</div>}
-                                    </For>
-                                  </Show>
-                                </>
+                                <LinePreview preview={p()} showContext={linksShowMoreContext()} />
                               )}
                             </Show>
                           </div>
@@ -2337,19 +2271,7 @@ const RightPanel: Component = () => {
                             </div>
                             <Show when={expanded() && preview()}>
                               {(p) => (
-                                <>
-                                  <Show when={linksShowMoreContext() && p().before.length}>
-                                    <For each={p().before}>
-                                      {(l) => <div class="link-context link-context--ctx">{l}</div>}
-                                    </For>
-                                  </Show>
-                                  <div class="link-context link-context--match">{p().line}</div>
-                                  <Show when={linksShowMoreContext() && p().after.length}>
-                                    <For each={p().after}>
-                                      {(l) => <div class="link-context link-context--ctx">{l}</div>}
-                                    </For>
-                                  </Show>
-                                </>
+                                <LinePreview preview={p()} showContext={linksShowMoreContext()} />
                               )}
                             </Show>
                           </div>

@@ -1,4 +1,5 @@
-//! Typst-AST-driven plain-prose extraction for the external-tool bridge.
+//! Typst-AST-driven plain-prose extraction for the external-tool bridge and
+//! for link previews, which can also mark where chosen nodes ended up.
 //!
 //! Grammar checkers, style linters, and LLM helpers want a writer's *prose*,
 //! not raw Typst source. Piping the source verbatim sends a note's
@@ -17,7 +18,26 @@
 //! contiguous prose string (with paragraph breaks preserved) rather than the
 //! offset-tagged token stream the search engine needs.
 
+use std::ops::Range;
+
 use typst::syntax::{ast, parse, LinkedNode, SyntaxKind};
+
+/// Decides which nodes' text [`extract_marked_text`] marks.
+pub type MarkNode<'f> = &'f dyn Fn(&LinkedNode<'_>) -> bool;
+
+/// Placeholders written around a marked node's text during the walk and
+/// removed afterwards. Private-use characters never show up in prose, and
+/// any that do are dropped from text leaves so they can't be misread.
+const MARK_OPEN: char = '\u{E000}';
+const MARK_CLOSE: char = '\u{E001}';
+
+/// Plain prose with some stretches marked, such as the links to one note.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MarkedText {
+    pub text: String,
+    /// Byte ranges into `text`, in order and not overlapping.
+    pub marks: Vec<Range<usize>>,
+}
 
 /// Extract plain prose from a note's Typst source (or a selected fragment).
 ///
@@ -30,16 +50,34 @@ use typst::syntax::{ast, parse, LinkedNode, SyntaxKind};
 /// line wraps collapse to single spaces, blank lines collapse to a single
 /// paragraph break.
 pub fn extract_plain_text(source: &str) -> String {
-    let root = parse(source);
-    let mut out = String::new();
-    walk(&LinkedNode::new(&root), &mut out);
-    normalize(&out)
+    extract_marked_text(source, &|_| false).text
 }
 
-/// Recursive descent over the AST. Default behaviour is "descend into every
-/// child"; the arms below either emit a text leaf, emit normalized whitespace,
-/// prune a non-prose subtree, or dispatch a function call.
-fn walk(node: &LinkedNode<'_>, out: &mut String) {
+/// [`extract_plain_text`], also noting where the text of each node that
+/// `is_marked` accepts ended up, so a display can highlight it.
+pub fn extract_marked_text(source: &str, is_marked: MarkNode<'_>) -> MarkedText {
+    let root = parse(source);
+    let mut out = String::new();
+    walk(&LinkedNode::new(&root), &mut out, is_marked);
+    take_marks(&normalize(&out))
+}
+
+/// Recursive descent over the AST, bracketing a marked node's text with the
+/// mark placeholders.
+fn walk(node: &LinkedNode<'_>, out: &mut String, mark: MarkNode<'_>) {
+    if mark(node) {
+        out.push(MARK_OPEN);
+        walk_node(node, out, mark);
+        out.push(MARK_CLOSE);
+    } else {
+        walk_node(node, out, mark);
+    }
+}
+
+/// Default behaviour is "descend into every child"; the arms below either
+/// emit a text leaf, emit normalized whitespace, prune a non-prose subtree,
+/// or dispatch a function call.
+fn walk_node(node: &LinkedNode<'_>, out: &mut String, mark: MarkNode<'_>) {
     match node.kind() {
         // Structural / non-prose subtrees — never descend.
         SyntaxKind::Label
@@ -61,7 +99,12 @@ fn walk(node: &LinkedNode<'_>, out: &mut String) {
         // while `Parbreak` (a blank line) becomes a real paragraph break, so
         // the tool sees the same paragraph structure the reader does.
         SyntaxKind::Text => {
-            out.push_str(node.leaf_text());
+            let text = node.leaf_text().as_str();
+            if text.contains([MARK_OPEN, MARK_CLOSE]) {
+                out.extend(text.chars().filter(|c| !matches!(*c, MARK_OPEN | MARK_CLOSE)));
+            } else {
+                out.push_str(text);
+            }
             return;
         }
         SyntaxKind::Space => {
@@ -94,7 +137,7 @@ fn walk(node: &LinkedNode<'_>, out: &mut String) {
         SyntaxKind::Heading => {
             ensure_paragraph_break(out);
             for child in node.children() {
-                walk(&child, out);
+                walk(&child, out, mark);
             }
             out.push_str("\n\n");
             return;
@@ -105,13 +148,13 @@ fn walk(node: &LinkedNode<'_>, out: &mut String) {
             // here too would fuse with that `Space` into a blank line.
             ensure_newline(out);
             for child in node.children() {
-                walk(&child, out);
+                walk(&child, out, mark);
             }
             return;
         }
 
         SyntaxKind::FuncCall => {
-            handle_func_call(node, out);
+            handle_func_call(node, out, mark);
             return;
         }
 
@@ -119,7 +162,7 @@ fn walk(node: &LinkedNode<'_>, out: &mut String) {
     }
 
     for child in node.children() {
-        walk(&child, out);
+        walk(&child, out, mark);
     }
 }
 
@@ -127,7 +170,7 @@ fn walk(node: &LinkedNode<'_>, out: &mut String) {
 /// string *argument* are special-cased; everything else falls back to
 /// "descend into `ContentBlock` arguments only", so content-bracket wrappers
 /// yield their inner prose without enumerating every function.
-fn handle_func_call(node: &LinkedNode<'_>, out: &mut String) {
+fn handle_func_call(node: &LinkedNode<'_>, out: &mut String, mark: MarkNode<'_>) {
     let Some(call) = node.cast::<ast::FuncCall>() else {
         return;
     };
@@ -169,19 +212,19 @@ fn handle_func_call(node: &LinkedNode<'_>, out: &mut String) {
         // `#link("https://…")[display]` — the URL is not prose; the display
         // body (if any) lives in a ContentBlock. Same for annotation/suggestion
         // bodies and every other content-bracket wrapper.
-        _ => descend_into_content_blocks(node, out),
+        _ => descend_into_content_blocks(node, out, mark),
     }
 }
 
 /// Walk only the `ContentBlock` (`[…]`) arguments of a call, skipping its
 /// code-mode arguments — the default for unknown / content-bracket functions.
-fn descend_into_content_blocks(node: &LinkedNode<'_>, out: &mut String) {
+fn descend_into_content_blocks(node: &LinkedNode<'_>, out: &mut String, mark: MarkNode<'_>) {
     let Some(args) = node.children().find(|c| c.kind() == SyntaxKind::Args) else {
         return;
     };
     for child in args.children() {
         if child.kind() == SyntaxKind::ContentBlock {
-            walk(&child, out);
+            walk(&child, out, mark);
         }
     }
 }
@@ -275,6 +318,33 @@ fn normalize(raw: &str) -> String {
     lines[start..end].join("\n")
 }
 
+/// Remove the mark placeholders from `raw`, recording the stretches they
+/// enclosed. Marks left empty (a marked node with no text) are dropped.
+fn take_marks(raw: &str) -> MarkedText {
+    let mut text = String::with_capacity(raw.len());
+    let mut marks = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0;
+    for c in raw.chars() {
+        match c {
+            MARK_OPEN => {
+                if depth == 0 {
+                    start = text.len();
+                }
+                depth += 1;
+            }
+            MARK_CLOSE => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 && text.len() > start {
+                    marks.push(start..text.len());
+                }
+            }
+            _ => text.push(c),
+        }
+    }
+    MarkedText { text, marks }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -336,5 +406,25 @@ mod tests {
         // UTF-8 correctness: em-dash, smart quotes, accents must pass through.
         let src = "Café — naïve “quotes” résumé.";
         assert_eq!(extract_plain_text(src), "Café — naïve “quotes” résumé.");
+    }
+
+    #[test]
+    fn marks_the_chosen_nodes_text() {
+        let src = "Café *see* #wikilink(\"Target\") — and #wikilink(\"Other\").";
+        let is_target = |n: &LinkedNode<'_>| {
+            n.kind() == SyntaxKind::FuncCall
+                && first_positional_string(n).as_deref() == Some("Target")
+        };
+        let m = extract_marked_text(src, &is_target);
+        assert_eq!(m.text, "Café see Target — and Other.");
+        assert_eq!(m.marks.len(), 1);
+        assert_eq!(&m.text[m.marks[0].clone()], "Target");
+    }
+
+    #[test]
+    fn placeholder_characters_in_prose_are_not_marks() {
+        let m = extract_marked_text("a \u{E000}b\u{E001} c", &|_| false);
+        assert_eq!(m.text, "a b c");
+        assert!(m.marks.is_empty());
     }
 }

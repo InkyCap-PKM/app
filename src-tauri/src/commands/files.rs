@@ -7,6 +7,7 @@ use crate::state::{AppState, NoteboxSession};
 use crate::storage::sanitize_notebox_arg;
 use crate::storage::to_frontend_string;
 use crate::storage::traits::NoteboxStorage;
+use crate::text_offsets::byte_to_utf16;
 use crate::typst_pipeline::note_rewriter;
 use crate::typst_pipeline::source_structure;
 
@@ -1115,6 +1116,9 @@ pub struct PotentialLink {
     /// returned a filter-only hit with no text match — those still satisfy
     /// the phrase predicate but have nothing useful to render.
     pub line: String,
+    /// `(start, end)` ranges of `line` where the note's name was found, in
+    /// UTF-16 code units for the webview's highlight.
+    pub marks: Vec<(usize, usize)>,
     pub context_before: Vec<String>,
     pub context_after: Vec<String>,
     pub modified_time: u64,
@@ -1207,6 +1211,20 @@ pub async fn get_potential_links(
             .unwrap_or_default();
         const MAX_SNIPPET: usize = 200;
         let line = trim_snippet(&r.line_text, MAX_SNIPPET);
+        // The snippet is a prefix of the line (plus an ellipsis when cut), so
+        // the engine's byte ranges still apply to whatever part survived.
+        let kept = line.trim_end_matches('\u{2026}').len();
+        let marks = r
+            .match_ranges
+            .iter()
+            .filter(|(start, end)| end > start && *start < kept)
+            .map(|&(start, end)| {
+                (
+                    byte_to_utf16(&line, start),
+                    byte_to_utf16(&line, end.min(kept)),
+                )
+            })
+            .collect();
         let context_before: Vec<String> = r
             .context_before
             .iter()
@@ -1221,6 +1239,7 @@ pub async fn get_potential_links(
             path: to_frontend_string(&p),
             name,
             line,
+            marks,
             context_before,
             context_after,
             // SearchResult uses i64 (Tantivy/Hayagriva legacy); clamp to

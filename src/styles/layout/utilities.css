@@ -230,3 +230,16 @@
 .reorder--drop-below {
   box-shadow: inset 0 -2px 0 0 var(--accent-purple, var(--accent));
 }
+
+/* ── Highlighted text ────────────────────────────────────────────────
+   A highlighted stretch of text (HighlightedText.tsx): search matches, and
+   the links to the open note in link previews and Compose cards. Same fill
+   as a match in the editor, plus bold so it stands out by weight and not
+   only by colour (as in Quick Open and the command palette). */
+.text-highlight {
+  background: var(--bg-search-match);
+  color: inherit;
+  font-weight: 600;
+  border-radius: var(--radius-xs);
+  padding: 0 1px;
+}

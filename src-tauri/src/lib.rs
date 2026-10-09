@@ -42,6 +42,7 @@ pub mod state;
 pub mod storage;
 pub mod system_open;
 pub mod tab_sessions;
+pub mod text_offsets;
 pub mod typst_packages;
 pub mod typst_pipeline;
 pub mod uri_scheme;

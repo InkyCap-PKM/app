@@ -96,13 +96,15 @@
   color: var(--fg-dim);
 }
 
-/* The "match" line of an inbound/potential preview stays on one line by
-   default (.link-context's existing rule). The ctx- variant carries the
-   before/after lines surfaced when "More context" is on; those are
-   visually subdued and allowed to wrap so the user gets readable
-   surrounding text instead of an ellipsis. */
+/* Link previews wrap rather than end in an ellipsis, so the highlighted
+   match is always in view. The match line is the main text; the ctx-
+   variant carries the before/after text shown when "More context" is on,
+   visually subdued. */
 .link-context--match {
   color: var(--fg-muted);
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
 }
 
 .link-context--ctx {
@@ -130,11 +132,6 @@
   white-space: pre-line;
   overflow: visible;
   text-overflow: clip;
-}
-
-.link-context__match {
-  color: var(--accent-text);
-  font-weight: 600;
 }
 
 .link--unresolved .sidebar-item__label {

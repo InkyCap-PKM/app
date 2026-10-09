@@ -198,15 +198,15 @@ This reciprocal model is what lets your notebox grow into a connected web rather
 
 You read these connections in the *Links* tab of the right-hand panel. It has three collapsible sections, each with a count and a remembered open/closed state:
 
-+ *Inbound Links* are the notes that link *to* the note you're viewing (its _backlinks_). Under each one, InkyCap shows the _passage_ the link sits in: the paragraph (or list item) that holds it, or, when the link is in a heading, the heading and the paragraph after it. A note that links to this one several times shows each passage. A note that links only through one of its properties says so instead. Passages are hidden at first; turn them all on with *Expand previews*, or double-click a row to show just that one's.
++ *Inbound Links* are the notes that link *to* the note you're viewing (its _backlinks_). Under each one, InkyCap shows a short preview of the text around the link: the sentence that holds it, with the sentence before and after when they're short, taken from the link's own line (a list item without the items indented under it). The link itself is highlighted. A note that links to this one several times shows each preview. A note that links only through one of its properties says so instead. Passages are hidden at first; turn them all on with *Expand previews*, or double-click a row to show just that one's.
 + *Outbound Links* are the notes your active note links *out to*. Links to notes that don't exist yet show up as *unresolved*, with a dashed file icon and a *create* button; clicking the row or the button makes the missing note on the spot.
-+ *Possible wikilinks* are notes that *mention this note's name in plain text* but haven't actually linked to it yet.  
++ *Possible wikilinks* are notes that *mention this note's name in plain text* but haven't actually linked to it yet. The mention is highlighted.  
 
 The panel gives you a few ways to find notes in a busy list:
 
 - *Sort links* by name, modified date, created date, or ZID (the Zettelkasten identifier, if your notes carry one), ascending or descending. Unresolved entries always sort to the bottom.
-- *Expand previews / Collapse previews* show or hide the passages for every row at once.
-- *Show more context* adds the paragraph (or list item) just before and just after each inbound passage, in a lighter colour.
+- *Expand previews / Collapse previews* show or hide the previews for every row at once.
+- *Show more context* replaces each inbound preview with the whole _passage_ the link sits in: the paragraph or list item that holds it (with any items indented under it), or, when the link is in a heading, the heading and the paragraph after it. The paragraph (or list item) just before and just after are added in a lighter colour.
 - *Filter links by name* with a search box ("Search within links...") that narrows the lists. It supports the full search syntax (quoted phrases, `AND`/`OR`/`NOT`, and filters like `tag:`, `file:`, `path:`, and `property:`) scoped to just this note's links. (For more on tags, see #wikilink("5 - Tags").)
 
 === Composing a new note from your links

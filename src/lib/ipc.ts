@@ -531,17 +531,26 @@ export async function getNotePreview(
 
 /** One stretch of note text: its Typst source (for copying) and plain prose
  *  for display, shortened with an ellipsis when long. */
-export interface PassageText {
-  source: string;
+/** Plain prose for display. `marks` are the `[start, end)` stretches to
+ *  highlight (links to the target note), in UTF-16 code units. */
+export interface DisplayText {
   text: string;
+  marks: [number, number][];
+}
+
+export interface PassageText extends DisplayText {
+  source: string;
 }
 
 /** The text around one wikilink: the paragraph (or list item, or heading plus
  *  the paragraph after it) holding it, and for context the units of writing
- *  just before and after (null at the edges). */
+ *  just before and after (null at the edges). `snippet` is the short preview:
+ *  the sentence holding the link with up to one sentence either side, from
+ *  the link's own line (a list item without its sub-items). */
 export interface LinkPassage {
   heading: string | null;
   paragraph: PassageText;
+  snippet: DisplayText;
   before: PassageText | null;
   after: PassageText | null;
 }
@@ -602,6 +611,9 @@ export interface PotentialLink {
   path: string;
   name: string;
   line: string;
+  /** `[start, end)` stretches of `line` holding the note's name, in UTF-16
+   *  code units. */
+  marks: [number, number][];
   context_before: string[];
   context_after: string[];
   modified_time: number;

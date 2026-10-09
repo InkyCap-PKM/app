@@ -2914,6 +2914,7 @@ dependencies = [
  "hayro-syntax",
  "icu_collator",
  "icu_normalizer",
+ "icu_segmenter",
  "include_dir",
  "insta",
  "keyring",

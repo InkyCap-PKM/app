@@ -82,6 +82,10 @@ icu_collator = "2.2"
 # but one on macOS. Already in the graph beneath icu_collator, so this is a
 # direct dep on a crate the binary was compiling regardless.
 icu_normalizer = "2.2"
+# Sentence boundaries for the Links pane's short link previews. Typst's own
+# layout engine uses this crate for line breaking, so it is already compiled
+# into the binary with the same features.
+icu_segmenter = "2.2"
 log = "0.4"
 env_logger = "0.11"
 

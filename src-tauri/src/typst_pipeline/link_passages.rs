@@ -7,7 +7,9 @@
 //!
 //! The Links pane shows inbound passages, and Compose mode copies them into a
 //! new note, so each passage carries both its Typst source (for copying) and a
-//! plain-text rendering (for display).
+//! plain-text rendering (for display) in which the links are marked for
+//! highlighting. A passage also carries a *snippet*: a few sentences around
+//! the link, which the Links pane shows until the user asks for more context.
 //!
 //! Paragraph boundaries come from the syntax tree (`Parbreak`, `Heading`,
 //! list items), not from scanning lines, so a `= ` inside a code block or a
@@ -15,8 +17,14 @@
 
 use std::ops::Range;
 
+use icu_segmenter::options::SentenceBreakInvariantOptions;
+use icu_segmenter::SentenceSegmenter;
+
 use crate::link_index::link_note_name;
-use crate::typst_pipeline::plaintext::extract_plain_text;
+use crate::text_offsets::byte_to_utf16;
+use crate::typst_pipeline::plaintext::{
+    extract_marked_text, extract_plain_text, MarkNode, MarkedText,
+};
 use crate::typst_pipeline::query::first_string_positional_arg;
 use crate::typst_pipeline::source_structure::{headings, SourceHeading};
 use crate::typst_pipeline::syntax::{ast, parse, LinkedNode, SyntaxKind};
@@ -25,14 +33,29 @@ use crate::typst_pipeline::syntax::{ast, parse, LinkedNode, SyntaxKind};
 /// source is never shortened, so copying a passage always copies all of it.
 const MAX_DISPLAY_CHARS: usize = 1500;
 
+/// Most characters a snippet keeps on each side of the link, counted in plain
+/// text so markup never uses up the allowance. A sentence next to the one
+/// holding the link is included only when it fits whole.
+const SNIPPET_CONTEXT_CHARS: usize = 100;
+
+/// Plain prose for display, with the stretches to highlight.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct DisplayText {
+    pub text: String,
+    /// `(start, end)` ranges of `text` to highlight, in UTF-16 code units so
+    /// the webview can slice its strings with them directly.
+    pub marks: Vec<(usize, usize)>,
+}
+
 /// One stretch of note text, in two forms.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct PassageText {
     /// The Typst source of the stretch, trimmed of surrounding blank space.
     pub source: String,
     /// Plain prose for display, shortened to [`MAX_DISPLAY_CHARS`] with an
-    /// ellipsis when longer.
-    pub text: String,
+    /// ellipsis when longer. Links to the target note are marked.
+    #[serde(flatten)]
+    pub display: DisplayText,
 }
 
 /// The text around one link.
@@ -42,6 +65,9 @@ pub struct LinkPassage {
     pub heading: Option<String>,
     /// The paragraph, list item, or heading-plus-paragraph holding the link.
     pub paragraph: PassageText,
+    /// The sentence holding the link with up to one sentence either side,
+    /// taken from the link's own line: a list item's sub-items are left out.
+    pub snippet: DisplayText,
     /// The unit of writing just before the paragraph, for context. `None` at
     /// the start of the body or of the block holding the link.
     pub before: Option<PassageText>,
@@ -57,9 +83,11 @@ pub struct LinkPassage {
 /// note that links only from its properties yields an empty list.
 pub fn inbound_passages(source: &str, target_stem: &str) -> Vec<LinkPassage> {
     let all_headings = headings(source);
+    let target = target_stem.to_lowercase();
+    let is_link = |n: &LinkedNode<'_>| is_wikilink_to(n, &target);
     inbound_spans(source, target_stem)
         .into_iter()
-        .filter_map(|span| span_passage(source, &all_headings, span))
+        .filter_map(|span| span_passage(source, &all_headings, span, &is_link))
         .collect()
 }
 
@@ -68,7 +96,7 @@ pub fn inbound_passages(source: &str, target_stem: &str) -> Vec<LinkPassage> {
 /// its first heading plus the paragraph after it. `None` for an empty body.
 /// Carries no `before` (nothing comes before it) but does carry `after`.
 pub fn lead_passage(source: &str) -> Option<LinkPassage> {
-    span_passage(source, &headings(source), lead_span(source)?)
+    span_passage(source, &headings(source), lead_span(source)?, &|_| false)
 }
 
 /// Where a passage and the units of writing around it sit in the source, as
@@ -76,6 +104,9 @@ pub fn lead_passage(source: &str) -> Option<LinkPassage> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PassageSpan {
     pub unit: Range<usize>,
+    /// The part of `unit` the snippet is taken from: a list item without
+    /// its sub-items, otherwise the whole unit.
+    pub own: Range<usize>,
     pub before: Option<Range<usize>>,
     pub after: Option<Range<usize>>,
 }
@@ -100,17 +131,14 @@ pub(crate) fn inbound_spans(source: &str, target_stem: &str) -> Vec<PassageSpan>
 
     let mut out: Vec<PassageSpan> = Vec::new();
     for call in calls {
-        let matches = first_string_positional_arg(&call)
-            .as_deref()
-            .and_then(link_note_name)
-            .is_some_and(|name| name.to_lowercase() == target);
-        if !matches {
+        if !is_wikilink_to(&call, &target) {
             continue;
         }
-        let (unit, markup) = unit_around(&call);
+        let (unit, own, markup) = unit_around(&call);
         let Some(unit) = clip(unit, body_start) else {
             continue;
         };
+        let own = clip(own, body_start).unwrap_or_else(|| unit.clone());
         if out.iter().any(|s| s.unit == unit) {
             continue;
         }
@@ -120,6 +148,7 @@ pub(crate) fn inbound_spans(source: &str, target_stem: &str) -> Vec<PassageSpan>
         };
         out.push(PassageSpan {
             unit,
+            own,
             before,
             after,
         });
@@ -135,32 +164,61 @@ pub(crate) fn lead_span(source: &str) -> Option<PassageSpan> {
     let first = markup.children().find(|c| {
         c.range().end > body_start && !matches!(c.kind(), SyntaxKind::Space | SyntaxKind::Parbreak)
     })?;
-    let unit = match first.kind() {
-        k if is_item(k) => first.range(),
-        SyntaxKind::Heading => heading_and_next(&first),
-        _ => paragraph_run(&markup, &first),
+    let (unit, own) = match first.kind() {
+        k if is_item(k) => (first.range(), item_own_range(&first)),
+        SyntaxKind::Heading => {
+            let unit = heading_and_next(&first);
+            (unit.clone(), unit)
+        }
+        _ => {
+            let unit = paragraph_run(&markup, &first);
+            (unit.clone(), unit)
+        }
     };
     let unit = clip(unit, body_start)?;
+    let own = clip(own, body_start).unwrap_or_else(|| unit.clone());
     let (_, after) = neighbours(&markup, &unit, body_start);
     Some(PassageSpan {
         unit,
+        own,
         before: None,
         after,
     })
 }
 
-/// The passage a span marks out, or `None` when its unit is blank.
+/// The passage a span marks out, or `None` when its unit is blank. The text
+/// of nodes `is_link` accepts is marked for highlighting.
 fn span_passage(
     source: &str,
     all_headings: &[SourceHeading],
     span: PassageSpan,
+    is_link: MarkNode<'_>,
 ) -> Option<LinkPassage> {
+    let paragraph = passage_text(source, span.unit.clone(), is_link)?;
+    let own = source
+        .get(span.own)
+        .map(|own| snippet(&extract_marked_text(own, is_link)))
+        .filter(|s| !s.text.trim().is_empty());
     Some(LinkPassage {
         heading: heading_above(all_headings, span.unit.start).map(heading_plain_text),
-        paragraph: passage_text(source, span.unit)?,
-        before: span.before.and_then(|r| passage_text(source, r)),
-        after: span.after.and_then(|r| passage_text(source, r)),
+        snippet: own.map_or_else(|| paragraph.display.clone(), |s| display_text(&s)),
+        paragraph,
+        before: span.before.and_then(|r| passage_text(source, r, is_link)),
+        after: span.after.and_then(|r| passage_text(source, r, is_link)),
     })
+}
+
+/// True when `node` is a `wikilink(...)` call to the note named `target`,
+/// which must be lowercase. Ignores case and any `::heading` suffix.
+fn is_wikilink_to(node: &LinkedNode<'_>, target: &str) -> bool {
+    let is_wikilink = node.cast::<ast::FuncCall>().is_some_and(
+        |call| matches!(call.callee(), ast::Expr::Ident(i) if i.as_str() == "wikilink"),
+    );
+    is_wikilink
+        && first_string_positional_arg(node)
+            .as_deref()
+            .and_then(link_note_name)
+            .is_some_and(|name| name.to_lowercase() == target)
 }
 
 /// The lowercase note names `source`'s wikilinks point at, in document order
@@ -222,13 +280,23 @@ fn breaks_paragraph(kind: SyntaxKind) -> bool {
 
 /// The unit of writing holding `node`: climb to the nearest list item,
 /// heading, or run of markup and take the paragraph there. Also returns the
-/// markup the unit is a part of, where its neighbours are.
-fn unit_around<'a>(node: &LinkedNode<'a>) -> (Range<usize>, Option<LinkedNode<'a>>) {
+/// unit's own text (see [`PassageSpan::own`]) and the markup the unit is a
+/// part of, where its neighbours are.
+fn unit_around<'a>(node: &LinkedNode<'a>) -> (Range<usize>, Range<usize>, Option<LinkedNode<'a>>) {
     let mut child = node.clone();
     while let Some(parent) = child.parent().cloned() {
         match parent.kind() {
-            k if is_item(k) => return (parent.range(), parent.parent().cloned()),
-            SyntaxKind::Heading => return (heading_and_next(&parent), parent.parent().cloned()),
+            k if is_item(k) => {
+                return (
+                    parent.range(),
+                    item_own_range(&parent),
+                    parent.parent().cloned(),
+                )
+            }
+            SyntaxKind::Heading => {
+                let unit = heading_and_next(&parent);
+                return (unit.clone(), unit, parent.parent().cloned());
+            }
             // Markup that is the body of a list item or heading belongs to
             // that item; keep climbing so the arms above take it.
             SyntaxKind::Markup
@@ -236,12 +304,27 @@ fn unit_around<'a>(node: &LinkedNode<'a>) -> (Range<usize>, Option<LinkedNode<'a
                     .parent_kind()
                     .is_some_and(|k| is_item(k) || k == SyntaxKind::Heading) =>
             {
-                return (paragraph_run(&parent, &child), Some(parent));
+                let unit = paragraph_run(&parent, &child);
+                return (unit.clone(), unit, Some(parent));
             }
             _ => child = parent,
         }
     }
-    (node.range(), None)
+    (node.range(), node.range(), None)
+}
+
+/// A list item without the items nested under it.
+fn item_own_range(item: &LinkedNode<'_>) -> Range<usize> {
+    let Some(body) = item.children().find(|c| c.kind() == SyntaxKind::Markup) else {
+        return item.range();
+    };
+    let end = body
+        .children()
+        .take_while(|c| !is_item(c.kind()))
+        .filter(|c| !matches!(c.kind(), SyntaxKind::Space | SyntaxKind::Parbreak))
+        .last()
+        .map_or(body.range().start, |c| c.range().end);
+    item.range().start..end
 }
 
 /// Every unit of writing directly inside `markup`, in order: each list item
@@ -337,7 +420,7 @@ fn heading_above(all: &[SourceHeading], offset: usize) -> Option<&SourceHeading>
 }
 
 /// Both forms of `source[range]`, or `None` when the stretch is blank.
-fn passage_text(source: &str, range: Range<usize>) -> Option<PassageText> {
+fn passage_text(source: &str, range: Range<usize>, is_link: MarkNode<'_>) -> Option<PassageText> {
     // Node and heading ranges come from the parser, so they fall on
     // character boundaries.
     let raw = source.get(range)?.trim();
@@ -346,8 +429,28 @@ fn passage_text(source: &str, range: Range<usize>) -> Option<PassageText> {
     }
     Some(PassageText {
         source: raw.to_string(),
-        text: shorten(&extract_plain_text(raw), MAX_DISPLAY_CHARS),
+        display: display_text(&shorten(
+            &extract_marked_text(raw, is_link),
+            MAX_DISPLAY_CHARS,
+        )),
     })
+}
+
+/// `text` ready to send to the webview, with its marks in UTF-16 units.
+fn display_text(text: &MarkedText) -> DisplayText {
+    DisplayText {
+        marks: text
+            .marks
+            .iter()
+            .map(|r| {
+                (
+                    byte_to_utf16(&text.text, r.start),
+                    byte_to_utf16(&text.text, r.end),
+                )
+            })
+            .collect(),
+        text: text.text.clone(),
+    }
 }
 
 fn heading_plain_text(h: &SourceHeading) -> String {
@@ -355,10 +458,102 @@ fn heading_plain_text(h: &SourceHeading) -> String {
 }
 
 /// `text` cut to `max` characters with an ellipsis when longer.
-fn shorten(text: &str, max: usize) -> String {
-    match text.char_indices().nth(max) {
-        Some((cut, _)) => format!("{}\u{2026}", text[..cut].trim_end()),
-        None => text.to_string(),
+fn shorten(text: &MarkedText, max: usize) -> MarkedText {
+    match text.text.char_indices().nth(max) {
+        Some((cut, _)) => excerpt(text, 0..cut),
+        None => text.clone(),
+    }
+}
+
+/// The short preview of a link's own text: the sentence holding the first
+/// mark, with the sentence before and after when each fits whole within
+/// [`SNIPPET_CONTEXT_CHARS`] of the mark, and the holding sentence itself cut
+/// at a word to that allowance when it runs longer. Without a mark the
+/// preview is taken from the start of the text.
+fn snippet(text: &MarkedText) -> MarkedText {
+    let s = &text.text;
+    let anchor = text.marks.first().cloned().unwrap_or(0..0);
+    let bounds: Vec<usize> = SentenceSegmenter::new(SentenceBreakInvariantOptions::default())
+        .segment_str(s)
+        .collect();
+    let sentences: Vec<Range<usize>> = bounds.windows(2).map(|w| w[0]..w[1]).collect();
+    let Some(first) = sentences.iter().position(|r| r.end > anchor.start) else {
+        return text.clone();
+    };
+    let last = sentences
+        .iter()
+        .rposition(|r| r.start < anchor.end)
+        .map_or(first, |i| i.max(first));
+
+    let mut start = sentences[first].start;
+    let mut end = sentences[last].end;
+    if let Some(prev) = first.checked_sub(1).map(|i| &sentences[i]) {
+        if s[prev.start..anchor.start].chars().count() <= SNIPPET_CONTEXT_CHARS {
+            start = prev.start;
+        }
+    }
+    if let Some(next) = sentences.get(last + 1) {
+        if s[anchor.end..next.end].chars().count() <= SNIPPET_CONTEXT_CHARS {
+            end = next.end;
+        }
+    }
+
+    // Cut a long sentence holding the link to the allowance, at a word.
+    let floor = s[..anchor.start]
+        .char_indices()
+        .rev()
+        .nth(SNIPPET_CONTEXT_CHARS - 1)
+        .map_or(0, |(i, _)| i);
+    if start < floor {
+        start = s[floor..anchor.start]
+            .find(char::is_whitespace)
+            .map_or(floor, |i| floor + i);
+    }
+    let ceiling = s[anchor.end..]
+        .char_indices()
+        .nth(SNIPPET_CONTEXT_CHARS)
+        .map_or(s.len(), |(i, _)| anchor.end + i);
+    if end > ceiling {
+        end = s[anchor.end..ceiling]
+            .rfind(char::is_whitespace)
+            .map_or(ceiling, |i| anchor.end + i);
+    }
+    excerpt(text, start..end)
+}
+
+/// `text[range]` trimmed of blank space, with an ellipsis on each side where
+/// text was left out and the marks moved to match. `range` must fall on
+/// character boundaries.
+fn excerpt(text: &MarkedText, range: Range<usize>) -> MarkedText {
+    let s = &text.text;
+    let inner = &s[range.clone()];
+    let start = range.start + (inner.len() - inner.trim_start().len());
+    let end = range.start + inner.trim_end().len();
+    if start >= end {
+        return MarkedText::default();
+    }
+    let lead = if s[..start].trim().is_empty() {
+        ""
+    } else {
+        "\u{2026}"
+    };
+    let tail = if s[end..].trim().is_empty() {
+        ""
+    } else {
+        "\u{2026}"
+    };
+    let shift = lead.len();
+    let marks = text
+        .marks
+        .iter()
+        .filter_map(|m| {
+            let (a, b) = (m.start.max(start), m.end.min(end));
+            (a < b).then(|| a - start + shift..b - start + shift)
+        })
+        .collect();
+    MarkedText {
+        text: format!("{lead}{}{tail}", &s[start..end]),
+        marks,
     }
 }
 
@@ -484,7 +679,7 @@ mod tests {
             p.paragraph.source,
             "Café — «citation» 東京 #wikilink(\"T\") — fin."
         );
-        assert!(p.paragraph.text.contains("東京"));
+        assert!(p.paragraph.display.text.contains("東京"));
     }
 
     #[test]
@@ -492,8 +687,8 @@ mod tests {
         let long = "word ".repeat(600);
         let src = note(&format!("{long}#wikilink(\"T\")"));
         let p = &inbound_passages(&src, "T")[0];
-        assert!(p.paragraph.text.ends_with('\u{2026}'));
-        assert!(p.paragraph.text.chars().count() <= MAX_DISPLAY_CHARS + 1);
+        assert!(p.paragraph.display.text.ends_with('\u{2026}'));
+        assert!(p.paragraph.display.text.chars().count() <= MAX_DISPLAY_CHARS + 1);
         assert!(p.paragraph.source.ends_with("#wikilink(\"T\")"));
     }
 
@@ -533,5 +728,83 @@ mod tests {
     fn context_around_heading_passage_skips_the_paragraph_it_took() {
         let src = note("Lead.\n\n= About #wikilink(\"T\")\nBody.\n\nAfter.");
         assert_eq!(context(&src), (Some("Lead.".into()), Some("After.".into())));
+    }
+
+    fn marked(d: &DisplayText) -> Vec<String> {
+        let units: Vec<u16> = d.text.encode_utf16().collect();
+        d.marks
+            .iter()
+            .map(|&(a, b)| String::from_utf16(&units[a..b]).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn links_to_the_target_are_marked() {
+        let src = note("Café — «see» #wikilink(\"T\", label: \"this\") and #wikilink(\"U\").");
+        let p = &inbound_passages(&src, "T")[0];
+        assert_eq!(marked(&p.paragraph.display), vec!["this"]);
+        assert_eq!(marked(&p.snippet), vec!["this"]);
+    }
+
+    #[test]
+    fn snippet_leaves_out_sub_items() {
+        let src = note("- Sent the #wikilink(\"T\") report\n  - a sub-item\n  - another\n- next");
+        let p = &inbound_passages(&src, "T")[0];
+        assert_eq!(p.snippet.text, "Sent the T report");
+        assert!(p.paragraph.display.text.contains("a sub-item"));
+    }
+
+    #[test]
+    fn snippet_of_a_link_in_a_sub_item_is_that_item() {
+        let src = note("- parent\n  - child #wikilink(\"T\")\n  - sibling");
+        assert_eq!(inbound_passages(&src, "T")[0].snippet.text, "child T");
+    }
+
+    #[test]
+    fn snippet_takes_a_sentence_either_side() {
+        let src = note("One. Two. Three #wikilink(\"T\") here. Four. Five.");
+        let p = &inbound_passages(&src, "T")[0];
+        assert_eq!(p.snippet.text, "\u{2026}Two. Three T here. Four.\u{2026}");
+        assert_eq!(marked(&p.snippet), vec!["T"]);
+    }
+
+    #[test]
+    fn snippet_skips_a_neighbour_sentence_that_does_not_fit() {
+        let long = "word ".repeat(40);
+        let src = note(&format!("{long}end. Short #wikilink(\"T\") one."));
+        assert_eq!(
+            inbound_passages(&src, "T")[0].snippet.text,
+            "\u{2026}Short T one."
+        );
+    }
+
+    #[test]
+    fn snippet_cuts_a_long_sentence_at_words() {
+        let before = "alpha ".repeat(40);
+        let after = " omega".repeat(40);
+        let src = note(&format!("{before}#wikilink(\"T\"){after}."));
+        let snip = inbound_passages(&src, "T")[0].snippet.clone();
+        assert!(snip.text.starts_with("\u{2026}alpha "), "{}", snip.text);
+        assert!(snip.text.ends_with(" omega\u{2026}"), "{}", snip.text);
+        let chars = snip.text.chars().count();
+        assert!(chars <= 2 * SNIPPET_CONTEXT_CHARS + 3, "{chars}");
+        assert_eq!(marked(&snip), vec!["T"]);
+    }
+
+    #[test]
+    fn markup_does_not_count_toward_the_snippet() {
+        let src = note("Lead *strong* #emph[words] here. Then #wikilink(\"T\").");
+        assert_eq!(
+            inbound_passages(&src, "T")[0].snippet.text,
+            "Lead strong words here. Then T."
+        );
+    }
+
+    #[test]
+    fn lead_passage_snippet_starts_at_the_top() {
+        let src = note("First. Second. Third.\n\nMore.");
+        let p = lead_passage(&src).unwrap();
+        assert_eq!(p.snippet.text, "First. Second.\u{2026}");
+        assert!(p.snippet.marks.is_empty());
     }
 }

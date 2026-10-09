@@ -11,6 +11,7 @@ use crate::search::results::{ReplaceResult, SearchResponse};
 use crate::state::AppState;
 use crate::storage::to_frontend_string;
 use crate::storage::traits::NoteboxStorage;
+use crate::text_offsets::byte_to_utf16;
 
 /// Get all tags with their counts (for tag autocomplete).
 #[tauri::command]
@@ -129,18 +130,6 @@ pub async fn notebox_search(
         results,
         total_count,
     })
-}
-
-/// Byte offset → UTF-16 code-unit offset within `line`, matching how the
-/// JS/CodeMirror frontend indexes strings. See the call site in
-/// `notebox_search` for why search ranges cross the IPC boundary in UTF-16.
-fn byte_to_utf16(line: &str, byte_off: usize) -> usize {
-    let mut b = byte_off.min(line.len());
-    // Defensive: ranges land on char boundaries, but never panic if one didn't.
-    while b > 0 && !line.is_char_boundary(b) {
-        b -= 1;
-    }
-    line[..b].encode_utf16().count()
 }
 
 /// A single original-case verification predicate for case-sensitive search.
@@ -316,7 +305,7 @@ pub async fn search_and_replace(
 
 #[cfg(test)]
 mod tests {
-    use super::{byte_to_utf16, original_case_terms};
+    use super::original_case_terms;
 
     /// Does any original-case term accept this span? Mirrors the engine's
     /// `verify_span` predicate.
@@ -355,19 +344,5 @@ mod tests {
         // leaves filter-only results untouched (no span predicate at all).
         assert!(original_case_terms("tag:Rust").is_empty());
         assert!(original_case_terms("AND OR NOT").is_empty());
-    }
-
-    #[test]
-    fn byte_to_utf16_converts_past_multibyte() {
-        // `“` is 3 UTF-8 bytes but 1 UTF-16 unit. A word after it has a byte
-        // offset 2 higher than its UTF-16 index — the exact drift that pushed
-        // highlights onto the wrong characters.
-        let line = "“a is"; // “(3) a(1) ' '(1) i(1) s(1)
-                            // "is" starts at byte 5 (3+1+1) but UTF-16 index 3 (1+1+1).
-        assert_eq!(byte_to_utf16(line, 5), 3);
-        // ASCII-only lines are unchanged.
-        assert_eq!(byte_to_utf16("hello world", 6), 6);
-        // Out-of-range clamps to the string's UTF-16 length.
-        assert_eq!(byte_to_utf16("ab", 99), 2);
     }
 }

@@ -7,6 +7,7 @@
 // clears the search box.
 
 import { errorText } from "../lib/errors";
+import HighlightedText from "./HighlightedText";
 import { compareName, compareZid } from "../lib/sort";
 import { substringMatch, compareMatches } from "../lib/fuzzy";
 import { notePropertyKeys } from "../lib/note-properties";
@@ -1198,7 +1199,7 @@ const SearchPanel: Component = () => {
                     class="search-panel__file-label"
                     onClick={(e) => openResult(group.matches[0], e)}
                   >
-                    <HighlightedLine
+                    <HighlightedText
                       text={group.file_name}
                       ranges={group.file_name_ranges}
                       class="search-panel__file-label-text"
@@ -1294,9 +1295,10 @@ const ResultLine: Component<{
         <span class="search-panel__result-lineno">
           {props.result.line_number}:
         </span>
-        <HighlightedLine
+        <HighlightedText
           text={props.result.line_text}
           ranges={props.result.match_ranges}
+          class="search-panel__result-text"
         />
       </div>
       <Show when={props.showMoreContext}>
@@ -1305,56 +1307,6 @@ const ResultLine: Component<{
         </For>
       </Show>
     </div>
-  );
-};
-
-const HighlightedLine: Component<{
-  text: string;
-  ranges: [number, number][];
-  /** Wrapper class. Defaults to the monospace snippet style; the group
-   *  header passes its own so the file name keeps the header font. */
-  class?: string;
-}> = (props) => {
-  const segments = () => {
-    const text = props.text;
-    const ranges = props.ranges;
-    if (ranges.length === 0) return [{ text, highlight: false }];
-
-    // Drop zero-width ranges. Document-level matches (a `tag:`/`path:`
-    // filter, or a filename hit) carry a `(0, 0)` placeholder range that
-    // marks the line as a match without pointing at a body span; rendering
-    // it would paint an empty highlight at the start of the line.
-    const sorted = ranges
-      .filter(([start, end]) => end > start)
-      .sort((a, b) => a[0] - b[0]);
-    if (sorted.length === 0) return [{ text, highlight: false }];
-
-    const parts: { text: string; highlight: boolean }[] = [];
-    let cursor = 0;
-
-    for (const [start, end] of sorted) {
-      if (start > cursor) {
-        parts.push({ text: text.slice(cursor, start), highlight: false });
-      }
-      parts.push({ text: text.slice(start, end), highlight: true });
-      cursor = end;
-    }
-    if (cursor < text.length) {
-      parts.push({ text: text.slice(cursor), highlight: false });
-    }
-    return parts;
-  };
-
-  return (
-    <span class={props.class ?? "search-panel__result-text"}>
-      <For each={segments()}>
-        {(seg) => (
-          <Show when={seg.highlight} fallback={<span>{seg.text}</span>}>
-            <mark class="search-panel__highlight">{seg.text}</mark>
-          </Show>
-        )}
-      </For>
-    </span>
   );
 };
 

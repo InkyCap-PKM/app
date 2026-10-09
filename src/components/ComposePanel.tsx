@@ -37,6 +37,7 @@ import {
   visibleCards,
   type ComposeCard,
 } from "../stores/compose";
+import HighlightedText from "./HighlightedText";
 
 const PANEL_ID = "compose";
 
@@ -262,7 +263,12 @@ const ComposePanel: Component = () => {
                     <Show when={card.passage.heading}>
                       <p class="compose__heading">{card.passage.heading}</p>
                     </Show>
-                    <p class="compose__text">{card.passage.paragraph.text}</p>
+                    <p class="compose__text">
+                      <HighlightedText
+                        text={card.passage.paragraph.text}
+                        ranges={card.passage.paragraph.marks}
+                      />
+                    </p>
                     <div class="compose__actions">
                       <InsertButtons cards={() => [card]} />
                       <button

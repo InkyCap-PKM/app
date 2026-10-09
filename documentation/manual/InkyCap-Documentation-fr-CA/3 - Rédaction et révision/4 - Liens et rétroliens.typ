@@ -199,15 +199,15 @@ Ce modèle réciproque est ce qui permet à votre boîte de notes de devenir un 
 
 Vous lisez ces connexions dans l'onglet *Liens* du panneau de droite. Il comporte trois sections repliables, chacune avec un compteur et un état ouvert/fermé mémorisé :
 
-+ *Liens entrants* : les notes qui pointent *vers* la note que vous regardez (ses _rétroliens_). Sous chacune, InkyCap affiche le _passage_ où se trouve le lien : le paragraphe (ou l'élément de liste) qui le contient ou, quand le lien est dans un titre, ce titre et le paragraphe qui le suit. Une note qui pointe plusieurs fois vers celle-ci affiche chaque passage. Une note qui n'y pointe que par l'une de ses propriétés l'indique plutôt. Les passages sont d'abord masqués ; affichez-les tous avec *Développer les aperçus*, ou double-cliquez sur une rangée pour n'afficher que les siens.
++ *Liens entrants* : les notes qui pointent *vers* la note que vous regardez (ses _rétroliens_). Sous chacune, InkyCap affiche un court aperçu du texte autour du lien : la phrase qui le contient, avec la phrase précédente et la suivante quand elles sont courtes, tirée de la ligne même du lien (un élément de liste sans les éléments en retrait sous lui). Le lien lui-même est surligné. Une note qui pointe plusieurs fois vers celle-ci affiche chaque aperçu. Une note qui n'y pointe que par l'une de ses propriétés l'indique plutôt. Les passages sont d'abord masqués ; affichez-les tous avec *Développer les aperçus*, ou double-cliquez sur une rangée pour n'afficher que les siens.
 + *Liens sortants* : les notes vers lesquelles votre note active pointe. Les liens vers des notes qui n'existent pas encore apparaissent comme *non résolus*, avec une icône de fichier en pointillé et un bouton *créer* ; cliquer sur la rangée ou le bouton crée la note manquante sur-le-champ.
-+ *Liens wiki possibles* : les notes qui *mentionnent le nom de cette note en texte clair* mais ne l'ont pas encore vraiment liée.
++ *Liens wiki possibles* : les notes qui *mentionnent le nom de cette note en texte clair* mais ne l'ont pas encore vraiment liée. La mention est surlignée.
 
 Le panneau vous donne quelques façons de retrouver des notes dans une liste chargée :
 
 - *Trier les liens* par nom, date de modification, date de création ou ZID (l'identifiant Zettelkasten, si vos notes en portent un), en ordre croissant ou décroissant. Les entrées non résolues se trient toujours au bas.
-- *Développer les aperçus / Réduire les aperçus* affiche ou masque les passages de chaque rangée d'un coup.
-- *Afficher plus de contexte* ajoute, en couleur plus pâle, le paragraphe (ou l'élément de liste) qui précède et celui qui suit chaque passage entrant.
+- *Développer les aperçus / Réduire les aperçus* affiche ou masque les aperçus de chaque rangée d'un coup.
+- *Afficher plus de contexte* remplace chaque aperçu entrant par le _passage_ entier où se trouve le lien : le paragraphe ou l'élément de liste qui le contient (avec les éléments en retrait sous lui) ou, quand le lien est dans un titre, ce titre et le paragraphe qui le suit. Le paragraphe (ou l'élément de liste) qui précède et celui qui suit s'y ajoutent en couleur plus pâle.
 - *Filtrer les liens par nom* avec une boîte de recherche (« Rechercher dans les liens... ») qui restreint les listes. Elle prend en charge toute la syntaxe de recherche (phrases entre guillemets, `AND`/`OR`/`NOT` et filtres comme `tag:`, `file:`, `path:` et `property:`) limitée aux seuls liens de cette note. (Pour en savoir plus sur les étiquettes, voir #wikilink("5 - Étiquettes").)
 
 === Composer une nouvelle note à partir de vos liens
