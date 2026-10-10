@@ -1,5 +1,17 @@
 /* Compose panel (components/ComposePanel.tsx): passage cards beside a draft.
-   Drag states come from the shared .reorder--* classes (utilities.css). */
+   Drag states come from the shared .reorder--* classes (utilities.css).
+
+   Every colour here is mixed from theme tokens (--accent, --fg-*, --surface-*)
+   so it follows the light and dark themes, the palettes and a custom accent
+   without per-theme overrides. */
+
+/* The Compose notice above the draft carries a faint wash of the accent. */
+.editor-notice--compose {
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--accent) 6%, transparent),
+    color-mix(in srgb, var(--accent) 6%, transparent)
+  );
+}
 
 .compose__header {
   display: flex;
@@ -9,12 +21,30 @@
   border-bottom: 1px solid var(--border-subtle);
 }
 
-.compose__origin {
+.compose__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   margin: 0;
   font-weight: 600;
   letter-spacing: 0.3px;
-  color: var(--fg-muted);
-  font-size: var(--text-sm);
+  color: var(--fg-primary);
+  font-size: var(--text-base);
+}
+
+.compose__title-icon {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.compose__title-text {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The note name or recurring phrase the passages were gathered around. */
+.compose__title-subject {
+  color: var(--accent-text);
 }
 
 /* Insert buttons that act on every card at once. */
@@ -27,15 +57,18 @@
 .compose__all-label {
   flex: 1;
   font-size: var(--text-sm);
-  color: var(--fg-muted);
+  color: var(--fg-dim);
 }
 
+/* Each card is a quotation: the page colour, so the passage reads as text
+   lifted from a note, with an accent rule down its leading edge. */
 .compose__card {
   margin: var(--space-3) var(--space-4);
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border-subtle);
+  border-inline-start: 3px solid color-mix(in srgb, var(--accent) 70%, transparent);
   border-radius: var(--radius-md);
-  background: var(--surface-1);
+  background: var(--surface-0);
 }
 
 /* The draft already links to this card's note. */
@@ -63,8 +96,9 @@
   background: none;
   text-align: start;
   font: inherit;
+  font-size: var(--text-sm);
   font-weight: 600;
-  color: var(--fg-primary);
+  color: var(--fg-muted);
   cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -87,7 +121,7 @@
   margin: var(--space-2) 0 0;
   font-size: var(--text-base);
   line-height: var(--leading-normal);
-  color: var(--fg-secondary);
+  color: var(--fg-primary);
   white-space: pre-line;
 }
 

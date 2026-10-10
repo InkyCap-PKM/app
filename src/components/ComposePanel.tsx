@@ -215,7 +215,17 @@ const ComposePanel: Component = () => {
         {(s) => (
           <>
             <div class="compose__header">
-              <p class="compose__origin">{originText(s().origin)}</p>
+              <p class="compose__title">
+                <NotebookPen class="compose__title-icon" size={15} />
+                <span class="compose__title-text">
+                  {originBefore(s().origin)}
+                  <span class="compose__title-subject">{originName(s().origin)}</span>
+                  {originAfter(s().origin)}
+                </span>
+                <Show when={!s().loading}>
+                  <span class="badge badge--count">{visibleCards(s()).length}</span>
+                </Show>
+              </p>
               <Show when={visibleCards(s()).length > 0}>
                 <div class="compose__all">
                   <span class="compose__all-label">{t("compose.allPassages")}</span>
@@ -272,7 +282,7 @@ const ComposePanel: Component = () => {
                         </span>
                       </Show>
                     </div>
-                    <Show when={card.passage.heading}>
+                    <Show when={showHeading(card)}>
                       <p class="compose__heading">{card.passage.heading}</p>
                     </Show>
                     <p class="compose__text">
@@ -309,7 +319,7 @@ export const ComposeNotice: Component<{ tabId: string }> = (props) => {
   const t = useI18n();
   return (
     <Show when={composeSessionFor(props.tabId)}>
-      <div class="editor-notice" role="note">
+      <div class="editor-notice editor-notice--compose" role="note">
         <NotebookPen class="editor-notice__icon" size={15} />
         <span>{t("compose.notice")}</span>
         <button
@@ -326,11 +336,21 @@ export const ComposeNotice: Component<{ tabId: string }> = (props) => {
   );
 };
 
-/** The line above the cards saying where they come from. */
-function originText(origin: ComposeOrigin): string {
-  return origin.kind === "links"
-    ? t("compose.origin", { name: origin.name })
-    : t("compose.originPhrase", { phrase: origin.phrase });
+/** The words of the panel's heading before and after the origin's name or
+ *  phrase, which is coloured on its own. */
+function originBefore(origin: ComposeOrigin): string {
+  return origin.kind === "links" ? t("compose.originBefore") : t("compose.originPhraseBefore");
+}
+
+function originAfter(origin: ComposeOrigin): string {
+  return origin.kind === "links" ? t("compose.originAfter") : t("compose.originPhraseAfter");
+}
+
+/** Whether a card shows the heading its passage sits under. A note's title
+ *  heading repeats the note name shown just above it, so it is left out. */
+function showHeading(card: ComposeCard): boolean {
+  const heading = card.passage.heading?.trim();
+  return !!heading && heading.toLowerCase() !== card.source.name.trim().toLowerCase();
 }
 
 /** The origin note's name, or the phrase when the cards come from one. */
