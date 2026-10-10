@@ -104,7 +104,7 @@ While you write, the *right sidebar* keeps useful information about the current 
 
 - *Outline* is a live tree of the note's headings. Click any heading to jump to it, and expand or collapse the whole tree at once.
 - *Properties* holds the note's typed metadata (its system properties like title, dates, collection, and any custom properties you create), plus file actions like Rename, Move, Bookmark, and Export. See #wikilink("6 - Note Properties").
-- *Links* shows the note's *Outbound Links*, its *Inbound Links* (backlinks), and *Possible wikilinks* you might want to make. See #wikilink("4 - Links and Backlinks").
+- *Links* shows the note's *Outbound Links*, its *Inbound Links* (backlinks), and *Latent wikilinks* you might want to make. See #wikilink("4 - Links and Backlinks").
 - *References* gathers the note's citations and bibliography. See #wikilink("7 - Citations and Bibliography").
 - *Changes & History* collects suggestions, annotations, and any changes that have arrived since your last sync, with a badge when something needs your attention (this is used mostly for a collaboration set-up).
 

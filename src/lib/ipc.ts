@@ -570,6 +570,12 @@ export async function getLeadPassage(path: string): Promise<LinkPassage | null> 
   return invoke<LinkPassage | null>("get_lead_passage", { path });
 }
 
+/** The passages in the note at `path` whose prose holds `phrase` (as whole
+ *  words, ignoring case), in document order, with the phrase marked. */
+export async function getPhrasePassages(path: string, phrase: string): Promise<LinkPassage[]> {
+  return invoke<LinkPassage[]>("get_phrase_passages", { path, phrase });
+}
+
 /** The whole body of the note at `path`, ready to copy into another note:
  *  no `#import` lines, `#note(...)` or `#bibliography(...)` call, and
  *  relative paths rebased to the notebox root. */

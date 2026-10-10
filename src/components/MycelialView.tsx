@@ -21,6 +21,7 @@ import { pathEquals } from "../lib/paths";
 import { errorCode, errorDetail } from "../lib/errors";
 import { resolveNoteNameConflict } from "../lib/note-name-conflict";
 import { openTab } from "../stores/tabs";
+import { showCompose } from "./ComposePanel";
 import { settings } from "../stores/settings";
 import { useI18n, tPlural } from "../lib/i18n";
 import { Dropdown } from "./Dropdown";
@@ -678,7 +679,14 @@ export default function MycelialView(props: MycelialViewProps) {
       `${bullets}\n`;
     try {
       const newPath = await ipc.createNote(title, folder, body);
-      openTab({ type: "file", title, path: newPath }, { forceNewTab: true });
+      const tabId = openTab({ type: "file", title, path: newPath }, { forceNewTab: true });
+      // The new page is a Compose draft, with cards for the passages the
+      // concept recurs in.
+      await showCompose(tabId, {
+        kind: "phrase",
+        phrase: concept.term,
+        notes: concept.mentions.map((m) => ({ path: m.path, name: m.name })),
+      });
     } catch (err) {
       // A note with this name already lives in another folder. Let the user
       // open it or pick a different name (then rebuild the page under that

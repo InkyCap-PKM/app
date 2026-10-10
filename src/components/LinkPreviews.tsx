@@ -1,6 +1,6 @@
 // The text previews under rows in the right panel's Links pane: the passages
 // around an inbound link, and the single matching line (with optional lines
-// around it) for possible wikilinks and search-filtered rows. The text that
+// around it) for latent wikilinks and search-filtered rows. The text that
 // matched (the link, the note's name, the search term) is highlighted.
 
 import { createResource, For, Show, type Component } from "solid-js";

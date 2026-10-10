@@ -1,7 +1,7 @@
-//! Commands that return the passages of text around wikilinks, for the Links
-//! pane and Compose mode, and that help Compose edit its draft. The link
-//! index says *which* notes link; these read the notes on request to find
-//! *where*. See [`crate::typst_pipeline::link_passages`] for what a passage
+//! Commands that return the passages of text around wikilinks (or around a
+//! recurring phrase), for the Links pane and Compose mode, and that help
+//! Compose edit its draft. The link index says *which* notes link; these read
+//! the notes on request to find *where*. See [`crate::typst_pipeline::link_passages`] for what a passage
 //! is.
 //!
 //! Text meant for copying is returned with relative paths
@@ -71,6 +71,29 @@ pub async fn get_lead_passage(
         rebase_passage(p, &note_dir(&path, &storage));
     }
     Ok(passage)
+}
+
+/// The passages in the note at `path` whose prose holds `phrase`, in
+/// document order, with the phrase marked. Compose shows these for a page
+/// made from a Mycelial View emergent concept, from the notes the concept
+/// recurs in.
+#[tauri::command]
+pub async fn get_phrase_passages(
+    path: String,
+    phrase: String,
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<Vec<LinkPassage>, InkyCapError> {
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
+    let path = sanitize_notebox_arg(&path)?;
+    let content = storage.read_file(&path).await?;
+    let mut passages = link_passages::phrase_passages(&content, &phrase);
+    let dir = note_dir(&path, &storage);
+    for p in &mut passages {
+        rebase_passage(p, &dir);
+    }
+    Ok(passages)
 }
 
 /// The whole body of the note at `path`, ready to copy into another note:

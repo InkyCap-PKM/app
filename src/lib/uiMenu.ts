@@ -134,6 +134,11 @@ export function anchorPointMenu(
 /// column. That's why the right panel's sort menu was wrapping its
 /// labels before — `absolute` inherited the panel width.
 ///
+/// A trigger inside an element marked `data-menu-bounds` (the editor column)
+/// keeps its menu inside that element, as `bounds` does for
+/// `anchorPointMenu`, so a menu opened near the column's edge turns inward
+/// rather than disappearing under the side panel next to it.
+///
 /// Placement is deferred to the next animation frame: Solid `ref`
 /// callbacks fire before the element is attached to the document, so
 /// `offsetWidth`/`offsetHeight` read 0 if measured synchronously — which
@@ -149,7 +154,8 @@ export function anchorPanelMenu(
   // `triggerEl` may have unmounted (menu closed) before the measuring frame.
   placeWhenMeasurable(menuEl, () => triggerEl.isConnected, (width, height) => {
     const tr = triggerEl.getBoundingClientRect();
-    const v = placementLimits(menuEl);
+    const bounds = triggerEl.closest<HTMLElement>("[data-menu-bounds]") ?? undefined;
+    const v = placementLimits(menuEl, bounds);
     // Left-aligned under the trigger; right-align to it if that overflows.
     const left = tr.left + width > v.right ? tr.right - width : tr.left;
     // Below the trigger; above it if that overflows.

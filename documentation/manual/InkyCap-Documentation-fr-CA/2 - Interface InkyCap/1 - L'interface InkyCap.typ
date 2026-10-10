@@ -89,7 +89,7 @@ Quand une *note* est active, le panneau de droite vous offre :
 - *Actions sur le fichier* est un menu avec *Renommer...*, *Déplacer le fichier vers...*, *Ajouter un signet...*, *Exporter...*, *Rechercher...*, *Remplacer...*, *Afficher dans l'arborescence des fichiers* (met le fichier en surbrillance), *Afficher dans le gestionnaire de fichiers du système* et *Supprimer le fichier*.
 - *Plan* est l'arbre des titres de votre document. C'est comme une table des matières sur laquelle vous pouvez cliquer pour sauter à des sections dans les notes longues.
 - *Propriétés* est un éditeur des métadonnées propres à la note, comme le titre, les étiquettes, la date et l'échéance. Voyez #wikilink("6 - Propriétés des notes").
-- *Liens* affiche les connexions de votre note, regroupées en Liens entrants (rétroliens), Liens sortants et Liens wiki possibles. Voyez #wikilink("4 - Liens et rétroliens").
+- *Liens* affiche les connexions de votre note, regroupées en Liens entrants (rétroliens), Liens sortants et Liens wiki latents. Voyez #wikilink("4 - Liens et rétroliens").
 - *Références* est le panneau de bibliographie. Voyez #wikilink("7 - Citations et bibliographie").
 - *Modifications et historique* vous permet de réviser les suggestions, les modifications suivies et les annotations. Un petit point apparaît sur cet onglet quand des modifications suggérées attendent que vous les acceptiez ou les refusiez.
 

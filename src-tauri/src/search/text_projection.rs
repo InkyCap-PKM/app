@@ -91,6 +91,44 @@ pub fn project(source: &str) -> TextProjection {
     out
 }
 
+/// Where `phrase` occurs among `tokens`, as the indices of the first and last
+/// token of each occurrence, in order. The phrase's words must match
+/// consecutive tokens on one line, ignoring case.
+pub fn phrase_matches(tokens: &[TextToken], phrase: &str) -> Vec<(usize, usize)> {
+    let words: Vec<String> = phrase.split_whitespace().map(str::to_lowercase).collect();
+    if words.is_empty() {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for i in 0..tokens.len() {
+        let matched = words.iter().enumerate().all(|(k, w)| {
+            tokens
+                .get(i + k)
+                .is_some_and(|t| t.word.to_lowercase() == *w && t.line == tokens[i].line)
+        });
+        if matched {
+            out.push((i, i + words.len() - 1));
+        }
+    }
+    out
+}
+
+/// Byte ranges of every occurrence of `phrase` in `source`'s prose, in
+/// order. Matches as [`phrase_matches`] does, so properties, code and
+/// comments are never matched.
+pub fn phrase_ranges(source: &str, phrase: &str) -> Vec<std::ops::Range<usize>> {
+    let line_map = LineMap::new(source);
+    let tokens = project(source).tokens;
+    phrase_matches(&tokens, phrase)
+        .into_iter()
+        .map(|(first, last)| {
+            let (first, last) = (&tokens[first], &tokens[last]);
+            line_map.line_start(first.line) + first.char_start
+                ..line_map.line_start(last.line) + last.char_end
+        })
+        .collect()
+}
+
 /// Recursive descent over the AST.
 ///
 /// Default behavior is "descend into every child"; the special-cases

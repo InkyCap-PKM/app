@@ -55,7 +55,7 @@ The view isn't just for looking. Every suggestion is a clickable action:
 
 - *Click a source note or a kindred note* to re-centre the whole view around it. A *Back* arrow appears in the toolbar so you can retrace your steps.
 - *Click a latent link* to open a small picker listing every place the term was mentioned. Choosing one opens that note at the exact spot, ready for you to wrap the mention in a link.
-- *Click an emergent concept* to create a page for it. Short terms become a new note straight away; longer phrases first let you trim the title. The new note arrives pre-filled with a heading and an "Emerged from" list of links back to the notes the idea came from.
+- *Click an emergent concept* to create a page for it. Short terms become a new note straight away; longer phrases first let you trim the title. The new note arrives pre-filled with a heading and an "Emerged from" list of links back to the notes the idea came from, and opens as a Compose draft: the right panel's *Compose* tab lists as cards the passages where the term recurs in those notes, ready to copy into the new page (see #wikilink("4 - Journal Scroll") for how Compose cards work).
 - *Right-click any note* in the graph (the anchor, a source note, a kindred note, or a latent link's page) and choose *Open in new tab* to read its content in the editor instead; useful when you want to see for yourself what makes a kindred note kindred before recentring on it.
 
 #callout("note")[A term only counts as an emergent concept if it shows up in *at least two* notes. A word used just once is only a word, not yet an idea for the Mycelial View.]

@@ -11,7 +11,9 @@ import PaneView from "./panes/PaneView";
  */
 const MainContent: Component = () => {
   return (
-    <div class="main-content">
+    // `data-menu-bounds`: menus opened from a button in here stay inside the
+    // column instead of running under the right panel (see anchorPanelMenu).
+    <div class="main-content" data-menu-bounds>
       <Show when={panes.root} keyed>
         {(root) => <PaneView node={root} />}
       </Show>

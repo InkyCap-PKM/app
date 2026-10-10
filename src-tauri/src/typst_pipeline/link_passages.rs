@@ -11,6 +11,10 @@
 //! highlighting. A passage also carries a *snippet*: a few sentences around
 //! the link, which the Links pane shows until the user asks for more context.
 //!
+//! A passage can also be found around a recurring phrase rather than a link
+//! ([`phrase_passages`]), for Compose drafts made from a Mycelial View
+//! emergent concept.
+//!
 //! Paragraph boundaries come from the syntax tree (`Parbreak`, `Heading`,
 //! list items), not from scanning lines, so a `= ` inside a code block or a
 //! blank line inside a string never splits a passage.
@@ -21,13 +25,12 @@ use icu_segmenter::options::SentenceBreakInvariantOptions;
 use icu_segmenter::SentenceSegmenter;
 
 use crate::link_index::link_note_name;
+use crate::search::text_projection::{phrase_ranges, word_boundaries};
 use crate::text_offsets::byte_to_utf16;
-use crate::typst_pipeline::plaintext::{
-    extract_marked_text, extract_plain_text, MarkNode, MarkedText,
-};
+use crate::typst_pipeline::plaintext::{extract_marked_text, extract_plain_text, MarkedText};
 use crate::typst_pipeline::query::first_string_positional_arg;
 use crate::typst_pipeline::source_structure::{headings, SourceHeading};
-use crate::typst_pipeline::syntax::{ast, parse, LinkedNode, SyntaxKind};
+use crate::typst_pipeline::syntax::{ast, parse, LinkedNode, Side, SyntaxKind};
 
 /// Longest plain-text rendering kept for display, in characters. The Typst
 /// source is never shortened, so copying a passage always copies all of it.
@@ -85,9 +88,29 @@ pub fn inbound_passages(source: &str, target_stem: &str) -> Vec<LinkPassage> {
     let all_headings = headings(source);
     let target = target_stem.to_lowercase();
     let is_link = |n: &LinkedNode<'_>| is_wikilink_to(n, &target);
+    let extract = |s: &str| extract_marked_text(s, &is_link);
     inbound_spans(source, target_stem)
         .into_iter()
-        .filter_map(|span| span_passage(source, &all_headings, span, &is_link))
+        .filter_map(|span| span_passage(source, &all_headings, span, &extract))
+        .collect()
+}
+
+/// Every passage in `source` whose prose holds `phrase`, in document order,
+/// with each occurrence of the phrase marked. The phrase is matched as
+/// [`phrase_ranges`] matches it: whole words on one line, ignoring case.
+/// Several occurrences inside one paragraph give one passage.
+pub fn phrase_passages(source: &str, phrase: &str) -> Vec<LinkPassage> {
+    let all_headings = headings(source);
+    let extract = |s: &str| mark_phrase(extract_marked_text(s, &|_| false), phrase);
+    let root = parse(source);
+    let tree = LinkedNode::new(&root);
+    let leaves: Vec<LinkedNode<'_>> = phrase_ranges(source, phrase)
+        .into_iter()
+        .filter_map(|r| tree.leaf_at(r.start, Side::After))
+        .collect();
+    spans_around(source, &leaves)
+        .into_iter()
+        .filter_map(|span| span_passage(source, &all_headings, span, &extract))
         .collect()
 }
 
@@ -96,7 +119,8 @@ pub fn inbound_passages(source: &str, target_stem: &str) -> Vec<LinkPassage> {
 /// its first heading plus the paragraph after it. `None` for an empty body.
 /// Carries no `before` (nothing comes before it) but does carry `after`.
 pub fn lead_passage(source: &str) -> Option<LinkPassage> {
-    span_passage(source, &headings(source), lead_span(source)?, &|_| false)
+    let extract = |s: &str| extract_marked_text(s, &|_| false);
+    span_passage(source, &headings(source), lead_span(source)?, &extract)
 }
 
 /// Where a passage and the units of writing around it sit in the source, as
@@ -124,17 +148,20 @@ impl PassageSpan {
 /// of writing that links to `target_stem`.
 pub(crate) fn inbound_spans(source: &str, target_stem: &str) -> Vec<PassageSpan> {
     let root = parse(source);
-    let body_start = body_start(source);
     let target = target_stem.to_lowercase();
     let mut calls = Vec::new();
     collect_wikilinks(&LinkedNode::new(&root), &mut calls);
+    calls.retain(|call| is_wikilink_to(call, &target));
+    spans_around(source, &calls)
+}
 
+/// The span of each unit of writing holding one of `nodes`, in the order of
+/// `nodes`, once per unit.
+fn spans_around(source: &str, nodes: &[LinkedNode<'_>]) -> Vec<PassageSpan> {
+    let body_start = body_start(source);
     let mut out: Vec<PassageSpan> = Vec::new();
-    for call in calls {
-        if !is_wikilink_to(&call, &target) {
-            continue;
-        }
-        let (unit, own, markup) = unit_around(&call);
+    for node in nodes {
+        let (unit, own, markup) = unit_around(node);
         let Some(unit) = clip(unit, body_start) else {
             continue;
         };
@@ -186,25 +213,28 @@ pub(crate) fn lead_span(source: &str) -> Option<PassageSpan> {
     })
 }
 
-/// The passage a span marks out, or `None` when its unit is blank. The text
-/// of nodes `is_link` accepts is marked for highlighting.
+/// Turns a stretch of Typst source into plain prose, with the stretches to
+/// highlight marked.
+type Extract<'f> = &'f dyn Fn(&str) -> MarkedText;
+
+/// The passage a span marks out, or `None` when its unit is blank.
 fn span_passage(
     source: &str,
     all_headings: &[SourceHeading],
     span: PassageSpan,
-    is_link: MarkNode<'_>,
+    extract: Extract<'_>,
 ) -> Option<LinkPassage> {
-    let paragraph = passage_text(source, span.unit.clone(), is_link)?;
+    let paragraph = passage_text(source, span.unit.clone(), extract)?;
     let own = source
         .get(span.own)
-        .map(|own| snippet(&extract_marked_text(own, is_link)))
+        .map(|own| snippet(&extract(own)))
         .filter(|s| !s.text.trim().is_empty());
     Some(LinkPassage {
         heading: heading_above(all_headings, span.unit.start).map(heading_plain_text),
         snippet: own.map_or_else(|| paragraph.display.clone(), |s| display_text(&s)),
         paragraph,
-        before: span.before.and_then(|r| passage_text(source, r, is_link)),
-        after: span.after.and_then(|r| passage_text(source, r, is_link)),
+        before: span.before.and_then(|r| passage_text(source, r, extract)),
+        after: span.after.and_then(|r| passage_text(source, r, extract)),
     })
 }
 
@@ -298,11 +328,16 @@ fn unit_around<'a>(node: &LinkedNode<'a>) -> (Range<usize>, Range<usize>, Option
                 return (unit.clone(), unit, parent.parent().cloned());
             }
             // Markup that is the body of a list item or heading belongs to
-            // that item; keep climbing so the arms above take it.
+            // that item, and the body of bold or italic text belongs to the
+            // paragraph around it; keep climbing so the right arm takes it.
             SyntaxKind::Markup
-                if !parent
-                    .parent_kind()
-                    .is_some_and(|k| is_item(k) || k == SyntaxKind::Heading) =>
+                if !parent.parent_kind().is_some_and(|k| {
+                    is_item(k)
+                        || matches!(
+                            k,
+                            SyntaxKind::Heading | SyntaxKind::Strong | SyntaxKind::Emph
+                        )
+                }) =>
             {
                 let unit = paragraph_run(&parent, &child);
                 return (unit.clone(), unit, Some(parent));
@@ -420,7 +455,7 @@ fn heading_above(all: &[SourceHeading], offset: usize) -> Option<&SourceHeading>
 }
 
 /// Both forms of `source[range]`, or `None` when the stretch is blank.
-fn passage_text(source: &str, range: Range<usize>, is_link: MarkNode<'_>) -> Option<PassageText> {
+fn passage_text(source: &str, range: Range<usize>, extract: Extract<'_>) -> Option<PassageText> {
     // Node and heading ranges come from the parser, so they fall on
     // character boundaries.
     let raw = source.get(range)?.trim();
@@ -429,11 +464,34 @@ fn passage_text(source: &str, range: Range<usize>, is_link: MarkNode<'_>) -> Opt
     }
     Some(PassageText {
         source: raw.to_string(),
-        display: display_text(&shorten(
-            &extract_marked_text(raw, is_link),
-            MAX_DISPLAY_CHARS,
-        )),
+        display: display_text(&shorten(&extract(raw), MAX_DISPLAY_CHARS)),
     })
+}
+
+/// `text` with every occurrence of `phrase` marked, as whole words and
+/// ignoring case. Replaces any marks `text` had.
+fn mark_phrase(text: MarkedText, phrase: &str) -> MarkedText {
+    let words: Vec<String> = phrase.split_whitespace().map(str::to_lowercase).collect();
+    let found = word_boundaries(&text.text);
+    let mut marks: Vec<Range<usize>> = Vec::new();
+    if !words.is_empty() {
+        for i in 0..found.len() {
+            let matched = words.iter().enumerate().all(|(k, w)| {
+                found
+                    .get(i + k)
+                    .is_some_and(|(_, word)| word.to_lowercase() == *w)
+            });
+            if matched {
+                let (start, _) = found[i];
+                let (last_start, last) = found[i + words.len() - 1];
+                marks.push(start..last_start + last.len());
+            }
+        }
+    }
+    MarkedText {
+        text: text.text,
+        marks,
+    }
 }
 
 /// `text` ready to send to the webview, with its marks in UTF-16 units.
@@ -572,6 +630,40 @@ mod tests {
             .into_iter()
             .map(|p| p.paragraph.source)
             .collect()
+    }
+
+    #[test]
+    fn phrase_passages_take_each_paragraph_holding_the_phrase_once() {
+        let src = note(
+            "Intro.\n\nThe *Commons* Garden grows; a commons garden needs care.\n\n- a commons\n  garden split across lines\n\nNothing here.",
+        );
+        let passages = phrase_passages(&src, "commons garden");
+        assert_eq!(passages.len(), 1);
+        let p = &passages[0].paragraph;
+        assert_eq!(
+            p.source,
+            "The *Commons* Garden grows; a commons garden needs care."
+        );
+        let marked: Vec<&str> = p
+            .display
+            .marks
+            .iter()
+            .map(|&(a, b)| &p.display.text[a..b])
+            .collect();
+        assert_eq!(marked, vec!["Commons Garden", "commons garden"]);
+    }
+
+    #[test]
+    fn phrase_passages_skip_properties_and_comments() {
+        let src = format!(
+            "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n#note(title: \"Commons garden\")\n\n// commons garden\n\nA café beside the commons garden."
+        );
+        let passages = phrase_passages(&src, "commons garden");
+        assert_eq!(passages.len(), 1);
+        assert_eq!(
+            passages[0].paragraph.source,
+            "A café beside the commons garden."
+        );
     }
 
     #[test]

@@ -1,6 +1,7 @@
-// Compose sessions: a new note being written beside passages from the notes
-// linked with another note (the origin), both the notes that link to it and
-// the notes it links to.
+// Compose sessions: a new note being written beside passages from other
+// notes. The passages come either from the notes linked with another note
+// (both the notes that link to it and the notes it links to), or from the
+// notes a recurring phrase appears in (a Mycelial View emergent concept).
 //
 // A session belongs to the draft's tab and lives only in memory. It ends when
 // that tab closes; whatever the writer kept is in the draft itself, and the
@@ -10,18 +11,30 @@
 import { createRoot, createEffect, createSignal } from "solid-js";
 import * as ipc from "../lib/ipc";
 import type { LinkPassage } from "../lib/ipc";
-import type { LinkInfo } from "../lib/types";
 import { compareChronological } from "../lib/sort";
 import { reorderIndex, type DropPosition } from "../lib/drag-reorder";
 import { pathEquals } from "../lib/paths";
 import { tabs } from "./tabs";
 
-/** One passage from a note linked with the origin note. */
+/** A note a session's passages come from. */
+export interface ComposeNote {
+  path: string;
+  name: string;
+}
+
+/** Where a session's cards come from. */
+export type ComposeOrigin =
+  /** The notes linked with the note at `path`, both ways. */
+  | ({ kind: "links" } & ComposeNote)
+  /** The notes `phrase` recurs in, in the order given. */
+  | { kind: "phrase"; phrase: string; notes: ComposeNote[] };
+
+/** One passage from a note the session draws on. */
 export interface ComposeCard {
   /** Unique within a session. */
   id: string;
   /** The note the passage comes from. */
-  source: LinkInfo;
+  source: ComposeNote;
   passage: LinkPassage;
   /** True when the passage is the note's opening rather than a passage that
    *  links to the origin: the origin links to the note but the note doesn't
@@ -30,8 +43,7 @@ export interface ComposeCard {
 }
 
 export interface ComposeSession {
-  /** The note whose links supplied the cards. */
-  origin: { path: string; name: string };
+  origin: ComposeOrigin;
   /** Every card, in display order. */
   cards: ComposeCard[];
   dismissed: string[];
@@ -57,13 +69,16 @@ function update(tabId: string, fn: (s: ComposeSession) => ComposeSession) {
 /** Start a session for the draft in tab `draftTabId` and load its cards. */
 export async function beginComposeSession(
   draftTabId: string,
-  origin: { path: string; name: string },
+  origin: ComposeOrigin,
 ): Promise<void> {
   setSessions((prev) => ({
     ...prev,
     [draftTabId]: { origin, cards: [], dismissed: [], loading: true },
   }));
-  const cards = await loadCards(origin.path);
+  const cards =
+    origin.kind === "links"
+      ? await loadLinkCards(origin.path)
+      : await loadPhraseCards(origin.phrase, origin.notes);
   update(draftTabId, (s) => ({ ...s, cards, loading: false }));
 }
 
@@ -95,7 +110,7 @@ export function moveCard(
  *  A note gives one card per passage that links to the origin, in document
  *  order. A note with no such passage (the origin links to it, or it links
  *  only from its properties) gives one card holding its opening passage. */
-async function loadCards(originPath: string): Promise<ComposeCard[]> {
+async function loadLinkCards(originPath: string): Promise<ComposeCard[]> {
   try {
     const [inbound, outbound] = await Promise.all([
       ipc.getBacklinks(originPath),
@@ -129,6 +144,27 @@ async function loadCards(originPath: string): Promise<ComposeCard[]> {
   } catch {
     return [];
   }
+}
+
+/** The cards for each of `notes`, in the order given: one card per passage
+ *  in which `phrase` appears, in document order. */
+async function loadPhraseCards(phrase: string, notes: ComposeNote[]): Promise<ComposeCard[]> {
+  const perNote = await Promise.all(
+    notes.map(async (source): Promise<ComposeCard[]> => {
+      try {
+        const passages = await ipc.getPhrasePassages(source.path, phrase);
+        return passages.map((passage, i) => ({
+          id: `${source.path}::${i}`,
+          source,
+          passage,
+          lead: false,
+        }));
+      } catch {
+        return [];
+      }
+    }),
+  );
+  return perNote.flat();
 }
 
 // A session ends when its draft's tab closes.

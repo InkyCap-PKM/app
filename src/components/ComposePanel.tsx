@@ -1,12 +1,13 @@
 // Compose mode: write a new note (the draft, in the editor) beside cards
-// holding passages from the notes linked with the note Compose was started
-// from (in the right panel): the passages that link to it, and the opening
-// passage of each note it links to.
+// holding passages from other notes (in the right panel).
 //
-// Started from the Compose button in the right panel of a Journal Scroll in
-// Neighbourhood mode, for the scroll's anchor. The draft is made exactly as
-// Ctrl+N makes a note, so the user's naming, folder, template and ZID
-// settings all apply. A passage can be copied in as it is or as a quote that
+// Started two ways. The Compose button in the right panel of a Journal
+// Scroll in Neighbourhood mode makes a draft exactly as Ctrl+N makes a note,
+// so the user's naming, folder, template and ZID settings all apply, and
+// shows the passages that link to the scroll's anchor and the opening
+// passage of each note it links to. Clicking an emergent concept in the
+// Mycelial View makes the concept's page and shows the passages in which the
+// concept recurs. A passage can be copied in as it is or as a quote that
 // links back to its note, or the card's whole note can be copied in; each
 // way adds the note to the draft's `derived-from` property. Session state
 // lives in stores/compose.ts.
@@ -36,6 +37,7 @@ import {
   moveCard,
   visibleCards,
   type ComposeCard,
+  type ComposeOrigin,
 } from "../stores/compose";
 import HighlightedText from "./HighlightedText";
 
@@ -52,30 +54,36 @@ let unregisterPanel: (() => void) | null = null;
  *  Does nothing if the user cancels naming the note. */
 export async function startCompose(originPath: string): Promise<void> {
   const fileName = originPath.split("/").pop() ?? originPath;
-  const origin = { path: originPath, name: fileName.replace(/\.typ$/i, "") };
+  const name = fileName.replace(/\.typ$/i, "");
   try {
     const result = await triggerCreationRule("new-note");
     if (!result) return;
-    const name = result.path.split("/").pop() ?? "";
+    const draftName = result.path.split("/").pop() ?? "";
     const tabId = openCreatedNote(
-      { type: "file", title: name, path: result.path },
+      { type: "file", title: draftName, path: result.path },
       { cursorOffset: result.cursor_offset ?? undefined },
     );
-    // Registered once and left in place: the `when` gate hides the tab
-    // whenever the focused tab has no session.
-    unregisterPanel ??= registerRightPanel({
-      id: PANEL_ID,
-      label: t("compose.tabTitle"),
-      icon: NotebookPen,
-      component: ComposePanel,
-      when: () => !!composeSessionFor(focusedActiveTabId()),
-    });
-    setRightCollapsed(false);
-    setRightPanelTab(PANEL_ID);
-    await beginComposeSession(tabId, origin);
+    await showCompose(tabId, { kind: "links", path: originPath, name });
   } catch (e) {
     toastError(t("compose.startFailed"), e);
   }
+}
+
+/** Make the draft open in tab `draftTabId` a Compose draft: show the Compose
+ *  panel beside it with the passages `origin` supplies. */
+export async function showCompose(draftTabId: string, origin: ComposeOrigin): Promise<void> {
+  // Registered once and left in place: the `when` gate hides the tab
+  // whenever the focused tab has no session.
+  unregisterPanel ??= registerRightPanel({
+    id: PANEL_ID,
+    label: t("compose.tabTitle"),
+    icon: NotebookPen,
+    component: ComposePanel,
+    when: () => !!composeSessionFor(focusedActiveTabId()),
+  });
+  setRightCollapsed(false);
+  setRightPanelTab(PANEL_ID);
+  await beginComposeSession(draftTabId, origin);
 }
 
 const ComposePanel: Component = () => {
@@ -104,7 +112,11 @@ const ComposePanel: Component = () => {
   document.addEventListener("inkycap:note-saved", onSaved);
   onCleanup(() => document.removeEventListener("inkycap:note-saved", onSaved));
 
-  const isUsed = (card: ComposeCard) => linkedNames().includes(card.source.name.toLowerCase());
+  // A card is dimmed once the draft links to its note. A page made from a
+  // concept links all its notes from the start, so its cards never dim.
+  const isUsed = (card: ComposeCard) =>
+    session()?.origin.kind === "links" &&
+    linkedNames().includes(card.source.name.toLowerCase());
 
   const drag = createDragReorder((fromId, targetId, position) => {
     const id = draftTabId();
@@ -203,7 +215,7 @@ const ComposePanel: Component = () => {
         {(s) => (
           <>
             <div class="compose__header">
-              <p class="compose__origin">{t("compose.origin", { name: s().origin.name })}</p>
+              <p class="compose__origin">{originText(s().origin)}</p>
               <Show when={visibleCards(s()).length > 0}>
                 <div class="compose__all">
                   <span class="compose__all-label">{t("compose.allPassages")}</span>
@@ -254,7 +266,7 @@ const ComposePanel: Component = () => {
                       <Show when={card.lead}>
                         <span
                           class="badge"
-                          title={t("compose.leadTitle", { name: s().origin.name })}
+                          title={t("compose.leadTitle", { name: originName(s().origin) })}
                         >
                           {t("compose.lead")}
                         </span>
@@ -313,6 +325,18 @@ export const ComposeNotice: Component<{ tabId: string }> = (props) => {
     </Show>
   );
 };
+
+/** The line above the cards saying where they come from. */
+function originText(origin: ComposeOrigin): string {
+  return origin.kind === "links"
+    ? t("compose.origin", { name: origin.name })
+    : t("compose.originPhrase", { phrase: origin.phrase });
+}
+
+/** The origin note's name, or the phrase when the cards come from one. */
+function originName(origin: ComposeOrigin): string {
+  return origin.kind === "links" ? origin.name : origin.phrase;
+}
 
 /** The cards' note names, once each, in card order. */
 function uniqueNames(cards: ComposeCard[]): string[] {

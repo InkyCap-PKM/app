@@ -15,4 +15,4 @@
 //! which keeps the `use typst::` surface greppable and in one place.
 
 pub use typst::foundations::{Dict, Value};
-pub use typst::syntax::{ast, parse, LinkedNode, SyntaxKind};
+pub use typst::syntax::{ast, parse, LinkedNode, Side, SyntaxKind};

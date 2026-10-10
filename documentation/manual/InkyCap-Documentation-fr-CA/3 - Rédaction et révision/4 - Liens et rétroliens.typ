@@ -201,7 +201,7 @@ Vous lisez ces connexions dans l'onglet *Liens* du panneau de droite. Il comport
 
 + *Liens entrants* : les notes qui pointent *vers* la note que vous regardez (ses _rétroliens_). Sous chacune, InkyCap affiche un court aperçu du texte autour du lien : la phrase qui le contient, avec la phrase précédente et la suivante quand elles sont courtes, tirée de la ligne même du lien (un élément de liste sans les éléments en retrait sous lui). Le lien lui-même est surligné. Une note qui pointe plusieurs fois vers celle-ci affiche chaque aperçu. Une note qui n'y pointe que par l'une de ses propriétés l'indique plutôt. Les passages sont d'abord masqués ; affichez-les tous avec *Développer les aperçus*, ou double-cliquez sur une rangée pour n'afficher que les siens.
 + *Liens sortants* : les notes vers lesquelles votre note active pointe. Les liens vers des notes qui n'existent pas encore apparaissent comme *non résolus*, avec une icône de fichier en pointillé et un bouton *créer* ; cliquer sur la rangée ou le bouton crée la note manquante sur-le-champ.
-+ *Liens wiki possibles* : les notes qui *mentionnent le nom de cette note en texte clair* mais ne l'ont pas encore vraiment liée. La mention est surlignée.
++ *Liens wiki latents* : les notes qui *mentionnent le nom de cette note en texte clair* mais ne l'ont pas encore vraiment liée. La mention est surlignée.
 
 Le panneau vous donne quelques façons de retrouver des notes dans une liste chargée :
 

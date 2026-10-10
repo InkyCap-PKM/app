@@ -748,41 +748,22 @@ async fn resolve_mention(
     term: &str,
 ) -> Option<SourceMention> {
     let content = storage.read_file(path).await.ok()?;
-    let projection = crate::search::text_projection::project(&content);
-    let tokens = &projection.tokens;
-    let words: Vec<String> = term.split(' ').map(|w| w.to_lowercase()).collect();
-    if words.is_empty() {
-        return None;
-    }
-
-    let lines: Vec<&str> = content.lines().collect();
-    for i in 0..tokens.len() {
-        // The term's words must match consecutive tokens on a single line.
-        let matched = words.iter().enumerate().all(|(k, w)| {
-            tokens
-                .get(i + k)
-                .map(|t| t.word.to_lowercase() == *w && t.line == tokens[i].line)
-                .unwrap_or(false)
-        });
-        if !matched {
-            continue;
-        }
-        let first = &tokens[i];
-        let last = &tokens[i + words.len() - 1];
-        let snippet = lines
-            .get(first.line)
-            .map(|l| trim_snippet(l))
-            .unwrap_or_default();
-        return Some(SourceMention {
-            path: to_frontend_string(path),
-            name: stem_name(path),
-            snippet,
-            line: first.line + 1,
-            char_start: first.char_start,
-            char_end: last.char_end,
-        });
-    }
-    None
+    let tokens = crate::search::text_projection::project(&content).tokens;
+    let (first, last) = *crate::search::text_projection::phrase_matches(&tokens, term).first()?;
+    let (first, last) = (&tokens[first], &tokens[last]);
+    let snippet = content
+        .lines()
+        .nth(first.line)
+        .map(trim_snippet)
+        .unwrap_or_default();
+    Some(SourceMention {
+        path: to_frontend_string(path),
+        name: stem_name(path),
+        snippet,
+        line: first.line + 1,
+        char_start: first.char_start,
+        char_end: last.char_end,
+    })
 }
 
 /// Trim surrounding whitespace and truncate to a printable character budget.

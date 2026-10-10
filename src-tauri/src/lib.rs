@@ -358,6 +358,7 @@ pub fn run() {
             commands::files::ensure_heading_label,
             commands::link_passages::get_link_passages,
             commands::link_passages::get_lead_passage,
+            commands::link_passages::get_phrase_passages,
             commands::link_passages::get_note_body_for_copy,
             commands::link_passages::note_with_derived_from,
             commands::link_passages::wikilink_names,

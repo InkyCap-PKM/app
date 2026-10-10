@@ -105,7 +105,7 @@ Pendant que vous écrivez, la *barre latérale de droite* garde à portée de ma
 
 - *Plan* est un arbre vivant des titres de la note. Cliquez sur n'importe quel titre pour y sauter, et déployez ou repliez l'arbre entier d'un coup.
 - *Propriétés* contient les métadonnées typées de la note (ses propriétés système comme le titre, les dates, la collection, ainsi que toute propriété personnalisée que vous créez), plus des actions de fichier comme Renommer, Déplacer, Ajouter un signet et Exporter. Voir #wikilink("6 - Propriétés des notes").
-- *Liens* affiche les *Liens sortants* de la note, ses *Liens entrants* (rétroliens) et les *Liens wiki possibles* que vous pourriez vouloir créer. Voir #wikilink("4 - Liens et rétroliens").
+- *Liens* affiche les *Liens sortants* de la note, ses *Liens entrants* (rétroliens) et les *Liens wiki latents* que vous pourriez vouloir créer. Voir #wikilink("4 - Liens et rétroliens").
 - *Références* rassemble les citations et la bibliographie de la note. Voir #wikilink("7 - Citations et bibliographie").
 - *Modifications et historique* recueille les suggestions, les annotations et tout changement arrivé depuis votre dernière synchronisation, avec un indicateur quand quelque chose réclame votre attention (cela sert surtout dans un contexte de collaboration).
 

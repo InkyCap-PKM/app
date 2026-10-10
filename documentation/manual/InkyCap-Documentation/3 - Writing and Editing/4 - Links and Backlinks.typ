@@ -200,7 +200,7 @@ You read these connections in the *Links* tab of the right-hand panel. It has th
 
 + *Inbound Links* are the notes that link *to* the note you're viewing (its _backlinks_). Under each one, InkyCap shows a short preview of the text around the link: the sentence that holds it, with the sentence before and after when they're short, taken from the link's own line (a list item without the items indented under it). The link itself is highlighted. A note that links to this one several times shows each preview. A note that links only through one of its properties says so instead. Passages are hidden at first; turn them all on with *Expand previews*, or double-click a row to show just that one's.
 + *Outbound Links* are the notes your active note links *out to*. Links to notes that don't exist yet show up as *unresolved*, with a dashed file icon and a *create* button; clicking the row or the button makes the missing note on the spot.
-+ *Possible wikilinks* are notes that *mention this note's name in plain text* but haven't actually linked to it yet. The mention is highlighted.  
++ *Latent wikilinks* are notes that *mention this note's name in plain text* but haven't actually linked to it yet. The mention is highlighted.  
 
 The panel gives you a few ways to find notes in a busy list:
 

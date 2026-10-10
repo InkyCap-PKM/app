@@ -2208,7 +2208,7 @@ const RightPanel: Component = () => {
                   </Show>
                 </div>
 
-                {/* Potential Links \u2014 files mentioning this note's name without
+                {/* Latent wikilinks \u2014 files mentioning this note's name without
                     an actual wikilink, surfaced so the user can spot missed
                     link opportunities. */}
                 <div class="right-panel__section">
@@ -2226,7 +2226,7 @@ const RightPanel: Component = () => {
                     aria-expanded={linksSectionExpanded().potential}
                   >
                     <span>
-                      {t("rightPanel.possibleWikilinks")}
+                      {t("rightPanel.latentWikilinks")}
                       <Show when={sortedPotentialLinks().length}>
                         <span class="right-panel__count">
                           {" "}({sortedPotentialLinks().length})
@@ -2279,7 +2279,7 @@ const RightPanel: Component = () => {
                       }}
                     </For>
                     <Show when={sortedPotentialLinks().length === 0}>
-                      <p class="sidebar-hint">{t("rightPanel.noPossibleWikilinks")}</p>
+                      <p class="sidebar-hint">{t("rightPanel.noLatentWikilinks")}</p>
                     </Show>
                   </Show>
                 </div>
