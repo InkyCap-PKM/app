@@ -75,10 +75,11 @@ A filter value with spaces must be in quotes, as in `property:author="Jane Doe"`
 
 === Picking filter values from a list
 
-You don't have to remember the exact names in your notebox. As soon as you type `tag:`, `property:`, or `path:`, a list appears under the search box showing what the notebox actually contains: *Tags in this notebox*, *Properties in this notebox*, or *Folders in this notebox*. Keep typing to narrow the list, use the up and down arrows to pick a row, and press `Tab` to accept it (or click it). `Enter` runs the query exactly as you typed it, unless you have arrowed to a row, in which case it accepts that row instead. `Escape` closes the list.
+You don't have to remember the exact names in your notebox. As soon as you type `tag:`, `collection:`, `property:`, or `path:`, a list appears under the search box showing what the notebox actually contains: *Tags in this notebox*, *Collections in this notebox*, *Properties in this notebox*, or *Folders in this notebox*. Keep typing to narrow the list, use the up and down arrows to pick a row, and press `Tab` to accept it (or click it). `Enter` runs the query exactly as you typed it, unless you have arrowed to a row, in which case it accepts that row instead. `Escape` closes the list.
 
 - Accepting a property key writes the `=` for you and the list switches to that key's values (*Values of status*, for example).
 - Accepting a folder writes the closing slash for you, and adds the quotes when the name has spaces.
+- Accepting a collection adds the quotes when its name has spaces.
 
 You can also start a folder search from the file tree: right-click a folder and choose *Search in folder*. The Search panel opens with `path:"<folder>/"` already filled in, ready for you to add the words you're looking for.
 

@@ -34,6 +34,7 @@ import RuleIcon from "./RuleIcon";
 import { LibraryPlusIcon } from "./icons";
 import type { CollectionInfo, FileTreeNode, PropertyType } from "../lib/types";
 import * as ipc from "../lib/ipc";
+import { renameCollection } from "../lib/rename-collection";
 import { renameFile } from "../lib/rename-file";
 import { REVEAL_IN_FILE_TREE_EVENT } from "../lib/file-tree-reveal";
 import { pathEquals, pathStartsWith } from "../lib/paths";
@@ -1249,10 +1250,9 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     setRenamingPath(null);
     if (!path || !newName) return;
     try {
-      await ipc.renameCollectionFile(path, newName);
-      refresh();
+      await renameCollection(path, newName);
     } catch (e) {
-      toastError(t("leftSidebar.renameCollectionFailed"), e);
+      toastError(t("collection.char.renameFailed"), e);
     }
   }
 

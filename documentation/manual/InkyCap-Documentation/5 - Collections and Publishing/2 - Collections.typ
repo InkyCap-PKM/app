@@ -113,6 +113,8 @@ Press *Apply* to set the filter, or *Clear* to remove it from that column. An ac
 
 #callout("note")[Column filters are quick refinements layered on top of what the view already shows. They narrow the rows in front of you; they do not change which notes belong to the collection (that is the job of the *Filter* editor described above). They are saved with the view, and each view keeps its own set.]
 
+*Finding a row.* To pick out something in a long collection, click *Find* on the toolbar and type. Only the rows whose shown text contains what you typed stay in view (the columns you see, as they appear, not the whole text of each note), and the match is highlighted in each cell. The count at the bottom shows how many rows match. Nothing is saved: clear the text, press `Escape`, or close the row with its *×* to see every row again. Find works the same way in an agenda view, matching each item's text, note, and tags.
+
 == The agenda view
 
 An *agenda* view trades the grid for a #highlight[focused list of tasks and dated items *pulled from the collection's member notes* (a deadline board scoped to exactly this set of notes)]. It uses the same membership rules as the table, so the two never disagree, and it needs no special opt-in: filter-based membership is enough.
@@ -128,7 +130,7 @@ With a collection open, the right panel shows four tabs for the collection:
 - *Export* is where every export of the collection starts: pick a format, set its options, and click the export button near the top. It is the first tab.
 - *Appearance* holds the collection's Typst template and bibliography style, its layout choices (paper size, margins, fonts, spacing, page and heading numbering), and a *Custom Typst* row for anything the controls do not cover. PDF files, the book, and the website use these.
 - *Book* holds everything about the merged book: title page, contributors, table of contents, bibliography, and page numbering. Only the book uses these.
-- *Collection* holds the collection's icon, a *Description* where you can keep a note to yourself about what the collection is for (it is never exported), and the collection's bibliography file.
+- *Collection* holds the collection's name, with a button to rename it, its icon, a *Description* where you can keep a note to yourself about what the collection is for (it is never exported), and the collection's bibliography file.
 
 Export, Appearance, and Book matter mostly when you publish, so they are described on #wikilink("3 - Exporting and Publishing").
 

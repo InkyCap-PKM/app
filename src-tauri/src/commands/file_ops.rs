@@ -1027,7 +1027,7 @@ fn preserve_extension(new_name: String, old: &std::path::Path, is_dir: bool) -> 
 /// store paths in frontend string form, so `old`/`new` are normalized through
 /// `to_frontend_string` before matching. A no-op when nothing was bookmarked
 /// under the renamed path.
-async fn rebase_bookmarks_for_rename(
+pub(crate) async fn rebase_bookmarks_for_rename(
     state: &AppState,
     window: &tauri::WebviewWindow,
     old: &std::path::Path,

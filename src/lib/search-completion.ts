@@ -1,9 +1,10 @@
-// Working out what a half-typed `tag:` or `property:` filter in the search box
-// could be completed with. Pure string work, kept out of the panel so the
+// Working out what a half-typed `tag:`, `path:`, `collection:` or `property:`
+// filter in the search box could be completed with. Pure string work, kept out of the panel so the
 // offsets are testable on their own.
 
-/** What a completion offers: folders, tag names, property keys, or values. */
-export type CompletionKind = "path" | "tag" | "property-key" | "property-value";
+/** What a completion offers: folders, tag names, collection names, property
+ *  keys, or property values. */
+export type CompletionKind = "path" | "tag" | "collection" | "property-key" | "property-value";
 
 export interface SearchCompletionContext {
   kind: CompletionKind;
@@ -24,7 +25,7 @@ export interface SearchCompletionContext {
  * because those are how the query language negates and groups a filter.
  */
 const FILTER_AT_CARET =
-  /(?:^|[\s(])-?(path|tag|property):((?:[^\s()"]|"[^"]*"?)*)$/i;
+  /(?:^|[\s(])-?(path|tag|collection|property):((?:[^\s()"]|"[^"]*"?)*)$/i;
 
 export function completionContext(
   query: string,
@@ -39,7 +40,7 @@ export function completionContext(
   const valueEnd = tokenEnd(query, valueStart);
   const raw = query.slice(valueStart, valueEnd);
 
-  if (filter === "path" || filter === "tag") {
+  if (filter === "path" || filter === "tag" || filter === "collection") {
     return { kind: filter, key: "", typed: normalize(raw), from: valueStart, to: valueEnd };
   }
 

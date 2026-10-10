@@ -132,6 +132,8 @@ Appuyez sur *Appliquer* pour poser le filtre, ou sur *Effacer* pour le retirer d
   Les filtres de colonne sont des affinages rapides superposés à ce que la vue affiche déjà. Ils restreignent les rangées devant vous ; ils ne changent pas quelles notes appartiennent à la collection (c'est le rôle de l'éditeur de *Filtre* décrit plus haut). Ils sont enregistrés avec la vue, et chaque vue garde son propre ensemble.
 ]
 
+*Trouver une rangée.* Pour repérer quelque chose dans une longue collection, cliquez sur *Rechercher* dans la barre d'outils et tapez. Seules les rangées dont le texte affiché contient ce que vous avez tapé restent visibles (les colonnes que vous voyez, telles qu'elles apparaissent, et non le texte entier de chaque note), et la correspondance est surlignée dans chaque cellule. Le compte en bas indique combien de rangées correspondent. Rien n'est enregistré : effacez le texte, appuyez sur `Échap` ou fermez la rangée avec son *×* pour revoir toutes les rangées. La recherche fonctionne de la même façon dans une vue agenda, en comparant le texte, la note et les étiquettes de chaque élément.
+
 == La vue agenda
 
 Une vue *agenda* troque la grille pour une #highlight[liste ciblée de tâches et d'éléments datés *tirés des notes membres de la collection* (un tableau d'échéances limité exactement à cet ensemble de notes)]. Elle utilise les mêmes règles d'appartenance que la table, de sorte que les deux ne se contredisent jamais, et elle ne nécessite aucune activation particulière : l'appartenance par filtres suffit.
@@ -147,7 +149,7 @@ Lorsqu'une collection est ouverte, le panneau de droite affiche quatre onglets p
 - *Exportation* est le point de départ de toute exportation de la collection : choisissez un format, réglez ses options et cliquez sur le bouton d'exportation près du haut. C'est le premier onglet.
 - *Apparence* contient le template Typst et le style de bibliographie de la collection, ses choix de mise en page (taille du papier, marges, polices, espacement, numérotation des pages et des titres) et une rangée *Typst personnalisé* pour tout ce que les contrôles ne couvrent pas. Les fichiers PDF, le livre et le site Web s'en servent.
 - *Livre* contient tout ce qui concerne le livre fusionné : page de titre, contributeurs, table des matières, bibliographie et numérotation des pages. Seul le livre s'en sert.
-- *Collection* contient l'icône de la collection, une *Description* où vous pouvez garder une note pour vous-même sur le but de la collection (elle n'est jamais exportée), et le fichier de bibliographie de la collection.
+- *Collection* contient le nom de la collection, avec un bouton pour la renommer, son icône, une *Description* où vous pouvez garder une note pour vous-même sur le but de la collection (elle n'est jamais exportée), et le fichier de bibliographie de la collection.
 
 Exportation, Apparence et Livre importent surtout au moment de publier ; ils sont donc décrits dans #wikilink("3 - Exportation et publication").
 

@@ -777,16 +777,13 @@ export function switchToTabByIndex(index: number) {
  * manager, etc.) so that an open tab follows the file rather than
  * becoming a phantom that errors on the next save.
  *
- * The new title is derived from the destination filename, matching how
- * `openTab` callers (App.tsx, MycelialView.tsx) compute
- * the title from a path. We don't try to detect "user-customized
- * titles" because the app doesn't currently support them — every tab
- * title is the basename of its path.
+ * The new title defaults to the destination filename, matching how
+ * `openTab` callers (App.tsx, MycelialView.tsx) compute the title from a
+ * path. Pass `newTitle` for tabs titled otherwise, such as a collection,
+ * whose tab shows its name without the `.collection` extension.
  */
-export function renameTabPath(from: string, to: string) {
+export function renameTabPath(from: string, to: string, newTitle = to.split("/").pop() ?? to) {
   if (pathEquals(from, to)) return;
-
-  const newTitle = to.split("/").pop() ?? to;
 
   // Open editors take the new path before their tabs switch to it, so the
   // save they make while being rebuilt lands in the renamed file.

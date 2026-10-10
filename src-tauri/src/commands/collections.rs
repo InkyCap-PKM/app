@@ -477,7 +477,8 @@ pub async fn delete_collection_file(
     Ok(())
 }
 
-/// Rename a .collection file.
+/// Rename a .collection file within its folder. `new_name` is the name
+/// without the `.collection` extension; bookmarks of the collection follow it.
 #[tauri::command]
 pub async fn rename_collection_file(
     collection_path: String,
@@ -488,6 +489,12 @@ pub async fn rename_collection_file(
     let session = state.session(window.label()).await;
     let storage = session.get_storage().await?;
     let old_path = sanitize_notebox_arg(&collection_path)?;
+    let new_name = new_name.trim().to_string();
+    if new_name.is_empty() || new_name.contains(['/', '\\']) {
+        return Err(InkyCapError::InvalidPath(format!(
+            "Not a collection name: '{new_name}'"
+        )));
+    }
     let new_path = old_path
         .parent()
         .unwrap_or(std::path::Path::new(""))
@@ -507,6 +514,9 @@ pub async fn rename_collection_file(
     if let Some(entry) = collection_files.iter_mut().find(|p| **p == old_path) {
         *entry = new_path.clone();
     }
+    drop(collection_files);
+    crate::commands::file_ops::rebase_bookmarks_for_rename(&state, &window, &old_path, &new_path)
+        .await;
 
     // Read to get view count
     let content = storage.read_file(&new_path).await?;

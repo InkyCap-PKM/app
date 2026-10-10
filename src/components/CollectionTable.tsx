@@ -5,10 +5,11 @@ import {
   createResource,
   createSignal,
   For,
+  on,
   Show,
   onCleanup,
 } from "solid-js";
-import { ChevronLeft, ChevronRight, Funnel, PenLine } from "lucide-solid";
+import { ChevronLeft, ChevronRight, Funnel, PenLine, X } from "lucide-solid";
 import type {
   PropertyValue,
   PropertyType,
@@ -30,6 +31,8 @@ import AgendaList from "./AgendaList";
 import FilterBuilder from "./FilterBuilder";
 import ColumnFilterPopover from "./ColumnFilterPopover";
 import PaneNavBar from "./panes/PaneNavBar";
+import HighlightedText from "./HighlightedText";
+import { substringMatch } from "../lib/fuzzy";
 
 // Remember the last active view per collection for the session, so switching
 // to another tab and back doesn't reset the collection to its first view.
@@ -44,6 +47,11 @@ function renderCell(value: PropertyValue): string {
   if (typeof value === "number") return String(value);
   if (Array.isArray(value)) return value.map(renderCell).join(", ");
   return String(value);
+}
+
+/** The stretches of `text` matching the Find row's `query`, for highlighting. */
+function findRanges(query: string, text: string): [number, number][] {
+  return query ? (substringMatch(query, text)?.ranges ?? []) : [];
 }
 
 /** Detect the property type from a cell value. */
@@ -96,6 +104,8 @@ const InlineCell: Component<{
   column: string;
   isFileName: boolean;
   fileName: string;
+  /** The Find row's text, highlighted where it appears in the cell. */
+  find: string;
   onSaved: () => void;
 }> = (props) => {
   const t = useI18n();
@@ -163,7 +173,7 @@ const InlineCell: Component<{
           openRowNote(props.filePath, props.fileName, { newTab: true });
         }}
       >
-        {props.fileName}
+        <HighlightedText text={props.fileName} ranges={findRanges(props.find, props.fileName)} />
       </a>
     );
   }
@@ -177,7 +187,10 @@ const InlineCell: Component<{
           onClick={startEdit}
           title={isFileColumn() ? t("collection.table.fileColReadonly") : t("collection.table.clickToEdit")}
         >
-          {renderCell(props.value) || "\u2014"}
+          <HighlightedText
+            text={renderCell(props.value) || "\u2014"}
+            ranges={findRanges(props.find, renderCell(props.value))}
+          />
         </span>
       }
     >
@@ -276,6 +289,12 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
   const [refreshTick, setRefreshTick] = createSignal(0);
   // Whether the "+ add view" type picker (Table / Agenda) is open.
   const [showAddViewMenu, setShowAddViewMenu] = createSignal(false);
+  // The Find row: a quick, unsaved narrowing of the rows on screen to those
+  // whose shown text contains the query. Closing it or clearing the text
+  // brings every row back.
+  const [showFind, setShowFind] = createSignal(false);
+  const [findQuery, setFindQuery] = createSignal("");
+  let findInputRef: HTMLInputElement | undefined;
   // The "+" trigger, so click-outside dismissal ignores clicks on it.
   let addViewBtnRef: HTMLButtonElement | undefined;
 
@@ -321,6 +340,49 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
     () => ({ path: props.path, tick: refreshTick(), pv: propertyVersion() }),
     async ({ path }) => ipc.getCollectionFile(path),
   );
+
+  /** The Find text in force: empty while the row is closed. */
+  const find = () => (showFind() ? findQuery().trim() : "");
+
+  function openFind() {
+    setShowFind(true);
+    queueMicrotask(() => {
+      findInputRef?.focus();
+      findInputRef?.select();
+    });
+  }
+
+  function closeFind() {
+    setShowFind(false);
+    setFindQuery("");
+  }
+
+  // A tab that navigates to another collection starts without a Find.
+  createEffect(on(() => props.path, closeFind, { defer: true }));
+
+  /** The table's rows, narrowed to those with a shown cell containing the
+   *  Find text. Only the visible columns are searched, as displayed. */
+  const shownRows = createMemo(() => {
+    const d = data();
+    if (!d) return [];
+    const q = find();
+    if (!q) return d.rows;
+    return d.rows.filter((row) =>
+      d.columns.some((col) =>
+        substringMatch(q, col === "file.name" ? row.file_name : renderCell(row.cells[col])),
+      ),
+    );
+  });
+
+  /** The agenda's items, narrowed the same way by their text, note and tags. */
+  const shownAgendaItems = createMemo(() => {
+    const items = agendaItems() ?? [];
+    const q = find();
+    if (!q) return items;
+    return items.filter((it) =>
+      [it.text, it.note_title, ...it.tags].some((field) => substringMatch(q, field)),
+    );
+  });
 
   // Tell the right panel which view this tab shows, so its Export and Book
   // tabs work from the same notes as the table.
@@ -923,6 +985,15 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
                   >
                     {t("collection.table.columns")}
                   </button>
+                  <button
+                    class="collection-table__toolbar-btn"
+                    classList={{ "is-active": showFind() }}
+                    onClick={() => (showFind() ? closeFind() : openFind())}
+                    title={t("collection.table.findTitle")}
+                    aria-pressed={showFind()}
+                  >
+                    {t("collection.table.find")}
+                  </button>
                   <Show when={anyColumnFilterActive()}>
                     <button
                       class="collection-table__toolbar-btn"
@@ -934,6 +1005,34 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
                   </Show>
                 </div>
               </div>
+
+              <Show when={showFind()}>
+                <div class="collection-table__find">
+                  <input
+                    ref={findInputRef}
+                    class="settings__text-input collection-table__find-input"
+                    type="text"
+                    value={findQuery()}
+                    placeholder={t("collection.table.findPlaceholder")}
+                    aria-label={t("collection.table.findTitle")}
+                    onInput={(e) => setFindQuery(e.currentTarget.value)}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Escape") return;
+                      e.preventDefault();
+                      if (findQuery()) setFindQuery("");
+                      else closeFind();
+                    }}
+                  />
+                  <button
+                    class="ui-icon-btn"
+                    onClick={closeFind}
+                    title={t("collection.table.findClose")}
+                    aria-label={t("collection.table.findClose")}
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </Show>
 
               {/* Column picker dropdown */}
               <Show when={showColumnPicker() && allKeys()}>
@@ -961,7 +1060,7 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
               <Show when={activeViewType() === "agenda"}>
                 <div class="collection-table__agenda">
                   <AgendaList
-                    items={agendaItems() ?? []}
+                    items={shownAgendaItems()}
                     loading={agendaItems.loading}
                     emptyMessage={t("agenda.emptyView")}
                     onOpen={(it, opts) =>
@@ -1060,7 +1159,7 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
                     </tr>
                   </thead>
                   <tbody>
-                    <For each={d().rows}>
+                    <For each={shownRows()}>
                       {(row) => (
                         <tr onContextMenu={(e) => handleRowContext(e, row.file_path, row.file_name)}>
                           <td class="collection-table__gutter-td">
@@ -1105,6 +1204,7 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
                                   column={col}
                                   isFileName={col === "file.name"}
                                   fileName={row.file_name}
+                                  find={find()}
                                   onSaved={refresh}
                                 />
                               </td>
@@ -1118,7 +1218,14 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
               </div>
 
               <div class="collection-table__footer">
-                {tPlural("common.file", d().rows.length)}
+                <Show
+                  when={find()}
+                  fallback={tPlural("common.file", d().rows.length)}
+                >
+                  {tPlural("collection.table.findCount", d().rows.length, {
+                    shown: shownRows().length,
+                  })}
+                </Show>
               </div>
               </Show>
 

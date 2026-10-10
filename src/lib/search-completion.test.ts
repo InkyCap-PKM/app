@@ -42,6 +42,11 @@ describe("recognizing the filter under the caret", () => {
     expect(at('path:"2 Box/"|')).toMatchObject({ kind: "path", typed: "2 box/" });
   });
 
+  it("offers collections inside a collection filter", () => {
+    expect(at("collection:|")).toMatchObject({ kind: "collection", typed: "" });
+    expect(at('-collection:"Reading Li|')).toMatchObject({ kind: "collection", typed: "reading li" });
+  });
+
   it("offers property keys until the `=` is typed, then that key's values", () => {
     expect(at("property:sta|")).toMatchObject({ kind: "property-key", typed: "sta" });
     expect(at("property:status=|")).toMatchObject({
@@ -99,6 +104,11 @@ describe("accepting a completion", () => {
     expect(accept("path:2|", "2 Box/")).toBe('path:"2 Box/"|');
     expect(accept("path:|", "Archive/")).toBe("path:Archive/|");
     expect(accept('path:"2 Box/"|', "2 Box/Drafts/")).toBe('path:"2 Box/Drafts/"|');
+  });
+
+  it("quotes a collection whose name has several words", () => {
+    expect(accept("collection:read|", "Reading List")).toBe('collection:"Reading List"|');
+    expect(accept("collection:|", "Papers")).toBe("collection:Papers|");
   });
 
   it("quotes a value that would otherwise end the token", () => {

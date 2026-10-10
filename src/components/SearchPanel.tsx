@@ -396,9 +396,12 @@ const SearchPanel: Component = () => {
     const next = cur + prefix;
     setSearchQuery(next);
     setShowTips(false);
+    // A filter with a value list (tag:, collection:, …) opens it straight away.
+    setCompletionsDismissed(false);
     setTimeout(() => {
       inputRef?.focus();
       inputRef?.setSelectionRange(next.length, next.length);
+      syncCaret();
     }, 0);
   }
 
@@ -421,6 +424,17 @@ const SearchPanel: Component = () => {
     (key: string) => ipc.getPropertyValues(key).catch(() => [] as string[]),
   );
 
+  // Collection names, in name order. Loaded each time a `collection:` list
+  // opens, so it reflects collections added or renamed since.
+  const [collectionNames] = createResource(
+    () => completion()?.kind === "collection" || null,
+    () =>
+      ipc
+        .listCollections()
+        .then((cols) => cols.map((c) => c.name).sort(compareName))
+        .catch(() => [] as string[]),
+  );
+
   /** Everything the current filter could be completed with, unfiltered
    *  except for values the query language cannot express at all. */
   const completionSource = createMemo((): string[] => {
@@ -435,6 +449,8 @@ const SearchPanel: Component = () => {
           return folders().map((folder) => `${folder}/`);
         case "tag":
           return allTags().map(([name]) => name);
+        case "collection":
+          return collectionNames() ?? [];
         case "property-key":
           return allPropertyKeys();
         case "property-value":
@@ -473,6 +489,7 @@ const SearchPanel: Component = () => {
     if (!c) return "";
     if (c.kind === "path") return t("search.completion.folders");
     if (c.kind === "tag") return t("search.completion.tags");
+    if (c.kind === "collection") return t("search.completion.collections");
     if (c.kind === "property-key") return t("search.completion.properties");
     return t("search.completion.values", { key: c.key });
   }

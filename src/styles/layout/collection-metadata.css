@@ -162,6 +162,20 @@
   min-width: 0;
 }
 
+/* The collection's name in the Collection pane, beside its rename button. */
+.collection-meta__name {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--fg-primary);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.collection-meta__name-input {
+  flex: 1;
+  min-width: 0;
+}
+
 .collection-meta__inline-check {
   display: inline-flex;
   align-items: center;

@@ -15,7 +15,7 @@ import {
   Switch,
   createResource,
 } from "solid-js";
-import { ChevronDown, ChevronRight } from "lucide-solid";
+import { ChevronDown, ChevronRight, TextCursorInput } from "lucide-solid";
 import { open } from "@tauri-apps/plugin-dialog";
 import { noteboxRootDefault } from "../lib/dialog-defaults";
 import type {
@@ -29,6 +29,7 @@ import type {
 import * as ipc from "../lib/ipc";
 import { propertyVersion, bumpPropertyVersion } from "../stores/notebox";
 import { toastError } from "../stores/toasts";
+import { renameCollection } from "../lib/rename-collection";
 import type { CollectionPanelTab } from "../stores/layout";
 import LucideIconPicker from "./LucideIconPicker";
 import ContributorsEditor from "./ContributorsEditor";
@@ -1067,12 +1068,86 @@ const CollectionTemplateFields: Component<{
 
 // ── Collection details (Collection tab) ────────────────────────────
 
+/// The collection's name, with a button that turns it into a field for
+/// renaming the collection. Enter or leaving the field renames; Escape
+/// cancels.
+const CollectionNameRow: Component<{ collectionPath: string; collectionName: string }> = (
+  props,
+) => {
+  const t = useI18n();
+  const [draft, setDraft] = createSignal<string | null>(null);
+  let input: HTMLInputElement | undefined;
+
+  function start() {
+    setDraft(props.collectionName);
+    queueMicrotask(() => {
+      input?.focus();
+      input?.select();
+    });
+  }
+
+  async function commit() {
+    const name = draft()?.trim();
+    // Cleared first so the blur that follows Enter doesn't rename twice.
+    setDraft(null);
+    if (!name || name === props.collectionName) return;
+    try {
+      await renameCollection(props.collectionPath, name);
+    } catch (err) {
+      toastError(t("collection.char.renameFailed"), err);
+    }
+  }
+
+  return (
+    <div class="collection-meta__row collection-meta__row--compact">
+      <label class="collection-meta__label">{t("collection.char.name")}</label>
+      <Show
+        when={draft() !== null}
+        fallback={
+          <>
+            <span class="collection-meta__name">{props.collectionName}</span>
+            <button
+              type="button"
+              class="ui-icon-btn"
+              onClick={start}
+              title={t("collection.char.rename")}
+              aria-label={t("collection.char.rename")}
+            >
+              <TextCursorInput size={16} />
+            </button>
+          </>
+        }
+      >
+        <input
+          ref={input}
+          type="text"
+          class="settings__text-input collection-meta__name-input"
+          value={draft() ?? ""}
+          onInput={(e) => setDraft(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              void commit();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              setDraft(null);
+            }
+          }}
+          onBlur={() => void commit()}
+          aria-label={t("collection.char.newName")}
+        />
+      </Show>
+    </div>
+  );
+};
+
 /// Settings that belong to the collection itself rather than to how it is
-/// exported: its sidebar icon, the user's description, and its bibliography
-/// file.
+/// exported: its name, its sidebar icon, the user's description, and its
+/// bibliography file.
 const CollectionDetailsEditor: Component<{
   collectionFile: CollectionFile;
   collectionPath: string;
+  collectionName: string;
   onSaved: () => void;
 }> = (props) => {
   const t = useI18n();
@@ -1085,6 +1160,11 @@ const CollectionDetailsEditor: Component<{
 
   return (
     <>
+      <CollectionNameRow
+        collectionPath={props.collectionPath}
+        collectionName={props.collectionName}
+      />
+
       <div class="collection-meta__row collection-meta__row--compact">
         <label class="collection-meta__label">
           {t("collection.char.icon")}
@@ -1303,6 +1383,7 @@ const CollectionSettings: Component<{
                 <CollectionDetailsEditor
                   collectionFile={cf()}
                   collectionPath={props.collectionPath}
+                  collectionName={props.collectionName}
                   onSaved={onSaved}
                 />
               </div>

@@ -80,10 +80,11 @@ Une valeur de filtre contenant des espaces doit être entre guillemets, comme da
 
 === Choisir les valeurs de filtre dans une liste
 
-Vous n'avez pas à vous rappeler les noms exacts qui se trouvent dans votre boîte de notes. Dès que vous tapez `tag:`, `property:` ou `path:`, une liste apparaît sous la case de recherche pour montrer ce que la boîte de notes contient réellement : *Étiquettes de cette boîte à notes*, *Propriétés de cette boîte à notes* ou *Dossiers de cette boîte à notes*. Continuez à taper pour restreindre la liste, utilisez les flèches vers le haut et vers le bas pour choisir une rangée, puis appuyez sur `Tab` pour l'accepter (ou cliquez dessus). `Entrée` lance la requête exactement comme vous l'avez tapée, sauf si vous avez choisi une rangée avec les flèches, auquel cas c'est cette rangée qui est acceptée. `Échap` ferme la liste.
+Vous n'avez pas à vous rappeler les noms exacts qui se trouvent dans votre boîte de notes. Dès que vous tapez `tag:`, `collection:`, `property:` ou `path:`, une liste apparaît sous la case de recherche pour montrer ce que la boîte de notes contient réellement : *Étiquettes de cette boîte à notes*, *Collections de cette boîte à notes*, *Propriétés de cette boîte à notes* ou *Dossiers de cette boîte à notes*. Continuez à taper pour restreindre la liste, utilisez les flèches vers le haut et vers le bas pour choisir une rangée, puis appuyez sur `Tab` pour l'accepter (ou cliquez dessus). `Entrée` lance la requête exactement comme vous l'avez tapée, sauf si vous avez choisi une rangée avec les flèches, auquel cas c'est cette rangée qui est acceptée. `Échap` ferme la liste.
 
 - Accepter une clé de propriété écrit le `=` pour vous, et la liste passe aux valeurs de cette clé (*Valeurs de statut*, par exemple).
 - Accepter un dossier écrit la barre oblique finale pour vous, et ajoute les guillemets lorsque le nom contient des espaces.
+- Accepter une collection ajoute les guillemets lorsque son nom contient des espaces.
 
 Vous pouvez aussi lancer une recherche dans un dossier à partir de l'arborescence des fichiers : faites un clic droit sur un dossier et choisissez *Rechercher dans le dossier*. Le panneau Recherche s'ouvre avec `path:"<dossier>/"` déjà rempli, prêt à recevoir les mots que vous cherchez.
 
