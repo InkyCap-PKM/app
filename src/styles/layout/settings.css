@@ -197,8 +197,16 @@
      pinning it to the top of the row. */
   align-self: center;
   gap: var(--space-1);
-  flex-shrink: 0;
+  /* May shrink to the room beside the version block, so a long status or
+     error message wraps instead of running past the window's edge. It never
+     gets narrower than its row of buttons. */
+  flex-shrink: 1;
   text-align: right;
+}
+
+/* Error details can hold long unbroken runs (file paths, command output). */
+.settings__update-control > .settings__description {
+  overflow-wrap: anywhere;
 }
 
 /* Button row of the update control: a single "Check" button most of the time,
@@ -207,6 +215,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  white-space: nowrap;
 }
 
 .settings__update-status {

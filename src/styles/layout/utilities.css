@@ -145,6 +145,14 @@
   flex: 0 0 auto;
 }
 
+/* Circular variant, for a dialog's close button: matches the round close
+   button of GNOME and other desktops' window title bars. Equal padding keeps
+   the hover shape a true circle. */
+.ui-icon-btn--round {
+  border-radius: var(--radius-full);
+  padding: var(--space-2);
+}
+
 .ui-icon-btn:hover {
   color: var(--fg-primary);
   border-color: var(--border-input);

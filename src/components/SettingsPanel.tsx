@@ -128,7 +128,7 @@ const SettingsPanel: Component<SettingsPanelProps> = (props) => {
           <div class="settings__header">
             <h2 class="settings__title">{t("settings.title")}</h2>
             <button
-              class="ui-icon-btn"
+              class="ui-icon-btn ui-icon-btn--round"
               onClick={props.onClose}
               aria-label={t("common.close")}
               title={t("common.close")}
