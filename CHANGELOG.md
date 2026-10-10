@@ -66,7 +66,7 @@ the editor.
 - A search match inside an annotation's comment, or other text the visual
   editor shows as a pill, left nothing on the page marking where it was. The
   pill now takes the search highlight, and glows while Find (Ctrl+F) is on
-  that match; clicking it shows the text with the match still highlighted.
+  that match; clicking it shows the text with the match.
 
 ### Removed
 
