@@ -1,25 +1,27 @@
 // Concept Filtering pane for the Mycelial View's right panel.
 //
-// Two jobs, both about making the (otherwise invisible) stopword filtering
-// legible and reversible:
-//   1. Excluded terms — words that recur in this note's neighbourhood like a
+// Makes the (otherwise invisible) filtering behind concept detection legible
+// and reversible. Three sections, words first and notes last:
+//   1. Excluded terms: words that recur in this note's neighbourhood like a
 //      real emergent concept but were held back by a stopword. The whole point
 //      is discoverability: you can't rescue a word you didn't know was filtered.
 //      Each row says *why* it was excluded and offers the matching rescue.
-//   2. Stopwords — add your own words to ignore (moved here from the old legend
-//      popup), plus a link to edit the full list on disk.
+//   2. Stopwords: add your own words to ignore, plus a button to edit the
+//      full list on disk.
+//   3. Excluded notes: the notebox-wide exclusion rules, collection-style
+//      filter expressions where a note matching *any* rule takes no part in
+//      Mycelial calculations. The common case (exclude by tag) gets a
+//      one-click tag picker; anything else goes through the same property row
+//      editor the collection FilterBuilder uses.
+//
+// Each section's explanation sits behind a HelpButton, as in the Growth pane.
 //
 // Data flows in via the mycelial store (MycelialView publishes excluded terms
 // when it loads); mutations call the backend then `requestMycelialReload()` so
 // the graph and this list both refresh.
-//
-// A third section, Excluded notes, manages the notebox-wide exclusion rules:
-// collection-style filter expressions where a note matching *any* rule takes
-// no part in Mycelial calculations. The common case (exclude by tag) gets a
-// one-click tag picker; anything else goes through the same property row
-// editor the collection FilterBuilder uses.
 
 import { Component, For, Show, createSignal, onMount } from "solid-js";
+import { Plus, SquarePen, X } from "lucide-solid";
 import * as ipc from "../lib/ipc";
 import type { ExcludedTerm, MycelialExclusionInfo } from "../lib/types";
 import { requestMycelialReload } from "../stores/mycelial";
@@ -28,6 +30,7 @@ import { openFileInDefaultApp } from "../lib/open-link";
 import { useI18n, tPlural } from "../lib/i18n";
 import { Dropdown } from "./Dropdown";
 import { FilterRowEditor } from "./FilterBuilder";
+import HelpButton from "./HelpButton";
 import { propertyLabel } from "../lib/property-labels";
 import {
   FILTER_OPERATORS,
@@ -167,102 +170,25 @@ const MycelialFilteringPanel: Component<MycelialFilteringPanelProps> = (props) =
 
   return (
     <div class="concept-filtering">
-      <div class="right-panel__section">
+      {/* Words: what concept detection held back here, and the user's own
+          stopword list. */}
+      <section class="concept-filtering__section">
         <div class="right-panel__section-header">
-          <span>{t("mycelialFilter.excludedNotes")}</span>
-          <div class="right-panel__header-actions" />
-        </div>
-        <p class="sidebar-hint">{t("mycelialFilter.excludedNotesHint")}</p>
-        <Show
-          when={(exclusions()?.rules.length ?? 0) > 0}
-          fallback={<p class="sidebar-hint">{t("mycelialFilter.noExclusionRules")}</p>}
-        >
-          <div class="concept-filtering__list">
-            <For each={exclusions()?.rules ?? []}>
-              {(rule) => (
-                <div class="concept-filtering__row">
-                  <div class="concept-filtering__term">
-                    <span class="concept-filtering__word" title={rule}>
-                      {ruleLabel(rule)}
-                    </span>
-                  </div>
-                  <button
-                    class="concept-filtering__rescue"
-                    onClick={() => removeRule(rule)}
-                    title={t("mycelialFilter.removeRule")}
-                  >
-                    {t("common.remove")}
-                  </button>
-                </div>
-              )}
-            </For>
+          <span class="mycelial-pane__heading">
+            {t("mycelialFilter.excludedTerms")}
+            <HelpButton label={t("mycelialFilter.excludedTerms")}>
+              {t("mycelialFilter.excludedTermsHint")}
+            </HelpButton>
+          </span>
+          <div class="right-panel__header-actions">
+            <Show when={props.excludedTerms.length > 0}>
+              <span class="right-panel__count">{props.excludedTerms.length}</span>
+            </Show>
           </div>
-          <p class="sidebar-hint">
-            {t("mycelialFilter.excludedNotesCount", {
-              excluded: exclusions()?.excluded_count ?? 0,
-              total: exclusions()?.note_count ?? 0,
-            })}
-          </p>
-        </Show>
-        <Show when={tagOptions().length > 0}>
-          <Dropdown<string>
-            class="dropdown--block"
-            value={""}
-            options={tagOptions()}
-            onChange={(tag) =>
-              addRule(
-                serializeFilterRow({
-                  property: "file.tags",
-                  operator: ".contains",
-                  value: tag,
-                }),
-              )
-            }
-            placeholder={t("mycelialFilter.excludeTagPlaceholder")}
-            ariaLabel={t("mycelialFilter.excludeTagPlaceholder")}
-          />
-        </Show>
-        <Show
-          when={ruleDraft()}
-          fallback={
-            <button
-              class="concept-filtering__editlink"
-              onClick={() => setRuleDraft({ ...EMPTY_ROW })}
-            >
-              {t("mycelialFilter.addPropertyRule")}
-            </button>
-          }
-        >
-          <div class="concept-filtering__rule-editor">
-            <FilterRowEditor
-              row={ruleDraft()!}
-              allKeys={allKeys()}
-              onChange={setRuleDraft}
-              onRemove={() => setRuleDraft(null)}
-            />
-            <button
-              class="btn btn--primary btn--sm"
-              disabled={!ruleDraft()?.property.trim()}
-              onClick={confirmRuleDraft}
-            >
-              {t("common.add")}
-            </button>
-          </div>
-        </Show>
-      </div>
-
-      <div class="right-panel__section">
-        <div class="right-panel__section-header">
-          <span>{t("mycelialFilter.excludedTerms")}</span>
-          <div class="right-panel__header-actions" />
         </div>
         <Show
           when={props.excludedTerms.length > 0}
-          fallback={
-            <p class="sidebar-hint">
-              {t("mycelialFilter.empty")}
-            </p>
-          }
+          fallback={<p class="concept-filtering__hint">{t("mycelialFilter.empty")}</p>}
         >
           <div class="concept-filtering__list">
             <For each={props.excludedTerms}>
@@ -272,17 +198,17 @@ const MycelialFilteringPanel: Component<MycelialFilteringPanelProps> = (props) =
                     <span class="concept-filtering__word">{term.term}</span>
                     <span class="concept-filtering__meta">
                       <span
-                        class="concept-filtering__badge"
-                        classList={{
-                          "concept-filtering__badge--user": term.source === "user",
-                        }}
+                        class="badge"
+                        classList={{ "badge--accent": term.source === "user" }}
                         title={
                           term.source === "user"
                             ? t("mycelialFilter.badgeUserTitle")
                             : t("mycelialFilter.badgeBuiltinTitle")
                         }
                       >
-                        {term.source === "user" ? t("mycelialFilter.badgeUser") : t("mycelialFilter.badgeBuiltin")}
+                        {term.source === "user"
+                          ? t("mycelialFilter.badgeUser")
+                          : t("mycelialFilter.badgeBuiltin")}
                       </span>
                       <span class="concept-filtering__count">
                         {tPlural("common.note", term.doc_count)}
@@ -290,7 +216,7 @@ const MycelialFilteringPanel: Component<MycelialFilteringPanelProps> = (props) =
                     </span>
                   </div>
                   <button
-                    class="concept-filtering__rescue"
+                    class="btn btn--secondary btn--sm"
                     onClick={() => rescue(term)}
                     title={
                       term.source === "user"
@@ -305,14 +231,18 @@ const MycelialFilteringPanel: Component<MycelialFilteringPanelProps> = (props) =
             </For>
           </div>
         </Show>
-      </div>
+      </section>
 
-      <div class="right-panel__section">
+      <section class="concept-filtering__section">
         <div class="right-panel__section-header">
-          <span>{t("mycelialFilter.stopwords")}</span>
+          <span class="mycelial-pane__heading">
+            {t("mycelialFilter.stopwords")}
+            <HelpButton label={t("mycelialFilter.stopwords")}>
+              {t("mycelialFilter.stopwordsHint")}
+            </HelpButton>
+          </span>
           <div class="right-panel__header-actions" />
         </div>
-        <p class="sidebar-hint">{t("mycelialFilter.stopwordsHint")}</p>
         <div class="concept-filtering__add">
           <input
             class="property-editor__input"
@@ -328,17 +258,119 @@ const MycelialFilteringPanel: Component<MycelialFilteringPanelProps> = (props) =
             }}
           />
           <button
-            class="settings__detect-btn"
+            class="btn btn--secondary btn--sm"
             disabled={!draft().trim()}
             onClick={addStopword}
           >
             {t("common.add")}
           </button>
         </div>
-        <button class="concept-filtering__editlink" onClick={openStopwordFile}>
-          {t("mycelialFilter.editList")}
-        </button>
-      </div>
+        <div class="mycelial-pane__actions">
+          <button class="btn btn--ghost btn--sm" onClick={openStopwordFile}>
+            <SquarePen size={14} />
+            {t("mycelialFilter.editList")}
+          </button>
+        </div>
+      </section>
+
+      {/* Notes: notebox-wide rules that keep whole notes out of the analysis. */}
+      <section class="concept-filtering__section">
+        <div class="right-panel__section-header">
+          <span class="mycelial-pane__heading">
+            {t("mycelialFilter.excludedNotes")}
+            <HelpButton label={t("mycelialFilter.excludedNotes")}>
+              {t("mycelialFilter.excludedNotesHint")}
+            </HelpButton>
+          </span>
+          <div class="right-panel__header-actions">
+            <Show when={(exclusions()?.rules.length ?? 0) > 0}>
+              <span class="right-panel__count">{exclusions()?.rules.length}</span>
+            </Show>
+          </div>
+        </div>
+        <Show
+          when={(exclusions()?.rules.length ?? 0) > 0}
+          fallback={<p class="concept-filtering__hint">{t("mycelialFilter.noExclusionRules")}</p>}
+        >
+          <div class="concept-filtering__list">
+            <For each={exclusions()?.rules ?? []}>
+              {(rule) => (
+                <div class="concept-filtering__row">
+                  <div class="concept-filtering__term">
+                    <span class="concept-filtering__word" title={rule}>
+                      {ruleLabel(rule)}
+                    </span>
+                  </div>
+                  <button
+                    class="ui-icon-btn"
+                    onClick={() => removeRule(rule)}
+                    title={t("mycelialFilter.removeRule")}
+                    aria-label={t("mycelialFilter.removeRule")}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              )}
+            </For>
+          </div>
+          <p class="concept-filtering__hint">
+            {t("mycelialFilter.excludedNotesCount", {
+              excluded: exclusions()?.excluded_count ?? 0,
+              total: exclusions()?.note_count ?? 0,
+            })}
+          </p>
+        </Show>
+        <div class="concept-filtering__add-rule">
+          <Show when={tagOptions().length > 0}>
+            <Dropdown<string>
+              class="dropdown--block"
+              value={""}
+              options={tagOptions()}
+              onChange={(tag) =>
+                addRule(
+                  serializeFilterRow({
+                    property: "file.tags",
+                    operator: ".contains",
+                    value: tag,
+                  }),
+                )
+              }
+              placeholder={t("mycelialFilter.excludeTagPlaceholder")}
+              ariaLabel={t("mycelialFilter.excludeTagPlaceholder")}
+            />
+          </Show>
+          <Show
+            when={ruleDraft()}
+            fallback={
+              <div class="mycelial-pane__actions">
+                <button
+                  class="btn btn--ghost btn--sm"
+                  onClick={() => setRuleDraft({ ...EMPTY_ROW })}
+                >
+                  <Plus size={14} />
+                  {t("mycelialFilter.addPropertyRule")}
+                </button>
+              </div>
+            }
+          >
+            <div class="concept-filtering__rule-editor">
+              <FilterRowEditor
+                row={ruleDraft()!}
+                allKeys={allKeys()}
+                onChange={setRuleDraft}
+                onRemove={() => setRuleDraft(null)}
+              />
+              <button
+                class="btn btn--primary btn--sm"
+                disabled={!ruleDraft()?.property.trim()}
+                onClick={confirmRuleDraft}
+              >
+                {t("common.add")}
+              </button>
+            </div>
+          </Show>
+        </div>
+      </section>
     </div>
   );
 };

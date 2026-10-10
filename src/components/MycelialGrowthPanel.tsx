@@ -16,7 +16,7 @@
 // instead of permanent hint paragraphs.
 
 import { Component, For, Show, createSignal } from "solid-js";
-import { Sprout, FileText, ChevronDown, ChevronRight } from "lucide-solid";
+import { Sprout, FileText, ChevronDown, ChevronRight, SquarePen } from "lucide-solid";
 import type { WeakHub, NoteQuestions, OpenQuestion } from "../lib/types";
 import { openTab } from "../stores/tabs";
 import { useI18n, tPlural } from "../lib/i18n";
@@ -120,7 +120,7 @@ const MycelialGrowthPanel: Component<MycelialGrowthPanelProps> = (props) => {
           }}
           aria-expanded={mycelialGrowthExpanded().hubs}
         >
-          <span class="mycelial-growth__heading">
+          <span class="mycelial-pane__heading">
             {t("mycelialGrowth.hubs")}
             {/* Keep the help toggle out of the collapse gesture: without
                 stopping propagation, opening the popover would also fold the
@@ -170,9 +170,12 @@ const MycelialGrowthPanel: Component<MycelialGrowthPanelProps> = (props) => {
           </Show>
           {/* Always available (even with no current hubs) so past hides stay
               discoverable and reversible — mirrors the stopword list link. */}
-          <button class="concept-filtering__editlink" onClick={openHiddenPagesFile}>
-            {t("mycelialGrowth.editHidden")}
-          </button>
+          <div class="mycelial-pane__actions">
+            <button class="btn btn--ghost btn--sm" onClick={openHiddenPagesFile}>
+              <SquarePen size={14} />
+              {t("mycelialGrowth.editHidden")}
+            </button>
+          </div>
         </Show>
       </div>
 
@@ -190,7 +193,7 @@ const MycelialGrowthPanel: Component<MycelialGrowthPanelProps> = (props) => {
           }}
           aria-expanded={mycelialGrowthExpanded().questions}
         >
-          <span class="mycelial-growth__heading">
+          <span class="mycelial-pane__heading">
             {t("mycelialGrowth.questions")}
             <span
               onClick={(e) => e.stopPropagation()}
