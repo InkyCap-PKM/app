@@ -15,10 +15,16 @@ const [resolvedTheme, setResolvedTheme] = createSignal<ResolvedTheme>("light");
 
 let mediaQuery: MediaQueryList | null = null;
 let mediaHandler: ((e: MediaQueryListEvent) => void) | null = null;
-// Tauri's native window theme-change subscription. On Linux/WebKitGTK the
-// browser-side `prefers-color-scheme` event doesn't always fire when the OS
-// flips, so we listen on both channels and let whichever fires first win.
-// Both call `applyTheme(resolveTheme("system"))`, which is idempotent.
+// Tauri's native window theme-change subscription, a second channel beside the
+// `prefers-color-scheme` media query. Both call
+// `applyTheme(resolveTheme("system"))`, which is idempotent, so whichever fires
+// first wins.
+//
+// On Linux this event never arrives: the window layer (tao) sends it with a
+// placeholder window id that Tauri doesn't match to any window. There the
+// media query does all the work. WebKitGTK updates it as soon as the desktop
+// changes, and also whenever `applyNativeWindowTheme` sets the window's theme,
+// so on Linux the query reports the app's own last choice as well as the OS.
 let tauriThemeUnlisten: (() => void) | null = null;
 
 /** Resolve "system" to the actual dark/light value. */
@@ -204,8 +210,8 @@ function setupSystemListener(pref: ThemePreference) {
     };
     mediaQuery.addEventListener("change", mediaHandler);
 
-    // Tauri-native fallback for platforms (notably Linux/WebKitGTK) where
-    // `prefers-color-scheme` doesn't reliably fire on OS theme flips.
+    // Native window theme events. Not delivered on Linux; see
+    // `tauriThemeUnlisten` above.
     getCurrentWindow()
       .onThemeChanged(() => {
         applyTheme(resolveTheme("system"));
