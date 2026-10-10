@@ -93,7 +93,7 @@ Three toggles next to the search box change how matching works:
 
 === Reading and arranging the results
 
-Results are grouped by file, with a match count beside each file name. Click any line to open that note at the match; when a note opens this way, *all* of its matches are highlighted so you can scan them. A note whose _name_ matches your query is listed too, even when the words appear nowhere in its body, with the matching part of the name highlighted.
+Results are grouped by file, with a match count beside each file name. Click any line to open that note at the match; when a note opens this way, *all* of its matches are highlighted so you can scan them. A note whose _name_ matches your query is listed too, even when the words appear nowhere in its body, with the matching part of the name highlighted. In the visual editor, a match inside text that shows as a pill, such as an annotation's comment, highlights the pill instead; click it to see the text.
 
 - *Expand / Collapse results* shows or hides the matched lines under each file. You can also override one file at a time with the chevron on its row.
 - *Show more context* widens each result to include a couple of lines above and below the match, so you can read the surrounding text without leaving the panel. (The note's leading `#import` line is always hidden from results.)

@@ -47,7 +47,6 @@ const CATEGORIES: { categoryKey: string; items: SourceItem[] }[] = [
       { name: "CodeMirror", license: "MIT", url: "https://codemirror.net/" },
       { name: "Solid.js", license: "MIT", url: "https://www.solidjs.com/" },
       { name: "@solid-primitives/i18n", license: "MIT", url: "https://github.com/solidjs-community/solid-primitives" },
-      { name: "KaTeX", license: "MIT", url: "https://katex.org/" },
       { name: "Lucide", license: "ISC", url: "https://lucide.dev/" },
       { name: "Tauri", license: "MIT / Apache-2.0", url: "https://tauri.app/" },
     ],

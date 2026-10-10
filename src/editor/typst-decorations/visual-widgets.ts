@@ -80,6 +80,7 @@ export class StylePreambleWidget extends WidgetType {
         label: t("editor.stylePreamble.label"),
         title: t("editor.stylePreamble.hint"),
         accessory: count,
+        hides: () => ({ from: this.from, to: this.to }),
       },
     );
     row.appendChild(btn);
@@ -126,7 +127,10 @@ export class AnnotationPillWidget extends WidgetType {
           },
         };
       },
-      { title: tooltipText(this.summary) },
+      {
+        title: tooltipText(this.summary),
+        hides: () => ({ from: this.pos, to: findCallEnd(view, this.pos) }),
+      },
     );
   }
   ignoreEvent() { return true; }
@@ -166,7 +170,12 @@ export class CommentPillWidget extends WidgetType {
           v.focus();
         },
       }),
-      { label, title: tooltipText(this.raw), accessory },
+      {
+        label,
+        title: tooltipText(this.raw),
+        accessory,
+        hides: () => ({ from: this.run.from, to: this.run.to }),
+      },
     );
   }
   ignoreEvent() { return true; }
@@ -206,7 +215,11 @@ export class SetRuleWidget extends WidgetType {
         callFrom: this.from,
         callTo: this.to,
       }),
-      { label: this.label, title: this.raw },
+      {
+        label: this.label,
+        title: this.raw,
+        hides: () => ({ from: this.from, to: this.to }),
+      },
     );
   }
   ignoreEvent() { return true; }
@@ -242,7 +255,11 @@ export class SymWidget extends WidgetType {
         callTo: this.to,
         optionSections: getPillOptions("sym", view, this.from, this.to),
       }),
-      { label: this.glyph ?? this.path, title: `#sym.${this.path}` },
+      {
+        label: this.glyph ?? this.path,
+        title: `#sym.${this.path}`,
+        hides: () => ({ from: this.from, to: this.to }),
+      },
     );
   }
   ignoreEvent() { return true; }

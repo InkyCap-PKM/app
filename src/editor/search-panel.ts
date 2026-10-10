@@ -36,7 +36,7 @@ import { t } from "../lib/i18n";
 
 /** Class added to the editor root while the "All" toggle is on; the editor
  *  theme keys the every-match highlight off it (see typst-editor.ts). */
-const HIGHLIGHT_ALL_CLASS = "cm-search-highlight-all";
+export const HIGHLIGHT_ALL_CLASS = "cm-search-highlight-all";
 
 /** Wrap one or more Lucide-style icon paths in a stroked 24×24 SVG. */
 function svgIcon(paths: string | string[], size = 16): string {
@@ -130,6 +130,9 @@ class InkycapSearchPanel implements Panel {
     const allBtn = button("select", t("search.all"), () => {
       const on = view.dom.classList.toggle(HIGHLIGHT_ALL_CLASS);
       allBtn.classList.toggle("is-active", on);
+      // An empty update lets extensions that follow the toggle repaint, such
+      // as the pills marking matches they hide (hidden-match-pills.ts).
+      view.dispatch({});
     });
 
     const searchRow = element("div", "cm-search__row");

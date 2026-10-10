@@ -908,6 +908,18 @@ export const visualTheme = EditorView.theme({
     borderColor: "var(--accent)",
     outline: "none",
   },
+  // A pill whose hidden source holds a search match (hidden-match-pills.ts)
+  // takes the colour matches are marked with, since the match itself can't
+  // be seen. The find's current match also gets a ring. Neither changes the
+  // pill's size, so the line doesn't move as matches come and go.
+  ".cm-typst-pill.cm-typst-pill--search-match": {
+    backgroundColor: "var(--bg-search-match)",
+    borderColor: "var(--bg-search-match)",
+    color: "var(--fg-primary)",
+  },
+  ".cm-typst-pill.cm-typst-pill--search-current": {
+    boxShadow: "0 0 0 2px var(--bg-search-match), 0 0 6px 2px var(--bg-search-match)",
+  },
   ".cm-typst-pill-hash, .cm-typst-func-chip-hash": {
     display: "inline-flex",
     alignItems: "center",

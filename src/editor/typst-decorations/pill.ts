@@ -81,6 +81,22 @@ export interface PillModel {
   alwaysExpandOnClick?: boolean;
 }
 
+/** A stretch of the note's source, as document offsets (`to` exclusive). */
+export interface SourceRange {
+  from: number;
+  to: number;
+}
+
+/** The source each pill that hides text stands in for. See `hides` on
+ *  {@link buildPillButton}. */
+const hiddenRanges = new WeakMap<HTMLElement, () => SourceRange>();
+
+/** The source a pill element stands in for, or null when the pill hides no
+ *  text (a pill beside visible content, such as `#quote`'s). */
+export function pillHiddenRange(el: HTMLElement): SourceRange | null {
+  return hiddenRanges.get(el)?.() ?? null;
+}
+
 // ── PillChip widget ─────────────────────────────────────────────────
 
 /** Build the canonical pill DOM: a `<button>` with a circled hash + label.
@@ -97,7 +113,16 @@ export function buildPillButton(
   /** Presentation overrides for pills that aren't a single named call —
    *  e.g. the document-style preamble chip, which shows a custom label plus a
    *  rule-count accessory. Defaults reproduce the standard `funcName` chip. */
-  opts?: { label?: string; title?: string; accessory?: Node },
+  opts?: {
+    label?: string;
+    title?: string;
+    accessory?: Node;
+    /** For a pill that replaces its source rather than sitting beside it
+     *  (an annotation, a comment, a `#set` rule): the source it stands in
+     *  for, so a search match hidden there can be shown on the pill (see
+     *  hidden-match-pills.ts). */
+    hides?: () => SourceRange;
+  },
 ): HTMLButtonElement {
   const btn = document.createElement("button");
   btn.type = "button";
@@ -115,6 +140,7 @@ export function buildPillButton(
   btn.appendChild(label);
 
   if (opts?.accessory) btn.appendChild(opts.accessory);
+  if (opts?.hides) hiddenRanges.set(btn, opts.hides);
 
   // Don't let a mousedown on the pill move CodeMirror's selection or
   // start a text drag. The actual action runs on click so that focus
@@ -435,6 +461,13 @@ function buildInputItem(item: PillMenuItem, close: () => void): HTMLElement {
  *  and by the simple-pill left-click shortcut (R5), so the destination
  *  is identical whichever path the user takes. */
 export function runEditSource(view: EditorView, model: PillModel): void {
+  // A selection inside the hidden source (Find leaves its current match
+  // selected there) stays where it is once the source shows, so the match
+  // keeps its highlight instead of the caret jumping to the call's start.
+  const sel = view.state.selection.main;
+  const held = !sel.empty && sel.from >= model.callFrom && sel.to <= model.callTo
+    ? { anchor: sel.anchor, head: sel.head }
+    : null;
   if (model.onEditSource) {
     model.onEditSource(view);
   } else {
@@ -444,6 +477,7 @@ export function runEditSource(view: EditorView, model: PillModel): void {
     });
     view.focus();
   }
+  if (held) view.dispatch({ selection: held, scrollIntoView: true });
 }
 
 function buildSourceSection(view: EditorView, model: PillModel): PillMenuSection {

@@ -1,5 +1,4 @@
 import { render } from "solid-js/web";
-import "katex/dist/katex.min.css";
 import "./styles/bundled-fonts.css";
 import App from "./App";
 

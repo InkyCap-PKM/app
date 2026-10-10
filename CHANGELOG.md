@@ -12,6 +12,68 @@ each tagged release, newest first, grouping entries under **Added**, **Changed**
 **Fixed**, **Removed**, **Security**, or **Deprecated** as needed.
 
 
+## [26.10.6] - 2026-10-11
+
+Pages made from an emergent concept in the Mycelial View now open as Compose
+drafts beside the passages where the concept recurs. Compose cards and the
+Mycelial View's Filtering panel are easier to read, collections can be renamed
+and searched more easily, and long notes with many misspellings no longer slow
+the editor.
+
+### Added
+
+- **Compose from an emergent concept.** Clicking an emergent concept in the
+  Mycelial View makes its page as before and opens it as a Compose draft: the
+  Compose tab lists as cards the passages where the concept recurs, with the
+  concept highlighted, ready to copy, quote or link into the new page.
+- **Find in a collection.** A Find button on the collection toolbar narrows
+  the rows to those containing what you type and highlights the matches. It
+  works in agenda views too and is never saved.
+- Collections can be **renamed from their settings pane**, which now starts
+  with the collection's name. Renaming, from there or the sidebar, carries an
+  open tab and any bookmark over to the new name.
+- In search, typing `collection:` lists the notebox's collections, as `tag:`
+  lists tags.
+
+### Changed
+
+- **Compose cards** read as quotations: the passage is the main text, the
+  note's name is a smaller credit above it, and an accent rule runs down each
+  card. The panel's heading names the note or phrase in the accent colour and
+  counts the cards.
+- **The Mycelial View's Filtering panel** is reorganized: Excluded terms,
+  Stopwords, then Excluded notes, each a clearly separated section whose
+  explanation sits behind a (?) button. Lists are grouped in boxes, and the
+  buttons match the rest of the app.
+- The Links panel's previews show the sentences around each link, with the
+  link highlighted.
+- "Possible wikilinks" in the Links panel is now **Latent wikilinks**, the
+  name the Mycelial View already uses for the same thing, which improves consistency across the application.
+- The Settings close button is round, like the desktop's window buttons.
+- The licence notices shipped with InkyCap list every package it includes
+  again; several added since August were missing.
+
+### Fixed
+
+- Typing and scrolling in notes with many flagged words no longer slow the
+  editor or keep a processor core busy (issue #7).
+- Menus opened from the editor area, such as the Mycelial View's Depth menu,
+  could be hidden under the right panel.
+- A long message under Check for updates in Settings ran past the edge of the
+  window instead of wrapping.
+- A link inside bold or italic text showed as a one-word passage in the Links
+  panel and Compose.
+- A search match inside an annotation's comment, or other text the visual
+  editor shows as a pill, left nothing on the page marking where it was. The
+  pill now takes the search highlight, and glows while Find (Ctrl+F) is on
+  that match; clicking it shows the text with the match still highlighted.
+
+### Removed
+
+- KaTeX, a maths library left over from early development. Maths is drawn by
+  Typst; the app is about 1 MB smaller.
+
+
 ## [26.10.4] - 2026-10-07
 
 A new Compose feature pulls the writing around a note's links into a new note, and the

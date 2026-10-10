@@ -98,7 +98,7 @@ Trois bascules à côté de la case de recherche changent le mode de corresponda
 
 === Lire et organiser les résultats
 
-Les résultats sont regroupés par fichier, avec un décompte de correspondances à côté de chaque nom de fichier. Cliquez sur une ligne pour ouvrir cette note à la correspondance; quand une note s'ouvre ainsi, *toutes* ses correspondances sont surlignées pour que vous puissiez les parcourir. Une note dont le _nom_ correspond à votre requête est listée elle aussi, même si les mots n'apparaissent nulle part dans son corps, avec la partie correspondante du nom surlignée.
+Les résultats sont regroupés par fichier, avec un décompte de correspondances à côté de chaque nom de fichier. Cliquez sur une ligne pour ouvrir cette note à la correspondance; quand une note s'ouvre ainsi, *toutes* ses correspondances sont surlignées pour que vous puissiez les parcourir. Une note dont le _nom_ correspond à votre requête est listée elle aussi, même si les mots n'apparaissent nulle part dans son corps, avec la partie correspondante du nom surlignée. Dans l'éditeur visuel, une correspondance dans un texte affiché sous forme de pastille, comme le commentaire d'une annotation, surligne plutôt la pastille; cliquez dessus pour voir le texte.
 
 - *Développer les résultats* / *Réduire les résultats* affiche ou masque les lignes correspondantes sous chaque fichier. Vous pouvez aussi inverser ce réglage un fichier à la fois grâce au chevron sur sa rangée.
 - *Afficher plus de contexte* élargit chaque résultat pour inclure quelques lignes au-dessus et en dessous de la correspondance, afin que vous puissiez lire le texte environnant sans quitter le panneau. (La ligne `#import` du début de la note est toujours masquée des résultats.)

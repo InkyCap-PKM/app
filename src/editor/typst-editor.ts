@@ -55,6 +55,7 @@ import {
   setSearchMatches,
   type SearchMatchRange,
 } from "./typst-decorations/search-matches";
+import { hiddenMatchPills } from "./typst-decorations/hidden-match-pills";
 
 /** Focus mode and dimming are independent: either alone needs the extension.
  *  Both are visual-editor affordances, so source mode shows the document
@@ -634,6 +635,7 @@ function baseExtensions(options: TypstEditorOptions): Extension[] {
     domCaretResync,
     inkycapSearch,
     searchMatchHighlight,
+    hiddenMatchPills,
     syntaxHighlighting(inkycapHighlight),
     sourceRawHighlight(),
     importLineGuard(),

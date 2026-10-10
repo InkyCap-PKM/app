@@ -14,6 +14,12 @@
 //
 // Run with:  npm run licenses:gen
 //
+// Every version bump (`npm run version:stable`, `version:beta`, …) runs
+// `npm run licenses:refresh` afterwards, which first downloads any crate
+// sources missing from this computer (`cargo fetch`; the Windows- and
+// macOS-only crates are never fetched by a Linux build) and then runs this
+// script, so the notices are current in each release commit.
+//
 // Scope notes:
 //   - Rust: normal + build dependencies, transitively, across ALL platform
 //     targets (so one notices file is correct for every OS build). Dev-only

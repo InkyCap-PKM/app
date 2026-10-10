@@ -10,7 +10,7 @@
 // fed straight from the backend's match positions.
 
 import { EditorView, Decoration, type DecorationSet } from "@codemirror/view";
-import { StateField, StateEffect, RangeSetBuilder } from "@codemirror/state";
+import { StateField, StateEffect, RangeSetBuilder, type EditorState } from "@codemirror/state";
 
 /** A match to highlight, in the search result's shape: 1-based line plus
  *  line-relative start/end offsets (mirrors `scrollToMatch`'s inputs). */
@@ -64,6 +64,16 @@ const searchMatchField = StateField.define<DecorationSet>({
   },
   provide: (f) => EditorView.decorations.from(f),
 });
+
+/** The notebox-search matches highlighted in the note, in document order. */
+export function searchMatchRanges(state: EditorState): { from: number; to: number }[] {
+  const out: { from: number; to: number }[] = [];
+  const deco = state.field(searchMatchField, false);
+  deco?.between(0, state.doc.length, (from, to) => {
+    out.push({ from, to });
+  });
+  return out;
+}
 
 const matchTheme = EditorView.baseTheme({
   ".cm-search-match-hit": {

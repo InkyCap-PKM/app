@@ -1,6 +1,6 @@
 {
   "name": "inkycap",
-  "version": "26.10.4",
+  "version": "26.10.6",
   "description": "Typst-based PKM with linked-notes for writing and academic research",
   "private": true,
   "scripts": {
@@ -10,11 +10,16 @@
     "test:watch": "vitest",
     "i18n:check": "node scripts/i18n-check.mjs",
     "licenses:gen": "node scripts/gen-third-party-licenses.mjs",
+    "licenses:refresh": "cargo fetch --manifest-path src-tauri/Cargo.toml && npm run licenses:gen",
     "version:show": "node scripts/version.mjs show",
     "version:release": "node scripts/version.mjs release",
     "version:stable": "node scripts/version.mjs stable",
     "version:beta": "node scripts/version.mjs beta",
     "version:patch": "node scripts/version.mjs patch",
+    "postversion:release": "npm run licenses:refresh",
+    "postversion:stable": "npm run licenses:refresh",
+    "postversion:beta": "npm run licenses:refresh",
+    "postversion:patch": "npm run licenses:refresh",
     "release:check-setup": "node scripts/release/check-setup.mjs",
     "release:feeds": "node scripts/release-feeds.mjs",
     "release:feeds:check": "node scripts/release-feeds.mjs --check",
@@ -24,7 +29,6 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.2",
-    "@types/katex": "^0.16.8",
     "@types/node": "^25.9.1",
     "jsdom": "^27.0.1",
     "patch-package": "^8.0.1",
@@ -55,7 +59,6 @@
     "codemirror-lang-typst": "^0.4.0",
     "dompurify": "^3.4.16",
     "hunspell-asm": "^4.0.2",
-    "katex": "^0.16.45",
     "lucide-solid": "^1.8.0"
   }
 }
