@@ -229,6 +229,10 @@ export function listContentStart(line: Line): number {
  * empty-selection line copy, still carries the marker and the item pastes back
  * as a complete bullet.
  *
+ * When a long paragraph wraps onto several rows on screen, Home on any row
+ * after the first goes to the start of that row, the way End goes to the end
+ * of it. A further press from there continues as above.
+ *
  * In the visual editor the markup is hidden behind a widget, and the caret in
  * front of it would be drawn in the same spot as the caret after it. For a list
  * bullet the second press therefore also reveals the marker as source (through
@@ -254,8 +258,14 @@ function smartLineStart(view: EditorView, extend: boolean): boolean {
     );
     const cs = Math.max(listContentStart(line), pastMarkup);
     const markerHidden = pastMarkup !== line.from;
+    // On a wrapped row below the paragraph's first, Home goes to the start of
+    // that row, matching End. Pressed again there, it carries on to the
+    // paragraph's start below.
+    const rowStart = view.moveToLineBoundary(range, false, true).head;
     let target = cs;
-    if (range.head === cs) {
+    if (rowStart > cs && range.head !== rowStart) {
+      target = rowStart;
+    } else if (range.head === cs) {
       if (!markerHidden) {
         target = line.from;
       } else if (i === state.selection.mainIndex && listMarkerEnd(line) === pastMarkup) {

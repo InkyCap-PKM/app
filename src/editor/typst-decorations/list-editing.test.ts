@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { EditorState, Transaction } from "@codemirror/state";
+import { EditorSelection, EditorState, Transaction } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { history, historyKeymap, undo } from "@codemirror/commands";
 import { codeFolding, foldEffect, foldedRanges } from "@codemirror/language";
@@ -126,6 +126,23 @@ describe("smart Home", () => {
     pressHome(v, true);
     // Second Shift-Home extends across the marker so a copy carries the bullet.
     expect(v.state.selection.main.from).toBe(0);
+    v.destroy();
+  });
+
+  it("on a wrapped row, goes to that row's start before the paragraph's", () => {
+    // jsdom does no layout, so stand in for a paragraph that wraps after
+    // "first row " onto a second row starting at position 10.
+    const doc = "first row second row";
+    const v = mk(doc);
+    const realBoundary = v.moveToLineBoundary.bind(v);
+    v.moveToLineBoundary = (start, forward, includeWrap) =>
+      includeWrap !== false && !forward && start.head > 10
+        ? EditorSelection.cursor(10)
+        : realBoundary(start, forward, includeWrap);
+    pressHome(v);
+    expect(v.state.selection.main.head).toBe(10);
+    pressHome(v);
+    expect(v.state.selection.main.head).toBe(0);
     v.destroy();
   });
 });
