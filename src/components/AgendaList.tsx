@@ -1,7 +1,8 @@
 // AgendaList: the shared presentation for a flat list of agenda items.
 // Three menu-driven controls — Sort, Task List filter, Tags filter — sit
-// above a search input and the flat row list. Owns no data fetching;
-// callers pass an already-resolved `AgendaItem[]`.
+// above a search input (omitted where the host has its own) and the flat
+// row list. Owns no data fetching; callers pass an already-resolved
+// `AgendaItem[]`.
 //
 // Used by the left-sidebar Agenda pane and the Collection "Agenda" view
 // so the two surfaces stay consistent.
@@ -61,6 +62,9 @@ interface AgendaListProps {
    *  component that should scroll, so a host that pins chrome above it (the
    *  sidebar pane) names it as its scroll body here. */
   listClass?: string;
+  /** Hide the text filter box. Set by hosts that narrow the items with their
+   *  own search, such as the collection view's Find row. */
+  hideTextFilter?: boolean;
 }
 
 /** All sort orders the Agenda offers. Each carries its own direction in
@@ -836,15 +840,17 @@ const AgendaList: Component<AgendaListProps> = (props) => {
         </div>
       </Show>
 
-      <div class="left-sidebar__filter-wrap">
-        <input
-          class="left-sidebar__filter-input"
-          type="text"
-          placeholder={t("agenda.filterPlaceholder")}
-          value={filterText()}
-          onInput={(e) => setFilterText(e.currentTarget.value)}
-        />
-      </div>
+      <Show when={!props.hideTextFilter}>
+        <div class="left-sidebar__filter-wrap">
+          <input
+            class="left-sidebar__filter-input"
+            type="text"
+            placeholder={t("agenda.filterPlaceholder")}
+            value={filterText()}
+            onInput={(e) => setFilterText(e.currentTarget.value)}
+          />
+        </div>
+      </Show>
 
       <Show
         when={!props.loading}

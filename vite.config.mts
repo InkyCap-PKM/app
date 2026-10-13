@@ -29,7 +29,10 @@ export default defineConfig({
     host: host || false,
     hmr: host ? { protocol: "ws", host, port: 1421 } : undefined,
     watch: {
-      // Don't watch the Rust crate or the packaging build trees. The flatpak
+      // Don't watch the Rust crate or the packaging build trees. The Docker
+      // Linux build (scripts/build-linux-docker.sh) fills `target-docker/` and
+      // `dist-linux/` with tens of thousands of files, enough to exhaust the
+      // system's file-watch limit (ENOSPC) and stop the dev server. The flatpak
       // builder (scripts/build-flatpak.sh) leaves `flatpak/.build` and
       // `.flatpak-builder/` in the repo — both gitignored, but vite's watcher
       // doesn't read .gitignore. Those trees contain sandbox artifacts with
@@ -44,7 +47,7 @@ export default defineConfig({
       // matches any path with one of these dirs as a segment, on either
       // separator.
       ignored: (filePath) =>
-        /(?:^|[/\\])(?:src-tauri|flatpak|\.flatpak-builder)(?:[/\\]|$)/.test(
+        /(?:^|[/\\])(?:src-tauri|target-docker|dist-linux|flatpak|\.flatpak-builder)(?:[/\\]|$)/.test(
           filePath,
         ),
     },

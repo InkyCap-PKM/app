@@ -1063,6 +1063,7 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
                     items={shownAgendaItems()}
                     loading={agendaItems.loading}
                     emptyMessage={t("agenda.emptyView")}
+                    hideTextFilter
                     onOpen={(it, opts) =>
                       openTab(
                         { type: "file", title: it.note_title, path: it.note_path },
