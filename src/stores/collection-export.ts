@@ -29,7 +29,7 @@ export interface ExportChoices {
 /** Fill in the defaults for a collection's saved export settings. */
 export function resolveExportChoices(saved: CollectionExportConfig | null | undefined): ExportChoices {
   return {
-    format: saved?.format ?? "pdf_files",
+    format: saved?.format ?? "table",
     pdfStandard: saved?.pdf_standard ?? "standard",
     reviewMode: saved?.review_mode ?? "keep",
     linkedFiles: saved?.linked_files ?? DEFAULT_LINKED_FILES,

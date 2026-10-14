@@ -328,7 +328,6 @@ pub struct BookExportConfig {
 #[serde(rename_all = "snake_case")]
 pub enum CollectionExportFormat {
     /// One PDF per note.
-    #[default]
     PdfFiles,
     /// All the notes merged into one PDF, set up by the `book:` settings.
     Book,
@@ -336,7 +335,9 @@ pub enum CollectionExportFormat {
     Site,
     /// One Markdown file per note.
     Markdown,
-    /// The table's rows and columns as CSV or TSV.
+    /// The table's rows and columns as CSV or TSV. The default, as the
+    /// first choice in the Export tab.
+    #[default]
     Table,
 }
 
