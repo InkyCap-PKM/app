@@ -241,6 +241,7 @@ const TemplatesPanel: Component = () => {
       message,
       confirmLabel: t("common.delete"),
       cancelLabel: t("common.cancel"),
+      danger: true,
     });
     if (!ok) return;
     try {
@@ -286,6 +287,7 @@ const TemplatesPanel: Component = () => {
       message,
       confirmLabel: t("common.uninstall"),
       cancelLabel: t("common.cancel"),
+      danger: true,
     });
     if (!ok) return;
     try {

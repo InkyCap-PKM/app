@@ -147,6 +147,14 @@
   gap: var(--space-2);
 }
 
+/* Destructive actions (Delete this collection) sit below the settings,
+   behind a divider, so they aren't mistaken for one of them. */
+.collection-meta__danger-zone {
+  margin-top: var(--space-6);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-primary);
+}
+
 .collection-meta__row--stacked .collection-meta__textarea {
   flex: none;
   width: auto;

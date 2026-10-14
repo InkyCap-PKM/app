@@ -228,7 +228,7 @@ const HelpPanel: Component = () => {
             ariaLabel={t("help.viewSelectorAria")}
           />
           <button
-            class="ui-icon-btn"
+            class="ui-icon-btn ui-icon-btn--outlined"
             onClick={openInkyCapDocs}
             title={t("help.docs.inkycap")}
             aria-label={t("help.docs.inkycap")}
@@ -261,7 +261,7 @@ const HelpPanel: Component = () => {
             </Show>
           </div>
           <button
-            class="ui-icon-btn"
+            class="ui-icon-btn ui-icon-btn--outlined"
             onClick={openTypstDocs}
             title={t("help.docs.typst")}
             aria-label={t("help.docs.typst")}

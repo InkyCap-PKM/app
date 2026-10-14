@@ -81,10 +81,18 @@ carries nothing but its margin.
 ### Icon-only buttons
 
 Square icon buttons are a separate role. The one class is **`.ui-icon-btn`**
-(add `.is-active` for a toggled state). The legacy variants (`.icon-btn`,
+(add `.is-active` for a toggled state, or `.ui-icon-btn--outlined` to keep
+the border showing when the button would not otherwise read as clickable).
+The legacy variants (`.icon-btn`,
 `.left-sidebar__icon-btn`, `.right-panel__icon-btn`) were consolidated onto
 it in 2026-09 and no longer exist — do not reintroduce them. Buttons are
 sized by padding around the icon so they scale with the icon tokens.
+
+### Confirmation dialogs
+
+`promptConfirm` (in `src/stores/prompt.ts`) draws its confirm button with
+`.btn--primary`. A confirm for anything that deletes or removes passes
+`danger: true`, which switches the button to `.btn--danger`.
 
 ---
 

@@ -30,6 +30,7 @@ import * as ipc from "../lib/ipc";
 import { propertyVersion, bumpPropertyVersion } from "../stores/notebox";
 import { toastError } from "../stores/toasts";
 import { renameCollection } from "../lib/rename-collection";
+import { deleteCollectionInteractive } from "../lib/delete-collection";
 import type { CollectionPanelTab } from "../stores/layout";
 import LucideIconPicker from "./LucideIconPicker";
 import ContributorsEditor from "./ContributorsEditor";
@@ -1143,7 +1144,8 @@ const CollectionNameRow: Component<{ collectionPath: string; collectionName: str
 
 /// Settings that belong to the collection itself rather than to how it is
 /// exported: its name, its sidebar icon, the user's description, and its
-/// bibliography file.
+/// bibliography file, with a button to delete the collection set apart at
+/// the bottom.
 const CollectionDetailsEditor: Component<{
   collectionFile: CollectionFile;
   collectionPath: string;
@@ -1229,6 +1231,16 @@ const CollectionDetailsEditor: Component<{
             {t("common.browseEllipsis")}
           </button>
         </div>
+      </div>
+
+      <div class="collection-meta__danger-zone">
+        <button
+          type="button"
+          class="btn btn--danger btn--sm"
+          onClick={() => void deleteCollectionInteractive(props.collectionPath, props.collectionName)}
+        >
+          {t("collection.delete.button")}
+        </button>
       </div>
     </>
   );

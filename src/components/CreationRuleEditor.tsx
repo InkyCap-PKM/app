@@ -244,6 +244,7 @@ const CreationRuleEditor: Component = () => {
       message: t("creationRules.deleteConfirm"),
       confirmLabel: t("common.delete"),
       cancelLabel: t("common.cancel"),
+      danger: true,
     });
     if (!confirmed) return;
     try {

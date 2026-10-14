@@ -35,6 +35,7 @@ import { LibraryPlusIcon } from "./icons";
 import type { CollectionInfo, FileTreeNode, PropertyType } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { renameCollection } from "../lib/rename-collection";
+import { deleteCollectionInteractive } from "../lib/delete-collection";
 import { renameFile } from "../lib/rename-file";
 import { REVEAL_IN_FILE_TREE_EVENT } from "../lib/file-tree-reveal";
 import { pathEquals, pathStartsWith } from "../lib/paths";
@@ -954,6 +955,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
       message: t("leftSidebar.deletePropBody", { key }),
       confirmLabel: t("common.delete"),
       cancelLabel: t("common.cancel"),
+      danger: true,
     });
     if (!ok) return;
     try {
@@ -1218,24 +1220,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
 
   async function deleteCollection(col: CollectionInfo) {
     setContextMenu(null);
-    const confirmed = await promptConfirm({
-      title: t("leftSidebar.deleteCollectionTitle"),
-      message: t("leftSidebar.deleteCollectionBody", { name: col.name }),
-      confirmLabel: t("common.delete"),
-      cancelLabel: t("common.cancel"),
-    });
-    if (!confirmed) return;
-    try {
-      await ipc.deleteCollectionFile(col.path);
-      // Close any open tab for this collection
-      const openCollTab = tabs.find(
-        (t) => t.type === "collection" && pathEquals(t.path, col.path),
-      );
-      if (openCollTab) closeTab(openCollTab.id);
-      refresh();
-    } catch (e) {
-      toastError(t("leftSidebar.deleteCollectionFailed"), e);
-    }
+    await deleteCollectionInteractive(col.path, col.name);
   }
 
   function startRename(col: CollectionInfo) {
@@ -1382,6 +1367,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
         message,
         confirmLabel: t("common.delete"),
         cancelLabel: t("common.cancel"),
+        danger: true,
       });
       if (!confirmed) return;
     }

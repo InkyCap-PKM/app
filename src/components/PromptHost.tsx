@@ -185,7 +185,7 @@ const PromptHost: Component = () => {
                 {c().cancelLabel ?? "Cancel"}
               </button>
               <button
-                class="btn btn--primary"
+                class={c().danger ? "btn btn--danger" : "btn btn--primary"}
                 onClick={() => resolveConfirm(true, confirmChecked())}
               >
                 {c().confirmLabel ?? "OK"}

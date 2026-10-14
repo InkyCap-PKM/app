@@ -116,6 +116,7 @@ export function BackupSettingsSection() {
       message: t("backup.password.confirmClearBody"),
       confirmLabel: t("common.remove"),
       cancelLabel: t("common.cancel"),
+      danger: true,
     });
     if (!ok) return;
     setPwStatus(null);

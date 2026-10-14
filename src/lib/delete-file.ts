@@ -30,6 +30,7 @@ export async function deleteActiveFileInteractive(tabId?: string): Promise<void>
     message,
     confirmLabel: t("common.delete"),
     cancelLabel: t("common.cancel"),
+    danger: true,
   });
   if (!confirmed) return;
   try {

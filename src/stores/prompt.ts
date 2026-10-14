@@ -57,6 +57,9 @@ export interface ConfirmOptions {
   confirmLabel?: string;
   /** Cancel button label. Defaults to "Cancel". */
   cancelLabel?: string;
+  /** Styles the confirm button as destructive (red). Set it for anything that
+   *  deletes or removes, so every such confirm looks the same. */
+  danger?: boolean;
   /** Optional secondary opt-in checkbox shown above the buttons (e.g. a
    *  destructive extra like "also delete the version history"). Its state is
    *  returned by [`promptConfirmWithCheckbox`]; plain [`promptConfirm`] ignores

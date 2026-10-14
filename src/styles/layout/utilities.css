@@ -158,6 +158,17 @@
   border-color: var(--border-input);
 }
 
+/* Outlined variant: the border shows all the time rather than only on hover,
+   for a button that would otherwise not read as clickable (the Help panel's
+   documentation buttons, which sit beside outlined fields). */
+.ui-icon-btn--outlined {
+  border-color: var(--border-input);
+}
+
+.ui-icon-btn--outlined:hover {
+  background: var(--bg-hover);
+}
+
 .ui-icon-btn.is-active {
   color: var(--accent);
   border-color: var(--accent);
