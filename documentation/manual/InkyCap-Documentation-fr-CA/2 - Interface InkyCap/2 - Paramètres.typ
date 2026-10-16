@@ -33,7 +33,7 @@ Plusieurs onglets ont un bouton rouge *« Réinitialiser aux valeurs par défaut
 
 === Gestion des boîtes de notes
 
-Cette section énumère chaque boîte de notes qu'InkyCap connaît sur votre ordinateur et vous permet d'en ajouter d'autres. Chaque rangée affiche le nom de la boîte de notes (renommez-la avec le crayon), son emplacement, et des boutons pour l'*Ouvrir*, l'*Afficher* (la révéler dans votre gestionnaire de fichiers), la *Déplacer* ou la *Retirer*.
+Cette section énumère chaque boîte de notes qu'InkyCap connaît sur votre ordinateur et vous permet d'en ajouter d'autres. Chaque rangée affiche le nom de la boîte de notes (renommez-la avec le crayon), son emplacement, et des boutons pour l'*Ouvrir*, l'*Afficher* (la révéler dans votre gestionnaire de fichiers), la *Déplacer* ou la *Retirer*. *Retirer* demande d'abord confirmation et retire seulement la boîte de notes de la liste d'InkyCap : son dossier et ses notes restent sur votre ordinateur, et vous pouvez l'ajouter de nouveau en tout temps.
 
 #callout("important")[ Ajouter une boîte de notes avec *Nouvelle boîte de notes* et *Ajouter* l'inscrit dans la liste sans l'ouvrir ; utilisez le bouton *Ouvrir* de la rangée quand vous êtes prêt. *Cloner depuis un dépôt distant* et *Importer un package*, en revanche, ouvrent la nouvelle boîte de notes dès qu'ils ont terminé (leurs boutons se lisent *Cloner et ouvrir* et *Importer et ouvrir*). ]
 

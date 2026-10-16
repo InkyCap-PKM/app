@@ -23,30 +23,25 @@ finish-args:
   # Audio output (embedded #video / #audio playback). Works for both
   # PulseAudio and PipeWire hosts.
   - --socket=pulseaudio
-  # OS keychain access (backup-archive passwords are stored via the Secret
-  # Service; without this the backup settings can't reach the keyring).
+  # OS keychain access: the backup-archive password and git HTTPS tokens are
+  # stored via the Secret Service, which can't be reached without this.
   - --talk-name=org.freedesktop.secrets
   # Network: Zotero connector (localhost), @preview Typst package downloads,
   # git remotes, and the release-update check (release feed / forge API).
   - --share=network
   # ssh-agent, for git collaboration over SSH remotes. (Key files in ~/.ssh
-  # are already readable via --filesystem=home for libgit2's direct path.)
+  # are readable via --filesystem=home for libgit2's direct path.)
   - --socket=ssh-auth
-  # Noteboxes can live anywhere the user keeps files — external drives and
-  # OS-mounted network/university shares (/mnt, /media, NFS/CIFS mountpoints,
-  # network home directories), so grant the full host filesystem read-write.
-  # This is the standard choice for a local-first editor; it trades sandbox
-  # tightness for the freedom to open a notebox from any location.
-  - --filesystem=host
+  # Noteboxes can live in the home folder (including network home
+  # directories) or on external drives and mounted shares. Access is limited
+  # to those places rather than the whole host filesystem.
+  - --filesystem=home
+  - --filesystem=/media
+  - --filesystem=/run/media
+  - --filesystem=/mnt
   # Desktop-mounted network shares (GNOME "Connect to Server" / gvfs, e.g.
-  # smb://, sftp://) live under the runtime dir, which `host` does not cover.
+  # smb://, sftp://) live under the runtime dir.
   - --filesystem=xdg-run/gvfs
-  # TEMPORARY, read-only: the previous Flatpak used the app ID
-  # com.inkycap.editor. On first launch the new app copies that app's
-  # settings across (src-tauri/src/id_migration.rs); the sandbox hides other
-  # apps' ~/.var/app folders even with --filesystem=host, so the copy needs
-  # this. Remove together with id_migration.rs (target: late 2027).
-  - --filesystem=~/.var/app/com.inkycap.editor:ro
 
 # Audio/video playback (#video / #audio) uses the runtime's GStreamer libav
 # plugin. Since the freedesktop 25.08 base (GNOME 49 onward), ffmpeg/libav ships

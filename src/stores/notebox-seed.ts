@@ -60,7 +60,7 @@ export function resolveNoteboxSeed(choice: NoteboxSeedChoice) {
 
 /** Offer the user a chance to seed a fresh notebox from an existing one,
  *  then carry out the copy if they accept. Skips the prompt (returns
- *  silently) when (a) the target already has per-notebox settings or
+ *  silently) when (a) the target is already a notebox or
  *  (b) there are no existing noteboxes available as sources.
  *
  *  Designed to be called from every "add notebox" entry point — the
@@ -76,7 +76,7 @@ export async function maybeSeedNotebox(
 ): Promise<void> {
   let fresh: boolean;
   try {
-    fresh = !(await ipc.noteboxHasUserSettings(targetPath));
+    fresh = !(await ipc.noteboxIsExisting(targetPath));
   } catch (e) {
     console.warn("notebox seed: freshness check failed:", e);
     return;

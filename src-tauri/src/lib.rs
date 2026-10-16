@@ -24,7 +24,6 @@ pub mod external_tools;
 pub mod font_resolver;
 pub mod git;
 pub mod html;
-pub mod id_migration;
 pub mod link_index;
 pub mod markdown;
 pub mod memory;
@@ -168,10 +167,7 @@ pub fn run() {
         .format_timestamp_millis()
         .init();
 
-    // Before anything reads settings or the webview starts: bring data stored
-    // under the old app ID across (see id_migration; temporary).
     let context = tauri::generate_context!();
-    let id_migration = id_migration::run(&context.config().identifier);
 
     // Apply the Linux-only "disable DMABUF renderer" workaround before the
     // webview starts. `WEBKIT_DISABLE_DMABUF_RENDERER` is read once when
@@ -266,7 +262,6 @@ pub fn run() {
         })
         .manage(state::AppState::new())
         .manage(commands::upgrade::PendingUpgrade::default())
-        .manage(id_migration)
         .manage(deep_link::Inbox::default())
         .invoke_handler(tauri::generate_handler![
             commands::about::read_third_party_notices,
@@ -276,7 +271,6 @@ pub fn run() {
             commands::upgrade::upgrade_download,
             commands::upgrade::upgrade_install,
             commands::upgrade::upgrade_restart,
-            id_migration::take_id_migration_notice,
             commands::git::git_setup_collaboration,
             commands::git::git_reconnect_collaboration,
             commands::git::git_status,
@@ -315,7 +309,7 @@ pub fn run() {
             commands::notebox::remove_notebox_from_registry,
             commands::notebox::dir_is_empty,
             commands::notebox::move_notebox,
-            commands::notebox::notebox_has_user_settings,
+            commands::notebox::notebox_is_existing,
             commands::notebox::seed_notebox_from_source,
             commands::notebox::rebuild_notebox_indexes,
             commands::collections::list_collections,

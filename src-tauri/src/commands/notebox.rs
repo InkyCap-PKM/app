@@ -1073,11 +1073,11 @@ pub struct NoteboxSeedResult {
     pub warnings: Vec<String>,
 }
 
-/// Returns `true` if the directory has no per-notebox settings file yet —
-/// i.e. it's a fresh notebox where the seed-from-existing flow would apply.
-/// Used by the frontend to decide whether to offer the copy prompt.
+/// Returns `true` if the folder already holds an InkyCap notebox (it has an
+/// `.inkycap` folder). The frontend offers the seed-from-existing prompt only
+/// when this is `false`.
 #[tauri::command]
-pub async fn notebox_has_user_settings(path: String) -> Result<bool, InkyCapError> {
+pub async fn notebox_is_existing(path: String) -> Result<bool, InkyCapError> {
     let dir = std::path::PathBuf::from(&path);
     if !dir.is_dir() {
         return Err(InkyCapError::InvalidPath(format!(
@@ -1085,8 +1085,7 @@ pub async fn notebox_has_user_settings(path: String) -> Result<bool, InkyCapErro
             path
         )));
     }
-    let settings_path = crate::notebox_settings::settings_path(&dir);
-    Ok(settings_path.exists())
+    Ok(crate::notebox_settings::is_existing_notebox(&dir))
 }
 
 /// Seed a fresh notebox's `.inkycap/` from another notebox: copies the
@@ -1097,9 +1096,9 @@ pub async fn notebox_has_user_settings(path: String) -> Result<bool, InkyCapErro
 /// resolve in the destination is cleared and a warning is surfaced so the
 /// user can fix it later.
 ///
-/// Refuses to run if the target already has a `.inkycap/settings.json`
-/// (assume the user opened the wrong notebox). Both paths must exist as
-/// directories.
+/// Refuses to run if the target is already a notebox (has an `.inkycap`
+/// folder), so an existing notebox's setup is never overwritten. Both paths
+/// must exist as directories.
 #[tauri::command]
 pub async fn seed_notebox_from_source(
     target_path: String,
@@ -1149,10 +1148,9 @@ fn seed_notebox_from_source_blocking(
         )));
     }
 
-    let target_settings = crate::notebox_settings::settings_path(&target);
-    if target_settings.exists() {
+    if crate::notebox_settings::is_existing_notebox(&target) {
         return Err(InkyCapError::BadRequest(
-            "Target notebox already has settings — refusing to overwrite".to_string(),
+            "Target is already a notebox — refusing to overwrite its setup".to_string(),
         ));
     }
 
@@ -1243,4 +1241,55 @@ fn seed_notebox_from_source_blocking(
         copied_scaffolds,
         warnings,
     })
+}
+
+#[cfg(test)]
+mod seed_tests {
+    use super::*;
+
+    /// A source notebox with settings and creation rules to copy from.
+    fn source_notebox(root: &std::path::Path) -> std::path::PathBuf {
+        let source = root.join("source");
+        std::fs::create_dir_all(source.join(".inkycap")).unwrap();
+        std::fs::write(source.join(".inkycap/settings.json"), "{}").unwrap();
+        std::fs::write(source.join(".inkycap/creation_rules.json"), "source rules").unwrap();
+        source
+    }
+
+    #[test]
+    fn seeds_a_folder_that_is_not_yet_a_notebox() {
+        let tmp = tempfile::tempdir().unwrap();
+        let source = source_notebox(tmp.path());
+        let target = tmp.path().join("target");
+        std::fs::create_dir_all(&target).unwrap();
+
+        seed_notebox_from_source_blocking(target.to_str().unwrap(), source.to_str().unwrap())
+            .unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(target.join(".inkycap/creation_rules.json")).unwrap(),
+            "source rules"
+        );
+    }
+
+    #[test]
+    fn refuses_an_existing_notebox_that_has_only_default_settings() {
+        // An existing notebox whose settings were never changed has an
+        // `.inkycap` folder but no `settings.json`; its own files must survive.
+        let tmp = tempfile::tempdir().unwrap();
+        let source = source_notebox(tmp.path());
+        let target = tmp.path().join("target");
+        std::fs::create_dir_all(target.join(".inkycap")).unwrap();
+        std::fs::write(target.join(".inkycap/creation_rules.json"), "own rules").unwrap();
+
+        assert!(crate::notebox_settings::is_existing_notebox(&target));
+        let result =
+            seed_notebox_from_source_blocking(target.to_str().unwrap(), source.to_str().unwrap());
+
+        assert!(result.is_err());
+        assert_eq!(
+            std::fs::read_to_string(target.join(".inkycap/creation_rules.json")).unwrap(),
+            "own rules"
+        );
+    }
 }

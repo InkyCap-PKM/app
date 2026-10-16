@@ -253,7 +253,7 @@ fn is_flatpak() -> bool {
 /// "Failed to trash file" (xdg-desktop-portal#1972, PR #1982). The same generic
 /// failure is still seen on 1.22.1 hosts, so the fallback is not just for old
 /// portals. When the portal fails, fall back to a spec-compliant move into the
-/// user's home trash — reachable because the flatpak holds `--filesystem=host`,
+/// user's home trash — reachable because the flatpak holds `--filesystem=home`,
 /// so `~/.local/share/Trash` is the real host trash and shares a filesystem with
 /// any notebox under `$HOME`.
 #[cfg(target_os = "linux")]
@@ -300,7 +300,7 @@ async fn trash_via_portal(full: &Path) -> Result<()> {
 /// The file is `rename`d into `Trash/files/<name>` and a matching
 /// `Trash/info/<name>.trashinfo` records its original location so the desktop can
 /// restore it. `rename` requires the file and the trash to share a filesystem;
-/// with `--filesystem=host` that holds for any notebox under `$HOME`. A notebox on
+/// with `--filesystem=home` that holds for any notebox under `$HOME`. A notebox on
 /// a separate mount (external drive) produces `EXDEV`, which we report rather than
 /// silently copy — its correct home is the drive's own `.Trash-$uid`, which only a
 /// fixed portal can reach.

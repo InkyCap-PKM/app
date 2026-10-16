@@ -159,10 +159,11 @@ export interface NoteboxSeedResult {
   warnings: string[];
 }
 
-/** True when the path has no per-notebox settings yet — used by the "Add
- *  notebox" flow to decide whether to offer the seed-from-existing prompt. */
-export async function noteboxHasUserSettings(path: string): Promise<boolean> {
-  return invoke<boolean>("notebox_has_user_settings", { path });
+/** True when the folder already holds an InkyCap notebox (it has an
+ *  `.inkycap` folder). The "Add notebox" flows offer the seed-from-existing
+ *  prompt only when this is false. */
+export async function noteboxIsExisting(path: string): Promise<boolean> {
+  return invoke<boolean>("notebox_is_existing", { path });
 }
 
 /** Copy `.inkycap/{settings.json, creation_rules.json, scaffolds/,
@@ -1464,13 +1465,6 @@ export async function upgradeInstall(): Promise<void> {
 /** Restart InkyCap into the newly installed version. */
 export async function upgradeRestart(): Promise<void> {
   return invoke<void>("upgrade_restart");
-}
-
-/** True once, on the first launch that copied settings from the old
- *  (`com.inkycap.editor`) Flatpak; the app then tells the user to remove it.
- *  Temporary: see src-tauri/src/id_migration.rs. */
-export async function takeIdMigrationNotice(): Promise<boolean> {
-  return invoke<boolean>("take_id_migration_notice");
 }
 
 // Creation rules

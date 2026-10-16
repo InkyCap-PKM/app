@@ -32,7 +32,7 @@ Many tabs have a red *"Reset to Defaults"* button in the footer. It resets _ever
 
 === Notebox Management
 
-This section lists every notebox InkyCap knows about on your computer and lets you add more. Each row shows the notebox's name (rename it with the pencil), its location, and buttons to *Open*, *Show* (reveal in your file manager), *Move*, or *Remove* it.
+This section lists every notebox InkyCap knows about on your computer and lets you add more. Each row shows the notebox's name (rename it with the pencil), its location, and buttons to *Open*, *Show* (reveal in your file manager), *Move*, or *Remove* it. *Remove* asks first, and only takes the notebox off InkyCap's list: its folder and notes stay on your computer, and you can add it back at any time.
 
 #callout("important")[ Adding a notebox with *New notebox* and *Add* lists it without opening it; use the row's *Open* button when you're ready. *Clone from remote* and *Import package*, on the other hand, open the new notebox as soon as they finish (their buttons read *Clone & open* and *Import & open*). ]
 

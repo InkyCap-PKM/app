@@ -16,7 +16,7 @@ import {
 import { noteboxSettings } from "../../stores/settings";
 import { maybeSeedNotebox } from "../../stores/notebox-seed";
 import { showToast, toastError } from "../../stores/toasts";
-import { promptConfirmWithCheckbox } from "../../stores/prompt";
+import { promptConfirm, promptConfirmWithCheckbox } from "../../stores/prompt";
 import { disableCollaboration, reconnectCollaboration, setupPackageHandoff } from "../../stores/git";
 import { toHttpsRemote } from "../../lib/git-remote";
 import { homeDirDefault } from "../../lib/dialog-defaults";
@@ -175,8 +175,20 @@ export function NoteboxManagementSection(props: { onClose: () => void }) {
     setEditingPath(null);
   }
 
-  async function handleRemove(path: string) {
+  async function handleRemove(entry: NoteboxRegistryEntry) {
+    const path = entry.path;
     const removingActive = pathEquals(path, noteboxInfo()?.path);
+    // Removing only takes the notebox off InkyCap's list; say so plainly, since
+    // "Remove" can read as deleting the folder.
+    const message = t("settings.notebox.removeConfirm", { path });
+    const ok = await promptConfirm({
+      title: t("settings.notebox.removeTitle", { name: entry.display_name }),
+      message: removingActive ? `${message}\n\n${t("settings.notebox.removeConfirmOpen")}` : message,
+      confirmLabel: t("common.remove"),
+      cancelLabel: t("common.cancel"),
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await ipc.removeNoteboxFromRegistry(path);
       // Removing the active notebox must also unload it — the user should never
@@ -731,7 +743,7 @@ export function NoteboxManagementSection(props: { onClose: () => void }) {
                 </button>
                 <button
                   class="settings__detect-btn"
-                  onClick={() => handleRemove(entry.path)}
+                  onClick={() => handleRemove(entry)}
                 >
                   {t("common.remove")}
                 </button>

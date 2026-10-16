@@ -267,6 +267,13 @@ pub struct NoteboxSettings {
 // [`NoteboxSettings`] to the rest of the app; the split is purely a
 // persistence concern and is invisible to callers and the frontend.
 
+/// True when the folder already holds an InkyCap notebox, i.e. it has an
+/// `.inkycap` folder. `settings.json` alone is not a reliable sign: it is
+/// written only once a notebox setting is changed from its default.
+pub fn is_existing_notebox(folder: &Path) -> bool {
+    folder.join(".inkycap").is_dir()
+}
+
 /// Storage path for a notebox's *shared* settings file (travels via git).
 pub fn settings_path(notebox_root: &Path) -> PathBuf {
     notebox_root.join(".inkycap").join("settings.json")
