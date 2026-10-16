@@ -1,6 +1,6 @@
 [package]
 name = "inkycap"
-version = "26.10.6"
+version = "26.10.8"
 edition = "2021"
 description = "Typst-based PKM with linked-notes for writing and academic research"
 

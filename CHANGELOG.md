@@ -12,6 +12,56 @@ each tagged release, newest first, grouping entries under **Added**, **Changed**
 **Fixed**, **Removed**, **Security**, or **Deprecated** as needed.
 
 
+## [26.10.8] - 2026-10-16
+
+Removing a notebox from the list now asks first, and adding an existing
+notebox no longer offers to copy settings into it. Collections can be deleted
+from their settings pane. The Flatpak moves to GNOME 51 and can now reach only
+the home folder and external drives.
+
+### Added
+
+- A **Delete this collection…** button at the bottom of a collection's
+  settings pane, doing the same as Delete in the Collections list's
+  right-click menu. The notes the collection lists are not deleted.
+
+### Changed
+
+- **Removing a notebox** in Settings now asks for confirmation and explains
+  that only InkyCap's list changes: the notebox's folder and notes stay on
+  your computer, and it can be added back at any time.
+- Confirmations that delete something now have a red button instead of a
+  green one.
+- The buttons in the Help panel have outlines, so they read as buttons.
+- A collection's agenda view no longer has its own filter box, which repeated
+  the collection toolbar's Find.
+- **Flatpak:** built on the GNOME 51 runtime.
+- **Flatpak:** InkyCap can now reach the home folder, external drives and
+  mounted shares (`/media`, `/run/media`, `/mnt`), rather than the whole
+  system. A notebox kept elsewhere, such as on a drive mounted at `/data`, no
+  longer opens; restore access to that folder with
+  `flatpak override --user --filesystem=/data org.inkycap.editor`.
+
+### Fixed
+
+- Adding a notebox that was already an InkyCap notebox, but whose settings had
+  never been changed, asked whether to copy settings from another notebox.
+  Accepting would have overwritten its own creation rules, scaffolds, property
+  types and dictionary. Existing noteboxes are now recognized and left as they
+  are.
+- In a paragraph that wraps onto several rows, Home now goes to the start of
+  the current row, matching End, instead of jumping to the start of the
+  paragraph. Pressing it again goes on to the paragraph's start.
+- The Export tab for a collection starts on its first choice, the table
+  (CSV/TSV), instead of PDF files.
+
+### Removed
+
+- The automatic copy of settings from the Flatpak's old app ID
+  (`com.inkycap.editor`, used up to 26.9). Anyone still on one of those
+  versions should first install 26.10.6 and open it once, which copies their
+  settings across, then update to this release.
+
 ## [26.10.6] - 2026-10-11
 
 Pages made from an emergent concept in the Mycelial View now open as Compose
