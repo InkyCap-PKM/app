@@ -31,7 +31,7 @@ On Linux you'll have a choice of package formats:
 
 The `.deb`, `.rpm` and AppImage come for both x86_64 (most PCs) and ARM computers; the Flatpak is for x86_64. The `.deb`, `.rpm` and Flatpak work through your system's package tools, and all four follow your desktop's native appearance. Except for the Flatpak, InkyCap can update itself; see "How updates work" below.
 
-#callout("note", title: "For Typst users")[The `.deb` package installs InkyCap's bundled language server under the name `inkycap-tinymist`, so it never collides with a Tinymist you may have installed separately. The Flatpak is built on the GNOME 50 runtime. ]
+#callout("note", title: "For Typst users")[The `.deb` package installs InkyCap's bundled language server under the name `inkycap-tinymist`, so it never collides with a Tinymist you may have installed separately. The Flatpak is built on the GNOME 51 runtime. ]
 
 === macOS
 

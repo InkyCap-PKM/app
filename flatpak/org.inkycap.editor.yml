@@ -10,7 +10,7 @@
 # The app-id matches the Tauri identifier in src-tauri/tauri.conf.json.
 id: org.inkycap.editor
 runtime: org.gnome.Platform
-runtime-version: '50'
+runtime-version: '51'
 sdk: org.gnome.Sdk
 command: inkycap
 
@@ -49,7 +49,7 @@ finish-args:
   - --filesystem=~/.var/app/com.inkycap.editor:ro
 
 # Audio/video playback (#video / #audio) uses the runtime's GStreamer libav
-# plugin. As of the freedesktop 25.08 base (GNOME 49/50), ffmpeg/libav ships
+# plugin. Since the freedesktop 25.08 base (GNOME 49 onward), ffmpeg/libav ships
 # inside the GNOME runtime itself, so no separate codec extension is declared
 # here — the standalone org.freedesktop.Platform.ffmpeg-full was discontinued
 # after 24.08.
