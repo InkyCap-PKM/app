@@ -2672,12 +2672,11 @@ const TreeNode: Component<{
             </span>
             <span
               class="sidebar-item__label"
-              // Non-note files are de-emphasized; when the user has
-              // extension display off, the hover title surfaces the full
-              // filename so it's clear *why* the row is dimmed.
-              title={
-                opensInApp(props.node.name) ? undefined : props.node.name
-              }
+              // The hover title shows the full name, including the extension
+              // when extensions are hidden. A narrow sidebar cuts long names
+              // off, and the title is the only way to read them without
+              // widening it.
+              title={props.node.name}
             >{
               props.node.is_dir || settings.files.show_file_extensions
                 ? props.node.name
