@@ -19,7 +19,9 @@
 use regex::Regex;
 use std::sync::LazyLock;
 
-use crate::typst_pipeline::source_structure;
+use typst::syntax::{ast, ast::AstNode, parse_code};
+
+use crate::typst_pipeline::{note_rewriter, source_structure};
 
 /// Options controlling the typst-to-markdown conversion.
 #[derive(Debug, Clone)]
@@ -134,10 +136,25 @@ static UNKNOWN_FUNC_RE: LazyLock<Regex> =
 
 /// Convert InkyCap Typst source to markdown.
 pub fn typst_to_markdown(input: &str, options: &TypstToMarkdownOptions) -> String {
+    // The `#note(...)` properties become the YAML header. Typst's parser
+    // finds the call, however it is laid out, and the call is cut out of the
+    // body before the line-by-line conversion below.
+    let frontmatter = note_frontmatter(input);
+    let without_note;
+    let input = match note_rewriter::note_call_span(input) {
+        Some(span) => {
+            let rest = &input[span.end..];
+            without_note = format!(
+                "{}{}",
+                &input[..span.start],
+                rest.strip_prefix('\n').unwrap_or(rest)
+            );
+            without_note.as_str()
+        }
+        None => input,
+    };
+
     let mut out = String::with_capacity(input.len());
-    let mut frontmatter_fields: Vec<(String, String)> = Vec::new();
-    let mut in_note_call = false;
-    let mut note_buf = String::new();
     let mut in_table = false;
     let mut table_buf = String::new();
 
@@ -153,9 +170,9 @@ pub fn typst_to_markdown(input: &str, options: &TypstToMarkdownOptions) -> Strin
         // of every other branch: a code sample may legitimately contain an
         // `#import` line, a `#note(` call, or anything else this loop would
         // otherwise consume. The exception is a fence *inside* a multi-line
-        // `#note(…)` / `#table(…)` call, whose accumulation below needs every
-        // line to find its closing paren.
-        if !in_note_call && !in_table && raw_lines.contains(&(idx + 1)) {
+        // `#table(…)` call, whose accumulation below needs every line to find
+        // its closing paren.
+        if !in_table && raw_lines.contains(&(idx + 1)) {
             out.push_str(line);
             out.push('\n');
             continue;
@@ -163,30 +180,6 @@ pub fn typst_to_markdown(input: &str, options: &TypstToMarkdownOptions) -> Strin
 
         // Skip import lines.
         if IMPORT_RE.is_match(line) {
-            continue;
-        }
-
-        // Detect #note(...) call (may span multiple lines).
-        if line.trim_start().starts_with("#note(") {
-            in_note_call = true;
-            note_buf.clear();
-            note_buf.push_str(line);
-            note_buf.push('\n');
-            // Check if it's all on one line.
-            if balanced_parens(line) {
-                in_note_call = false;
-                frontmatter_fields = parse_note_to_frontmatter(&note_buf);
-            }
-            continue;
-        }
-
-        if in_note_call {
-            note_buf.push_str(line);
-            note_buf.push('\n');
-            if balanced_parens(&note_buf) {
-                in_note_call = false;
-                frontmatter_fields = parse_note_to_frontmatter(&note_buf);
-            }
             continue;
         }
 
@@ -234,13 +227,11 @@ pub fn typst_to_markdown(input: &str, options: &TypstToMarkdownOptions) -> Strin
         out.push('\n');
     }
 
-    // Build final output with frontmatter if we extracted properties.
+    // Build the final output, with the YAML header when the note has properties.
     let mut result = String::new();
-    if !frontmatter_fields.is_empty() {
+    if let Some(yaml) = frontmatter {
         result.push_str("---\n");
-        for (key, value) in &frontmatter_fields {
-            result.push_str(&format!("{}: {}\n", key, value));
-        }
+        result.push_str(&yaml);
         result.push_str("---\n\n");
     }
 
@@ -313,12 +304,17 @@ fn convert_line(line: &str, options: &TypstToMarkdownOptions) -> String {
 fn convert_inline(text: &str, options: &TypstToMarkdownOptions) -> String {
     let mut result = text.to_string();
 
-    // Wikilinks → standard markdown links: [Name](Name.md)
+    // Wikilinks → standard markdown links: [Name](Name.md), or
+    // [Name](<My Name.md>) when the name has spaces.
     result = WIKILINK_RE
         .replace_all(&result, |caps: &regex::Captures| {
             let target = &caps[1];
             let display = caps.get(2).map(|m| m.as_str()).unwrap_or(target);
-            format!("[{}]({}.md)", display, target)
+            format!(
+                "[{}]({})",
+                display,
+                link_destination(&format!("{target}.md"))
+            )
         })
         .into_owned();
 
@@ -330,7 +326,7 @@ fn convert_inline(text: &str, options: &TypstToMarkdownOptions) -> String {
     // Links with display text.
     result = LINK_RE
         .replace_all(&result, |caps: &regex::Captures| {
-            format!("[{}]({})", &caps[2], &caps[1])
+            format!("[{}]({})", &caps[2], link_destination(&caps[1]))
         })
         .into_owned();
 
@@ -347,7 +343,7 @@ fn convert_inline(text: &str, options: &TypstToMarkdownOptions) -> String {
                 .captures(&caps[2])
                 .map(|a| unescape_typst_string(&a[1]))
                 .unwrap_or_default();
-            format!("![{}]({})", alt, &caps[1])
+            format!("![{}]({})", alt, link_destination(&caps[1]))
         })
         .into_owned();
 
@@ -419,6 +415,21 @@ fn convert_inline(text: &str, options: &TypstToMarkdownOptions) -> String {
     }
 
     result
+}
+
+/// A link or image address in the form Markdown accepts. An address with a
+/// space or a parenthesis would end the link early, so it goes inside angle
+/// brackets (`[text](<My Note.md>)`), which Markdown reads verbatim. The few
+/// characters not allowed there are percent-encoded.
+fn link_destination(target: &str) -> String {
+    if !target.contains(|c: char| c.is_whitespace() || matches!(c, '(' | ')' | '<' | '>')) {
+        return target.to_string();
+    }
+    let inner = target
+        .replace('<', "%3C")
+        .replace('>', "%3E")
+        .replace('\n', "%0A");
+    format!("<{inner}>")
 }
 
 /// Convert a `#table(...)` block to a markdown pipe table.
@@ -681,70 +692,104 @@ fn find_closing_marker(chars: &[char], start: usize, marker: char) -> Option<usi
     (start..chars.len()).find(|&i| chars[i] == marker && (i == 0 || chars[i - 1] != ' '))
 }
 
-/// Parse `#note(...)` content into (key, value) pairs for YAML frontmatter.
-fn parse_note_to_frontmatter(note_str: &str) -> Vec<(String, String)> {
-    let mut fields = Vec::new();
-
-    // Extract the content between #note( and the final )
-    let inner = note_str
-        .trim()
-        .strip_prefix("#note(")
-        .and_then(|s| s.strip_suffix(')'))
-        .unwrap_or("");
-
-    for line in inner.lines() {
-        let line = line.trim().trim_end_matches(',');
-        if line.is_empty() {
+/// The note's `#note(...)` properties as a YAML mapping (ending in a newline),
+/// or `None` when it has no properties worth writing. The YAML is written by
+/// a YAML library, so a value such as `Dogs: a study` comes out quoted and
+/// the header always parses.
+fn note_frontmatter(input: &str) -> Option<String> {
+    let mut mapping = serde_yaml::Mapping::new();
+    for (key, raw) in note_rewriter::extract_note_properties(input) {
+        let root = parse_code(&raw);
+        let Some(expr) = root
+            .cast::<ast::Code>()
+            .and_then(|code| code.exprs().next())
+        else {
             continue;
-        }
-
-        if let Some((key, value)) = line.split_once(':') {
-            let key = key.trim();
-            let value = value.trim();
-
-            let yaml_value = typst_value_to_yaml(value);
-            if !yaml_value.is_empty() {
-                fields.push((key.to_string(), yaml_value));
-            }
+        };
+        if let Some(value) = typst_expr_to_yaml(expr) {
+            mapping.insert(serde_yaml::Value::String(key), value);
         }
     }
-
-    fields
+    if mapping.is_empty() {
+        return None;
+    }
+    serde_yaml::to_string(&mapping).ok()
 }
 
-/// Convert a Typst value literal to YAML representation.
-fn typst_value_to_yaml(value: &str) -> String {
-    let value = value.trim().trim_end_matches(',');
-
-    // link-ref("Target") → "[[Target]]"
-    if let Some(rest) = value.strip_prefix("link-ref(") {
-        if let Some(inner) = rest.strip_suffix(')') {
-            let target = inner.trim().trim_matches('"');
-            return format!("\"[[{}]]\"", target);
+/// Convert one property value to YAML. Strings, numbers, booleans and arrays
+/// map directly; `datetime(...)` becomes an ISO 8601 date (with the time when
+/// it has one); `link-ref("Target")` becomes `[[Target]]`, the form Markdown
+/// note apps read as a link. An empty string, `none` or `auto` is left out.
+/// Anything else is kept as its Typst source text.
+fn typst_expr_to_yaml(expr: ast::Expr) -> Option<serde_yaml::Value> {
+    use serde_yaml::Value;
+    let source_text = || Value::String(expr.to_untyped().full_text().to_string());
+    match expr {
+        ast::Expr::Str(s) => {
+            let text = s.get();
+            (!text.is_empty()).then(|| Value::String(text.to_string()))
         }
+        ast::Expr::Int(i) => Some(Value::Number(i.get().into())),
+        ast::Expr::Float(f) => Some(Value::Number(f.get().into())),
+        ast::Expr::Bool(b) => Some(Value::Bool(b.get())),
+        ast::Expr::None(_) | ast::Expr::Auto(_) => None,
+        ast::Expr::Array(array) => Some(Value::Sequence(
+            array
+                .items()
+                .filter_map(|item| match item {
+                    ast::ArrayItem::Pos(e) => typst_expr_to_yaml(e),
+                    ast::ArrayItem::Spread(_) => None,
+                })
+                .collect(),
+        )),
+        ast::Expr::FuncCall(call) => {
+            let ast::Expr::Ident(callee) = call.callee() else {
+                return Some(source_text());
+            };
+            let converted = match callee.as_str() {
+                "datetime" => datetime_call_to_iso(call),
+                "link-ref" => call.args().items().find_map(|arg| match arg {
+                    ast::Arg::Pos(ast::Expr::Str(s)) => Some(format!("[[{}]]", s.get())),
+                    _ => None,
+                }),
+                _ => None,
+            };
+            Some(converted.map(Value::String).unwrap_or_else(source_text))
+        }
+        _ => Some(source_text()),
     }
+}
 
-    // String: "value" → value
-    if value.starts_with('"') && value.ends_with('"') {
-        return value[1..value.len() - 1].to_string();
+/// `datetime(year: 2026, month: 4, day: 29)` → `2026-04-29`, adding
+/// `T09:30:00` when the call also gives `hour:` and `minute:`. `None` when
+/// the call names neither a full date nor a time.
+fn datetime_call_to_iso(call: ast::FuncCall) -> Option<String> {
+    let part = |name: &str| {
+        call.args().items().find_map(|arg| match arg {
+            ast::Arg::Named(named) if named.name().as_str() == name => match named.expr() {
+                ast::Expr::Int(i) => Some(i.get()),
+                _ => None,
+            },
+            _ => None,
+        })
+    };
+    let date = match (part("year"), part("month"), part("day")) {
+        (Some(y), Some(m), Some(d)) => Some(format!("{y:04}-{m:02}-{d:02}")),
+        _ => None,
+    };
+    let time = match (part("hour"), part("minute")) {
+        (Some(h), Some(min)) => Some(format!(
+            "{h:02}:{min:02}:{:02}",
+            part("second").unwrap_or(0)
+        )),
+        _ => None,
+    };
+    match (date, time) {
+        (Some(d), Some(t)) => Some(format!("{d}T{t}")),
+        (Some(d), None) => Some(d),
+        (None, Some(t)) => Some(t),
+        (None, None) => None,
     }
-
-    // Array: ("a", "b") → [a, b]
-    if value.starts_with('(') && value.ends_with(')') {
-        let inner = &value[1..value.len() - 1];
-        let items: Vec<&str> = inner.split(',').map(|s| s.trim()).collect();
-        let yaml_items: Vec<String> = items
-            .iter()
-            .filter(|s| !s.is_empty())
-            .map(|s| {
-                let s = s.trim_matches('"');
-                s.to_string()
-            })
-            .collect();
-        return format!("[{}]", yaml_items.join(", "));
-    }
-
-    value.to_string()
 }
 
 /// Check if parentheses are balanced in the string.
@@ -852,16 +897,122 @@ mod tests {
         let result = convert(input);
         assert!(result.contains("---"));
         assert!(result.contains("title: My Note"));
-        assert!(result.contains("tags: [foo, bar]"));
+        assert!(result.contains("tags:\n- foo\n- bar\n"), "{result}");
         assert!(result.contains("date: 2024-01-15"));
         assert!(result.contains("# Hello"));
+    }
+
+    /// The header part of an export, parsed as YAML.
+    fn header(markdown: &str) -> serde_yaml::Mapping {
+        let yaml = markdown
+            .strip_prefix("---\n")
+            .and_then(|rest| rest.split_once("\n---\n"))
+            .map(|(yaml, _)| yaml)
+            .unwrap_or_else(|| panic!("no header: {markdown}"));
+        serde_yaml::from_str(yaml).unwrap_or_else(|e| panic!("invalid YAML ({e}): {markdown}"))
+    }
+
+    fn header_str<'a>(map: &'a serde_yaml::Mapping, key: &str) -> &'a str {
+        map.get(key)
+            .and_then(|v| v.as_str())
+            .unwrap_or_else(|| panic!("no {key}: {map:?}"))
+    }
+
+    #[test]
+    fn frontmatter_quotes_values_yaml_would_misread() {
+        let input = r##"#note(
+  title: "Dogs: a study",
+  subtitle: "#1 \"best\" friend",
+  tags: ("a: b", "c, d", "[x]"),
+  count: "42",
+  flag: "yes",
+)
+Body"##;
+        let map = header(&convert(input));
+        assert_eq!(header_str(&map, "title"), "Dogs: a study");
+        assert_eq!(header_str(&map, "subtitle"), "#1 \"best\" friend");
+        assert_eq!(header_str(&map, "count"), "42");
+        assert_eq!(header_str(&map, "flag"), "yes");
+        let tags: Vec<&str> = map["tags"]
+            .as_sequence()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect();
+        assert_eq!(tags, ["a: b", "c, d", "[x]"]);
+    }
+
+    #[test]
+    fn frontmatter_from_one_line_note_call() {
+        let input = r#"#note(title: "One line", status: "draft", rank: 3, done: false)
+Body"#;
+        let result = convert(input);
+        let map = header(&result);
+        assert_eq!(header_str(&map, "title"), "One line");
+        assert_eq!(header_str(&map, "status"), "draft");
+        assert_eq!(map["rank"].as_i64(), Some(3));
+        assert_eq!(map["done"].as_bool(), Some(false));
+        assert!(result.ends_with("---\n\nBody\n"), "{result}");
+    }
+
+    #[test]
+    fn frontmatter_converts_dates_and_links() {
+        let input = r#"#note(
+  created: datetime(year: 2026, month: 4, day: 9),
+  updated: datetime(year: 2026, month: 4, day: 9, hour: 7, minute: 5, second: 0),
+  related: link-ref("Cats"),
+  sources: (link-ref("Dogs: a study"), "plain"),
+  description: "",
+  parent: none,
+)
+Body"#;
+        let map = header(&convert(input));
+        assert_eq!(header_str(&map, "created"), "2026-04-09");
+        assert_eq!(header_str(&map, "updated"), "2026-04-09T07:05:00");
+        assert_eq!(header_str(&map, "related"), "[[Cats]]");
+        let sources: Vec<&str> = map["sources"]
+            .as_sequence()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect();
+        assert_eq!(sources, ["[[Dogs: a study]]", "plain"]);
+        assert!(
+            !map.contains_key("description"),
+            "empty string kept: {map:?}"
+        );
+        assert!(!map.contains_key("parent"), "none kept: {map:?}");
+    }
+
+    #[test]
+    fn note_call_inside_code_fence_is_not_the_header() {
+        let input = "Example:\n\n```typst\n#note(title: \"Sample\")\n```\n";
+        let result = convert(input);
+        assert!(!result.starts_with("---"), "{result}");
+        assert!(result.contains("#note(title: \"Sample\")"), "{result}");
+    }
+
+    #[test]
+    fn link_addresses_with_spaces_stay_one_link() {
+        let result = convert(
+            r#"#wikilink("Birds of prey", display: "birds") #link("https://example.org/a_(b)")[wiki] #image("/attachments/my photo.png")"#,
+        );
+        assert!(result.contains("[birds](<Birds of prey.md>)"), "{result}");
+        assert!(
+            result.contains("[wiki](<https://example.org/a_(b)>)"),
+            "{result}"
+        );
+        assert!(
+            result.contains("![](</attachments/my photo.png>)"),
+            "{result}"
+        );
     }
 
     #[test]
     fn wikilinks_to_md_links() {
         let input = "See #wikilink(\"My Note\") and #wikilink(\"Other\", display: \"shown\").";
         let result = convert(input);
-        assert!(result.contains("[My Note](My Note.md)"));
+        assert!(result.contains("[My Note](<My Note.md>)"));
         assert!(result.contains("[shown](Other.md)"));
     }
 

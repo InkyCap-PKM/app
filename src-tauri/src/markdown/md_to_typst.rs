@@ -23,6 +23,7 @@
 
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use regex::Regex;
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
@@ -151,8 +152,9 @@ static IMAGE_EMBED_RE: LazyLock<Regex> =
 
 /// Standard CommonMark image: `![alt](url "title")`. Captures the URL up to
 /// the first whitespace or closing paren (so an optional title is ignored).
+// The address is either `<…>` (which may hold spaces) or a run without spaces.
 static STD_IMAGE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"!\[[^\]]*\]\(\s*([^)\s]+)").unwrap());
+    LazyLock::new(|| Regex::new(r"!\[[^\]]*\]\(\s*(?:<([^>]+)>|([^)\s]+))").unwrap());
 
 static WIKILINK_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]").unwrap());
@@ -277,11 +279,15 @@ pub fn extract_embed_filenames(input: &str) -> Vec<String> {
 pub fn extract_image_filenames(input: &str) -> Vec<String> {
     let mut out = Vec::new();
     for caps in STD_IMAGE_RE.captures_iter(input) {
-        let url = caps[1].trim();
+        let Some(url) = caps.get(1).or_else(|| caps.get(2)) else {
+            continue;
+        };
+        let url = url.as_str().trim();
         if is_external_or_absolute(url) {
             continue;
         }
-        let basename = image_basename(url);
+        let url = decode_local_address(url);
+        let basename = image_basename(&url);
         if !basename.is_empty() {
             out.push(basename.to_string());
         }
@@ -296,6 +302,17 @@ fn is_external_or_absolute(url: &str) -> bool {
     url.starts_with('/') || url.starts_with("data:") || url.contains("://")
 }
 
+/// A notebox-local link or image address, with percent-codes such as `%20`
+/// turned back into the characters they stand for. Markdown apps (Obsidian by
+/// default) write a space in an address as `%20`, but the file and note names
+/// they point to have real spaces. An address that doesn't decode to valid
+/// text is kept as written.
+fn decode_local_address(url: &str) -> Cow<'_, str> {
+    percent_encoding::percent_decode_str(url)
+        .decode_utf8()
+        .unwrap_or(Cow::Borrowed(url))
+}
+
 /// The final path component of an image URL (its filename).
 fn image_basename(url: &str) -> &str {
     url.rsplit('/').next().unwrap_or(url)
@@ -308,7 +325,8 @@ fn route_image_url(url: &str, attachment_folder: &str) -> String {
     if is_external_or_absolute(url) {
         return url.to_string();
     }
-    let basename = image_basename(url);
+    let url = decode_local_address(url);
+    let basename = image_basename(&url);
     let folder = attachment_folder.trim_matches('/');
     if folder.is_empty() {
         format!("/{}", basename)
@@ -1276,11 +1294,11 @@ impl<'a> Converter<'a> {
                 let alt = std::mem::take(&mut self.image_alt);
                 let alt = alt.trim();
                 if alt.is_empty() {
-                    self.emit(&format!("#image(\"{}\")", routed));
+                    self.emit(&format!("#image(\"{}\")", escape_str(&routed)));
                 } else {
                     self.emit(&format!(
                         "#image(\"{}\", alt: \"{}\")",
-                        routed,
+                        escape_str(&routed),
                         escape_str(alt)
                     ));
                 }
@@ -1417,13 +1435,19 @@ fn format_link(url: &str, text: &str) -> String {
     let is_internal = !url.contains("://") && !url.starts_with("mailto:");
 
     if is_internal {
-        let target = url.trim_end_matches(".md").trim_start_matches("./");
-        // Strip anchor fragments for wikilink target.
-        let target = target.split('#').next().unwrap_or(target);
+        // Strip the anchor fragment before decoding, so an encoded `%23` in a
+        // name isn't mistaken for one.
+        let path = url.split('#').next().unwrap_or(url);
+        let path = decode_local_address(path);
+        let target = path.trim_end_matches(".md").trim_start_matches("./");
         if text.is_empty() || text == target {
-            format!("#wikilink(\"{}\")", target)
+            format!("#wikilink(\"{}\")", escape_str(target))
         } else {
-            format!("#wikilink(\"{}\", display: \"{}\")", target, text)
+            format!(
+                "#wikilink(\"{}\", display: \"{}\")",
+                escape_str(target),
+                escape_str(text)
+            )
         }
     } else {
         if text.is_empty() || text == url {
@@ -2069,6 +2093,52 @@ mod tests {
     fn internal_links() {
         let result = convert("[my note](./some-note.md)");
         assert!(result.contains("#wikilink(\"some-note\", display: \"my note\")"));
+    }
+
+    #[test]
+    fn internal_links_decode_percent_codes() {
+        // Obsidian's default form, and the `<…>` form InkyCap's export writes.
+        let encoded = convert("[birds](Birds%20of%20prey.md)");
+        assert!(
+            encoded.contains("#wikilink(\"Birds of prey\", display: \"birds\")"),
+            "{encoded}"
+        );
+        let bracketed = convert("[birds](<Birds of prey.md>)");
+        assert!(
+            bracketed.contains("#wikilink(\"Birds of prey\", display: \"birds\")"),
+            "{bracketed}"
+        );
+        let to_heading = convert("[Cats](My%20Cats.md#Food)");
+        assert!(
+            to_heading.contains("#wikilink(\"My Cats\", display: \"Cats\")"),
+            "{to_heading}"
+        );
+    }
+
+    #[test]
+    fn decoded_link_characters_stay_inside_the_typst_string() {
+        let result = convert("[the \"one\"](The%20%22One%22.md)");
+        assert!(
+            result.contains(r#"#wikilink("The \"One\"", display: "the \"one\"")"#),
+            "{result}"
+        );
+    }
+
+    #[test]
+    fn image_addresses_decode_percent_codes() {
+        let result = markdown_to_typst("![](my%20photo.png) ![](<other photo.png>)", &assets());
+        assert!(
+            result.contains("#image(\"/Assets/my photo.png\")"),
+            "{result}"
+        );
+        assert!(
+            result.contains("#image(\"/Assets/other photo.png\")"),
+            "{result}"
+        );
+        assert_eq!(
+            extract_image_filenames("![](my%20photo.png) ![a](<other photo.png>)"),
+            ["my photo.png", "other photo.png"]
+        );
     }
 
     #[test]
