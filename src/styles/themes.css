@@ -153,6 +153,14 @@
   --space-8: calc(32px * var(--density));
   --space-9: calc(48px * var(--density));
 
+  /* Callout frame: a thin corner bracket at the top-left and bottom-right of
+     the box, in the callout's colour. Across and down are how far the bracket
+     runs along the horizontal and vertical edges; width is the line
+     thickness. Used by the visual editor and Reading mode. */
+  --callout-corner-across: 5em;
+  --callout-corner-down: 2em;
+  --callout-corner-width: 2px;
+
   /* Thickness of every scrollbar in the app (see reset.css). Layout that must
      keep clear of a scrollbar, such as the status bar's right end, measures
      from this. */

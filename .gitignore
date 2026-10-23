@@ -47,6 +47,7 @@ InkyCap.code-workspace
 # Design assets: source artwork + the icon-tile the build derives from the
 # mark (src/assets/inkycap-logo.svg) via scripts/gen-icon-tile.mjs. Versioned
 # so the icon build's inputs travel with the repo.
+design-assets/old-saved-reference-icons/
 
 # Sidecar binaries (downloaded per-platform, ~30MB each)
 src-tauri/binaries/

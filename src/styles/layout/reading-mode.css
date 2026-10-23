@@ -362,14 +362,42 @@
    <div class="inkycap-callout …"> on the HTML target
    (typst-html can't carry the paged `block` box styling), passing the resolved
    kind colour through the --inkycap-callout-color custom property. Mirrors the
-   paged/SVG and visual-editor look: a left border + faint tint + coloured
-   title. */
+   paged/SVG and visual-editor look: a thin corner bracket with a rounded
+   bend at the top-left and bottom-right + faint tint + coloured title. */
 .typst-reading__html-content .inkycap-callout {
-  border-left: 3px solid var(--inkycap-callout-color, var(--accent-info));
-  background: color-mix(in srgb, var(--accent-info) 8%, transparent);
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  --callout-color: var(--inkycap-callout-color, var(--accent-info));
+  position: relative;
+  background: color-mix(in srgb, var(--callout-color) 8%, transparent);
+  border-radius: var(--radius-sm);
   padding: var(--space-4) var(--space-5);
   margin: 1em 0;
+}
+
+.typst-reading__html-content .inkycap-callout::before,
+.typst-reading__html-content .inkycap-callout::after {
+  content: "";
+  position: absolute;
+  width: var(--callout-corner-across);
+  height: var(--callout-corner-down);
+  max-height: 100%;
+  border: 0 solid var(--callout-color);
+  pointer-events: none;
+}
+
+.typst-reading__html-content .inkycap-callout::before {
+  top: 0;
+  left: 0;
+  border-top-width: var(--callout-corner-width);
+  border-left-width: var(--callout-corner-width);
+  border-top-left-radius: var(--radius-sm);
+}
+
+.typst-reading__html-content .inkycap-callout::after {
+  bottom: 0;
+  right: 0;
+  border-bottom-width: var(--callout-corner-width);
+  border-right-width: var(--callout-corner-width);
+  border-bottom-right-radius: var(--radius-sm);
 }
 
 .typst-reading__html-content .inkycap-callout__title {

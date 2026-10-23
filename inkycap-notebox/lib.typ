@@ -734,16 +734,35 @@
         ).join(),
       )
     } else {
+      // The frame is a thin corner bracket with a rounded bend at the top-left
+      // and bottom-right: a rectangle stroked on two sides only, shifted out
+      // by the inset to the box's edge. A stroke is centred on its edge, so
+      // each bracket also moves in by half its weight to sit inside the box.
+      let inset-x = 12pt
+      let inset-y = 8pt
+      let across = 5em
+      let down = 2em
+      let weight = 1.5pt
+      let radius = 3pt
+      let edge = weight + accent
       block(
         width: 100%,
-        inset: (left: 12pt, rest: 8pt),
-        stroke: (left: 3pt + accent),
+        inset: (x: inset-x, y: inset-y),
         fill: accent.lighten(92%),
-        radius: (right: 3pt),
-        [
-          #text(fill: accent, weight: "bold", size: 0.95em, heading-text) \
-          #body
-        ],
+        radius: radius,
+        {
+          place(top + left, dx: -inset-x + weight / 2, dy: -inset-y + weight / 2, rect(
+            width: across, height: down,
+            stroke: (top: edge, left: edge), radius: (top-left: radius),
+          ))
+          place(bottom + right, dx: inset-x - weight / 2, dy: inset-y - weight / 2, rect(
+            width: across, height: down,
+            stroke: (bottom: edge, right: edge), radius: (bottom-right: radius),
+          ))
+          text(fill: accent, weight: "bold", size: 0.95em, heading-text)
+          linebreak()
+          body
+        },
       )
     }
   }

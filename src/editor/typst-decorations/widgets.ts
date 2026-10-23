@@ -2301,7 +2301,7 @@ export class CalloutBlockWidget extends BlockBodyElementWidget {
     const color = this.color;
     const inner = document.createElement("div");
     inner.className = "cm-typst-callout";
-    inner.style.borderLeftColor = color;
+    inner.style.setProperty("--callout-color", color);
     inner.style.backgroundColor = `color-mix(in srgb, ${color} 8%, transparent)`;
 
     inner.appendChild(buildCalloutHeading(

@@ -366,13 +366,40 @@ svg { max-width: 100%; height: auto; }
 /* Callouts (#callout) and annotations (#annotation): the notebox package emits
    <div class="inkycap-callout …"> on the HTML target with the resolved kind
    colour in --inkycap-callout-color, since typst-html drops the paged box
-   styling. */
+   styling. A callout's frame is a thin corner bracket with a rounded bend at
+   its top-left and bottom-right. */
 .inkycap-callout {
-  border-left: 3px solid var(--inkycap-callout-color, var(--accent));
-  background: color-mix(in srgb, var(--inkycap-callout-color, #448aff) 8%, transparent);
-  border-radius: 0 3px 3px 0;
+  --callout-color: var(--inkycap-callout-color, var(--accent));
+  position: relative;
+  background: color-mix(in srgb, var(--callout-color) 8%, transparent);
+  border-radius: 4px;
   padding: 8px 12px;
   margin: 1em 0;
+}
+.inkycap-callout::before,
+.inkycap-callout::after {
+  content: "";
+  position: absolute;
+  box-sizing: border-box;
+  width: 5em;
+  height: 2em;
+  max-height: 100%;
+  border: 0 solid var(--callout-color);
+  pointer-events: none;
+}
+.inkycap-callout::before {
+  top: 0;
+  left: 0;
+  border-top-width: 2px;
+  border-left-width: 2px;
+  border-top-left-radius: 4px;
+}
+.inkycap-callout::after {
+  bottom: 0;
+  right: 0;
+  border-bottom-width: 2px;
+  border-right-width: 2px;
+  border-bottom-right-radius: 4px;
 }
 .inkycap-callout__title {
   font-weight: 600;

@@ -1703,7 +1703,7 @@ export function handleFuncCall(
       }
       // Cursor on the callout: the opener becomes the heading row (pill +
       // label) at the top of the first body line, the closer is hidden, and
-      // each body line carries the frame's bar, inset and tint.
+      // each body line carries the frame's inset and tint.
       const layout = blockEditLayout(state, bodyRange.from, bodyRange.to);
       decos.push(
         Decoration.replace({
@@ -1716,7 +1716,7 @@ export function handleFuncCall(
         state,
         layout,
         "cm-typst-callout-line",
-        `border-left-color: ${color}; background-color: color-mix(in srgb, ${color} 8%, transparent);`,
+        `--callout-color: ${color}; background-color: color-mix(in srgb, ${color} 8%, transparent);`,
       );
       return false;
     }

@@ -288,7 +288,7 @@ export const visualTheme = EditorView.theme({
     transform: "translateY(-50%)",
   },
   ".cm-typst-callout": {
-    borderLeft: "3px solid var(--accent)",
+    position: "relative",
     borderRadius: "var(--radius-sm)",
     padding: "var(--callout-pad) var(--callout-inset)",
     margin: "var(--callout-margin) 0",
@@ -833,12 +833,13 @@ export const visualTheme = EditorView.theme({
   // ── Callout edit state ──
   // The hidden `#callout(...)[` opener is replaced by a heading row (pill +
   // label) at the top of the first body line, and every body line carries the
-  // frame's bar, inset and tint (colour set inline per callout kind). Together
-  // they measure the same as the rendered widget.
+  // frame's inset and tint (colour set inline per callout kind), with the
+  // corner brackets on the first and last lines. Together they measure the
+  // same as the rendered widget.
   ".cm-typst-callout-line": {
     marginLeft: "var(--line-inset)",
     marginRight: "var(--line-inset-end)",
-    borderLeft: "3px solid var(--accent)",
+    position: "relative",
     padding: "0 var(--callout-inset)",
     fontSize: "var(--callout-body-size)",
     lineHeight: "var(--callout-line-height)",
@@ -854,6 +855,39 @@ export const visualTheme = EditorView.theme({
     marginBottom: "var(--callout-margin)",
     paddingBottom: "var(--callout-pad)",
     borderRadius: "0 0 var(--radius-sm) var(--radius-sm)",
+  },
+  ".cm-typst-callout-line.cm-typst-block-edit-first.cm-typst-block-edit-last": {
+    borderRadius: "var(--radius-sm)",
+  },
+  // The callout's frame: a thin corner bracket with a rounded bend at the
+  // top-left and bottom-right, in the `--callout-color` the widget or line
+  // sets inline. Shared by the rendered widget and the edit state's first and
+  // last lines, so it sits in the same spot in both. Out of flow, so it adds
+  // no height; `max-height` keeps a vertical arm inside a short line.
+  ".cm-typst-callout::before, .cm-typst-callout-line.cm-typst-block-edit-first::before, .cm-typst-callout::after, .cm-typst-callout-line.cm-typst-block-edit-last::after": {
+    content: '""',
+    position: "absolute",
+    width: "var(--callout-corner-across)",
+    height: "var(--callout-corner-down)",
+    maxHeight: "100%",
+    borderColor: "var(--callout-color)",
+    borderStyle: "solid",
+    borderWidth: "0",
+    pointerEvents: "none",
+  },
+  ".cm-typst-callout::before, .cm-typst-callout-line.cm-typst-block-edit-first::before": {
+    top: "0",
+    left: "0",
+    borderTopWidth: "var(--callout-corner-width)",
+    borderLeftWidth: "var(--callout-corner-width)",
+    borderTopLeftRadius: "var(--radius-sm)",
+  },
+  ".cm-typst-callout::after, .cm-typst-callout-line.cm-typst-block-edit-last::after": {
+    bottom: "0",
+    right: "0",
+    borderBottomWidth: "var(--callout-corner-width)",
+    borderRightWidth: "var(--callout-corner-width)",
+    borderBottomRightRadius: "var(--radius-sm)",
   },
   // Also carries .cm-typst-block-row, whose inline-block box keeps the
   // heading's bottom margin inside the row.
