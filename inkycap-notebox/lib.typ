@@ -738,13 +738,16 @@
       // and bottom-right: a rectangle stroked on two sides only, shifted out
       // by the inset to the box's edge. A stroke is centred on its edge, so
       // each bracket also moves in by half its weight to sit inside the box.
+      // The bracket is 70% transparent, so over the fill it lands 30% of the
+      // way from the fill to the full accent. Keep in step with
+      // `--callout-corner-strength` in the app's themes.css.
       let inset-x = 12pt
       let inset-y = 8pt
       let across = 5em
       let down = 2em
       let weight = 1.5pt
       let radius = 3pt
-      let edge = weight + accent
+      let edge = weight + accent.transparentize(70%)
       block(
         width: 100%,
         inset: (x: inset-x, y: inset-y),

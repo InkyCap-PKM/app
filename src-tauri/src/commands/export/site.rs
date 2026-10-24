@@ -384,7 +384,7 @@ svg { max-width: 100%; height: auto; }
   width: 5em;
   height: 2em;
   max-height: 100%;
-  border: 0 solid var(--callout-color);
+  border: 0 solid color-mix(in srgb, var(--callout-color) 30%, transparent);
   pointer-events: none;
 }
 .inkycap-callout::before {

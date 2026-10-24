@@ -156,10 +156,13 @@
   /* Callout frame: a thin corner bracket at the top-left and bottom-right of
      the box, in the callout's colour. Across and down are how far the bracket
      runs along the horizontal and vertical edges; width is the line
-     thickness. Used by the visual editor and Reading mode. */
+     thickness. Strength is how opaque the bracket is: it sits on the box's
+     tint, so 30% lands 30% of the way from the tint to the full colour. Used by
+     the visual editor and Reading mode. */
   --callout-corner-across: 5em;
   --callout-corner-down: 2em;
   --callout-corner-width: 2px;
+  --callout-corner-strength: 30%;
 
   /* Thickness of every scrollbar in the app (see reset.css). Layout that must
      keep clear of a scrollbar, such as the status bar's right end, measures

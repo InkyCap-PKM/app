@@ -380,7 +380,7 @@
   width: var(--callout-corner-across);
   height: var(--callout-corner-down);
   max-height: 100%;
-  border: 0 solid var(--callout-color);
+  border: 0 solid color-mix(in srgb, var(--callout-color) var(--callout-corner-strength), transparent);
   pointer-events: none;
 }
 

@@ -861,8 +861,9 @@ export const visualTheme = EditorView.theme({
   },
   // The callout's frame: a thin corner bracket with a rounded bend at the
   // top-left and bottom-right, in the `--callout-color` the widget or line
-  // sets inline. Shared by the rendered widget and the edit state's first and
-  // last lines, so it sits in the same spot in both. Out of flow, so it adds
+  // sets inline, faded by `--callout-corner-strength`. Shared by the rendered
+  // widget and the edit state's first and last lines, so it sits in the same
+  // spot in both. Out of flow, so it adds
   // no height; `max-height` keeps a vertical arm inside a short line.
   ".cm-typst-callout::before, .cm-typst-callout-line.cm-typst-block-edit-first::before, .cm-typst-callout::after, .cm-typst-callout-line.cm-typst-block-edit-last::after": {
     content: '""',
@@ -870,7 +871,7 @@ export const visualTheme = EditorView.theme({
     width: "var(--callout-corner-across)",
     height: "var(--callout-corner-down)",
     maxHeight: "100%",
-    borderColor: "var(--callout-color)",
+    borderColor: "color-mix(in srgb, var(--callout-color) var(--callout-corner-strength), transparent)",
     borderStyle: "solid",
     borderWidth: "0",
     pointerEvents: "none",
