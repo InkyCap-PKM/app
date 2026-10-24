@@ -56,18 +56,20 @@ A **notebox** is a directory of Typst (`.typ`) files plus a reserved
 documents that compile in any Typst environment. The metadata layer is a small
 Typst package, **`inkycap-notebox`** (top-level [`inkycap-notebox/`](../../inkycap-notebox/),
 `lib.typ` is the entry point), bundled into the binary and written into every
-notebox at `.inkycap/packages/inkycap-notebox/<version>/`. Notes auto-import it:
+notebox at `.inkycap/notebox.typ` whenever the notebox opens and its copy
+differs from the bundled one. Notes auto-import it:
 
 ```typst
-#import "/.inkycap/packages/inkycap-notebox/<version>/lib.typ": *
+#import "/.inkycap/notebox.typ": *
 #note(title: "…", tags: ("a", "b"))
 = Heading
 Body with a #wikilink("Other Note") and a #tag("idea").
 ```
 
 The package defines the primitives (`note`, `tag`, `wikilink`, `link-ref`,
-`embed`, `callout`, `verse`, `set-notebox`) and the stable query labels
-(`<inkycap-note>`, `<inkycap-tag>`, `<inkycap-link>`, …). InkyCap extracts
+`task`, `callout`, `annotation`, `verse`, `set-notebox`, among others) and
+the stable query labels (`<inkycap-note>`, `<inkycap-tag>`, `<inkycap-link>`,
+…). InkyCap extracts
 metadata by running **`typst query`** against those labels rather than parsing
 note text itself. This is the **Typst-first principle** in action: the
 extraction stays correct as Typst evolves because Typst does the parsing.

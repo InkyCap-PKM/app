@@ -73,24 +73,24 @@ In the visual editor, all Typst function markup that is **not** in the simple di
 
 - All pill instances must reuse `FuncPillWidget` and the single `expandFunc` effect / `expandedFuncField` StateField. No duplicating pill logic per function.
 - Content-bracket functions (`strike`, `highlight`, `emph`, `strong`, `callout`, `quote`, `verse`) show pill + visible content when the cursor is on the line, and hide the markup entirely when the cursor is away.
-- Block widget functions (`image`, `embed`) show pill + editable value on cursor line.
+- Block widget functions (`image`, `video`, `audio`) show pill + editable value on cursor line.
 - Interactive functions (`wikilink`, `tag`, `link`) always render as semantic widgets (no pill).
 - Unknown `#func[content]` calls use the same pill pattern via the default case.
 
 ### Metadata via the `inkycap-notebox` package
 
-All notebox primitives (`note`, `tag`, `wikilink`, `link-ref`, `embed`, `callout`, `verse`, `set-notebox`) live in a Typst package bundled with the notebox at `.inkycap/packages/inkycap-notebox/<version>/`. Notes auto-import via `#import "/.inkycap/packages/inkycap-notebox/<version>/lib.typ": *`. Backlink scanning, tag indexing, and properties all flow through `typst query` against stable labels (`<inkycap-note>`, `<inkycap-tag>`, `<inkycap-link>`).
+All notebox primitives (`note`, `tag`, `wikilink`, `link-ref`, `task`, `callout`, `annotation`, `verse`, `set-notebox`, among others) live in the `inkycap-notebox` Typst package. The app embeds [`inkycap-notebox/lib.typ`](inkycap-notebox/lib.typ) at build time and, each time a notebox opens, writes it to `.inkycap/notebox.typ` if the notebox's copy differs ([`notebox_package::scaffold`](src-tauri/src/notebox_package.rs)). That file is app-owned and overwritten on open, so edit `lib.typ`, never a notebox's copy. Notes auto-import via `#import "/.inkycap/notebox.typ": *`; the path carries no version. Backlink scanning, tag indexing, and properties all flow through `typst query` against stable labels (`<inkycap-note>`, `<inkycap-tag>`, `<inkycap-link>`).
 
 Document properties are the typed arguments to a `#note(...)` call at the top of the file, optionally materialized via the inline property panel.
 
 ### Path arguments in note source are notebox-root-absolute
 
-Any InkyCap code path that emits an `image`, `read`, `embed`, or
+Any InkyCap code path that emits an `image`, `video`, `audio`, `read`, or
 `bibliography` call into a note's source writes a path that starts with
 `/` (the Typst "project root", which we configure to the notebox root).
 Relative paths are tolerated when a user hand-authors them, but not emitted by InkyCap itself because they are fragile under note moves and break
 under merged collection export. Drag-and-drop, paste-image, the `/`
-command palette's image/embed entries, and markdown notebox import all
+command palette's image/video/audio entries, and markdown notebox import all
 funnel attachments into `settings.files.attachment_folder` and emit
 `#image("/<folder>/<file>")`-shaped calls. When inlining a note's
 content into a synthetic document or

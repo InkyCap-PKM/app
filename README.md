@@ -14,9 +14,8 @@
 > **[CodeFloe](https://codefloe.com/InkyCap/app)**. That is where the issue
 > tracker, pull requests and releases are. The
 > [GitHub repository](https://github.com/InkyCap-PKM/app) is a read-only mirror
-> that exists to build the installers, since CodeFloe has no runners for macOS
-> and Windows, and to host the few installers too large for CodeFloe (such as
-> the AppImages), which each CodeFloe release links to. **Issues and pull requests opened on
+> that exists to build the installers, since CodeFloe doesn't have runners for macOS
+> and Windows. **Issues and pull requests opened on
 > GitHub will not be seen.** Please use CodeFloe.
 >
 > The project moved from Codeberg in September 2026. The
@@ -26,36 +25,41 @@
 
 ---
 
-InkyCap is an experimental project from a person that cares about knowledge management. In spite of making my best efforts to continue it, I am not a professional developer and there are no guarantees here. **If you are interested in this project please contact me, I would be happy to explore collaboration** (especially if you have some expertise or know-how with the open technologies underpinning it). 
+InkyCap is an experimental project from a person that cares about knowledge management. 
 
-InkyCap is a desktop knowledge-management and writing tool whose documents are plain text [Typst](https://typst.app) files. It provides organizational flexibility, discoverability, and advanced recall functionality for notes. Notes are not trapped in a proprietary format; they are real Typst source, which compiles anywhere, and their metadata is queryable with the `typst` command-line tool, with or without InkyCap. InkyCap is currently available in English / Français.
+As a desktop knowledge-management and writing tool, InkyCap is designed to ensure your information remains under your control and is flexibile for future possibilities. Its files are plain text in the open, [Typst](https://typst.app) format. InkyCap provides organizational flexibility, unique ideation features, and advanced recall functionality for notes through a familiar interface workflow. As real Typst source files, these notes can be compiled in other Typst applications and their metadata is queryable with the `typst` command-line tool, with or without InkyCap. InkyCap is currently available in English / Français.
 
 ## Why InkyCap
+The following list itemizes a few highlights.  
 
 - **Reciprocal note-linking.** Wikilinks and automatic backlinks are the centre
-  of the navigation model, not an add-on.
+  of the navigation model.
 - **Portable, typed metadata.** Note properties are typed arguments to a Typst
   `#note(...)` call, queryable by any Typst tool through the bundled
   `inkycap-notebox` package. Your structure travels with your files.
 - **Three editor modes.** Source (full Typst), visual (write-what-you-mean convenience over
   live Typst markup), and reading (the rendered document).
 - **First-class bibliography.** Native Typst BibTeX/Hayagriva citations and a
-  dedicated References sidebar, with Zotero integration.
-- **The Mycelial View.** A graph that surfaces *emergent concepts* (recurring ideas you have not yet
-  named a page for) and *latent links* (notes you mention
-  but never linked), using corpus statistics. It's goal is to help you identify where your interests want to grow.
-- **Local-first and private.** No telemetry, no analytics, no remote logging, no built-in generative artificial intelligence consumption.
-  Your notebox never leaves your device unless you decide to synchronize it or manually share your files.
-- **Collaboration when you want it.** Optional whole-notebox git sync with a
-  simplified, merge-first model that does not block writing on a conflict.
+  dedicated References sidebar with Zotero integration.
+- **The Mycelial View.** A graph that reveals *emergent concepts* (recurring ideas you have not yet
+  written a page for) and other types of notes that are likely to merit development or more of your attention, using corpus statistics. Its goal is to help you identify where your interests want to grow.
+- **The Journal Scroll View.** A temporal and contextual flow of your notes. It provides easy ways to see your work and its connections over the course of time or based on connective content. 
+- **Local-first and private.** No telemetry, analytics, or remote logging, and no built-in generative artificial intelligence consumption.
+  Your notebox does not leave your computer unless you decide to synchronize it or manually share your files.
+- **Collections.** These provide database-like functionality, allowing you to easily treat your notes and their properties as information you can query and display in an exportable table. Collections also provide unique functionality for compiling and styling an export of notes into one or multiple PDFs (for example, a professional-looking book) or HTML files (for example, as a website).
+- **Collaboration.** Optional whole-notebox git sync with a
+  simplified, merge-first model and the ability to collaborate asynchronously on notes via e-mail or file transfers. In all cases, suggestions, add/remove, and annotations are possible.
+- **Dates and Tasks.** Shortcuts to easily insert dates and tasks within the context of whatever you are working on. InkyCap will extract them in a variety of agenda views to list what is important for you.
 - **Open formats in and out.** Import from regular Markdown or an Obsidian-flavoured vault; export to PDF
   (including PDF/A and PDF/UA), HTML, Markdown, and ODT/DOCX/LaTeX via Pandoc.
 
 ## Status
 
-InkyCap was introduced June 2026 and is in active development. The feature set is broad and fairly stable but expect some rough edges. It is not a commercial project, rather a labour-of-love. **Issues and contributions are welcome, especially from human developers with expertise in the open technologies underpinning InkyCap**.  
+InkyCap was introduced June 2026 and is in active development. It is not a commercial project, rather a labour-of-love. **Issues and contributions are welcome, especially from human developers with expertise in the open technologies underpinning InkyCap**. The feature set is broad and fairly stable.  
 
-Mostly developed on a Linux system (Ubuntu), it has also been partially tested and seems to work reasonably well on Windows. In theory, there is evidence it works on a Mac but I do not have one to try it.
+While I am not a professional developer and there are no guarantees, I make a best-effort to continue it. **If you are interested in this project please contact me, I would be happy to explore collaboration** (especially if you have some expertise or know-how with the open technologies underpinning it). 
+
+Mostly developed on a Linux systems (e.g. CachyOS or Ubuntu), it has also been tested and seems to work well on Windows. I do not have a Mac for testing but have seen that people use the Mac files successfully.
 
 ## Installing
 
