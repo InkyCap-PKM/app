@@ -13,7 +13,8 @@
 //
 // A check only ever runs on explicit user action, or on startup if the user
 // opted in (settings.updates.check_on_startup) — never silently otherwise
-// (local-first, no telemetry).
+// (local-first, no telemetry). A copy updated by the software centre it came
+// from (Flathub) never checks: `updatesManaged` hides every update control.
 import { createSignal } from "solid-js";
 import * as ipc from "../lib/ipc";
 import { errorCode, errorText } from "../lib/errors";
@@ -59,6 +60,8 @@ export const updateNotes = notes;
 export const updateError = errorMessage;
 /** Whether this copy can upgrade itself (see ipc.upgradeSupport). */
 export const upgradeSupport = support;
+/** True when the software centre this copy came from updates it. */
+export const updatesManaged = () => support() === "managed";
 export const upgradePhase = phase;
 /** Download progress 0–100, or null when the size is unknown. */
 export const upgradePercent = percent;
@@ -72,6 +75,23 @@ function isNewer(a: string, b: string): boolean {
     if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) > (pb[i] ?? 0);
   }
   return false;
+}
+
+let supportLoaded: Promise<void> | null = null;
+
+/** Ask the backend once whether this copy can upgrade itself. The answer
+ *  can't change while InkyCap runs. */
+export function loadUpgradeSupport(): Promise<void> {
+  const loading =
+    supportLoaded ??
+    ipc.upgradeSupport().then(
+      (s) => void setSupport(s),
+      () => {
+        supportLoaded = null;
+      },
+    );
+  supportLoaded = loading;
+  return loading;
 }
 
 /** Run a check. Drives the status signal; safe to call repeatedly. */
@@ -93,7 +113,7 @@ export async function checkForUpdates(): Promise<void> {
     // Adopt the feed's download link whatever the verdict, so it is right by
     // the time the button that uses it appears.
     setDownloadUrl(latest.downloadUrl || DOWNLOAD_URL);
-    setSupport(await ipc.upgradeSupport());
+    await loadUpgradeSupport();
     if (latest.version && isNewer(latest.version, current)) {
       setLatestVersion(latest.version);
       setLatestUrl(latest.url || latest.releasesUrl || RELEASES_URL);
@@ -162,6 +182,8 @@ export async function restartIntoUpdate(): Promise<void> {
  *  surfaces a single informational toast if something newer exists. */
 export async function maybeCheckOnStartup(): Promise<void> {
   if (!settings.updates.check_on_startup) return;
+  await loadUpgradeSupport();
+  if (updatesManaged()) return;
   await checkForUpdates();
   if (status() === "available") {
     showToast("info", t("settings.updates.startupAvailable", { version: latestVersion() ?? "" }));

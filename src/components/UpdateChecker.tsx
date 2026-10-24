@@ -2,8 +2,9 @@
 // whether a newer release exists; if so it offers Download (always) and, for
 // copies installed by InkyCap's own installers, Upgrade: download and verify →
 // install → Restart now. A check only runs on click (or on startup, if opted
-// in); an upgrade only on click.
-import { Show, Switch, Match } from "solid-js";
+// in); an upgrade only on click. A copy updated by the software centre it came
+// from (Flathub) shows a note instead of any of this.
+import { Show, Switch, Match, onMount } from "solid-js";
 import { useI18n } from "../lib/i18n";
 import * as ipc from "../lib/ipc";
 import {
@@ -15,6 +16,8 @@ import {
   updateError,
   checkForUpdates,
   upgradeSupport,
+  updatesManaged,
+  loadUpgradeSupport,
   upgradePhase,
   upgradePercent,
   upgradeError,
@@ -29,6 +32,7 @@ import {
 export default function UpdateChecker() {
   const t = useI18n();
   const status = updateStatus;
+  onMount(() => void loadUpgradeSupport());
 
   const statusText = () => {
     switch (status()) {
@@ -57,6 +61,14 @@ export default function UpdateChecker() {
   const upgradeBusy = () => upgradePhase() === "downloading" || upgradePhase() === "installing";
 
   return (
+    <Show
+      when={!updatesManaged()}
+      fallback={
+        <div class="settings__update-control">
+          <span class="settings__description settings__update-status">{t("settings.updates.managed")}</span>
+        </div>
+      }
+    >
     <div class="settings__update-control">
       <div class="settings__update-action">
         <Switch>
@@ -127,6 +139,7 @@ export default function UpdateChecker() {
         <span class="settings__description settings__update-status">{t("settings.updates.flatpakManual")}</span>
       </Show>
     </div>
+    </Show>
   );
 }
 

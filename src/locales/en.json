@@ -1597,6 +1597,7 @@
   "settings.updates.restartNow": "Restart now",
   "settings.updates.upgradeFailed": "The upgrade didn't finish, and your current version is unchanged. You can try again, or use Download to install it by hand.",
   "settings.updates.flatpakManual": "Flatpak updates are installed by hand for now: use Download.",
+  "settings.updates.managed": "Updates for this copy come from the software centre it was installed from.",
   "settings.updates.startupAvailable": "InkyCap {version} is available — see Settings › Overview.",
   "settings.updates.checkOnStartup.label": "Check for updates on startup",
   "settings.updates.checkOnStartup.description": "Check once shortly after launch. Off by default — InkyCap makes no network connection unless you turn this on or check manually.",

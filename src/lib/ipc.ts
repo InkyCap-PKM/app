@@ -1425,10 +1425,12 @@ export async function checkLatestRelease(
 }
 
 /** Whether this copy can upgrade itself: `available` (installed by one of
- *  InkyCap's own installers), `flatpak` (updates are installed by hand), or
- *  `unsupported` (repackaged or self-built copies). The Download button is
- *  offered in every case. */
-export type UpgradeSupport = "available" | "flatpak" | "unsupported";
+ *  InkyCap's own installers), `flatpak` (updates are installed by hand),
+ *  `managed` (updated by the software centre it came from, such as Flathub,
+ *  so no update controls are shown), or `unsupported` (repackaged or
+ *  self-built copies). The Download button is offered in every case except
+ *  `managed`. */
+export type UpgradeSupport = "available" | "flatpak" | "managed" | "unsupported";
 
 export async function upgradeSupport(): Promise<UpgradeSupport> {
   return invoke<UpgradeSupport>("upgrade_support");

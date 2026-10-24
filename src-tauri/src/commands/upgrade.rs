@@ -12,8 +12,17 @@
 //! ## Which copies may upgrade themselves
 //!
 //! Only copies installed by one of InkyCap's own installers (see
-//! [`detect_support`]). Everything else keeps the Download button only:
+//! [`detect_support`]). Everything else keeps the Download button only,
+//! except copies whose updates come from where they were installed:
 //!
+//! - **Updated by a software centre or package manager** (Flathub): the
+//!   package sets the environment variable [`UPDATES_MANAGED_ENV`] to `1`
+//!   (for Flathub, `--env=INKYCAP_UPDATES_MANAGED=1` in the manifest's
+//!   `finish-args`). Such a copy offers no check, Download or Upgrade at all,
+//!   since installing a release from elsewhere would replace the managed one.
+//!   Flatpak can't tell from inside the sandbox where an app was installed
+//!   from, so the package has to say so. The bundle file built by
+//!   `scripts/build-flatpak.sh` doesn't set it.
 //! - **Flatpak:** a Flatpak installed from a bundle file cannot update itself,
 //!   and the plugin must never run inside it: the Flatpak repackages the
 //!   `.deb`, so the plugin would believe it is a `.deb` install and try `dpkg`
@@ -60,6 +69,9 @@ use crate::errors::InkyCapError;
 const DEB_PACKAGE: &str = "inky-cap";
 const RPM_PACKAGE: &str = "InkyCap";
 
+/// Set to `1` by a package whose updates come from where it was installed.
+pub const UPDATES_MANAGED_ENV: &str = "INKYCAP_UPDATES_MANAGED";
+
 /// Whether this copy of InkyCap can upgrade itself.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -68,20 +80,28 @@ pub enum UpgradeSupport {
     Available,
     /// Running as a Flatpak: updates are installed by hand.
     Flatpak,
+    /// Updated by the software centre or package manager it came from, which
+    /// is the only way this copy should be updated.
+    Managed,
     /// Repackaged, self-built, or an install type with no automatic upgrade.
     Unsupported,
 }
 
-/// Decide whether this copy may upgrade itself. `program` is what an upgrade
+/// Decide whether this copy may upgrade itself. `managed` is whether the
+/// package set [`UPDATES_MANAGED_ENV`]. `program` is what an upgrade
 /// replaces: the AppImage file for an AppImage, otherwise the running
 /// program. `confirm_linux_install` checks a Linux install with the system
 /// (see [`linux_install_confirmed`]).
 fn detect_support(
+    managed: bool,
     in_flatpak: bool,
     bundle: Option<BundleType>,
     program: &Path,
     confirm_linux_install: impl Fn(BundleType, &Path) -> bool,
 ) -> UpgradeSupport {
+    if managed {
+        return UpgradeSupport::Managed;
+    }
     if in_flatpak {
         return UpgradeSupport::Flatpak;
     }
@@ -172,7 +192,8 @@ fn appimage_is_replaceable(_appimage: &Path) -> bool {
 }
 
 /// Whether this copy can upgrade itself. The frontend shows the Upgrade button
-/// only for `available`; the Download button is shown in every case.
+/// only for `available`, and for `managed` shows no update controls at all;
+/// otherwise the Download button is shown.
 #[tauri::command]
 pub fn upgrade_support() -> UpgradeSupport {
     let bundle = tauri::utils::platform::bundle_type();
@@ -187,6 +208,7 @@ pub fn upgrade_support() -> UpgradeSupport {
         return UpgradeSupport::Unsupported;
     };
     detect_support(
+        std::env::var_os(UPDATES_MANAGED_ENV).is_some_and(|v| v == "1"),
         std::env::var_os("FLATPAK_ID").is_some(),
         bundle,
         &program,
@@ -342,7 +364,28 @@ mod tests {
         exe: &str,
         owned: bool,
     ) -> UpgradeSupport {
-        detect_support(flatpak, bundle, &PathBuf::from(exe), |_, _| owned)
+        detect_support(false, flatpak, bundle, &PathBuf::from(exe), |_, _| owned)
+    }
+
+    #[test]
+    fn a_managed_copy_offers_no_update_of_its_own() {
+        let managed = |flatpak, bundle| {
+            detect_support(
+                true,
+                flatpak,
+                bundle,
+                &PathBuf::from("/app/bin/inkycap"),
+                |_, _| true,
+            )
+        };
+        assert_eq!(
+            managed(true, Some(BundleType::Deb)),
+            UpgradeSupport::Managed
+        );
+        assert_eq!(
+            managed(false, Some(BundleType::Deb)),
+            UpgradeSupport::Managed
+        );
     }
 
     #[test]

@@ -1,13 +1,14 @@
 // Behaviour tab: startup behaviour + target, tab preferences (switching and
 // the new tab page's optional lists), and the Journal Scroll sort/anchor-scope
 // settings.
-import { createResource, createEffect, Show } from "solid-js";
+import { createResource, createEffect, onMount, Show } from "solid-js";
 import * as ipc from "../../lib/ipc";
 import { settings, updateSetting, noteboxSettings, updateNoteboxSetting } from "../../stores/settings";
 import { useI18n, formatNumber } from "../../lib/i18n";
 import { dailyNotesFolder } from "../../stores/journal-scroll";
 import { isLinux } from "../../lib/platform";
 import { SettingSelect, SettingPathText, SettingToggle, collectPaths } from "./shared";
+import { updatesManaged, loadUpgradeSupport } from "../../stores/updater";
 
 /** The list lengths offered for the new tab page. */
 const NEW_TAB_LIST_LENGTHS = [3, 6, 12];
@@ -42,6 +43,8 @@ export function BehaviourSettingsSection() {
         value: r.id,
         label: r.name,
       }));
+
+  onMount(() => void loadUpgradeSupport());
 
   // A native <select> silently displays its first option when the bound
   // value matches nothing — leaving `target` empty/stale even though a rule
@@ -189,22 +192,25 @@ export function BehaviourSettingsSection() {
         </p>
       </Show>
 
-      {/* Software updates */}
-      <div class="settings__section-header">
-        <span class="settings__label">{t("settings.updates.title")}</span>
-      </div>
-      <SettingToggle
-        label={t("settings.updates.checkOnStartup.label")}
-        description={t("settings.updates.checkOnStartup.description")}
-        value={settings.updates.check_on_startup}
-        onChange={(v) => updateSetting("updates", "check_on_startup", v)}
-      />
-      <SettingToggle
-        label={t("settings.updates.includeBeta.label")}
-        description={t("settings.updates.includeBeta.description")}
-        value={settings.updates.include_beta}
-        onChange={(v) => updateSetting("updates", "include_beta", v)}
-      />
+      {/* Software updates: absent when the software centre this copy came
+          from updates it. */}
+      <Show when={!updatesManaged()}>
+        <div class="settings__section-header">
+          <span class="settings__label">{t("settings.updates.title")}</span>
+        </div>
+        <SettingToggle
+          label={t("settings.updates.checkOnStartup.label")}
+          description={t("settings.updates.checkOnStartup.description")}
+          value={settings.updates.check_on_startup}
+          onChange={(v) => updateSetting("updates", "check_on_startup", v)}
+        />
+        <SettingToggle
+          label={t("settings.updates.includeBeta.label")}
+          description={t("settings.updates.includeBeta.description")}
+          value={settings.updates.include_beta}
+          onChange={(v) => updateSetting("updates", "include_beta", v)}
+        />
+      </Show>
 
       {/* Journal Scroll settings */}
       <div class="settings__section-header">
