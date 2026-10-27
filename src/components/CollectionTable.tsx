@@ -34,9 +34,9 @@ import PaneNavBar from "./panes/PaneNavBar";
 import HighlightedText from "./HighlightedText";
 import { substringMatch } from "../lib/fuzzy";
 
-// Remember the last active view per collection for the session, so switching
-// to another tab and back doesn't reset the collection to its first view.
-// Keyed by collection path; an empty value means "the default (first) view".
+// The last active view per collection for this session, so switching tabs
+// doesn't reset it. Keyed by collection path; empty means the default (first)
+// view.
 const lastActiveViewByCollection = new Map<string, string>();
 
 // ── Cell rendering ─────────────────────────────────────────────────
@@ -78,12 +78,10 @@ function parseInput(raw: string, hint: "boolean" | "number" | "list" | "string")
 }
 
 /**
- * Open the note behind a collection row. Every row affordance funnels through
- * here so they agree on the modifier conventions: a plain click navigates the
- * current tab, Ctrl/Cmd-click and middle-click open a new one. `editingMode`
- * pins the editor mode the note lands in — the row's pencil button asks for the
- * visual editor; the file-name link leaves it undefined and follows the user's
- * default.
+ * Open the note behind a row. Every row control uses this, so they share the
+ * modifier rules: a plain click opens in the current tab, Ctrl/Cmd-click and
+ * middle-click in a new one. `editingMode` sets the mode (the pencil button
+ * asks for visual; the name link follows the user default).
  */
 function openRowNote(
   filePath: string,
@@ -289,9 +287,8 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
   const [refreshTick, setRefreshTick] = createSignal(0);
   // Whether the "+ add view" type picker (Table / Agenda) is open.
   const [showAddViewMenu, setShowAddViewMenu] = createSignal(false);
-  // The Find row: a quick, unsaved narrowing of the rows on screen to those
-  // whose shown text contains the query. Closing it or clearing the text
-  // brings every row back.
+  // The Find row: a quick, unsaved filter of the visible rows to those whose
+  // text contains the query. Closing or clearing it shows every row again.
   const [showFind, setShowFind] = createSignal(false);
   const [findQuery, setFindQuery] = createSignal("");
   let findInputRef: HTMLInputElement | undefined;
@@ -317,9 +314,8 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
     return v?.view_type ?? "table";
   });
 
-  // Agenda rows for an "agenda" view — resolved from the collection's
-  // member notes' #task/#due markers and dated properties. Only fetched
-  // when the active view is actually an agenda view.
+  // Rows for an agenda view, from the members' #task / #due markers and dated
+  // properties. Only fetched for agenda views.
   const [agendaItems] = createResource(
     () => ({
       path: props.path,
@@ -333,9 +329,8 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
       type === "agenda" ? ipc.getCollectionAgenda(path, view) : [],
   );
 
-  // `propertyVersion()` is in the key so the file refetches after any autosave
-  // (the right-panel Collection Settings bumps the property version on save)
-  // without a direct callback into this component.
+  // `propertyVersion()` is in the key, so the file refetches after Collection
+  // Settings saves.
   const [collectionFile, { refetch: refetchCollection }] = createResource(
     () => ({ path: props.path, tick: refreshTick(), pv: propertyVersion() }),
     async ({ path }) => ipc.getCollectionFile(path),
@@ -422,12 +417,9 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
 
   // ── Filter handling ──
   //
-  // A collection carries filters at two scopes — `base.filters` (applies to
-  // every view) and `view.filters` (additional, per-view). The Filter
-  // panel surfaces whichever is set so it can be edited or removed. When
-  // both exist the view's wins for display (and is the one saved back).
-  // Without this fallback a filter stored at the global scope would be
-  // invisible in the builder even though it was actively filtering rows.
+  // Filters exist at two levels: `base.filters` (every view) and `view.filters`
+  // (one view). The Filter panel shows whichever is set, the view's when both
+  // are, so a filter stored at the base level is visible and editable.
 
   function currentFilterScope(): "view" | "global" {
     const bf = collectionFile();
@@ -452,9 +444,8 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
   }
 
   async function handleFilterSave(filters: FilterGroup | null) {
-    // Save back to the same scope the builder showed — editing a global
-    // filter writes to `base.filters`, not a brand-new view filter that
-    // shadows it.
+    // Save to the level the builder showed, so editing a base filter doesn't
+    // create a view filter that shadows it.
     const viewName =
       currentFilterScope() === "global" ? null : activeView() || null;
     await ipc.updateCollectionFilters(props.path, viewName, filters);
@@ -464,9 +455,9 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
 
   // ── Per-column header filters ──
   //
-  // A separate scope from the FilterBuilder (`view.columnFilters`, keyed by
-  // property). Each column's funnel opens a type-aware popover; the popover
-  // emits a `FilterGroup` that ANDs in with the base/view filters backend-side.
+  // Separate from the FilterBuilder (`view.columnFilters`, keyed by property).
+  // Each column's funnel opens a popover for its type, which produces a
+  // `FilterGroup` ANDed with the base and view filters in the backend.
 
   /** The active view's definition from the parsed `.collection` file. */
   function activeViewDef(): ViewDef | undefined {
@@ -486,10 +477,11 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
     return !!cf && Object.keys(cf).length > 0;
   }
 
-  /** Resolve a column's concrete property type for filtering. A `file.*`
-   *  column has a fixed type (never inferred — a date-shaped filename must not
-   *  flip the filter to a date control). Otherwise a declared type wins, and an
-   *  untyped ("auto") column infers from its first non-null cell value. */
+  /**
+   * A column's property type for filtering. `file.*` columns have fixed types
+   * (a date-like file name mustn't make it a date filter); otherwise the
+   * declared type, or for "auto" columns the type of the first non-null value.
+   */
   function resolveColumnType(col: string): PropertyType {
     const fileType = fileColumnType(col);
     if (fileType) return fileType;
@@ -520,13 +512,9 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
 
   // ── Sort handling ──
 
-  // Clicking a header sorts by that column *alone*, cycling
-  // none → ASC → DESC → none. Sorting by a single column at a time is what
-  // users expect from a table header click; the previous behaviour appended
-  // each click as a lower-priority key, so a click on a second column was
-  // dominated by the first and appeared to do nothing. (A `.collection`
-  // file can still define a multi-key sort by hand — the backend honours the
-  // whole list — this only governs what header clicks produce.)
+  // Clicking a header sorts by that column alone, cycling none → ascending →
+  // descending → none. A `.collection` file can still define a multi-key sort
+  // by hand.
   async function handleSort(col: string) {
     const rules = currentSortRules();
     const isPrimary = rules[0]?.property === col;
@@ -562,13 +550,12 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
     refresh();
   }
 
-  // ── Column reordering (drag a header cell onto another) ──
+  // ── Column reordering (drag a header onto another) ──
   //
-  // Reorders the active view's `columns` array and persists it through the
-  // same `updateViewColumns` command the column picker uses. `colDropSide`
-  // tracks whether the drop indicator sits on the left ("before") or right
-  // ("after") half of the hovered header, mirroring the property-row reorder
-  // in the right panel (which drops above/below instead of before/after).
+  // Reorders the view's `columns` and saves through `updateViewColumns`, as the
+  // column picker does. `colDropSide` says whether the indicator is on the left
+  // ("before") or right ("after") half of the hovered header, like the property
+  // reorder in the right panel.
   const [draggingCol, setDraggingCol] = createSignal<string | null>(null);
   const [dragOverCol, setDragOverCol] = createSignal<string | null>(null);
   const [colDropSide, setColDropSide] = createSignal<"before" | "after">("before");
@@ -614,15 +601,14 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
     refresh();
   }
 
-  // ── Column width resizing (drag the right edge of a header) ──
+  // ── Column width resizing (drag a header's right edge) ──
   //
-  // Effective widths live in a local signal so a drag updates the layout
-  // live (no round-trip per pointer move); they're reconciled from the
-  // active view's persisted `columnSize` map whenever the collection file or
-  // view changes, and written back through `updateViewColumnWidths` on
-  // pointer-up. A sized column is clamped (width + min/max on the header,
-  // max-width on its cells) so it holds its width instead of growing to fit
-  // content; unsized columns keep their natural width.
+  // Widths are kept in a local signal so dragging updates the layout without
+  // saving on every move; they are reloaded from the view's `columnSize` when
+  // the file or view changes, and saved through `updateViewColumnWidths` on
+  // release. A sized column is clamped (width and min/max on the header,
+  // max-width on its cells) so it keeps its width; unsized columns keep their
+  // natural width.
   const MIN_COL_WIDTH = 60;
   const [colWidths, setColWidths] = createSignal<Record<string, number>>({});
 
@@ -641,9 +627,8 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
   }
 
   function startColResize(e: MouseEvent, col: string) {
-    // Resizing must not also trigger the header's sort click or start a
-    // column-reorder drag. Stop the event here and disable native dragging on
-    // the parent header for the duration of the gesture (restored on release).
+    // Resizing mustn't sort or start a column drag: stop the event and turn off
+    // dragging on the header until release.
     e.preventDefault();
     e.stopPropagation();
     const handle = e.currentTarget as HTMLElement;
@@ -729,12 +714,10 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
     viewScrollRef?.scrollBy({ left: direction * 160, behavior: "smooth" });
   }
 
-  // Wire the overflow tracking through the `ref` callback rather than onMount:
-  // the scroll area lives inside `<Show when={data()}>`, so it doesn't exist at
-  // mount time. The ref fires when the element actually attaches (and again if
-  // it remounts), at which point we observe size/child changes. The
-  // ResizeObserver's own initial callback gives the first measurement after
-  // layout, so the chevrons appear as soon as the tabs overflow.
+  // Set up overflow tracking in the `ref`, since the scroll area is inside
+  // `<Show when={data()}>` and doesn't exist at mount. The ResizeObserver's
+  // first callback gives the initial measurement, so the chevrons appear as
+  // soon as the tabs overflow.
   function attachViewScroll(el: HTMLDivElement) {
     viewScrollRef = el;
     el.addEventListener("scroll", updateViewScrollState);

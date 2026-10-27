@@ -1,11 +1,8 @@
-// Right-panel Collection Settings: the tabbed panel for a Collection View.
-// The four tabs (Export / Appearance / Book / Collection) are driven by the
-// tab bar in `RightPanel`; this module owns their content. Export leads,
-// because the other tabs are the settings different exports use.
-//
-// All edits autosave to the `.collection` file on field blur/change (there is
-// no Save button), and then `onSaved` bumps the property version so the table
-// and member list stay in sync.
+// Right-panel Collection Settings. RightPanel's tab bar picks the tab (Export,
+// Appearance, Book, Collection); this module has their content. Export comes
+// first, since the other tabs hold settings exports use. Edits save to the
+// `.collection` file on blur or change, and `onSaved` bumps the property
+// version so the table follows.
 
 import {
   Component,
@@ -60,9 +57,8 @@ const COLLECTION_PAGE_SIZES = [
   { value: "b5", label: "B5" },
 ];
 
-// Preset numbering patterns. Values are Typst numbering pattern strings; the
-// special "none" suppresses numbering (emitted as the bare `none` keyword by
-// the backend). "" means inherit the app/template default.
+// Page numbering presets: Typst numbering patterns; "none" turns numbering off
+// (the `none` keyword); "" inherits.
 const PAGE_NUMBERING_PRESETS: PresetOption[] = [
   { value: "", label: "Inherit" },
   { value: "none", label: "None" },
@@ -120,19 +116,16 @@ const REGION_PRESETS: PresetOption[] = [
 const CollectionStyleEditor: Component<{
   style: CollectionStyle | null;
   onSave: (style: CollectionStyle | null) => void;
-  /// When true, render the body unconditionally without the
-  /// expand/collapse header (used when embedded inside a tab whose
-  /// visibility is already managed by the parent).
+  /// Show the body without the expand/collapse header, when the parent tab
+  /// already controls visibility.
   alwaysExpanded?: boolean;
-  /// The collection's raw custom Typst, shown here only to drive the "in use"
-  /// hint and the Add/Edit label. Editing happens in a modal hosted by the
-  /// parent (so the template's "Set up template…" button reaches the same
-  /// editor); this button just requests that the parent open it.
+  /// The collection's custom Typst, used here only for the "in use" hint and
+  /// the Add/Edit label. Editing happens in a dialog hosted by the parent (so
+  /// the template's "Set up template…" opens the same editor).
   customTypst?: string;
   onEditCustomTypst?: () => void;
-  /// When a Typst template is assigned, its `#show:` rule re-establishes the
-  /// document's layout, so these style overrides won't take effect — lock the
-  /// grid and say so. Custom Typst (where the template lives) stays editable.
+  /// A template's `#show:` rule sets the document's layout, so these overrides
+  /// wouldn't apply; lock the grid and say so. Custom Typst stays editable.
   templateInUse?: boolean;
 }> = (props) => {
   const t = useI18n();
@@ -455,11 +448,8 @@ const CollectionStyleEditor: Component<{
 
 // ── Book metadata editor ──────────────────────────────────────────
 
-/// Editor for the collection's persistent "Export as book" configuration.
-/// Edits write back to the `.collection` file on each change, mirroring the
-/// other Collection Settings editors (no save button — autosave on field
-/// blur / change so the configuration is always up to date when the user
-/// triggers the merged export).
+/// Editor for the collection's "Export as book" settings, saved to the
+/// `.collection` file on each change like the other editors.
 const CollectionBookEditor: Component<{
   collectionFile: CollectionFile;
   collectionName: string;
@@ -471,9 +461,8 @@ const CollectionBookEditor: Component<{
 }> = (props) => {
   const t = useI18n();
 
-  // The chapters that make up the book, in the order of the view the table
-  // shows (the notes the book is made from). Used to populate the "after
-  // chapter" table-of-contents placement options.
+  // The book's chapters in table order, for the "after chapter"
+  // table-of-contents options.
   const [chapters] = createResource(
     () => [props.collectionPath, props.view] as const,
     async ([path, view]) => {
@@ -489,11 +478,8 @@ const CollectionBookEditor: Component<{
     | "roman_then_arabic"
     | "arabic_from_page";
 
-  // Snapshot the persisted values into local signals so typing does not
-  // round-trip through the disk on every keystroke. We flush on blur /
-  // change. A non-null returned config is always passed to onSave; the
-  // parent decides when to clear (currently never — empty fields are
-  // serialised as null inside the config).
+  // Local copies of the saved values so typing doesn't write on each keystroke;
+  // saved on blur or change. Empty fields are saved as null in the config.
   const cfg = (): BookExportConfig => props.collectionFile.book ?? {};
 
   const [title, setTitle] = createSignal(cfg().title ?? "");
@@ -517,9 +503,8 @@ const CollectionBookEditor: Component<{
   const [tocPlacement, setTocPlacement] = createSignal<TocPlacement>(
     cfg().toc_placement ?? { kind: "beginning" },
   );
-  // Bibliography mode: unified consolidates one list at the back (default);
-  // per-chapter emits one chapter-scoped list per chapter; in-place keeps each
-  // note's own `#bibliography(...)`. Surfaced as a three-way selector.
+  // Bibliography mode: unified (one list at the back, the default),
+  // per-chapter, or in-place (each note's own `#bibliography(...)`).
   const [bibMode, setBibMode] = createSignal<BibliographyMode>(
     cfg().bibliography_mode ?? "unified",
   );
@@ -549,9 +534,8 @@ const CollectionBookEditor: Component<{
     return {
       title: title() || null,
       subtitle: subtitle() || null,
-      // The document `author` metadata is derived from the contributor
-      // roster at export time; the stored field is preserved as a fallback
-      // for collections that predate contributors.
+      // The document author comes from the contributors at export; the stored
+      // field is kept as a fallback for older collections.
       author: cfg().author ?? null,
       contributors: contributors(),
       date: date() || null,
@@ -572,9 +556,8 @@ const CollectionBookEditor: Component<{
     await props.onSave(buildConfig());
   }
 
-  // The ToC placement is stored as a tagged `TocPlacement`; the Dropdown works
-  // in flat strings. `beginning`/`end` map directly, an after-chapter anchor
-  // encodes as `after:<stem>`.
+  // The placement is a tagged `TocPlacement`; the Dropdown uses strings:
+  // `beginning`, `end`, or `after:<stem>`.
   const tocValue = () => {
     const p = tocPlacement();
     return p.kind === "after_chapter" ? `after:${p.stem}` : p.kind;
@@ -918,16 +901,15 @@ const CollectionTemplateFields: Component<{
   const [customCslMode, setCustomCslMode] = createSignal(false);
   const [customTemplateMode, setCustomTemplateMode] = createSignal(false);
 
-  // Installed template packages, offered for quick selection so a user needn't
-  // retype a spec they've already installed. The dropdown also exposes "None"
-  // (clear) and "Custom…" (type any spec or notebox path).
+  // Installed template packages, offered so a spec needn't be retyped, plus
+  // "None" and "Custom…" (any spec or notebox path).
   const [installedPackages] = createResource(() => ipc.listInstalledPackages());
   const installedTemplates = () =>
     (installedPackages() ?? []).filter((p) => p.kind === "template");
 
-  // What the template dropdown shows: an installed spec when the saved value
-  // matches one, "__custom__" when it's a hand-typed path/spec (or the user
-  // chose Custom…), and "" (None) when nothing is set.
+  // The dropdown's value: an installed spec when the saved value matches one,
+  // "__custom__" for a typed path or spec (or after choosing Custom…), ""
+  // (None) when unset.
   const TEMPLATE_CUSTOM = "__custom__";
   const templateSelectValue = () => {
     if (customTemplateMode()) return TEMPLATE_CUSTOM;
@@ -1069,9 +1051,8 @@ const CollectionTemplateFields: Component<{
 
 // ── Collection details (Collection tab) ────────────────────────────
 
-/// The collection's name, with a button that turns it into a field for
-/// renaming the collection. Enter or leaving the field renames; Escape
-/// cancels.
+/// The collection's name with a button that makes it a field for renaming.
+/// Enter or leaving the field renames; Escape cancels.
 const CollectionNameRow: Component<{ collectionPath: string; collectionName: string }> = (
   props,
 ) => {
@@ -1142,10 +1123,9 @@ const CollectionNameRow: Component<{ collectionPath: string; collectionName: str
   );
 };
 
-/// Settings that belong to the collection itself rather than to how it is
-/// exported: its name, its sidebar icon, the user's description, and its
-/// bibliography file, with a button to delete the collection set apart at
-/// the bottom.
+/// Settings of the collection itself rather than its export: name, sidebar
+/// icon, description and bibliography file, with Delete set apart at the
+/// bottom.
 const CollectionDetailsEditor: Component<{
   collectionFile: CollectionFile;
   collectionPath: string;
@@ -1248,9 +1228,8 @@ const CollectionDetailsEditor: Component<{
 
 // ── Tab content switch ─────────────────────────────────────────────
 
-/// Renders the body of the active Collection Settings tab. Loads the
-/// `.collection` file once (keyed on `propertyVersion` so it refetches after
-/// any autosave) and routes to the matching editor.
+/// The body of the active Collection Settings tab. Loads the `.collection` file
+/// (refetched on `propertyVersion`) and shows the matching editor.
 const CollectionSettings: Component<{
   /// The collection tab the panel belongs to, for the view its table shows.
   tabId: string;
@@ -1259,14 +1238,11 @@ const CollectionSettings: Component<{
   tab: CollectionPanelTab;
 }> = (props) => {
   const t = useI18n();
-  // The loaded `.collection` file, tagged with the path it was loaded for.
-  // Keyed on `propertyVersion` so it refetches after any autosave. The editors
-  // snapshot their fields into local signals on mount, so the editor tree is
-  // remounted (below) whenever `loadedPath` changes. Keying on the *loaded*
-  // path rather than `props.collectionPath` matters: on a collection switch the
-  // prop changes a beat before the refetch resolves, and the resource keeps the
-  // previous value until then — so remounting on `loadedPath` avoids
-  // snapshotting the outgoing collection's data into the new editor.
+  // The `.collection` file with the path it was loaded for. The editors copy
+  // their fields at mount, so the tree remounts when `loadedPath` changes. The
+  // loaded path rather than `props.collectionPath`, because on a switch the
+  // prop changes before the refetch finishes and the resource still holds the
+  // old data.
   const [collectionData, { refetch }] = createResource(
     () => [props.collectionPath, propertyVersion()] as const,
     async ([p]) => ({ path: p, file: await ipc.getCollectionFile(p) }),
@@ -1281,10 +1257,9 @@ const CollectionSettings: Component<{
     bumpPropertyVersion();
   };
 
-  // The Custom Typst editor is hosted here, not inside the style editor, so
-  // the template's "Set up template…" button and the style editor's Custom
-  // Typst button open the same editor. `autoInsert`
-  // pre-fills the assigned template's starter `#show:` rule on open.
+  // The Custom Typst editor lives here, so the template's "Set up template…"
+  // and the style editor's button open the same one. `autoInsert` pre-fills the
+  // template's starter `#show:` rule.
   const [customTypstModal, setCustomTypstModal] = createSignal<{
     autoInsert: boolean;
   } | null>(null);
@@ -1326,10 +1301,8 @@ const CollectionSettings: Component<{
     }
   }
 
-  // Remount the editor tree on a genuine collection switch (keyed on the
-  // loaded path) so the editors re-snapshot the new collection's values.
-  // Same-collection autosave refetches keep the same `loadedPath`, so they do
-  // not remount and never clobber an in-progress edit.
+  // Remount the editors on a real collection switch (by loaded path). Autosave
+  // refetches keep the path, so they don't remount and interrupt an edit.
   return (
     <Show when={loadedPath()} keyed>
       <Switch>

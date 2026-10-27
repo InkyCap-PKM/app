@@ -1,31 +1,24 @@
-//! Mycelial View command.
+//! The Mycelial View command.
 //!
-//! The Mycelial View is not a link-graph browser — backlinks and forward
-//! links are deliberately *not* the point. It surfaces where a notebox wants
-//! to grow next (gaps to fill, ideas to develop), via signals computed over a
-//! note's neighborhood:
+//! The view isn't a link-graph browser; it shows where a notebox could grow,
+//! from signals computed over a note's neighbourhood:
 //!
-//! - **Latent links** — an existing page is mentioned in other notes as plain
-//!   text, with no wikilink. Clicking one lets the user go connect them.
-//!   (Dangling wikilinks — links to pages never created — are deliberately
-//!   NOT part of this signal: latency is about *unlinked mentions of pages
-//!   that exist*, and the editor already surfaces dangling links inline.)
-//! - **Emergent concepts** — a recurring term/phrase with no page of its own,
-//!   representing knowledge the user has developed implicitly. Clicking one
-//!   creates a new page seeded with the connections it emerged from.
-//! - **Kindred notes** — semantically close to the anchor with no link path
-//!   to it; the one gap signal rendered as its own graph node kind.
-//! - **Under-developed hubs** and **open questions** — Growth-panel signals
-//!   (referenced-but-thin pages; question sentences left in prose).
+//! - **Latent links**: an existing page mentioned in other notes as plain text,
+//!   without a wikilink. (Links to missing pages aren't included; the editor
+//!   already shows those.)
+//! - **Emergent concepts**: a recurring term with no page; clicking one creates
+//!   a page from the connections it came from.
+//! - **Kindred notes**: similar to the anchor but with no link path to it,
+//!   shown as their own node kind.
+//! - **Under-developed hubs** and **open questions**: for the Growth panel
+//!   (much-referenced thin pages, and questions left in prose).
 //!
-//! The neighborhood those signals are computed over is **not** just the link
-//! graph: it is the link graph *unioned with the most semantically similar
-//! notes*, and each note is *anchor-weighted* (cosine-to-center, floored by a
-//! BFS-depth decay) so the analysis is genuinely specific to this anchor.
+//! The neighbourhood is the link graph plus the most similar notes, each
+//! weighted by similarity to the anchor (with a floor by link distance), so the
+//! results are specific to the anchor.
 //!
-//! Notes split into two visual roles: **source notes** (provenance — a note a
-//! signal emerged from) and **context notes** (existing wikilink neighbors
-//! that surface no signal — listed in the right panel for orientation).
+//! **Source notes** are those a signal came from; **context notes** are linked
+//! neighbours with no signal, listed in the right panel.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -45,9 +38,8 @@ use crate::storage::{sanitize_notebox_arg, to_frontend_string};
 const SNIPPET_MAX_CHARS: usize = 160;
 /// Maximum mention sites kept per latent link / emergent concept.
 const MAX_MENTIONS: usize = 8;
-/// Per-BFS-hop floor on a linked note's anchor weight (`0.9^depth`), so an
-/// explicitly linked note never weighs zero even when its vocabulary shares
-/// nothing with the center.
+/// Per-hop floor on a linked note's weight (`0.9^depth`), so a linked note
+/// never weighs zero.
 const DEPTH_DECAY: f64 = 0.9;
 /// Shared distinctive terms shown on a kindred node.
 const KINDRED_SHARED_TERMS: usize = 5;
@@ -101,9 +93,8 @@ pub struct EmergentConcept {
     pub mentions: Vec<SourceMention>,
 }
 
-/// A term the stopword filter held back that would otherwise have surfaced as
-/// an emergent concept. Shown in the Concept Filtering pane so the user can see
-/// what was suppressed and rescue a word that matters in their notebox.
+/// A stopword that would otherwise have been an emergent concept, shown in
+/// Concept Filtering so it can be rescued.
 #[derive(Debug, Clone, Serialize)]
 pub struct ExcludedTerm {
     pub term: String,
@@ -114,9 +105,8 @@ pub struct ExcludedTerm {
     pub source: String,
 }
 
-/// A note referenced often but barely written — high backlink count, low
-/// word count. Shown in the Growth panel (and as a badge on its graph node)
-/// as an under-developed page worth expanding.
+/// A note linked to often but barely written (many backlinks, few words), shown
+/// in the Growth panel and as a badge on its node.
 #[derive(Debug, Clone, Serialize)]
 pub struct WeakHub {
     pub path: String,
@@ -125,10 +115,8 @@ pub struct WeakHub {
     pub word_count: usize,
 }
 
-/// A note semantically close to the anchor with no link path to it within
-/// the BFS depth — two circles of thought that never touch. Rendered as its
-/// own (dashed-edge) node kind; `shared_terms` explains *why* the two notes
-/// read as kindred.
+/// A note similar to the anchor with no link path to it within the depth. Drawn
+/// with dashed edges; `shared_terms` explains the similarity.
 #[derive(Debug, Clone, Serialize)]
 pub struct KindredNote {
     pub path: String,
@@ -185,16 +173,14 @@ pub struct MycelialData {
     /// Indexed corpus size, so the frontend can label confidence on young
     /// noteboxes ("early growth" notice below `GROWING_CORPUS_DOCS`).
     pub total_docs: usize,
-    /// True when the centre note matches the notebox's Mycelial exclusion
-    /// rules. It is analyzed anyway (the user opened the view on it); the
-    /// frontend shows a notice explaining that.
+    /// True when the centre note matches the Mycelial exclusion rules. It is
+    /// analyzed anyway, and the frontend says so.
     pub center_excluded: bool,
 }
 
-/// Build the Mycelial View graph centred on `path`: BFS the wikilink graph to
-/// `max_depth`, widen it with the most semantically-similar notes (corpus
-/// stats), then surface latent links and emergent concepts with their source
-/// mentions. The heaviest read-side command — see the inline step comments.
+/// Build the Mycelial View centred on `path`: walk the wikilink graph to
+/// `max_depth`, add the most similar notes, then find latent links and emergent
+/// concepts with their mentions. See the numbered steps below.
 #[tauri::command]
 pub async fn get_mycelial_data(
     path: String,
@@ -205,22 +191,15 @@ pub async fn get_mycelial_data(
     let session = state.session(window.label()).await;
     let max_depth = max_depth.unwrap_or(2).min(3);
     let center_path = sanitize_notebox_arg(&path)?;
-    // The centre note's id, in the same `to_frontend_string` shape every other
-    // node id (and every edge endpoint) carries. The raw `path` argument is an
-    // OS-native string — on Windows it may use `\` separators or a `\\?\`
-    // verbatim prefix — so using it directly as the centre id makes it
-    // string-unequal to its own edges in the frontend layout, which collapses
-    // the graph to just the anchor. Deriving the id here keeps it consistent.
+    // The centre's id in the `to_frontend_string` form every node and edge
+    // uses. The raw `path` can differ on Windows, which would detach the centre
+    // from its edges.
     let center_id = to_frontend_string(&center_path);
     let config = MycelialConfig::default();
     let storage = session.get_storage().await?;
 
-    // 0. Notebox-wide note exclusions: notes matching the user's exclusion
-    //    rules take no part in any calculation below — they don't appear in
-    //    the graph, don't bridge links, and don't feed the corpus analysis.
-    //    The centre note is the one exception: the user opened the view on
-    //    it, so it always participates; `center_excluded` tells the frontend
-    //    to explain that.
+    // 0. Excluded notes take no part: not in the graph, not bridging links, not
+    //    in the analysis. The centre note always takes part.
     let exclusion_group =
         crate::commands::mycelial_exclusions::load_exclusion_group(storage.root()).await;
     let (excluded, center_excluded) = match &exclusion_group {
@@ -246,14 +225,10 @@ pub async fn get_mycelial_data(
         bfs_link_graph(&link_index, &center_path, &center_id, max_depth, &excluded)
     };
 
-    // 2. Map every existing page name -> its path, so corpus analysis can tell
-    //    a latent link (page exists) from an emergent concept (no page).
-    //
-    //    A page is named by its file stem *and* by its `title` property *and*
-    //    by any `aliases`. Stem alone is not enough: notes with ZID-style
-    //    filenames (`Some Concept 20210628145342`) carry their human-facing
-    //    name only in `title`, so a stem-only check would misclassify a
-    //    recurring concept as "emergent" even though its page already exists.
+    // 2. Map each page name to its path, to tell latent links (page exists)
+    //    from emergent concepts. A page is named by its stem, its `title` and
+    //    its `aliases`; notes with ZID file names carry their real name only in
+    //    `title`.
     let existing_pages: HashMap<String, String> = {
         let prop_index = session.property_index.read().await;
         let mut map: HashMap<String, String> = HashMap::new();
@@ -284,15 +259,13 @@ pub async fn get_mycelial_data(
         map
     };
 
-    // 3. Build the analysis neighborhood (the link graph widened with the
-    //    most semantically similar notes) and its anchor weights, and run the
-    //    corpus analysis. Everything needing the corpus lock happens here.
+    // 3. Build the neighbourhood and weights and run the analysis, all under
+    //    the corpus lock.
     let (analysis, link_node_ids, note_weights, kindred_raw, word_counts, total_docs) = {
         let corpus_stats = session.corpus_stats.read().await;
 
-        // Scored semantic neighbors — the widening set, and (scored) the
-        // kindred-note candidates. Excluded notes are dropped before they can
-        // widen the neighborhood or surface as kindred.
+        // Similar notes, which widen the neighbourhood and are kindred
+        // candidates. Excluded notes are dropped first.
         let similar: Vec<(PathBuf, f64)> = corpus_stats
             .similar_docs_scored(&center_path, config.semantic_neighbors)
             .into_iter()
@@ -308,10 +281,8 @@ pub async fn get_mycelial_data(
         let neighborhood: Vec<PathBuf> = neighborhood.into_iter().collect();
         let link_node_ids: HashSet<String> = link_nodes.iter().map(|n| n.id.clone()).collect();
 
-        // Anchor weights: each neighborhood note votes in proportion to its
-        // cosine similarity to the center, floored for BFS notes by a depth
-        // decay so an explicitly linked note never weighs zero. This is what
-        // makes the analysis anchor-specific.
+        // Weights: similarity to the centre, with a depth floor for linked
+        // notes.
         let cosine = corpus_stats.similarity_map(&center_path, &neighborhood);
         let depth_of: HashMap<PathBuf, usize> = link_nodes
             .iter()
@@ -332,9 +303,9 @@ pub async fn get_mycelial_data(
             note_weights.insert(p.clone(), w);
         }
 
-        // Kindred candidates: semantically close, no link path within the
-        // BFS depth. Gathered with headroom — the final pass drops any that
-        // already render as source notes or latent targets.
+        // Kindred candidates: similar, with no link path within the depth.
+        // Extra are gathered, since the final pass drops those already shown in
+        // other roles.
         let kindred_raw: Vec<(PathBuf, f64, Vec<String>)> = similar
             .iter()
             .filter(|(p, s)| {
@@ -370,9 +341,8 @@ pub async fn get_mycelial_data(
         )
     };
 
-    // 4. Snapshot everything the latent/hub passes need from the link index
-    //    in one lock scope, so the read guard is never held across the file
-    //    I/O below — a concurrent reindex needs the write lock.
+    // 4. Copy what the next passes need from the link index in one lock scope,
+    //    so it isn't held during file reads.
     let (forward_links, backlink_counts) = {
         let link_index = session.link_index.read().await;
 
@@ -400,10 +370,9 @@ pub async fn get_mycelial_data(
     // Under-developed pages the user has chosen to hide from the Growth panel.
     let hub_exclusions = load_hub_exclusions(storage.root()).await;
 
-    // 5. Latent links: keep only notes that mention the target without a
-    //    wikilink to it (the analyzer returns raw scores), then MMR-select
-    //    and normalize. The draft carries the mentioning-note ids as the MMR
-    //    diversity source set.
+    // 5. Latent links: keep notes that mention the target without linking to
+    //    it, then MMR-select and normalize, using the mentioning notes for
+    //    diversity.
     struct LatentDraft {
         term: String,
         target_path: String,
@@ -417,9 +386,8 @@ pub async fn get_mycelial_data(
     let mut drafts: Vec<LatentDraft> = Vec::new();
     for cand in analysis.latent {
         let target = PathBuf::from(&cand.target_path);
-        // An excluded page never surfaces as a latent-link target. It stays
-        // in `existing_pages`, though, so its name can't be misread as an
-        // emergent concept with no page.
+        // An excluded page is never a latent target, but stays in
+        // `existing_pages` so its name isn't taken as an emergent concept.
         if excluded.contains(&target) {
             continue;
         }
@@ -511,9 +479,8 @@ pub async fn get_mycelial_data(
         });
     }
 
-    // 7. Partition notes into provenance (source) and orientation (context).
-    //    Source notes = anything a signal emerged from. Context notes =
-    //    explicit wikilink neighbors that surfaced no signal — the horizon.
+    // 7. Source notes are those a signal came from; context notes are linked
+    //    neighbours without one.
     let mut source_ids: HashSet<String> = HashSet::new();
     let mut latent_targets: HashSet<String> = HashSet::new();
     for ll in &latent_links {
@@ -529,9 +496,7 @@ pub async fn get_mycelial_data(
     }
     source_ids.remove(&center_id);
 
-    // 8. Kindred notes: keep only candidates not already rendered in another
-    //    role — kindred rescues notes that are otherwise invisible (similar,
-    //    unlinked, and sourcing no signal).
+    // 8. Kindred notes not already shown in another role.
     let kindred_notes: Vec<KindredNote> = kindred_raw
         .into_iter()
         .filter(|(p, _, _)| {
@@ -578,9 +543,8 @@ pub async fn get_mycelial_data(
     });
     weak_hubs.truncate(MAX_WEAK_HUBS);
 
-    // 10. Open questions: question sentences across the neighborhood,
-    //     nearest (highest-weighted) notes first, hard-capped so the pass
-    //     reads a bounded number of files.
+    // 10. Open questions from the neighbourhood, highest-weighted notes first,
+    //     with a cap on files read.
     let mut by_weight: Vec<(&PathBuf, f64)> = note_weights.iter().map(|(p, w)| (p, *w)).collect();
     by_weight.sort_by(|a, b| {
         b.1.partial_cmp(&a.1)
@@ -624,10 +588,8 @@ pub async fn get_mycelial_data(
         });
     }
 
-    // `source_ids` / `link_node_ids` are HashSets — iteration order varies
-    // per call. Sort the rendered node lists by id so the Mycelial View
-    // layout (whose force simulation seeds off input order) is stable across
-    // recomputes of the same notebox.
+    // Sort nodes by id, since the force layout depends on input order and
+    // HashSet order varies.
     let mut source_notes: Vec<FlowNode> = source_ids
         .iter()
         .map(|p| flow_node(p, &center_id))
@@ -696,11 +658,8 @@ fn flow_node(id: &str, center: &str) -> FlowNode {
     }
 }
 
-/// Decode `%XX` percent-escapes (e.g. a `%20` left in a file name).
-///
-/// Works in the byte domain so a multi-byte UTF-8 character spread across
-/// several escapes reassembles correctly, then rebuilds a `String` lossily.
-/// A `%` not followed by two hex digits is left verbatim.
+/// Decode `%XX` escapes (e.g. `%20` in a file name), as bytes so multi-byte
+/// characters reassemble. A `%` without two hex digits is kept.
 fn percent_decode(s: &str) -> String {
     let bytes = s.as_bytes();
     let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
@@ -736,12 +695,9 @@ fn stem_name(path: &Path) -> String {
         .unwrap_or_default()
 }
 
-/// Read a note and locate the first occurrence of `term`, returning a
-/// `SourceMention` with a context snippet and the mention's byte range.
-///
-/// Matching runs over `text_projection` tokens — the same projection the
-/// corpus engine uses — so it inherits the exclusion of the `#note(...)`
-/// metadata block and import line, and never points a snippet at a property.
+/// Find the first mention of `term` in a note and return it with a snippet and
+/// its byte range. Uses the `text_projection` tokens, as the corpus engine
+/// does, so the `#note(...)` block and import are never matched.
 async fn resolve_mention(
     storage: &LocalNoteboxStorage,
     path: &Path,
@@ -778,10 +734,9 @@ fn trim_snippet(line: &str) -> String {
     out
 }
 
-/// Append `term` (lowercased) as its own line to a word-list file (stopwords or
-/// dictionary), creating the file and parent directory if needed and skipping
-/// the write when the word is already present. Shared by the stopword-add,
-/// term-rescue, and spellcheck add-to-dictionary commands.
+/// Add `term` (lowercased) as a line in a word-list file, creating it if
+/// needed; nothing if already there. Used by the stopword, rescue and
+/// add-to-dictionary commands.
 pub(crate) async fn append_unique_word(path: &Path, term: &str) -> Result<(), InkyCapError> {
     if let Some(parent) = path.parent() {
         tokio::fs::create_dir_all(parent).await?;
@@ -832,10 +787,8 @@ pub async fn add_mycelial_stopword(
     Ok(())
 }
 
-/// Rescue a term suppressed by a *built-in* stopword: force-include it by
-/// appending to the notebox's `dictionary.txt`, which removes it from the
-/// active stopword set even though a bundled list contains it. The term can
-/// then surface as an emergent concept / latent link.
+/// Rescue a built-in stopword by adding it to the notebox's `dictionary.txt`,
+/// which takes it out of the active stopwords.
 #[tauri::command]
 pub async fn rescue_mycelial_term(
     term: String,
@@ -853,9 +806,8 @@ pub async fn rescue_mycelial_term(
     Ok(())
 }
 
-/// Rescue a term the user themselves added to `mycelial-stopwords.txt` by
-/// removing its line, rather than masking it via the dictionary. No-op if the
-/// term isn't present (e.g. it was a built-in stopword — use rescue instead).
+/// Rescue a word from `mycelial-stopwords.txt` by removing its line. No-op if
+/// it isn't there (for a built-in stopword, use rescue).
 #[tauri::command]
 pub async fn remove_mycelial_stopword(
     term: String,
@@ -888,12 +840,9 @@ pub async fn remove_mycelial_stopword(
     Ok(())
 }
 
-/// Ensure the user's mycelial stopword file exists and return its path so the
-/// frontend can open it for editing. The file is the user-editable layer on
-/// top of the built-in stopword lists (one lowercase word per line, `#`
-/// comments) — exposing it directly lets the user inspect and prune it without
-/// a bespoke editor UI. When absent we create it with a short explanatory
-/// header so the first thing the user sees is the format, not a blank file.
+/// Make sure the user's stopword file exists and return its path for editing.
+/// One lowercase word per line, `#` comments, on top of the built-in lists. A
+/// new file gets a short header explaining the format.
 #[tauri::command]
 pub async fn ensure_mycelial_stopwords_file(
     state: State<'_, AppState>,
@@ -930,10 +879,9 @@ fn hub_exclusions_path(root: &Path) -> PathBuf {
     root.join(".inkycap").join("mycelial-hub-exclusions.txt")
 }
 
-/// Read the set of notebox paths the user has hidden from the Growth panel's
-/// under-developed-pages list. Each line is one `to_frontend_string`-shaped
-/// path — the same shape `WeakHub.path` carries — so membership is a direct
-/// string compare. Missing file, blank lines, and `#` comments yield nothing.
+/// Paths hidden from the Growth panel's under-developed list, one
+/// `to_frontend_string` path per line (as in `WeakHub.path`). Missing file,
+/// blank lines and `#` comments give nothing.
 async fn load_hub_exclusions(root: &Path) -> HashSet<String> {
     let mut set = HashSet::new();
     if let Ok(contents) = tokio::fs::read_to_string(hub_exclusions_path(root)).await {
@@ -947,9 +895,8 @@ async fn load_hub_exclusions(root: &Path) -> HashSet<String> {
     set
 }
 
-/// Append `value` as its own line to a list file, verbatim (unlike
-/// `append_unique_word`, which lowercases — a path must keep its case). Creates
-/// the file and parent directory if needed; a no-op when already present.
+/// Add `value` as a line, unchanged (unlike `append_unique_word`, which
+/// lowercases), creating the file if needed; nothing if already there.
 async fn append_unique_line(path: &Path, value: &str) -> Result<(), InkyCapError> {
     if let Some(parent) = path.parent() {
         tokio::fs::create_dir_all(parent).await?;
@@ -973,9 +920,8 @@ async fn append_unique_line(path: &Path, value: &str) -> Result<(), InkyCapError
     Ok(())
 }
 
-/// Hide an under-developed page from the Growth panel by adding its notebox
-/// path to `.inkycap/mycelial-hub-exclusions.txt`. The exclusion is per-notebox
-/// and takes effect the next time the Mycelial View loads. Reversible via
+/// Hide a page from the Growth panel by adding its path to
+/// `.inkycap/mycelial-hub-exclusions.txt`. Applies on the next load; undo with
 /// `remove_mycelial_hub_exclusion`.
 #[tauri::command]
 pub async fn exclude_mycelial_hub(
@@ -989,11 +935,9 @@ pub async fn exclude_mycelial_hub(
     Ok(())
 }
 
-/// Ensure the under-developed-page exclusion file exists and return its path so
-/// the frontend can open it for editing — the mirror of
-/// `ensure_mycelial_stopwords_file`, giving the user a way to review and prune
-/// what they've hidden from the Growth panel. Created with an explanatory
-/// header (one notebox-relative path per line, `#` comments) on first use.
+/// Make sure the hidden-pages file exists and return its path for editing, as
+/// `ensure_mycelial_stopwords_file` does. Created with a header (one path per
+/// line, `#` comments).
 #[tauri::command]
 pub async fn ensure_mycelial_hub_exclusions_file(
     state: State<'_, AppState>,

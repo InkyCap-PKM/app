@@ -5,25 +5,22 @@ import type { Contributor } from "../lib/types";
 import { Dropdown } from "./Dropdown";
 import { useI18n } from "../lib/i18n";
 
-/// Sentinel value for the role select's "Other…" entry. A row in this mode
-/// stores a free-text `biblio_role` the user types, instead of one of the
-/// catalog's known role values.
+/// Value of the role list's "Other…" entry. Such a row stores the `biblio_role`
+/// the user types instead of a known role.
 const OTHER_ROLE = "__other__";
 
 /// The NISO CRediT (Contributor Roles Taxonomy) reference, linked from the
 /// "Include CRediT contributions statement" toggle.
 const CREDIT_TAXONOMY_URL = "https://credit.niso.org/";
 
-/// The Book Metadata contributors table: each row is a contributor with a
-/// display name, a bibliographic role (drives the byline), and CRediT roles
-/// (drive the optional contributions statement).
+/// The Book Metadata contributors table: each row has a name, a bibliographic
+/// role (for the byline) and CRediT roles (for the optional contributions
+/// statement).
 ///
-/// Backed by a `createStore` array so per-field edits are fine-grained: a
-/// keystroke updates one cell in place without recreating the row's DOM
-/// (a `<For>` over a freshly-mapped array would tear down and rebuild every
-/// input each keystroke, stealing focus). Text fields commit to the parent
-/// on blur; selects and add/remove commit immediately. The role vocabularies
-/// come from the backend so they match what the export renderer understands.
+/// Rows are a `createStore` array, so a keystroke updates one field in place (a
+/// `<For>` over a newly mapped array would rebuild every input and lose focus).
+/// Text fields save to the parent on blur; selects and add/remove save at once.
+/// The role lists come from the backend, so they match the export.
 const ContributorsEditor: Component<{
   initial: Contributor[];
   includeCreditStatement: boolean;
@@ -31,10 +28,8 @@ const ContributorsEditor: Component<{
 }> = (props) => {
   const t = useI18n();
   const [catalogs] = createResource(() => ipc.contributorCatalogs());
-  // Normalize the wire shape: the backend omits `credit_roles` from JSON when
-  // it's empty (serde `skip_serializing_if`), so it can arrive `undefined`.
-  // Coerce to a real array so every store row is well-formed and
-  // spreads/`.length`/`.includes` are always safe.
+  // The backend omits an empty `credit_roles` from JSON, so it may be
+  // `undefined`; make it an array so every row is complete.
   const [rows, setRows] = createStore<Contributor[]>(
     (props.initial ?? []).map((c) => ({
       ...c,
@@ -48,11 +43,10 @@ const ContributorsEditor: Component<{
   const knownRoleValues = () =>
     new Set((catalogs()?.biblio_roles ?? []).map((o) => o.value));
 
-  // What the role select should display for a stored value. Any non-null role
-  // that isn't a catalog value (a custom string, or the empty placeholder set
-  // when "Other…" was just chosen) shows as "Other…". Gated on the catalog
-  // being loaded so a known role isn't briefly mistaken for custom on first
-  // paint.
+  // What the role list shows for a stored value. A role that isn't a known
+  // value (custom text, or the empty value just after choosing "Other…") shows
+  // as "Other…". Waits for the role list to load, so a known role isn't briefly
+  // shown as custom.
   const roleSelectValue = (role: string | null | undefined): string => {
     if (catalogs() && role != null && !knownRoleValues().has(role)) {
       return OTHER_ROLE;
@@ -115,9 +109,9 @@ const ContributorsEditor: Component<{
               ]}
               onChange={(v) => {
                 if (v === OTHER_ROLE) {
-                  // Enter custom mode with an empty value; the text field
-                  // below captures the typed role. An empty custom role is
-                  // treated as "author" by the export renderer.
+                  // Switch to a custom role with an empty value, typed in the
+                  // field below. The export treats an empty custom role as
+                  // "author".
                   setRows(i(), "biblio_role", "");
                 } else {
                   setRows(i(), "biblio_role", v === "author" ? null : v);
@@ -190,9 +184,8 @@ const ContributorsEditor: Component<{
         />
         <span>
           {(() => {
-            // Render "CRediT" as a link to the NISO taxonomy without making it
-            // a separate translation unit: the surrounding sentence stays one
-            // string with a `{credit}` slot, and we splice the link in.
+            // "CRediT" links to the NISO taxonomy, while the sentence stays one
+            // string with a `{credit}` slot for the link.
             const [before, after] = t("contributors.includeCreditStatement").split("{credit}");
             return (
               <>

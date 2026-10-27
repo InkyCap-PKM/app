@@ -1,16 +1,10 @@
-// In-app folder picker. A keyboard-driven, notebox-scoped dialog for
-// choosing a destination folder — used by the "Move file/folder to…"
-// actions in the file tree context menu and the File Actions menu.
+// In-app folder picker: a keyboard-friendly dialog for choosing a folder in the
+// notebox, for "Move file/folder to…" in the file tree menu and File Actions
+// menu. Like stores/prompt.ts: a signal holds the request, FolderPickerHost
+// renders it, and `pickFolder()` returns a Promise.
 //
-// Pattern mirrors stores/prompt.ts: a module-level signal holds the
-// active request, a single FolderPickerHost component subscribes to it,
-// and the imperative `pickFolder()` function returns a Promise.
-//
-// Picking is deliberately confined to folders that already exist inside
-// the open notebox — a user cannot move a note outside the notebox, which
-// keeps filesystem access scoped to the notebox root (see CLAUDE.md's
-// security directives). New folders are created via the existing
-// "New Folder" action, not here.
+// Only existing folders in the open notebox are offered, so nothing can be
+// moved outside it. New folders are made with "New Folder", not here.
 
 import { createSignal } from "solid-js";
 
@@ -20,14 +14,13 @@ export interface FolderPickerOptions {
   /** Placeholder shown in the filter input. */
   placeholder?: string;
   /**
-   * Absolute path of a folder to hide from the list together with all
-   * of its descendants. Set when moving a folder so it cannot be moved
-   * into itself or one of its own subfolders.
+   * Absolute path of a folder to hide with all its subfolders, so a folder
+   * can't be moved into itself.
    */
   disallowPrefix?: string;
   /**
-   * Absolute path of the item's current parent folder. Excluded from
-   * the list because moving into it would be a no-op.
+   * Absolute path of the item's current folder, hidden since moving there would
+   * do nothing.
    */
   currentParent?: string;
 }
@@ -42,10 +35,9 @@ const [activeFolderPicker, setActiveFolderPicker] =
 export { activeFolderPicker };
 
 /**
- * Open the folder picker. Resolves with the chosen folder's
- * notebox-relative path (the empty string `""` denotes the notebox root),
- * or `null` if the user dismissed the dialog. If a picker is already
- * open it is cancelled (resolved with `null`) before the new one opens.
+ * Open the folder picker. Resolves with the chosen folder's notebox-relative
+ * path (`""` is the root), or `null` if dismissed. An open picker is cancelled
+ * (`null`) first.
  */
 export function pickFolder(
   opts: FolderPickerOptions,

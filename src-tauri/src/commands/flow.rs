@@ -22,12 +22,9 @@ pub struct FlowEdge {
     pub target: String,
 }
 
-/// BFS traversal of the link graph from a center note.
-/// Returns (nodes, edges) for rendering.
-///
-/// Notes in `excluded` are treated as absent from the graph: they are never
-/// added as nodes, never emit edges, and never bridge two other notes. The
-/// center note itself is always kept, even if listed.
+/// Breadth-first walk of the link graph from a centre note, returning (nodes,
+/// edges) for drawing. Notes in `excluded` are treated as absent: no nodes, no
+/// edges, never connecting two others. The centre note is always kept.
 pub fn bfs_link_graph(
     link_index: &LinkIndex,
     center_path: &Path,

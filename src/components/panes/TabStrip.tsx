@@ -34,20 +34,15 @@ interface TabDragPayload {
 }
 
 /**
- * The tab row for a single leaf pane: its tabs (drag to reorder within the
- * pane, or drag into another pane to move), a fixed control cluster holding
- * the overflow scroll arrows and the new-tab button, and the pane menu
- * (`PanelTopOpen`) at the right edge.
- *
- * Tabs compress toward a legible floor before the strip starts scrolling, and
- * an overflowing edge fades out — so "there is more this way" is signalled by
- * the track itself, not only by whether an arrow happens to be showing.
+ * A pane's tab row: its tabs (drag to reorder, or into another pane to move), a
+ * control group with the scroll arrows and new-tab button, and the pane menu
+ * (`PanelTopOpen`) at the right. Tabs shrink to a readable minimum before the
+ * row scrolls, and an overflowing edge fades out, showing there is more.
  */
 const TabStrip: Component<{ leaf: LeafPane }> = (props) => {
   const t = useI18n();
-  // Drag state is local to this strip; it only drives the visual insertion
-  // cue. The actual move reads the tab id + source pane from the dataTransfer
-  // payload, so a drag that started in another pane lands correctly here.
+  // Local drag state, for the insertion cue only. The move itself reads the tab
+  // and source pane from the drag data, so drags from other panes work.
   const [dragFromIndex, setDragFromIndex] = createSignal<number | null>(null);
   const [dropTargetIndex, setDropTargetIndex] = createSignal<number | null>(null);
   const [dropAfter, setDropAfter] = createSignal(false);
@@ -61,27 +56,26 @@ const TabStrip: Component<{ leaf: LeafPane }> = (props) => {
     setDragFromIndex(index);
     if (e.dataTransfer) {
       e.dataTransfer.effectAllowed = "move";
-      // WebKitGTK (Tauri's Linux webview) and Firefox treat a drag with no
-      // payload as invalid — drop never fires and the tab snaps back. The
-      // payload also tells a drop in another pane which tab moved.
+      // WebKitGTK and Firefox reject drags without data (no drop fires); the
+      // data also tells another pane which tab moved.
       const payload: TabDragPayload = { tabId, sourcePaneId: props.leaf.id };
       e.dataTransfer.setData(TAB_DRAG_MIME, JSON.stringify(payload));
     }
   }
 
-  // DnD over/drop is handled at the strip-container level (not per tab) so a
-  // drop anywhere in the row — including the empty space to the right of the
-  // tabs — lands correctly. The insertion point is computed from the actual
-  // tab element positions.
+  // Drag over and drop are handled on the row, not each tab, so dropping
+  // anywhere in it (including the empty space after the tabs) works. The
+  // insertion point comes from the tabs' positions.
   function tabElements(): HTMLElement[] {
     return scrollAreaRef
       ? Array.from(scrollAreaRef.querySelectorAll<HTMLElement>(".tab"))
       : [];
   }
 
-  /** Insertion point from the pointer: `over` is the reference tab and
-   *  `after` which side of it — together they drive both the visual cue and
-   *  the computed slot. `over === -1` means the strip has no tabs. */
+  /**
+   * Insertion point from the pointer: `over` is the reference tab, `after`
+   * which side of it. `over === -1` when there are no tabs.
+   */
   function computeDrop(e: DragEvent): { over: number; after: boolean } {
     const els = tabElements();
     if (els.length === 0) return { over: -1, after: true };
@@ -148,24 +142,20 @@ const TabStrip: Component<{ leaf: LeafPane }> = (props) => {
   let rightArrowRef: HTMLButtonElement | undefined;
   const [canScrollLeft, setCanScrollLeft] = createSignal(false);
   const [canScrollRight, setCanScrollRight] = createSignal(false);
-  /** True when the tabs are wider than the track. Drives whether the arrows are
-   *  painted and whether the end gutters are rendered. The arrows are
-   *  absolutely positioned, so painting one costs no layout and nothing to the
-   *  right of the track can shift under the pointer.
-   *
-   *  Deliberately *not* derived from `canScrollLeft || canScrollRight`: the
-   *  gutters this flag renders are themselves scrollable, so a strip whose tabs
-   *  just fit would keep reporting room to scroll into its own gutter and the
-   *  arrows would never stand down. Measuring the tabs' span against the
-   *  track's content box is independent of both scroll position and gutters. */
+  /**
+   * True when the tabs are wider than the track; decides whether the arrows and
+   * end gutters show. The arrows are positioned absolutely, so showing them
+   * shifts nothing. Not derived from `canScrollLeft || canScrollRight`, since
+   * the gutters are scrollable themselves and the arrows would never hide.
+   */
   const [overflowing, setOverflowing] = createSignal(false);
 
-  /** Sub-pixel slack when comparing edges. `scrollWidth` / `clientWidth` are
-   *  rounded to integers and WebKit omits a trailing margin from a scroll
-   *  container's `scrollWidth`, so the integer properties can under-report an
-   *  overflow of a few pixels — the tab looks clipped but no arrow appears.
-   *  Measuring the first/last tab's own border box against the viewport edge
-   *  is fractional and includes every part of the tab, so it can't miss. */
+  /**
+   * Slack for comparing edges. `scrollWidth` / `clientWidth` are rounded, and
+   * WebKit leaves a trailing margin out of `scrollWidth`, so they can miss a
+   * few pixels of overflow. The first and last tabs' own boxes are measured
+   * instead, which is exact.
+   */
   const EDGE_EPSILON = 0.5;
 
   function updateScrollState() {
@@ -202,10 +192,11 @@ const TabStrip: Component<{ leaf: LeafPane }> = (props) => {
     scrollAreaRef?.scrollBy({ left: direction * 200, behavior: "smooth" });
   }
 
-  /** A wheel over the strip scrolls it horizontally. The track has no visible
-   *  scrollbar, so without this the arrows are the only pointer affordance —
-   *  and every browser, plus our own collection view-tab row, scrolls on wheel
-   *  here. A trackpad's horizontal axis is honoured when it dominates. */
+  /**
+   * The wheel scrolls the row sideways (it has no scrollbar), as browsers and
+   * the collection view tabs do. A trackpad's horizontal movement is used when
+   * it dominates.
+   */
   function handleWheel(e: WheelEvent) {
     const area = e.currentTarget as HTMLElement;
     const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
@@ -215,36 +206,28 @@ const TabStrip: Component<{ leaf: LeafPane }> = (props) => {
     area.scrollLeft += delta;
   }
 
-  /** Scroll the active tab fully into view whenever it changes (or a new tab is
-   *  opened, which activates it). Without this, a tab opened past the right edge
-   *  stays clipped — its close × hidden — until the user manually clicks the ›
-   *  arrow, and the fixed-step arrow may not reveal the whole tab in one press.
-   *  We scroll by exactly the amount the tab overflows either edge, plus the
-   *  width of the arrow on that side, so the tab lands beside the arrow rather
-   *  than tucked underneath it. */
+  /**
+   * Scroll the active tab fully into view when it changes (including a new tab),
+   * so its close button isn't hidden. Scroll by exactly its overflow plus the
+   * arrow's width, so it lands beside the arrow.
+   */
   createEffect(() => {
     const activeId = props.leaf.activeTabId;
-    // Depend on the tab set too: when a brand-new active tab is opened its DOM
-    // node isn't present yet at the moment activeTabId changes, so re-running on
-    // the tab list ensures we scroll once it has mounted.
+    // Also depend on the tabs, since a new tab's element doesn't exist yet when
+    // activeTabId changes.
     stripTabs();
     if (!activeId) return;
     const area = scrollAreaRef;
     if (!area) return;
     // rAF so a just-opened tab's node is laid out before we measure it.
     requestAnimationFrame(() => {
-      // Re-measure from here too, not just from the observers. Those fire off
-      // DOM mutations, which can land before the new tab has been laid out at
-      // its final width; this runs a frame later, after layout has settled, so
-      // a too-early reading can't stick and leave the arrows hidden over a
-      // strip that has started overflowing.
+      // Measure here too: the observers can fire before the new tab is laid out
+      // at its final width, and this runs a frame later.
       updateScrollState();
       const el = area.querySelector<HTMLElement>(".tab--active");
       if (!el) return;
-      // Measure the arrows rather than restating their width here, so the
-      // buffer can't drift out of step with the CSS. Add the track's own
-      // inter-tab gap on top, so the tab lands a small step clear of the arrow
-      // instead of resting flush against its edge.
+      // Measure the arrows instead of assuming their width, and add the track's
+      // gap, so the tab sits a little clear of the arrow.
       const areaRect = area.getBoundingClientRect();
       const elRect = el.getBoundingClientRect();
       const gap = parseFloat(getComputedStyle(area).columnGap) || 0;
@@ -262,11 +245,8 @@ const TabStrip: Component<{ leaf: LeafPane }> = (props) => {
     if (!el) return;
     el.addEventListener("scroll", updateScrollState);
     el.addEventListener("scrollend", updateScrollState);
-    // Observe the track *and* every tab in it. Watching only the track misses
-    // the common case where the container keeps its size but the content grows
-    // — a dirty dot appearing, "Untitled" resolving to a real filename, a
-    // rename, a language switch — which previously left the arrows hidden over
-    // a strip that had started overflowing.
+    // Observe the track and every tab: the track can keep its size while tabs
+    // grow (a dirty dot, a new name, a language switch).
     const ro = new ResizeObserver(updateScrollState);
     function observeTabs() {
       ro.disconnect();

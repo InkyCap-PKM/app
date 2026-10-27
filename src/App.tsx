@@ -83,9 +83,8 @@ const App: Component = () => {
   const [nameAuditVisible, setNameAuditVisible] = createSignal(false);
   const [scaffoldPickerVisible, setScaffoldPickerVisible] = createSignal(false);
 
-  // Keep the record of open tabs current so the "previous tabs" startup
-  // behaviour can restore them next launch. A no-op unless that behaviour is
-  // the one selected.
+  // Keep the record of open tabs current for the "previous tabs" startup
+  // option. Does nothing unless that option is chosen.
   installTabSessionRecorder();
 
   // Persist the active file path so "last-file" startup behavior can restore it.
@@ -98,29 +97,21 @@ const App: Component = () => {
     }
   });
 
-  // The left sidebar follows the active tab's content: a collection tab shows
-  // the Collections list; a file / mycelial tab shows the general notebox
-  // browse panel. We remember the most recent non-collection ("browse") mode
-  // the user chose so moving between notes restores Files / Tags / Bookmarks /
-  // etc. as they left it, rather than snapping back to Files each time.
+  // The left sidebar follows the active tab: Collections for a collection tab,
+  // the browse panel for a file or Mycelial tab. The last browse mode is
+  // remembered, so moving between notes keeps Files, Tags, Bookmarks etc. as
+  // the user left them.
   //
-  // An *empty* tab (a fresh "New tab", or the placeholder left after the last
-  // real tab closes) has no content of its own, so it leaves the sidebar where
-  // it is: deleting the only collection, or opening a new tab beside one,
-  // keeps the Collections panel up instead of throwing the user to the file
-  // tree. Switching to a tab that *does* have content always re-syncs the
-  // sidebar to match it.
+  // An empty tab leaves the sidebar as it is, so deleting the only collection,
+  // or opening a new tab beside one, keeps Collections showing. A tab with
+  // content always re-syncs it.
   let lastBrowseMode: SidebarMode = "filetree";
 
-  // User-initiated mode changes (toolbar buttons, the sidebar mode bar,
-  // Ctrl+Shift+F search) route through here so the last browse mode is
-  // recorded. The tab-driven effect below sets the signal directly and is
-  // deliberately NOT recorded, so an auto-forced "collections" never becomes
-  // the remembered browse mode.
-  // "help" is excluded alongside "collections": it's a reference overlay, not a
-  // content-browsing panel, so it must never become the remembered browse mode
-  // that the tab-driven effect restores. That also gives `openHelp` a clean
-  // return target (the real panel the user was last on) when toggled off.
+  // Mode changes the user makes (toolbar, mode bar, Ctrl+Shift+F) go through
+  // here so the browse mode is recorded. The tab-driven effect below sets the
+  // signal directly, so a forced "collections" isn't remembered. "help" isn't
+  // recorded either: it is a reference overlay, and this gives `openHelp` the
+  // panel to return to.
   const selectSidebarMode = (m: SidebarMode) => {
     if (m !== "collections" && m !== "help") lastBrowseMode = m;
     setSidebarMode(m);
@@ -150,10 +141,9 @@ const App: Component = () => {
     onCleanup(() => document.removeEventListener("inkycap:open-help", showHelp));
   }
 
-  // (Re)load declarative plugins on startup and whenever the open notebox
-  // changes — per-notebox manifests live under the notebox's `.inkycap/plugins`,
-  // so a switch must re-discover them. User-global manifests are picked up on
-  // the first run. loadPlugins disposes prior registrations before re-applying.
+  // Load declarative plugins at startup and whenever the notebox changes, since
+  // notebox manifests are in its `.inkycap/plugins`. loadPlugins removes earlier
+  // registrations first.
   createEffect(() => {
     noteboxInfo()?.path; // track: re-run on notebox change
     void loadPlugins();
@@ -174,17 +164,12 @@ const App: Component = () => {
     // collection down to an empty workspace doesn't yank the panel away.
   });
 
-  // The collaboration pane is meaningful for a collaborative notebox (sync /
-  // history) AND for a non-collaborative one the user is actively setting up —
-  // the SetupForm lives there, reached by toggling collaboration on from
-  // Settings. So only LEAVE the pane when the active notebox
-  // *becomes* non-collaborative while we're parked on it (i.e. a switch to a
-  // non-collaborative notebox, or Stop collaborating), never when the user
-  // deliberately opens the pane on a non-collaborative notebox to set it up.
-  // We watch the `collaborative` true→false transition rather than the bare
-  // `!collaborative()` state so opening the pane doesn't bounce away. Falls back
-  // to the pane that fits: collections for a collection tab, else the last
-  // browse pane (or the file tree).
+  // The collaboration pane also serves setting up a non-collaborative notebox
+  // (its SetupForm), so only leave it when the active notebox stops being
+  // collaborative while it is showing (a switch, or Stop collaborating), not
+  // when the user opens it to set up. Watch the true → false change, not the
+  // state, so opening it doesn't bounce away. Falls back to Collections for a
+  // collection tab, else the last browse pane (or the file tree).
   let prevSidebarMode = sidebarMode();
   let wasCollaborative = collaborative();
   createEffect(() => {
@@ -212,9 +197,8 @@ const App: Component = () => {
     setSettingsVisible((v) => !v);
   };
 
-  // When the app falls into the "no active notebox" state — e.g. the user
-  // removed the active notebox from Settings — the NoteboxRequiredOverlay must
-  // own the screen. Close Settings so the overlay isn't stacked behind it.
+  // Without an active notebox (e.g. it was removed in Settings),
+  // NoteboxRequiredOverlay takes the screen, so close Settings.
   createEffect(() => {
     if (initAttempted() && !noteboxInfo() && settingsVisible()) {
       setSettingsVisible(false);
@@ -231,16 +215,13 @@ const App: Component = () => {
     await applyFontSettings(settings.fonts);
     onSettingsChange((s) => applyFontSettings(s.fonts));
     initTheme();
-    // Apply the UI language before registering commands below, so command
-    // titles are built from the correct dictionary on first paint. React to
-    // external changes (e.g. a settings import) live.
+    // Set the UI language before registering commands, so their titles are
+    // right from the start; follow outside changes (e.g. a settings import).
     initLocale();
     onSettingsChange(syncLocaleFromSettings);
-    // A secondary window can be launched pointed at a specific notebox via a
-    // `?notebox=<path>` query param (the InkyCap Documentation window uses
-    // this). Otherwise restore the last-opened notebox. openNotebox runs
-    // applyStartupBehavior internally on every successful open (initial launch
-    // and subsequent switches alike), so we don't call it separately here.
+    // A secondary window can be opened on a notebox with `?notebox=<path>` (the
+    // Documentation window does). Otherwise restore the last notebox.
+    // openNotebox runs applyStartupBehavior itself.
     const params = new URLSearchParams(window.location.search);
     const noteboxParam = params.get("notebox");
     const fileParam = params.get("path");
@@ -258,9 +239,8 @@ const App: Component = () => {
         // (the "open in a new window" actions pass both notebox + path).
         if (fileParam) {
           const title = fileParam.split(/[/\\]/).pop() ?? fileParam;
-          // Reuse the window's initial empty tab rather than forcing a second
-          // one (which left a stray "New tab" beside the opened file). Only
-          // force a new tab if the active tab already holds content.
+          // Reuse the window's empty tab instead of adding a second one; only
+          // open a new tab if the active one has content.
           openTab(
             { type: "file", title, path: fileParam },
             { forceNewTab: getActiveTab()?.type !== "empty" },
@@ -283,10 +263,9 @@ const App: Component = () => {
       );
       if (startupLink) void followDelivery(startupLink);
     }
-    // Register every built-in command with the registry. The global
-    // keyboard dispatcher (initKeyboard, called below) reads keybindings
-    // straight off the registry, so anything with a `keybinding` field
-    // becomes a working hotkey automatically — no per-key wiring here.
+    // Register the built-in commands. The keyboard dispatcher (initKeyboard,
+    // below) reads key bindings from the registry, so any `keybinding` works as
+    // a hotkey.
     registerBuiltinCommands({
       toggleQuickOpen,
       toggleSettings,
@@ -307,48 +286,41 @@ const App: Component = () => {
     initMenuNav();
     initMenuPlacement();
 
-    // Register the user's creation rules with the registry as well —
-    // this is what gives e.g. "New Note" its Ctrl+N binding.
-    // Done after `initKeyboard` so newly-added rule hotkeys take effect
-    // without needing a relaunch (the dispatcher reads live from the
-    // registry on every keydown).
+    // Register the creation rules too (this gives "New Note" its Ctrl+N), after
+    // `initKeyboard`; the dispatcher reads the registry on every keydown, so
+    // new rule hotkeys work without a restart.
     registerCreationRuleCommands();
 
-    // Apply the user's saved keyboard-shortcut overrides on top of the
-    // now-registered command defaults, and keep them synced on later edits.
-    // Runs after all commands are registered so every effective binding is
-    // resolved in one pass.
+    // Apply saved shortcut overrides on top of the registered defaults and keep
+    // them in sync; after all commands are registered so bindings resolve in
+    // one pass.
     initShortcuts();
 
-    // Surface any user-registered external tools (the external-tool bridge):
-    // the `/` menu for tools opted into it, the global command palette for the
-    // rest (the default). The slash source reads live settings on each open;
-    // the command registry is reconciled reactively on settings change.
+    // External tools: in the `/` menu for those that opt in, otherwise in the
+    // command palette. The slash source reads settings when it opens; the
+    // registry follows settings changes.
     registerExternalToolPalette();
     registerExternalToolCommands();
 
     // Load creation rules into the reactive store (toolbar reads from it)
     void loadCreationRules();
 
-    // Opt-in update check on launch (main window only — secondary windows like
-    // the documentation viewer pass a `?notebox=`/`?new` param). No network
-    // request unless the user enabled settings.updates.check_on_startup.
+    // Optional update check on launch, main window only (secondary windows have
+    // `?notebox=` or `?new`). No network request unless
+    // settings.updates.check_on_startup is on.
     if (!noteboxParam && params.get("new") === null) {
       void maybeCheckOnStartup();
     }
 
-    // External drag-drop from the OS file manager.
+    // Drops from the OS file manager.
     //
-    // On Linux/webkit2gtk: DOM dragover blocks dataTransfer reads for
-    // cross-origin security, so JS drop events in
-    // typst-decorations/drag-drop.ts can't see file paths. Tauri's own
-    // listener bypasses that via the native window event.
+    // On Linux (webkit2gtk), the DOM hides file paths during drags, so
+    // drag-drop.ts can't see them; Tauri's native event can.
     //
-    // On Windows: `dragDropEnabled` is forced to false (see
-    // tauri.windows.conf.json) so internal HTML5 DnD works for file
-    // tree row moves. The Tauri-native event therefore does not fire,
-    // and external file drops come through as HTML5 DragEvents with
-    // `dataTransfer.files` populated as in any Chromium-based browser.
+    // On Windows, `dragDropEnabled` is false (see tauri.windows.conf.json) so
+    // HTML5 drag and drop works for moving tree rows. The native event doesn't
+    // fire, and file drops arrive as HTML5 DragEvents with
+    // `dataTransfer.files`.
     if (isWindows()) {
       initHtml5DragDrop();
     } else {
@@ -400,16 +372,14 @@ const App: Component = () => {
   document.addEventListener("inkycap:open-settings", onOpenSettings);
   onCleanup(() => document.removeEventListener("inkycap:open-settings", onOpenSettings));
 
-  // Open the Git Collaboration sidebar panel (from Settings' per-notebox entry
-  // point, the status-bar chip, or the command palette). Close Settings,
-  // ensure the sidebar is visible, and switch to the collaboration mode.
+  // Open the Git Collaboration panel (from Settings, the status-bar chip or the
+  // palette): close Settings, show the sidebar and switch to it.
   const onOpenCollaboration = (e: Event) => {
     setSettingsVisible(false);
     if (leftCollapsed()) setLeftCollapsed(false);
     selectSidebarMode("collaboration");
-    // The Settings › Configure entry point asks for the Manage section expanded
-    // (the user is there to edit the configuration); the toolbar / status-bar
-    // entry points leave it collapsed (the sync workflow).
+    // From Settings › Configure, open with Manage expanded; from the toolbar or
+    // status bar, collapsed.
     if ((e as CustomEvent).detail?.manage) setManageOpen(true);
   };
   document.addEventListener("inkycap:open-collaboration", onOpenCollaboration);

@@ -1,14 +1,11 @@
-// Right-panel pane for an external tool's output — the "panel" output
-// disposition of the external-tool bridge, and the in-tree consumer of the
-// right-panel registry. Unlike the transient `notify` toast, this keeps a
-// tool's stdout visible in a note-context tab so the user can work through a
-// multi-line result (a grammar/lint report, say) while editing.
+// Right-panel pane for an external tool's output (the "panel" output mode).
+// Unlike the `notify` toast, it keeps the output in a tab so a multi-line
+// result (a grammar or lint report) can be worked through while editing. Uses
+// the right-panel registry.
 //
-// A tool pane is scoped to the note it was last run against: it shows only
-// while that note is active (via the registry's reactive `when` gate), so
-// switching to another note hides it rather than leaving a stale report
-// floating in the sidebar. The pane header carries a close button that
-// unregisters the tab entirely.
+// A tool pane belongs to the note it last ran on: it shows only while that note
+// is active (the registry's `when`), so another note doesn't show a stale
+// report. Its header has a close button that removes the tab.
 
 import { Component, createSignal } from "solid-js";
 import { Terminal, X } from "lucide-solid";
@@ -19,9 +16,10 @@ import { getActiveTab } from "../stores/tabs";
 import { pathEquals } from "../lib/paths";
 import { useI18n } from "../lib/i18n";
 
-/** Per-tool pane state: the latest stdout and the note it belongs to. Reactive
- *  so re-running a tool refreshes the open pane in place and updates which note
- *  it's scoped to. */
+/**
+ * A tool's pane state: the latest output and its note. Reactive, so running the
+ * tool again updates the open pane and its note.
+ */
 interface ToolPaneState {
   name: string;
   text: string;
@@ -73,9 +71,11 @@ const ToolOutputPane: Component<{ toolId: string }> = (props) => {
   );
 };
 
-/** Show an external tool's stdout in a note-scoped right-panel pane. Registers
- *  (or refreshes) a tab keyed by the tool, scopes it to `notePath`, applies the
- *  tool's chosen icon, and focuses it (expanding the panel if collapsed). */
+/**
+ * Show a tool's output in a right-panel pane for `notePath`: register (or
+ * update) a tab for the tool with its icon, and focus it (expanding the panel
+ * if collapsed).
+ */
 export function showToolOutputPane(
   toolId: string,
   toolName: string,
@@ -103,9 +103,10 @@ export function showToolOutputPane(
   setRightPanelTab(paneId(toolId));
 }
 
-/** Close a tool's output pane: unregister its tab and drop its state. If it was
- *  the active right-panel tab, fall back to a built-in one so the pane area
- *  isn't left blank. */
+/**
+ * Close a tool's output pane: remove its tab and state. If it was the active
+ * tab, switch to a built-in one so the panel isn't blank.
+ */
 export function closeToolOutputPane(toolId: string): void {
   disposers.get(toolId)?.();
   disposers.delete(toolId);

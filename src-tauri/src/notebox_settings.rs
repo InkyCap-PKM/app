@@ -1,13 +1,11 @@
-// Per-notebox settings — preferences that belong to a specific notebox and
-// travel with it (folder paths, citation source, journal scroll behaviour,
-// document defaults, last-active file). Persisted at
+// Per-notebox settings that travel with the notebox (folder paths, citation
+// source, Journal Scroll, document defaults, last-active file), stored in
 // `<notebox>/.inkycap/settings.json`.
 //
-// User-global preferences (editor ergonomics, theme, fonts, system binary
-// paths, etc.) live in [`crate::settings::UserSettings`] and are persisted
-// at `$CONFIG_DIR/inkycap/settings.json`. The split is by what the field
-// describes — a notebox's structure vs. the user's environment — not by
-// which surface configures it.
+// Per-user preferences (editor, theme, fonts, program paths) are in
+// [`crate::settings::UserSettings`], stored in
+// `$CONFIG_DIR/inkycap/settings.json`. The split follows what a field
+// describes, the notebox or the user's environment.
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -15,10 +13,8 @@ use std::path::{Path, PathBuf};
 use crate::errors::Result;
 use crate::git::auth::GitIdentity;
 
-/// File and link settings whose meaning depends on a specific notebox's
-/// folder layout. The user-global workflow toggles (link auto-update,
-/// confirm-on-delete, Zettelkasten behaviour, etc.) live in
-/// [`crate::settings::FileSettings`].
+/// File and link settings that depend on a notebox's folders. Per-user toggles
+/// are in [`crate::settings::FileSettings`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct NoteboxFileSettings {
@@ -30,20 +26,17 @@ pub struct NoteboxFileSettings {
     pub attachment_folder: String,
     /// Regex patterns for files to exclude from search and quick-open.
     pub excluded_files_regex: Vec<String>,
-    /// How this notebox's file tree groups folders relative to files when
-    /// sorting: "before" (folders first), "after" (files first), or "inline"
-    /// (interleaved). Per-notebox so each notebox's folder layout presents the
-    /// way that suits it. Stored as a string so the frontend's union type is the
-    /// single source of truth — Rust just round-trips the value.
+    /// How the file tree places folders when sorting: "before" (folders first),
+    /// "after" (files first) or "inline". Per notebox. A string, since the
+    /// frontend's type defines the values.
     pub folder_grouping: String,
 }
 
 impl NoteboxFileSettings {
-    /// The notebox-relative folder where new notes go when nothing more
-    /// specific applies: the chosen folder for "specified", `current_folder`
-    /// (the folder of the note the user is working in) for "current", and the
-    /// notebox root (empty string) otherwise. May still contain template
-    /// variables such as `{{date:YYYY}}`.
+    /// The notebox-relative folder for new notes when nothing more specific
+    /// applies: the chosen folder for "specified", `current_folder` for
+    /// "current", otherwise the root (""). May contain template variables like
+    /// `{{date:YYYY}}`.
     pub fn default_note_folder(&self, current_folder: &str) -> String {
         let folder = match self.new_note_location.as_str() {
             "specified" => self.new_note_folder.as_str(),
@@ -69,123 +62,85 @@ impl Default for NoteboxFileSettings {
     }
 }
 
-/// Per-notebox startup state. The user-global "behavior" choice
-/// ("last-file", "default", etc.) is in [`crate::settings::StartupSettings`];
-/// what gets opened is per-notebox.
+/// Per-notebox startup state. The "behavior" choice is per user, in
+/// [`crate::settings::StartupSettings`].
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct NoteboxStartupSettings {
-    /// Target: creation rule ID or file/base path (depends on the
-    /// user-global startup behaviour). *Notebox-shared* — describes where
-    /// this notebox opens, so it travels through git collaboration.
+    /// A creation rule ID or a file path, depending on the startup behaviour.
+    /// Shared through git.
     pub target: String,
-    /// Notebox-relative path of the last active file, persisted by the
-    /// frontend. *Per-machine* — this is the user's cursor position on this
-    /// device, not a property of the notebox. It is presented to the
-    /// frontend as part of this struct, but persisted separately (see the
-    /// settings-split note on [`NoteboxLocalState`]) so it never travels
-    /// through git collaboration.
+    /// Notebox-relative path of the last active file. Per machine: shown as
+    /// part of this struct, but stored in `local.json` (see
+    /// [`NoteboxLocalState`]), so it never travels through git.
     pub last_active_file: Option<String>,
 }
 
-/// Git collaboration configuration for a notebox. When present, the notebox
-/// is *collaborative*: its root is a git repository backed by `remote`, and
-/// the whole notebox (not a subset) syncs through it.
+/// Git collaboration config. When present, the whole notebox is a git repo
+/// synced through `remote`.
 ///
-/// This carries only the *notebox-shared* facts about the repo — the remote
-/// URL and the tracked branch — which are fine to travel through git like
-/// any other shared setting. **Commit author identity is deliberately not
-/// here:** if it travelled in the committed settings file, every
-/// collaborator who opened the notebox would commit under the same name.
-/// Identity is per-user and is resolved at commit time from a
-/// per-installation store keyed by remote URL (see
-/// [`crate::git::auth`]), which keeps it per-notebook (a user can use a
-/// different account per notebox) without leaking it to collaborators.
+/// It holds only the remote URL and branch. The commit identity is per user and
+/// isn't stored here, or every collaborator would commit under one name; see
+/// `NoteboxLocalState::git_identity`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct NoteboxGitConfig {
-    /// Remote URL — SSH (`git@host:owner/repo.git`) or HTTPS
-    /// (`https://host/owner/repo.git`). **Empty in package-handoff mode**: a
-    /// server-less notebox that collaborates by exporting/importing its git
-    /// history as a file (see [`Self::is_package_mode`] and the Phase 7 package
-    /// commands in `commands/git.rs`).
+    /// Remote URL, SSH (`git@host:owner/repo.git`) or HTTPS
+    /// (`https://host/owner/repo.git`). Empty in package mode, where the
+    /// notebox shares its history as exported files (see
+    /// [`Self::is_package_mode`] and the package commands in
+    /// `commands/git.rs`).
     pub remote: String,
     /// Branch that collaboration tracks (e.g. `"main"`).
     pub branch: String,
 }
 
 impl NoteboxGitConfig {
-    /// Whether this notebox collaborates by offline package handoff rather than
-    /// a hosted git server. The single source of truth for the invariant
-    /// "empty `remote` ⇒ no server": Sync/Check are not offered, and gestures
-    /// route through Export/Import package instead. A repo can still gain a
-    /// server later by setting a `remote`.
+    /// Whether this notebox collaborates through packages rather than a git
+    /// server: an empty `remote` means no server, so Sync and Check aren't
+    /// offered. Setting a `remote` adds a server later.
     pub fn is_package_mode(&self) -> bool {
         self.remote.trim().is_empty()
     }
 }
 
-/// Per-machine notebox state that must **not** travel through git
-/// collaboration. Persisted to a gitignored `.inkycap/local.json`, separate
-/// from the shared `.inkycap/settings.json`.
-///
-/// The settings-split audit (Phase 1 of the notebox-git plan) found that the
-/// other per-machine state already lives *outside* the notebox tree — window
-/// state under the OS config dir, the metadata cache and search index under
-/// the OS cache dir — so it never enters the repo in the first place. The
-/// only per-machine field that previously lived inside the notebox was the
-/// startup cursor (`last_active_file`); routing it here is what keeps the
-/// committed `settings.json` free of device-specific churn that would
-/// otherwise surface as a needless conflict on every pull.
+/// Per-machine notebox state that must not travel through git, stored in the
+/// gitignored `.inkycap/local.json`. Other per-machine state (window state,
+/// caches, search index) already lives outside the notebox; keeping the startup
+/// cursor here keeps `settings.json` free of device-specific changes.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct NoteboxLocalState {
     /// Notebox-relative path of the last active file on *this* machine.
     pub last_active_file: Option<String>,
-    /// The HEAD commit (full oid) the last time this machine *shared* the
-    /// notebox by **exporting a package** (package-handoff mode only). Lets the
-    /// status read "Changes to share" vs "shared" without a server: there are
-    /// unshared changes when the working tree is dirty or HEAD has moved past
-    /// this. `None` until the first export. Server-backed noteboxes use the
-    /// remote-tracking ref instead, so they never set this.
+    /// HEAD (full oid) at this machine's last package export, in package mode.
+    /// There are changes to share when the tree is dirty or HEAD has moved past
+    /// it. `None` before the first export; server-backed noteboxes use the
+    /// tracking ref instead.
     pub last_shared_oid: Option<String>,
-    /// When set, every share gesture (Sync push and package export) first
-    /// vendors the Typst packages this notebox imports into
-    /// `.inkycap/packages/` — including transitive dependencies — so the
-    /// notebox stays self-contained and a recipient can compile without
-    /// fetching them. The vendored files are ordinary tracked content, so they
-    /// then travel through any transport. A per-machine sharing preference (the
-    /// sharer decides whether to bundle), off by default. Read by
+    /// When set, Sync and package export first copy the Typst packages the
+    /// notebox imports (with their dependencies) into `.inkycap/packages/`, so
+    /// recipients can compile without downloading them. The copies are ordinary
+    /// tracked files. A per-machine choice, off by default. Read by
     /// `commands::git::run_sync` and `git_export_package`.
     pub bundle_packages: bool,
-    /// The local HEAD commit (full oid) as it stood **just before** the most
-    /// recent Sync / package import folded in incoming changes — the baseline
-    /// the merge-first "Changes since last sync" review diffs against. `None`
-    /// means no incoming merge has happened on this machine yet (or the first
-    /// pull was into an unborn branch, where there is no prior version to
-    /// revert to), in which case the Changes-since-sync surface stays empty.
-    /// Recorded by `commands::git::run_sync`; per-machine, never travels.
+    /// Local HEAD (full oid) just before the last Sync or package import merged
+    /// incoming changes: the baseline for "Changes since last sync". `None`
+    /// when no merge has happened here yet (or the first pull was into an empty
+    /// branch). Set by `commands::git::run_sync`.
     pub last_sync_oid: Option<String>,
-    /// Notebox-relative paths (frontend string form) the most recent sync
-    /// resolved by taking *theirs* over an overlapping local edit. The
-    /// merge-first model never pauses, so these are flagged for priority review
-    /// in the Changes pane (the user can revert any of them). Replaced wholesale
-    /// on each sync; per-machine, never travels.
+    /// Notebox-relative paths where the last sync took the incoming side over a
+    /// local edit, flagged in the Changes pane. Replaced on each sync.
     pub last_sync_conflicted: Vec<String>,
-    /// Git collaboration config for this notebox on *this machine*. `None` ⇒ the
-    /// notebox is not collaborative here. The remote address and branch are
-    /// per-clone connection details (git already records the remote in
-    /// `.git/config`), and deciding to collaborate is a per-machine choice — so,
-    /// like the other fields here, this is gitignored and never travels. Keeping
-    /// it out of the shared `settings.json` is what stops "set up collaboration"
-    /// from showing up as a change to send back to collaborators. See
+    /// Git collaboration config on this machine; `None` when not collaborative
+    /// here. The remote and branch are per-clone details and collaborating is a
+    /// per-machine choice, so it stays out of the shared `settings.json`, where
+    /// setting up collaboration would look like a change to share. See
     /// [`NoteboxGitConfig`].
     pub git: Option<NoteboxGitConfig>,
-    /// The commit-author name + email stamped on this notebox's changes, on
-    /// *this machine*. Per-notebox (not keyed by remote) so two clones of the
-    /// same repo — e.g. simulating two collaborators on one machine — can commit
-    /// under different identities. Falls back to git config when `None`. Never
-    /// travels (gitignored); a secret it is not, but it is a per-user choice.
+    /// Commit name and email for this notebox on this machine. Per notebox, so
+    /// two clones of a repo can commit as different people. Falls back to git
+    /// config when `None`.
     pub git_identity: Option<GitIdentity>,
 }
 
@@ -196,9 +151,8 @@ pub struct NoteboxLocalState {
 pub struct JournalScrollSettings {
     /// Sort axis for the feed: "created", "modified", "zid", or "note_date".
     pub date_sort: String,
-    /// Maximal scope of notes the scroll may show:
-    /// "all" (whole notebox), "daily" (the Daily Note rule's folder), or
-    /// "custom" (the folder named in `custom_scope_folder`).
+    /// Which notes the scroll may show: "all", "daily" (the Daily Note rule's
+    /// folder) or "custom" (`custom_scope_folder`).
     pub anchor_scope: String,
     /// Notebox-relative folder used when `anchor_scope == "custom"`.
     pub custom_scope_folder: String,
@@ -214,9 +168,8 @@ impl Default for JournalScrollSettings {
     }
 }
 
-/// Citation and bibliography settings whose meaning is tied to a specific
-/// notebox's research apparatus. The user-global default style and Zotero
-/// install path live in [`crate::settings::CitationSettings`].
+/// Citation settings tied to this notebox. The default style and Zotero
+/// location are per user, in [`crate::settings::CitationSettings`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct NoteboxCitationSettings {
@@ -248,28 +201,23 @@ pub struct NoteboxSettings {
     pub startup: NoteboxStartupSettings,
     pub journal_scroll: JournalScrollSettings,
     pub citations: NoteboxCitationSettings,
-    /// Git collaboration config. `None` ⇒ the notebox is not collaborative.
-    /// Presented here as part of the single merged settings object the app
-    /// works with, but **persisted to the per-machine `local.json`**, not the
-    /// shared `settings.json` — it is per-clone connection state that must not
-    /// travel through git. See [`NoteboxLocalState::git`] and the persistence
-    /// notes below.
+    /// Git collaboration config, or `None`. Part of the merged settings the app
+    /// sees, but stored in the per-machine `local.json` (see
+    /// [`NoteboxLocalState::git`]).
     pub git: Option<NoteboxGitConfig>,
 }
 
 // --- Persistence ---
 //
-// Per-notebox settings are split across two files so that collaboration can
-// share one and ignore the other:
-//   - `.inkycap/settings.json`  — notebox-*shared* state; travels via git.
-//   - `.inkycap/local.json`     — per-*machine* state; gitignored.
-// [`load_settings`] / [`save_settings`] present a single merged
-// [`NoteboxSettings`] to the rest of the app; the split is purely a
-// persistence concern and is invisible to callers and the frontend.
+// Per-notebox settings are stored in two files:
+//   - `.inkycap/settings.json`: shared; travels through git.
+//   - `.inkycap/local.json`: per machine; gitignored.
+// [`load_settings`] / [`save_settings`] present one merged
+// [`NoteboxSettings`], so callers never see the split.
 
-/// True when the folder already holds an InkyCap notebox, i.e. it has an
-/// `.inkycap` folder. `settings.json` alone is not a reliable sign: it is
-/// written only once a notebox setting is changed from its default.
+/// True when the folder already holds a notebox (it has `.inkycap`).
+/// `settings.json` alone isn't reliable; it is only written once a setting
+/// changes from its default.
 pub fn is_existing_notebox(folder: &Path) -> bool {
     folder.join(".inkycap").is_dir()
 }
@@ -305,9 +253,8 @@ pub fn save_local_state(notebox_root: &Path, local: &NoteboxLocalState) -> Resul
     Ok(())
 }
 
-/// Load per-notebox settings from disk, returning defaults if the file
-/// doesn't exist or is unparseable. The per-machine `last_active_file` is
-/// read from `local.json` and overlaid so callers see one merged object.
+/// Load the notebox's settings, or defaults if missing or unreadable, with the
+/// per-machine fields from `local.json` merged in.
 pub fn load_settings(notebox_root: &Path) -> NoteboxSettings {
     let path = settings_path(notebox_root);
     let mut settings: NoteboxSettings = std::fs::read_to_string(&path)
@@ -317,23 +264,20 @@ pub fn load_settings(notebox_root: &Path) -> NoteboxSettings {
     // Overlay per-machine state from the gitignored local file.
     let local = load_local_state(notebox_root);
     settings.startup.last_active_file = local.last_active_file;
-    // Git config now lives per-machine in local.json. Prefer it; fall back to a
-    // legacy value still embedded in settings.json (older noteboxes), which
-    // `migrate_git_config` / the next save moves to local.json.
+    // The git config lives in local.json; fall back to an older value in
+    // settings.json, which `migrate_git_config` or the next save moves.
     if local.git.is_some() {
         settings.git = local.git;
     }
     settings
 }
 
-/// Save per-notebox settings to disk. Creates the `.inkycap/` parent dir if
-/// it doesn't exist. Per-machine state (`last_active_file`) is written to the
-/// gitignored `local.json`; the shared `settings.json` always records it as
-/// `null` so device-specific cursor state never travels through git.
+/// Save the notebox's settings, creating `.inkycap/` if needed. Per-machine
+/// fields go to the gitignored `local.json`; `settings.json` records them as
+/// `null`.
 pub fn save_settings(notebox_root: &Path, settings: &NoteboxSettings) -> Result<()> {
-    // 1. Per-machine state → local.json. Load-merge so other per-machine fields
-    //    (e.g. `last_shared_oid`, `last_sync_oid`) that aren't part of
-    //    `NoteboxSettings` survive a settings save instead of being reset.
+    // 1. Per-machine state → local.json, merged with what is there so fields
+    //    outside `NoteboxSettings` (e.g. `last_sync_oid`) survive.
     let mut local = load_local_state(notebox_root);
     local.last_active_file = settings.startup.last_active_file.clone();
     local.git = settings.git.clone();
@@ -354,14 +298,9 @@ pub fn save_settings(notebox_root: &Path, settings: &NoteboxSettings) -> Result<
     Ok(())
 }
 
-/// One-time migration for noteboxes created before the git collaboration config
-/// moved out of the shared `settings.json` into the per-machine `local.json`.
-///
-/// If `settings.json` still carries a non-null `git` block, move it to
-/// `local.json` and rewrite `settings.json` without it — so it stops travelling
-/// to collaborators and stops showing up as a perpetual "change to share". A
-/// no-op once migrated (or when there was never a git block), so it is safe to
-/// call on every notebox open.
+/// Move an older notebox's git config from `settings.json` to `local.json`, so
+/// it stops being shared and showing as a change to share. No-op once done, so
+/// safe on every open.
 pub fn migrate_git_config(notebox_root: &Path) -> Result<()> {
     let raw = match std::fs::read_to_string(settings_path(notebox_root)) {
         Ok(s) => s,
@@ -374,9 +313,8 @@ pub fn migrate_git_config(notebox_root: &Path) -> Result<()> {
     if !has_git_block {
         return Ok(());
     }
-    // load_settings overlays the git block (preferring local.json, else the
-    // legacy settings.json value); save_settings then routes it to local.json
-    // and blanks it from settings.json.
+    // `load_settings` picks up the git block from either file; `save_settings`
+    // writes it to local.json and removes it from settings.json.
     let settings = load_settings(notebox_root);
     save_settings(notebox_root, &settings)
 }
@@ -415,9 +353,7 @@ mod tests {
         assert_eq!(git.branch, "main");
     }
 
-    /// The committed `settings.json` must never carry the per-machine cursor:
-    /// it is the field that would otherwise conflict on every collaborator
-    /// pull. It is blanked there and lives only in the gitignored `local.json`.
+    /// The shared `settings.json` never contains the per-machine cursor.
     #[test]
     fn last_active_file_is_not_written_to_shared_settings() {
         let dir = tempfile::tempdir().unwrap();
@@ -449,10 +385,7 @@ mod tests {
         assert!(load_settings(root).git.is_none());
     }
 
-    /// The git connection config must never reach the committed `settings.json`
-    /// — it is per-clone state and lives only in the gitignored `local.json`.
-    /// This is what stops "set up collaboration" from showing as a change to
-    /// send back to collaborators.
+    /// The git config never reaches the shared `settings.json`.
     #[test]
     fn git_config_is_not_written_to_shared_settings() {
         let dir = tempfile::tempdir().unwrap();
@@ -479,9 +412,8 @@ mod tests {
         );
     }
 
-    /// A legacy notebox with `git` still embedded in `settings.json` migrates:
-    /// the block moves to `local.json` and is stripped from the shared file,
-    /// while the merged view the app sees is unchanged.
+    /// An older notebox with `git` in `settings.json` migrates to `local.json`;
+    /// the merged settings are unchanged.
     #[test]
     fn migrate_moves_legacy_git_block_to_local() {
         let dir = tempfile::tempdir().unwrap();

@@ -24,9 +24,8 @@ pub struct MycelialConfig {
     pub trigram_boost: f64,
     /// Number of top suggestions to return.
     pub top_k: usize,
-    /// Superseded by the corpus-size threshold schedule in
-    /// `effective_thresholds()` (emergent concepts off below 10 docs, relaxed
-    /// frequency floors below 50). Kept for serde compatibility; unread.
+    /// No longer used: replaced by the corpus-size thresholds in
+    /// `effective_thresholds()`. Kept so saved settings still load.
     pub min_corpus_size: usize,
     /// Weight for PMI score in composite ranking (bigrams).
     pub pmi_weight: f64,
@@ -34,9 +33,8 @@ pub struct MycelialConfig {
     pub tfidf_weight: f64,
     /// Weight for graph proximity (neighborhood presence ratio).
     pub proximity_weight: f64,
-    /// How many semantically-similar notes to widen the neighborhood with,
-    /// beyond the link graph. Lets a sparsely-linked note still surface
-    /// concepts that emerge from its *context*, not just its own vocabulary.
+    /// How many similar notes to add to the neighbourhood beyond linked ones,
+    /// so a sparsely linked note can still show concepts from its context.
     pub semantic_neighbors: usize,
     /// Minimum number of neighborhood notes an emergent concept must appear
     /// in. A term in a single note is just a word, not an emergent concept.

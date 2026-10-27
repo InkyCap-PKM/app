@@ -10,54 +10,58 @@ import { getRegisteredPaletteItems } from "./palette-registry";
 import { t } from "../../lib/i18n";
 
 export interface PaletteItem {
-  /** Stable English identifier — also the group/expanded-state key, so it must
-   *  NOT be localized. Display text comes from `labelKey` when present (symbol
-   *  rows keep their glyph+name `label` directly). */
+  /**
+   * Fixed English identifier, also the group and expanded-state key, so it must
+   * not be translated. Display text comes from `labelKey` when present (symbol
+   * rows show `label` directly).
+   */
   label: string;
   /** i18n key for the displayed label, resolved at render. */
   labelKey?: string;
   category: string;
-  /** Static template; `${sel}` is replaced with the selection. Optional when
-   *  `dynamic` is set (annotation/suggestion items build their markup at accept
-   *  time so they can stamp the current author + date). */
+  /** Template; `${sel}` becomes the selection. Optional with `dynamic`. */
   insert?: string;
   cursorOffset?: number;
-  /** When set, the item's markup is built at accept time from the live
-   *  selection — used by the annotation/suggestion entries so each carries the
-   *  author's `by:`/`on:` attribution. Takes precedence over `insert`. */
+  /**
+   * Builds the markup when accepted, from the selection, so annotation and
+   * suggestion items get the author's `by:` / `on:`. Wins over `insert`.
+   */
   dynamic?: (sel: string) => { insert: string; cursorOffset: number; expand: boolean };
-  /** When set, accepting the item runs the attachment picker instead of
-   *  inserting the `insert` template. The picker copies the selected
-   *  file(s) into `settings.files.attachment_folder` and emits
-   *  `#image("/...")` (or `#video` / `#audio`) with a notebox-root-absolute
-   *  path. See CLAUDE.md's portable-paths principle. */
+  /**
+   * Run the attachment picker instead of inserting `insert`: the chosen files
+   * are copied into `settings.files.attachment_folder` and a
+   * notebox-root-absolute `#image("/...")` (or `#video` / `#audio`) is
+   * inserted.
+   */
   pickAttachment?: "image" | "video" | "audio";
-  /** Inline typing shortcut shown at the right edge of the row, when
-   *  one exists. Purely informational — the actual trigger lives in
-   *  auto-pair-typst.ts, markdown-shortcuts.ts, wikilink-suggest.ts,
-   *  or is direct Typst syntax. */
+  /**
+   * Typing shortcut shown at the row's right edge, for information; the
+   * shortcut itself lives in auto-pair-typst.ts, markdown-shortcuts.ts or
+   * wikilink-suggest.ts, or is Typst syntax.
+   */
   shortcut?: string;
-  /** When true, dispatch `expandFunc` for the inserted call so the
-   *  visual editor leaves its source brackets exposed for editing
-   *  rather than collapsing into a block widget. Required for any
-   *  call that the visual plugin replaces wholesale (callout, block
-   *  quote, etc.) — without it, the cursor lands at the widget's
-   *  edge and keystrokes appear outside the call body. Same trick the
-   *  markdown shortcut for `> ` already uses. */
+  /**
+   * Dispatch `expandFunc` for the inserted call so its brackets stay visible
+   * instead of collapsing into a widget. Needed for any call the visual plugin
+   * replaces whole (callout, block quote, …); otherwise the caret lands at the
+   * widget's edge and typing goes outside the call. The `> ` shortcut does the
+   * same.
+   */
   expandOnInsert?: boolean;
-  /** When set, this is a group row (e.g. "More symbols…") that has no
-   *  insert of its own — selecting it (Right arrow / click / Enter) opens a
-   *  side submenu listing these child items. While the user is typing a
-   *  query the children are flattened into the main results so they stay
-   *  searchable; the group row only appears for the empty-query browse. */
+  /**
+   * A group row (e.g. "More symbols…") with no insert of its own: choosing it
+   * opens a submenu of these items. While a query is typed, the children are
+   * listed in the main results so they stay searchable; the group row only
+   * shows with an empty query.
+   */
   submenu?: PaletteItem[];
   /** Render this row indented — used for a group's children when expanded. */
   indent?: boolean;
-  /** When set, accepting the item runs this action instead of inserting
-   *  markup. Used by runtime-contributed items (external-tool bridge, plugin
-   *  commands) that *do* something rather than insert a template. Takes
-   *  precedence over `insert` / `dynamic` / `pickAttachment`. The slash trigger
-   *  text (`/query`) is removed before the action runs. */
+  /**
+   * Run this instead of inserting markup, for contributed items (external
+   * tools, plugin commands). Wins over `insert`, `dynamic` and
+   * `pickAttachment`. The `/query` text is removed first.
+   */
   action?: (view: EditorView) => void;
 }
 
@@ -85,9 +89,10 @@ const itemLabel = (item: PaletteItem): string =>
 const categoryLabel = (category: string): string =>
   CATEGORY_KEYS[category] ? t(CATEGORY_KEYS[category]) : category;
 
-/** Curated `#sym.*` named symbols (single source of truth in symbols.ts).
- *  Surfaced behind the "More symbols…" group so they don't flood the menu,
- *  but flattened back into the results when the user types a query. */
+/**
+ * Named `#sym.*` symbols (from symbols.ts), behind "More symbols…" so they
+ * don't flood the menu, but searchable when a query is typed.
+ */
 const SYMBOL_ITEMS: PaletteItem[] = CURATED_SYMBOLS.map((s) => ({
   label: `${s.char}  ${s.label}`,
   category: "Symbol",
@@ -100,10 +105,8 @@ const SYMBOL_ITEMS: PaletteItem[] = CURATED_SYMBOLS.map((s) => ({
 const PALETTE_ITEMS: PaletteItem[] = [
   { label: "Bold", labelKey: "slash.bold", category: "Format", insert: '*${sel}*', cursorOffset: 1, shortcut: "*…*" },
   { label: "Italic", labelKey: "slash.italic", category: "Format", insert: '_${sel}_', cursorOffset: 1, shortcut: "_…_" },
-  // `#func[…]` formatting collapses to a pill the moment the visual plugin runs.
-  // expandOnInsert keeps the source brackets visible right after insertion so the
-  // caret lands inside `[…]` and typing goes into the body — without it the pill
-  // is atomic and CM rounds the caret to its outer edge, so text lands after `]`.
+  // `#func[…]` collapses to a pill once the visual plugin runs; expandOnInsert
+  // keeps the brackets visible so the caret lands inside `[…]`, not after `]`.
   { label: "Strikethrough", labelKey: "slash.strikethrough", category: "Format", insert: '#strike[${sel}]', cursorOffset: 8, expandOnInsert: true },
   { label: "Highlight", labelKey: "slash.highlight", category: "Format", insert: '#highlight[${sel}]', cursorOffset: 11, expandOnInsert: true },
   { label: "Underline", labelKey: "slash.underline", category: "Format", insert: '#underline[${sel}]', cursorOffset: 11, expandOnInsert: true },
@@ -149,9 +152,9 @@ const PALETTE_ITEMS: PaletteItem[] = [
   { label: "Hide", labelKey: "slash.hide", category: "Insert", insert: '#hide[${sel}]', cursorOffset: 6 },
   { label: "Callout", labelKey: "slash.callout", category: "Insert", insert: '#callout("note")[${sel}]', cursorOffset: 17, expandOnInsert: true },
 
-  // Symbol shorthands — Typst's parser-level abbreviations that compile to
-  // typographic characters. We insert the shorthand sequence (not the literal
-  // glyph) so the source stays Typst-native and the ShorthandWidget renders it.
+  // Typst shorthands that compile to typographic characters. The shorthand is
+  // inserted, not the glyph, so the source stays Typst; ShorthandWidget renders
+  // it.
   { label: "Em dash (—)", labelKey: "slash.emDash", category: "Symbol", insert: '---', cursorOffset: 3, shortcut: "---" },
   { label: "En dash (–)", labelKey: "slash.enDash", category: "Symbol", insert: '--', cursorOffset: 2, shortcut: "--" },
   { label: "Ellipsis (…)", labelKey: "slash.ellipsis", category: "Symbol", insert: '...', cursorOffset: 3, shortcut: "..." },
@@ -253,9 +256,8 @@ function detectPaletteContext(view: EditorView): PaletteState {
 }
 
 function buildDisplayList(query: string): PaletteItem[] {
-  // Built-in items plus any contributed at runtime (external-tool bridge,
-  // plugin manifests). Registered items are appended so they group after the
-  // built-in categories.
+  // Built-in items, then contributed ones (external tools, plugins), so those
+  // group after the built-in categories.
   const all = [...PALETTE_ITEMS, ...getRegisteredPaletteItems()];
   // Querying: flatten group rows into their children so submenu items
   // (curated symbols) remain directly searchable, then filter everything.
@@ -353,9 +355,8 @@ function showPopup(view: EditorView, state: PaletteState) {
 function acceptItem(view: EditorView, state: PaletteState, item: PaletteItem) {
   const cursor = view.state.selection.main;
   const selectedText = view.state.doc.sliceString(cursor.from, cursor.to);
-  // `dynamic` items (annotation/suggestion) build their markup + caret + expand
-  // at accept time so the author's `by:`/`on:` are stamped; the rest use their
-  // static template with the selection substituted in.
+  // `dynamic` items build their markup, caret and expand at accept time; the
+  // rest substitute the selection into their template.
   const built = item.dynamic?.(selectedText);
   const insert = built ? built.insert : (item.insert ?? "").replace("${sel}", selectedText);
   const cursorOffset = built ? built.cursorOffset : item.cursorOffset;
@@ -363,9 +364,7 @@ function acceptItem(view: EditorView, state: PaletteState, item: PaletteItem) {
   const deleteFrom = state.from;
   const deleteTo = view.state.selection.main.from;
 
-  // Action items (external-tool bridge, plugin commands) perform work instead
-  // of inserting a template. Remove the slash trigger first, then run the
-  // action against the now-clean document.
+  // Action items: remove the slash text, then run the action.
   if (item.action) {
     hidePopup();
     view.dispatch({ changes: { from: deleteFrom, to: deleteTo, insert: "" } as ChangeSpec });
@@ -373,9 +372,9 @@ function acceptItem(view: EditorView, state: PaletteState, item: PaletteItem) {
     return;
   }
 
-  // Image: open the attachment picker and replace the slash trigger with a
-  // notebox-root-absolute call. The picker is async; hide the popup first so
-  // the dialog can take focus cleanly.
+  // Image, video, audio: open the picker and replace the slash text with a
+  // notebox-root-absolute call. Hide the popup first so the dialog can take
+  // focus.
   if (item.pickAttachment) {
     hidePopup();
     void pickAndInsertAttachments(view, deleteFrom, deleteTo, item.pickAttachment);
@@ -388,13 +387,9 @@ function acceptItem(view: EditorView, state: PaletteState, item: PaletteItem) {
     selection: {
       anchor: deleteFrom + (cursorOffset ?? insert.length),
     },
-    // expandFunc keeps the call's source brackets visible after the
-    // visual plugin runs, so the cursor lands inside `[…]` and typing
-    // goes into the body. Without this, callout/quote/blockquote insert
-    // collapses immediately into a block widget and the cursor snaps to
-    // the widget edge — keystrokes then appear outside the call. Same
-    // technique [src/editor/typst-decorations/markdown-shortcuts.ts](markdown-shortcuts.ts)
-    // uses for the `> ` blockquote shortcut.
+    // expandFunc keeps the call's brackets visible after the visual plugin runs, so the
+    // caret lands inside `[…]`; otherwise callout and quote collapse into a widget and
+    // typing goes outside. As [markdown-shortcuts.ts](markdown-shortcuts.ts) does for `> `.
     effects: expand ? expandFunc.of(deleteFrom) : undefined,
   });
 }
@@ -426,9 +421,10 @@ function pageSelection(delta: number) {
   moveSelection(next);
 }
 
-/** Expand or collapse a group row (e.g. "More symbols…") inline: its children
- *  are spliced into the list directly beneath it. Re-renders and keeps the
- *  group row selected so keyboard focus doesn't jump. */
+/**
+ * Expand or collapse a group row (e.g. "More symbols…") in place, with its
+ * children listed beneath it. The group row stays selected.
+ */
 function toggleGroup(view: EditorView, state: PaletteState, item: PaletteItem) {
   if (expandedGroups.has(item.label)) expandedGroups.delete(item.label);
   else expandedGroups.add(item.label);
@@ -530,13 +526,9 @@ const paletteTracker = ViewPlugin.fromClass(
     update(update: ViewUpdate) {
       if (!update.docChanged && !update.selectionSet) return;
 
-      // Undo/redo can replay a doc state where a "/foo" slash query existed,
-      // which would otherwise reopen the palette mid-undo. That's both a UX
-      // distraction (the user is walking back through edits, not invoking
-      // commands) and a source of rendering glitches: the popup overlays the
-      // editor while the visual decorations are still being rebuilt against
-      // the post-history syntax tree. Treat history transactions as a hard
-      // suppress.
+      // Undo and redo can restore a state with a "/foo" query, which would
+      // reopen the palette mid-undo and draw it while decorations are still
+      // rebuilding. Never open on history transactions.
       for (const tr of update.transactions) {
         if (tr.isUserEvent("undo") || tr.isUserEvent("redo")) {
           if (pendingFrame !== null) {

@@ -1,16 +1,14 @@
-// Compose mode: write a new note (the draft, in the editor) beside cards
-// holding passages from other notes (in the right panel).
+// Compose mode: write a new note (the draft, in the editor) beside cards with
+// passages from other notes (in the right panel).
 //
-// Started two ways. The Compose button in the right panel of a Journal
-// Scroll in Neighbourhood mode makes a draft exactly as Ctrl+N makes a note,
-// so the user's naming, folder, template and ZID settings all apply, and
-// shows the passages that link to the scroll's anchor and the opening
-// passage of each note it links to. Clicking an emergent concept in the
-// Mycelial View makes the concept's page and shows the passages in which the
-// concept recurs. A passage can be copied in as it is or as a quote that
-// links back to its note, or the card's whole note can be copied in; each
-// way adds the note to the draft's `derived-from` property. Session state
-// lives in stores/compose.ts.
+// Started two ways. The Compose button in a Journal Scroll's right panel in
+// Neighbourhood mode creates a draft as Ctrl+N does (the user's naming, folder,
+// template and ZID settings apply) and shows the passages linking to the
+// scroll's anchor and the opening passage of each note it links to. Clicking an
+// emergent concept in the Mycelial View creates the concept's page and shows
+// the passages where it recurs. A passage can be copied as is or as a quote
+// linking back to its note, or the whole note can be copied; each adds the note
+// to the draft's `derived-from` property. State is in stores/compose.ts.
 
 import { Component, For, Show, createSignal, onCleanup, createEffect, on } from "solid-js";
 import { CopyPlus, GripVertical, Link, NotebookPen, X } from "lucide-solid";
@@ -49,9 +47,10 @@ type InsertMode = "whole" | "copy" | "quote" | "link";
 
 let unregisterPanel: (() => void) | null = null;
 
-/** Create a draft the way Ctrl+N does, open it, and show the Compose panel
- *  with the passages from the notes linked with the note at `originPath`.
- *  Does nothing if the user cancels naming the note. */
+/**
+ * Create a draft as Ctrl+N does, open it, and show Compose with the passages
+ * from notes linked with `originPath`. Does nothing if naming is cancelled.
+ */
 export async function startCompose(originPath: string): Promise<void> {
   const fileName = originPath.split("/").pop() ?? originPath;
   const name = fileName.replace(/\.typ$/i, "");
@@ -123,9 +122,10 @@ const ComposePanel: Component = () => {
     if (id) moveCard(id, fromId, targetId, position);
   });
 
-  /** Put `cards` into the draft at the cursor, in order. Copies add their
-   *  notes to `derived-from`; links don't, since the link itself records
-   *  the connection. */
+  /**
+   * Insert `cards` at the cursor, in order. Copies add their notes to
+   * `derived-from`; links don't, since the link records the connection.
+   */
   async function insert(cards: ComposeCard[], mode: InsertMode) {
     if (cards.length === 0) return;
     const id = draftTabId();
@@ -405,9 +405,10 @@ function insertBlock(view: EditorView, text: string) {
   view.focus();
 }
 
-/** Add notes `names` to the draft's `derived-from` property, changing only
- *  the `#note(...)` call so the cursor and the writer's undo history stay
- *  put. */
+/**
+ * Add `names` to the draft's `derived-from` property, changing only the
+ * `#note(...)` call, so the cursor and undo history are unaffected.
+ */
 async function recordSources(view: EditorView, names: string[]) {
   try {
     // The writer may type while the new text is worked out; start again from
@@ -428,9 +429,8 @@ async function recordSources(view: EditorView, names: string[]) {
       }
       view.dispatch({
         changes: { from: start, to: endBefore, insert: after.slice(start, endAfter) },
-        // The `#note(...)` call is locked against typing in the visual
-        // editor; this marks the change as the app's own, like a
-        // properties-panel edit.
+        // The `#note(...)` call is locked against typing in the visual editor;
+        // this marks the change as the app's own, like a properties panel edit.
         annotations: [externalReload.of(true), Transaction.addToHistory.of(true)],
       });
       return;

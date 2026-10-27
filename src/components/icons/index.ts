@@ -1,11 +1,9 @@
 /**
- * InkyCap's hand-authored icons — the glyphs Lucide doesn't provide.
- * Everything here is custom; for anything Lucide already has, import the
- * component from `lucide-solid` directly rather than re-drawing it.
+ * InkyCap's own icons, for glyphs Lucide lacks. For anything Lucide has, import
+ * it from `lucide-solid` instead.
  *
- * Several of these glyphs have an editable master under `design-assets/`
- * (called out in each file's doc comment). Those masters and the components
- * here are kept in sync BY HAND — redraw one, redraw the other.
+ * Several have an editable master in `design-assets/` (noted in each file).
+ * They're kept in step by hand: redraw one, redraw the other.
  */
 export { lucideFrame } from "./frame";
 export { LibraryPlusIcon } from "./LibraryPlus";

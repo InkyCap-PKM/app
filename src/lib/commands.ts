@@ -51,12 +51,9 @@ import {
 } from "../stores/git";
 import { exportPackageInteractive, importPackageInteractive } from "./package-handoff";
 
-// Editor-targeting commands (toggle source mode, zoom in/out/reset)
-// mutate Solid.js signals; the editor picks up changes automatically
-// via createEffect. No imperative dispatch needed.
+// Editor commands (source mode, zoom) change Solid.js signals, which the editor
+// picks up through createEffect.
 
-/** Register all built-in commands. Callbacks for toggling UI panels
- *  are passed in so this module doesn't depend on component state. */
 /** Callbacks for the built-in commands. */
 export interface BuiltinCommandCallbacks {
   toggleQuickOpen: () => void;
@@ -77,12 +74,12 @@ export interface BuiltinCommandCallbacks {
 // fresh translated titles after a UI-language switch — see that function.
 let lastBuiltinCallbacks: BuiltinCommandCallbacks | null = null;
 
-/** Id of the active tab when what it shows zooms as a whole (a note's
- *  compiled reading view, or an image or PDF in an attachment tab), or null
- *  when the active pane is showing something else. Used by the zoom commands
- *  to decide whether "content" means that view or the editor body. Journal
- *  Scroll takes over the pane when enabled, so a reading-mode tab in scroll
- *  mode isn't showing the reading view and doesn't count. */
+/**
+ * Id of the active tab when its content zooms as a whole (a note's reading
+ * view, or an image or PDF tab), otherwise null. The zoom commands use it to
+ * decide what "content" means. A reading-mode tab in Journal Scroll isn't
+ * showing the reading view.
+ */
 function activeReadingTabId(): string | null {
   const tab = getActiveTab();
   if (tab?.type === "attachment") {
@@ -94,6 +91,8 @@ function activeReadingTabId(): string | null {
   return tab.id;
 }
 
+/** Register all built-in commands. UI toggles are passed in as callbacks, so
+ *  this module doesn't depend on component state. */
 export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): void {
   lastBuiltinCallbacks = callbacks;
   // ── File commands ──
@@ -106,12 +105,9 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
     execute: callbacks.toggleQuickOpen,
   });
 
-  // Note: "New Note" is registered by `registerCreationRuleCommands` as
-  // a creation rule (id "new-note") with whatever hotkey the user has on
-  // the rule — default Ctrl+N. It is the rule that backs the file tree's
-  // New Note icon button and the context menu's "New Note" entry; the
-  // legacy "New Simple File" command was removed when those call sites
-  // were unified onto the rule.
+  // "New Note" is registered by `registerCreationRuleCommands` as the
+  // "new-note" creation rule (Ctrl+N by default), the same rule behind the file
+  // tree's New Note button and menu entry.
 
   registerCommand({
     id: "file:close-tab",
@@ -288,9 +284,8 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
     },
   });
 
-  // Notebox-wide find & replace. Intentionally has NO keybinding: a global
-  // replace can touch many files at once, so it stays palette-only to keep it a
-  // deliberate action rather than something a stray chord can trigger.
+  // Notebox-wide find and replace has no key binding, since it can change many
+  // files at once.
   registerCommand({
     id: "view:search-replace",
     title: t("command.view.search-replace"),
@@ -408,22 +403,14 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
 
   // ── Edit commands ──
 
-  // Zoom commands honour `settings.appearance.zoom_target`, which lets
-  // the user pick whether Ctrl+= / Ctrl+- adjusts the editor body font,
-  // the interface chrome, or both. Keeping that branching here (rather
-  // than only in the keyboard handler) means the same behaviour applies
-  // when zoom is triggered from the command palette.
+  // Zoom follows `settings.appearance.zoom_target` (editor text, interface, or
+  // both), here so the palette behaves like the keys. For "content", a reading
+  // view zooms as a whole (page scale for SVG, layout zoom for HTML); a font-size
+  // change wouldn't scale an SVG page. See `activeReadingTabId`.
   //
-  // The "content" target resolves to whatever content is actually on screen:
-  // in reading mode that's the compiled preview, which zooms as a whole
-  // (page scale for SVG, layout zoom for HTML) rather than by nudging the
-  // editor's body font — a font-size bump wouldn't scale an SVG page at all.
-  // See `activeReadingTabId`.
-  // "Ctrl+Plus" is ambiguous across keyboards: pressing the `=` key with
-  // Ctrl (no Shift) produces `Ctrl+=`, holding Shift normalizes to `Ctrl+Shift+=`
-  // (formatKeyCombo maps the shifted `+` glyph back to `=`), and the numpad
-  // key produces `Ctrl++`. Register all three so the command fires regardless
-  // of which physical keystroke the user makes.
+  // "Ctrl+Plus" differs by keyboard: `=` with Ctrl gives `Ctrl+=`, with Shift
+  // `Ctrl+Shift+=` (formatKeyCombo maps `+` back to `=`), and the numpad
+  // `Ctrl++`. All three are registered.
   registerCommand({
     id: "edit:zoom-in",
     title: t("command.edit.zoom-in"),
@@ -541,10 +528,9 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
     },
   });
 
-  // Annotation / suggestion authoring. These mirror the four InkyCap entries
-  // in the `/` slash palette and the Annotations pane toolbar — all three route
-  // through `insertAnnotationMarkup`, which wraps the current selection and
-  // no-ops when no editor is focused, so the templates stay in one place.
+  // Annotation and suggestion commands, matching the `/` palette and the
+  // Annotations pane toolbar. All use `insertAnnotationMarkup`, which wraps the
+  // selection and does nothing without a focused editor.
   registerCommand({
     id: "edit:add-annotation",
     title: t("command.edit.add-annotation"),
@@ -594,19 +580,11 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
     title: t("backup.runNow.paletteTitle"),
     category: "Tools",
     execute: async () => {
-      // Surface progress + result through the toast system rather
-      // than opening Settings — palette flows shouldn't yank focus
-      // into another UI surface. Errors and the per-run summary go
-      // to the same place so the user has one consistent feedback
-      // channel for ad-hoc backups.
+      // Report progress and the result in toasts rather than opening Settings.
       const { showToast, dismissToast } = await import("../stores/toasts");
-      // Persistent toast: the backup write is synchronous on the
-      // backend (zip serialization) and may take several seconds on
-      // larger noteboxes, longer than the default 5s auto-dismiss.
-      // Keep the "in progress" toast visible until the result toast
-      // explicitly replaces it. The toast carries an X button wired
-      // to `cancelBackup`, which flips the backend's cancel flag and
-      // the archive writer aborts at its next poll.
+      // A persistent toast, since a backup can outlast the 5s auto-dismiss; the
+      // result toast replaces it. Its X button calls `cancelBackup`, and the
+      // archive writer stops at its next check.
       let cancelRequested = false;
       const progressId = showToast(
         "info",
@@ -694,9 +672,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
         void toggleScroll(tab.id, tab.path);
         return;
       }
-      // No note is open to anchor on (empty tab, non-file view, or a fresh
-      // window). Fall back to the most recently modified note so the scroll
-      // still has a starting point instead of silently doing nothing.
+      // No note open to anchor on: use the most recently modified note.
       const mostRecent = fileList()
         .filter(isNoteFile)
         .sort((a, b) => b.modified_time - a.modified_time)[0];
@@ -757,12 +733,10 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
   });
 
   // ── Collaboration commands ──
-  // Each gesture acts on the open collaborative notebox and opens the
-  // collaboration panel for feedback (the post-sync digest, the import merge
-  // result). When the notebox isn't collaborative they just open the panel
-  // (its setup form). Sync / Check for updates apply only to an ONLINE git
-  // remote; Export / Import package apply only to OFFLINE package handoff — a
-  // command invoked in the wrong mode explains itself instead of acting.
+  // Each acts on the open collaborative notebox and opens the collaboration
+  // panel for feedback; for a notebox that isn't collaborative they just open
+  // the panel. Sync and Check for updates need a git remote, Export / Import
+  // package need package mode; in the wrong mode a command explains why.
 
   registerCommand({
     id: "git:sync",
@@ -790,9 +764,8 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
     },
   });
 
-  // Package handoff (server-less). The command drives the same file-dialog
-  // gesture as the panel buttons — opening the panel too so the export toast /
-  // import merge result surface there.
+  // Package handoff: the same file dialogs as the panel buttons, and the panel
+  // opens to show the result.
   registerCommand({
     id: "git:export-package",
     title: t("command.git.exportPackage"),
@@ -846,14 +819,11 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
 }
 
 /**
- * Re-register the built-in commands so their titles pick up the active locale's
- * strings. Built-in commands capture their `t(...)` titles as frozen values in
- * the registry Map at registration time, so a language switch leaves them stale
- * until re-registered. `registerCommand` overwrites by id and bumps
- * `commandVersion`, so this is idempotent and prompts the command palette to
- * re-render. Called from src/stores/locale.ts on locale change. No-op before
- * the first `registerBuiltinCommands`. Creation-rule commands carry user-authored
- * titles (not translated), so they are intentionally left untouched.
+ * Re-register the built-in commands so their titles use the current language.
+ * Titles are stored when registered, so a language switch leaves them stale.
+ * `registerCommand` replaces by id and bumps `commandVersion`, so this is safe to
+ * repeat and refreshes the palette. Called from src/stores/locale.ts.
+ * Creation-rule commands have user-written titles and are left alone.
  */
 export function relocalizeCommands(): void {
   if (lastBuiltinCallbacks) registerBuiltinCommands(lastBuiltinCallbacks);
@@ -869,12 +839,10 @@ function insertMarkup(template: string, cursorOffset: number, expand = false) {
   view.dispatch({
     changes: { from: sel.from, to: sel.to, insert },
     selection: { anchor: sel.from + cursorOffset },
-    // `#func[…]` calls collapse to an atomic pill/glyph the moment the visual
-    // plugin runs (e.g. #quote[…] → smart-quote widgets), and CM then rounds
-    // the caret to the pill's outer edge — so the cursor lands *after* the
-    // closing delimiter and typing goes outside the call. expandFunc keeps the
-    // source brackets visible so the caret stays inside `[…]`. No-op in source
-    // mode. Mirrors the `/` slash menu's `expandOnInsert`.
+    // A `#func[…]` call collapses to an atomic pill as soon as the visual
+    // plugin runs, and the caret would be moved past it. expandFunc keeps the
+    // brackets visible so the caret stays inside `[…]`. No effect in source
+    // mode. Like the `/` menu's `expandOnInsert`.
     effects: expand ? expandFunc.of(sel.from) : undefined,
   });
   view.focus();
@@ -922,13 +890,10 @@ function registerMarkupCommands() {
 
     // ── Insert ──
     { id: "link", title: "Link", category: "Insert", insert: '#link("")[${sel}]', cursorOffset: 7 },
-    // Image/Video/Audio are special-cased below: rather than inserting a
-    // template with an empty path the user must hand-type (which would produce
-    // a fragile relative reference), they drive the attachment picker, copy the
-    // chosen file(s) into `settings.files.attachment_folder`, and emit a
-    // notebox-root-absolute `#image("/...")` / `#video(...)` / `#audio(...)`
-    // call. The `insert` field is unused for those ids — the picker diverts the
-    // execute path.
+    // Image, Video and Audio open the attachment picker instead of inserting an
+    // empty path: the chosen files are copied into
+    // `settings.files.attachment_folder` and a notebox-root-absolute call is
+    // inserted. Their `insert` field isn't used.
     { id: "image", title: "Image", category: "Insert", insert: '#image("")', cursorOffset: 8 },
     { id: "video", title: "Video", category: "Insert", insert: '#video("")', cursorOffset: 8 },
     { id: "audio", title: "Audio", category: "Insert", insert: '#audio("")', cursorOffset: 8 },
@@ -991,10 +956,10 @@ function registerMarkupCommands() {
         : () => insertMarkup(item.insert ?? "", item.cursorOffset ?? 0, item.expand);
 
     registerCommand({
-      // `item.title` stays as the English source (mirrored in en.json under
-      // `command.markup.<id>`); the registered title is the localized form,
-      // resolved here so `relocalizeCommands()` refreshes it on a UI-language
-      // switch. The translated label also drives the palette's fuzzy search.
+      // `item.title` is the English source (also in en.json as
+      // `command.markup.<id>`); the registered title is translated here, so
+      // `relocalizeCommands()` updates it. The palette searches the translated
+      // label.
       id: `markup:${item.id}`,
       title: t(`command.markup.${item.id}`),
       category: item.category,
@@ -1012,19 +977,14 @@ async function insertAttachmentViaPicker(func: "image" | "video" | "audio") {
   await pickAndInsertAttachments(view, sel.from, sel.to, func);
 }
 
-/** Keep the command registry in sync with the user's creation rules, so each
- *  rule's palette entry and global hotkey reflect edits without a relaunch.
- *
- *  Driven reactively off the `creationRules` store (the same signal the toolbar
- *  reads), this re-runs whenever a rule is saved, toggled, or deleted —
- *  registering the current active set and unregistering rules that disappeared
- *  or were disabled. This is what makes a newly-assigned hotkey live
- *  immediately: the global keydown dispatcher reads `keybinding` live from the
- *  registry, but only sees it once the command is (re-)registered here.
- *
- *  Mirrors `registerExternalToolCommands`. Call once at startup inside a
- *  reactive owner (App's onMount). Disabled rules are excluded by
- *  `activeRules()`. */
+/**
+ * Keep the command registry in step with the creation rules, so each rule's
+ * palette entry and hotkey update without a restart. Runs whenever the
+ * `creationRules` store changes, registering active rules and unregistering
+ * removed or disabled ones; the keydown dispatcher reads key bindings from the
+ * registry. Like `registerExternalToolCommands`. Call once at startup inside a
+ * reactive owner (App's onMount).
+ */
 export function registerCreationRuleCommands(): void {
   let registered = new Set<string>();
   createEffect(() => {

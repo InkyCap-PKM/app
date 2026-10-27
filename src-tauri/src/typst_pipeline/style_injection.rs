@@ -1,39 +1,32 @@
-//! Build and inject style configuration calls from app-level document
-//! defaults and collection-level overrides into Typst source before
-//! compilation.
+//! Add style rules from the app's document defaults and a collection's overrides to Typst
+//! source before compiling.
 //!
-//! Uses a hybrid approach: text/font/paragraph/heading settings are
-//! delegated to `apply-notebox-defaults` / `apply-collection-style` in
-//! `lib.typ` via `#show: fn.with(...)`. Page geometry (`set page(...)`)
-//! is emitted as a direct `#set` rule because `set page` inside a
-//! show-rule wrapper is a no-op for document-level layout in Typst.
+//! Text, font, paragraph and heading settings go through `apply-notebox-defaults` /
+//! `apply-collection-style` in `lib.typ` as `#show: fn.with(...)`. Page geometry is a direct
+//! `#set page(...)`, since `set page` inside a show rule has no effect on the document's
+//! layout.
 //!
-//! Injection order (after the inkycap-notebox `#import` line):
+//! Order, after the notebox `#import` line:
 //!
-//! 1. App document defaults — `#set page(...)` + `#show: apply-notebox-defaults.with(...)`
-//! 2. Collection style overrides — `#set page(...)` + `#show: apply-collection-style.with(...)`
-//! 3. Template import (if any) — template's own rules override 1 & 2
+//! 1. App defaults: `#set page(...)` + `#show: apply-notebox-defaults.with(...)`
+//! 2. Collection overrides: `#set page(...)` + `#show:
+//!    apply-collection-style.with(...)`
+//! 3. Template import, if any, whose rules override 1 and 2
 //!
-//! The user's own `#set` rules in the document body come after all
-//! injections and naturally win via Typst's cascading semantics.
+//! `#set` rules in the document come after all of these and win through the cascade.
 
 use crate::font_resolver::{self, FontRole};
 use crate::settings::{DocumentDefaults, UserSettings};
 
-/// Escape a string value for safe embedding in a Typst quoted string literal.
-///
-/// Every caller wraps the result in `"..."`, so we *escape* (`\` → `\\`, `"` →
-/// `\"`) rather than strip — a value that legitimately contains a backslash or
-/// quote (an unusual font family, a paper name) survives round-trip while
-/// staying injection-safe. Backslash is escaped first so the quote-escape's own
-/// backslash isn't doubled.
+/// Escape a value for a Typst `"..."` literal (`\` → `\\`, `"` → `\"`), so
+/// unusual font or paper names survive and can't inject code. Backslashes
+/// first, so the quote escape isn't doubled.
 pub fn sanitize_typst_string(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-/// Ensure a Typst length expression has a unit suffix. If the trimmed value
-/// parses as a bare number (integer or float), append `default_unit`.
-/// Values that already contain a unit (e.g. "12pt", "1.5em") pass through.
+/// Add `default_unit` to a bare number; values with a unit ("12pt", "1.5em")
+/// are unchanged.
 pub fn ensure_length_unit(value: &str, default_unit: &str) -> String {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -46,11 +39,9 @@ pub fn ensure_length_unit(value: &str, default_unit: &str) -> String {
     }
 }
 
-/// Parse a CSS-style font stack (e.g. `"Adwaita Mono", "Ubuntu Mono", monospace`)
-/// into individual family names, dropping CSS generic keywords (`monospace`,
-/// `sans-serif`, `serif`, `system-ui`, etc.) that Typst doesn't recognize.
-/// Returns the families in the same order so Typst's own font fallback chain
-/// mirrors what the user sees in the editor.
+/// Family names from a CSS font stack (e.g. `"Adwaita Mono", "Ubuntu Mono",
+/// monospace`), in order, without CSS generic keywords (`monospace`,
+/// `sans-serif`, …), so Typst's fallback matches the editor's.
 pub fn parse_font_stack(stack: &str) -> Vec<String> {
     const GENERIC_KEYWORDS: &[&str] = &[
         "monospace",
@@ -103,13 +94,10 @@ fn format_font_value(families: &[String]) -> Option<String> {
     }
 }
 
-/// Build style rules for app-level document defaults. Returns an empty
-/// string when no defaults are set so the caller can skip injection.
-///
-/// Text/font/monospace settings are emitted as a single
-/// `#show: apply-notebox-defaults.with(...)` call (lib.typ handles the
-/// actual `set` rules). Page geometry is also emitted as a direct
-/// `#set page(...)` so the paper size is fixed before any wrapper runs.
+/// Style rules for the app's document defaults, or "" when none are set. Text
+/// and fonts go in one `#show: apply-notebox-defaults.with(...)` (lib.typ
+/// applies the `set` rules); page size is a direct `#set page(...)` so it is
+/// fixed before any wrapper runs.
 pub fn build_defaults_show_call(
     doc: &DocumentDefaults,
     text_font: Option<&str>,
@@ -151,10 +139,8 @@ pub fn build_defaults_show_call(
     lines.join("\n")
 }
 
-/// Build defaults rules by resolving the user's `FontSettings` to a
-/// concrete text + monospace family, paired with the user-global
-/// `DocumentDefaults` (text size and page size). This is the entry
-/// point new code should use.
+/// Default rules from the user's `FontSettings` (resolved to text and monospace
+/// families) and `DocumentDefaults` (text and page size). Use this in new code.
 pub fn build_defaults_show_call_resolved(user: &UserSettings) -> String {
     let resolved_text = font_resolver::resolve_role(FontRole::Text, &user.fonts);
     let resolved_mono = font_resolver::resolve_role(FontRole::Monospace, &user.fonts);
@@ -162,16 +148,10 @@ pub fn build_defaults_show_call_resolved(user: &UserSettings) -> String {
     build_defaults_show_call(&user.document, resolved_text.as_deref(), &mono_str)
 }
 
-/// Inject style rules into the source after the inkycap-notebox import line.
-///
-/// `defaults_rules`: from `build_defaults_rules()` (app-level)
-/// `collection_rules`: from `CollectionStyle::to_typst_show_call()` (collection-level)
-///
-/// Both are optional and only injected when non-empty. The injection point
-/// is immediately after the inkycap-notebox import line — recognized via
-/// [`crate::notebox_package::is_notebox_import_line`] (the canonical
-/// `/.inkycap/notebox.typ` form). If no such line is found, rules are
-/// prepended to the source.
+/// Insert style rules after the notebox import line (found with
+/// [`crate::notebox_package::is_notebox_import_line`]), or at the top without one.
+/// `defaults_rules` (from `build_defaults_rules()`) and `collection_rules` (from
+/// `CollectionStyle::to_typst_show_call()`) are added only when non-empty.
 pub fn inject_style_rules(
     source: &str,
     defaults_rules: Option<&str>,
@@ -208,17 +188,11 @@ pub fn inject_style_rules(
     out
 }
 
-/// Inject a `show cite` rule that tags every citation with a
-/// `data-cite-key` attribute in the compiled HTML, so HTML surfaces (the
-/// Journal Scroll's Scroll Context panel) can locate a given citation's
-/// occurrences and highlight them.
-///
-/// This is injected in-memory on the HTML render path only. The on-disk
-/// note, the `inkycap-notebox` package, and the PDF/SVG export path are all
-/// untouched — a user's documents and their own exports never carry this
-/// wrapper. The rule is placed right after the inkycap-notebox import line
-/// (so `html` is in scope and it precedes document content); if there is no
-/// import line it is prepended.
+/// Add a `show cite` rule that tags each citation with `data-cite-key` in HTML,
+/// so the Journal Scroll's Scroll Context panel can find and highlight them.
+/// HTML rendering only, in memory; notes, the package and PDF/SVG output are
+/// unaffected. Placed after the notebox import (so `html` is in scope), or at
+/// the top without one.
 pub fn inject_cite_tagging(source: &str) -> String {
     // `it.key` is a label; `repr` renders it as `<key>`, so the slice strips
     // the angle brackets to leave the bare citation key.
@@ -244,17 +218,11 @@ pub fn inject_cite_tagging(source: &str) -> String {
     out
 }
 
-/// Install the `align()` → `<div text-align>` show rule on the HTML render
-/// path. `typst-html` has no show rule for `AlignElem`, so a centred or
-/// right-aligned block (most visibly an `#image`) is silently dropped from the
-/// output. `html-align` (in `inkycap-notebox/lib.typ`) re-emits it as a styled
-/// `<div>`; this installs it as a document-wide `#show align: html-align`.
-///
-/// In-memory, HTML render/export only — the on-disk note and the PDF/SVG paths
-/// keep native `align()`. The rule is placed right after the inkycap-notebox
-/// import line so `html-align` is in scope; if there is no import line (not a
-/// real InkyCap note) it is left unchanged rather than referencing an undefined
-/// function.
+/// Add `#show align: html-align` on the HTML path. typst-html has no output for
+/// `align()`, so aligned blocks (notably images) would be dropped; `html-align`
+/// in lib.typ re-emits them as `<div>`s. In memory, HTML only. Placed after the
+/// notebox import so `html-align` is in scope; without the import (not an
+/// InkyCap note) the source is left alone.
 pub fn inject_html_align_shim(source: &str) -> String {
     const RULE: &str = "#show align: html-align";
 
@@ -293,10 +261,9 @@ fn build_injection_block(
         }
     }
     // The collection's custom Typst comes last so it overrides the generated
-    // app + collection rules above it. In the non-book export paths a template
-    // is imported (symbols only) ahead of this block, so custom rules win there
-    // too; the book path emits custom Typst after its `#show: template` call
-    // separately (see book_wrapper::build_book_source).
+    // rules. Templates are imported before this in the other export paths; the
+    // book path adds custom Typst after its `#show: template` (see
+    // book_wrapper::build_book_source).
     if let Some(custom) = custom_typst {
         if !custom.trim().is_empty() {
             parts.push(custom.to_string());
@@ -407,9 +374,8 @@ mod tests {
         assert!(custom_pos > collection_pos);
     }
 
-    /// End-to-end: compile a note with the hybrid injection approach —
-    /// direct `#set page(...)` for geometry + `#show: apply-notebox-defaults.with(...)`
-    /// for text — and verify both take effect.
+    /// A note compiles with both `#set page(...)` and `#show:
+    /// apply-notebox-defaults.with(...)` taking effect.
     #[test]
     fn hybrid_injection_changes_page_size_and_text() {
         use crate::storage::path::canonicalize_root;

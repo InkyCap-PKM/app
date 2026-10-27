@@ -1,22 +1,17 @@
 // ---------------------------------------------------------------------------
-// JournalScrollView — continuous, infinite-scrolling list of related notes.
+// JournalScrollView: an infinitely scrolling list of related notes.
 //
-// Render pipeline: each entry is compiled to HTML via the same Typst path
-// reading mode's continuous-HTML view uses (`compileTypstHtml`). A
-// bounded-concurrency render queue caps how many compiles run at once, and
-// a module-level LRU cache by path keeps recently-rendered output around so
-// that scrolling back to an earlier entry is instant. The cache invalidates
-// on `notebox:file-changed`.
+// Each entry is compiled to HTML through the same Typst path as reading mode
+// (`compileTypstHtml`), with a limit on concurrent compiles. A module-level
+// cache by path makes scrolling back instant; it is cleared on
+// `notebox:file-changed`.
 //
-// Pagination: the feed is one-directional. The anchor is always the first
-// row; a single bottom IntersectionObserver sentinel drives `loadMoreAfter`
-// as the user scrolls down. Nothing is ever loaded above the anchor.
+// The feed only grows downwards: the anchor is the first row, and a bottom
+// IntersectionObserver calls `loadMoreAfter`.
 //
-// Scroll anchoring: entries compile asynchronously and grow from short
-// placeholders to full notes. WebKitGTK has no native CSS scroll anchoring,
-// so a `scrollAnchorRO` ResizeObserver manually folds the growth of any
-// entry above the viewport into `scrollTop` — without it the feed visibly
-// jumps back to an earlier note as off-screen entries finish compiling.
+// Entries compile asynchronously and grow from placeholders. WebKitGTK has no
+// CSS scroll anchoring, so `scrollAnchorRO` adds the growth of entries above
+// the viewport to `scrollTop`; otherwise the feed jumps back.
 // ---------------------------------------------------------------------------
 
 import { errorText } from "../lib/errors";
@@ -71,11 +66,11 @@ import { SquareArrowOutUpRight, SquareArrowInDownLeft } from "./icons";
 import { DiagnosticRow } from "./DiagnosticRow";
 import type { ConnectionFlags, ScrollEntry, TypstHtmlResult } from "../lib/types";
 
-// === Module-level render cache + bounded-concurrency queue ===
+// === Render cache and concurrency queue ===
 //
-// A render is either a whole note or, in Neighbourhood, an excerpt of a note
-// around its links to the anchor. Both are cached under a key naming the
-// note and, for an excerpt, the anchor (see `renderKey`).
+// A render is a whole note or, in Neighbourhood, an excerpt around its links to
+// the anchor. Both are cached by a key naming the note and, for an excerpt, the
+// anchor (see `renderKey`).
 
 const MAX_CONCURRENT = 3;
 const CACHE_CAP = 50;
@@ -102,9 +97,10 @@ function renderKey(job: RenderJob): string {
 /** Render key → compiled HTML result. */
 const htmlCache = new Map<string, RenderResult>();
 
-/** Render key → set of subscriber callbacks called once when the
- *  compilation completes (or fails). Used to coalesce multiple in-flight
- *  requests for the same render. */
+/**
+ * Render key → callbacks waiting for that render, so concurrent requests share
+ * one compile.
+ */
 const pendingSubscribers = new Map<string, Set<(r: RenderResult) => void>>();
 
 /** Renders queued but not yet started. */
@@ -212,15 +208,12 @@ function invalidatePath(path: string) {
   for (const key of [...htmlCache.keys()]) {
     if (key === path || key.startsWith(path + KEY_SEPARATOR)) htmlCache.delete(key);
   }
-  // Pending compiles will still run; their result populates the cache and
-  // any newly-subscribed listeners pick up the latest version. Subscribers
-  // already attached get the in-flight result, then a fresh subscription
-  // (driven by the file-change effect on the entry) replaces it.
+  // Pending compiles still run and fill the cache; the entry's file-change
+  // effect subscribes again for the new version.
 }
 
-// One global file-change listener for the whole app session. Set up lazily
-// on first JournalScrollView mount and kept alive — there is no good
-// teardown point for a per-tab listener since other tabs may still need it.
+// One file-change listener for the session, installed on first mount and kept,
+// since other tabs may need it.
 let fileChangeListenerInstalled = false;
 function ensureFileChangeListener() {
   if (fileChangeListenerInstalled) return;
@@ -232,10 +225,8 @@ function ensureFileChangeListener() {
   });
 }
 
-// Module-local visible-paths table, keyed by tabId. Each per-entry
-// IntersectionObserver mutates its tab's set and the store's
-// `visibleEntries` is published as the union. Local to this module so the
-// hack-y global on `window` is avoided.
+// Visible paths per tab. Each entry's IntersectionObserver updates its tab's
+// set, and the store's `visibleEntries` is their union.
 const visibleByTab = new Map<string, Set<string>>();
 function trackVisibility(tabId: string, path: string, isVisible: boolean) {
   let set = visibleByTab.get(tabId);
@@ -265,28 +256,18 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
     Map<string, ConnectionFlags>
   >(new Map());
 
-  // === Manual scroll anchoring ===
+  // === Scroll anchoring ===
   //
-  // WebKitGTK — Tauri's webview on Linux — does not implement CSS scroll
-  // anchoring (`overflow-anchor`). So when an entry above the viewport
-  // finishes compiling and grows from a short placeholder to a full note,
-  // the content the user is reading is shoved downward and the feed
-  // appears to "jump back" to an earlier note. (A Chrome/Firefox build
-  // would get this compensation for free.)
-  //
-  // This ResizeObserver, installed on every entry frame, folds the height
-  // growth of any entry lying fully above the viewport straight into
-  // `scrollTop`, holding the visible content still. Unlike `holdEntry` it
-  // never releases on user scroll: growth above the fold is phantom
-  // content and must be cancelled no matter what the user is doing.
+  // WebKitGTK doesn't implement CSS scroll anchoring, so when an entry above
+  // the viewport finishes compiling and grows, the content being read moves
+  // down. This ResizeObserver adds that growth to `scrollTop`. Unlike
+  // `holdEntry` it doesn't stop when the user scrolls.
   const entryHeights = new WeakMap<Element, number>();
   const scrollAnchorRO = new ResizeObserver((records) => {
     const container = containerRef;
     if (!container) return;
-    // A running `holdEntry` loop already pins an entry by absolute
-    // measurement, which subsumes above-the-fold growth — relative
-    // compensation on top would double-count. Keep baselines current so
-    // there is no spurious jump once the hold ends.
+    // A running `holdEntry` already pins by absolute position, so don't
+    // compensate as well; just keep the baselines current.
     if (activeHoldStop) {
       for (const rec of records) {
         entryHeights.set(
@@ -313,24 +294,18 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
   });
   onCleanup(() => scrollAnchorRO.disconnect());
 
-  // `<For>` keys rows by element reference. The store rebuilds its `entries`
-  // array on every pagination step, and elements round-tripped through the
-  // reactive store do not keep a stable identity — so `<For each={getEntries()}>`
-  // would tear down and recreate EVERY entry component on each load-more.
-  // Recreated entries reset to placeholders, the feed momentarily collapses,
-  // `scrollTop` clamps against the now-short content, and the viewport snaps
-  // back toward the anchor. This memo hands `<For>` a per-path-stable object:
-  // the same path always yields the same reference, so existing entry
-  // components survive a load-more untouched and only new entries mount.
+  // `<For>` keys rows by reference, and entries coming back from the store aren't
+  // the same objects after each load-more, so every entry would be recreated and
+  // the feed would collapse and jump back. This map returns the same object for
+  // the same path, so existing entries survive.
   const entryIdentity = new Map<string, ScrollEntry>();
   const stableEntries = createMemo<ScrollEntry[]>(() => {
     const raw = getEntries(props.tabId);
     const seen = new Set<string>();
     const out: ScrollEntry[] = [];
     for (const e of raw) {
-      // Skip a path already emitted this pass. The store dedupes on merge,
-      // but guarding here too means a duplicate can never reach `<For>` as
-      // two identical references (which it cannot key apart).
+      // `<For>` can't tell two identical references apart, so skip duplicates
+      // here too.
       if (seen.has(e.path)) continue;
       seen.add(e.path);
       let stable = entryIdentity.get(e.path);
@@ -352,13 +327,9 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
 
   onMount(ensureFileChangeListener);
 
-  // On mount: focus the feed (so the keyboard scrolls it right away) and
-  // restore the saved scroll position. Restoration re-pins the saved entry
-  // to its saved viewport offset via `holdEntry` — a correction loop, not a
-  // one-shot `scrollTop` assignment, because entries compile asynchronously
-  // and the saved entry and its neighbours grow from placeholders to full
-  // height over the first frames after mount; a single assignment would
-  // clamp against the still-short content and land near the top.
+  // On mount, focus the feed and restore the saved position with `holdEntry`,
+  // which keeps correcting while the entries above grow; a single `scrollTop`
+  // would land near the top.
   onMount(() => {
     if (!containerRef) return;
     containerRef.focus({ preventScroll: true });
@@ -368,10 +339,9 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
 
   onCleanup(() => activeHoldStop?.());
 
-  // Recompute connection flags whenever the loaded entry set or anchor
-  // changes. The anchor is read from the store (not a prop) so a re-anchor
-  // — e.g. a tree-mode file-tree click — recomputes against the new anchor.
-  // One backend call covers all currently-loaded paths.
+  // Recompute connection flags when the entries or the anchor change (the
+  // anchor comes from the store, so re-anchoring counts). One backend call for
+  // all loaded paths.
   createEffect(() => {
     const entries = getEntries(props.tabId);
     const anchor = getAnchorPath(props.tabId);
@@ -392,15 +362,10 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
     })();
   });
 
-  // Scroll-nav requests: the within-scroll back/forward arrows and the
-  // anchor-return button issue a `scrollNavRequest` through the store; here
-  // we consume it. The `nonce` makes repeated requests for the same path
-  // distinct so this effect re-fires. Request-clearing and async scroll
-  // work run untracked so the effect's only dependency is the request.
-  //
-  // The anchor is always the first row, so a request to return to it is an
-  // exact, instant `scrollTop = 0` — no smooth-scroll through a feed of
-  // still-compiling, resizing entries (which lands unpredictably).
+  // Handle `scrollNavRequest` from the back/forward arrows and the
+  // return-to-anchor button. `nonce` makes repeated requests distinct; the rest
+  // runs untracked. Returning to the anchor is `scrollTop = 0`, since it is
+  // always the first row.
   createEffect(() => {
     const req = getScrollNavRequest(props.tabId);
     if (!req) return;
@@ -415,18 +380,12 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
     });
   });
 
-  // On every result-set rebuild, reset the viewport to the anchor (the
-  // first row) — a plain scrollTop 0.
+  // On every result-set rebuild, scroll back to the anchor (`scrollTop = 0`).
   //
-  // CRITICAL: the `nonce !== prevNonce` guard is load-bearing. Every store
-  // mutation calls `bump()`, which ticks the `scrollVersion` signal that
-  // *every* journal-scroll selector reads — including `getAnchorPinNonce`.
-  // So this `on` effect re-fires on every `bump()` (each `loadMoreAfter`,
-  // each loading-flag flip), not only when the nonce changes. Without the
-  // guard, `pinAnchorToTop` would run on every pagination step and the feed
-  // would snap back to the anchor the instant you scrolled to the bottom.
-  // `defer: true` skips the initial run so a tab-return (which restores the
-  // saved scroll position) isn't overridden.
+  // The `nonce !== prevNonce` guard is essential: every store change ticks the
+  // signal all selectors read, so this effect runs on every pagination step and
+  // would otherwise snap back to the anchor. `defer: true` keeps it from
+  // overriding a restored position on tab return.
   createEffect(
     on(
       () => getAnchorPinNonce(props.tabId),
@@ -437,9 +396,7 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
     ),
   );
 
-  // Bottom sentinel observer drives downward pagination. The feed is
-  // one-directional — there is no top sentinel and nothing loads above the
-  // anchor.
+  // The bottom sentinel loads more; nothing loads above the anchor.
   createEffect(() => {
     if (!containerRef || !bottomSentinelRef) return;
 
@@ -460,31 +417,23 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
     onCleanup(() => bottomObserver.disconnect());
   });
 
-  // Wikilink click routing (delegated on the container so it covers every
-  // entry without per-entry handler installation). Smart routing:
-  //   - right-click → wikilink context menu (open-as destinations)
-  //   - modifier-click / middle-click → open in new tab
-  //   - plain click + target is in the currently-loaded entry window →
-  //     smooth-scroll to it
-  //   - plain click + target is unresolved or outside the loaded window →
-  //     fall through to a new tab (Rule A)
+  // Wikilink clicks, delegated on the container:
+  //   - right-click: the wikilink context menu
+  //   - modifier or middle click: new tab
+  //   - plain click on a target in the loaded entries: scroll to it
+  //   - plain click otherwise: new tab
   //
-  // Resolution is one `getForwardLinks(source)` call per click. The source
-  // is the closest `.journal-scroll__entry` ancestor, identified by its
-  // `data-path` attribute. Notebox-wide resolution would also work but
-  // forward-links is already cached in the LinkIndex and avoids surfacing a
-  // new IPC for a per-click lookup.
+  // The target is resolved with one `getForwardLinks(source)` call (already
+  // cached in the LinkIndex), where the source is the closest
+  // `.journal-scroll__entry`'s `data-path`.
   async function handleWikilinkClick(e: MouseEvent) {
     const a = (e.target as HTMLElement | null)?.closest<HTMLAnchorElement>(
       "a.inkycap-wikilink",
     );
     if (!a) {
-      // Any other anchor in the compiled body — an external URL or a notebox
-      // file link authored via `#link(...)` — would otherwise navigate the
-      // webview away from the app (the notebox reopens / open-notebox dialog).
-      // Route it through `openLink` so URLs open in the OS browser and file
-      // links in the system default app. The native context menu is left
-      // alone so "Copy link" etc. still work.
+      // Other links (URLs, `#link(...)` to files) go through `openLink` instead
+      // of navigating the webview. The context menu is left alone so "Copy
+      // link" works.
       if (e.type === "contextmenu") return;
       const other = (e.target as HTMLElement | null)?.closest<HTMLAnchorElement>(
         "a[href]",
@@ -533,11 +482,8 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
       );
       return;
     }
-    // Plain click: try to navigate within the scroll (scroll to it if
-    // loaded, else page toward it). If that succeeds, record the jump so
-    // the header back arrow can return to the note the link was clicked
-    // in; if the target isn't in this query at all, fall through to a new
-    // tab (Rule A).
+    // Plain click: navigate within the scroll and record the jump for the back
+    // arrow; if the target isn't in this scroll, open a new tab.
     const reached = await navigateScrollTo(match.path);
     if (reached) {
       recordScrollNavigation(props.tabId, sourcePath, match.path);
@@ -549,11 +495,9 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
     }
   }
 
-  // Navigate within the scroll to `targetPath`: scroll straight to it when
-  // already loaded, otherwise re-anchor the scroll on the target so it
-  // becomes the first entry. Returns false when the target isn't part of
-  // the current query result (caller decides the fallback). Shared by
-  // wikilink clicks and the header back/forward arrows.
+  // Go to `targetPath` in the scroll: scroll to it if loaded, otherwise
+  // re-anchor on it. False when it isn't part of this scroll. Used by wikilinks
+  // and the back/forward arrows.
   async function navigateScrollTo(targetPath: string): Promise<boolean> {
     if (getEntries(props.tabId).some((e) => pathEquals(e.path, targetPath))) {
       scrollToLoadedEntry(targetPath);
@@ -562,9 +506,7 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
     // Check whether the target exists in this query at all.
     const targetOffset = await findOffsetForTarget(props.tabId, targetPath);
     if (targetOffset === null) return false;
-    // Re-anchor the scroll on the target — clears the current entries
-    // and loads a fresh window starting from the target note, preserving
-    // the back/forward nav stack.
+    // Re-anchor on the target, keeping the back/forward stack.
     await reanchorForNavigation(props.tabId, targetPath);
     return getEntries(props.tabId).some((e) => pathEquals(e.path, targetPath));
   }
@@ -578,15 +520,11 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
     el.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  // Hold the entry at `path` pinned to viewport offset `offsetTop` through
-  // a per-frame correction loop. Entries compile asynchronously and grow
-  // from placeholders to full height; without this the viewport drifts as
-  // content above the pinned entry changes size. The loop releases as soon
-  // as the user scrolls (wheel / pointer / touch / key) — their intent wins
-  // — or after a generous deadline. Used to restore a saved scroll position
-  // on tab return (the initial anchor pin needs no loop: the anchor is the
-  // first row, so scrollTop 0 alone holds it — see `pinAnchorToTop`). A new
-  // hold cancels any hold already running so they never fight `scrollTop`.
+  // Keep the entry at `path` at viewport offset `offsetTop` with a per-frame
+  // loop while entries compile and grow. Stops when the user scrolls (wheel,
+  // pointer, touch, key) or after a deadline. Used to restore a saved position;
+  // the anchor needs no loop (see `pinAnchorToTop`). A new hold cancels the
+  // previous one.
   function holdEntry(path: string, offsetTop: number) {
     const container = containerRef;
     if (!container || !path) return;
@@ -619,17 +557,13 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
       if (performance.now() < deadline) requestAnimationFrame(tick);
       else stop();
     };
-    // Run the first correction synchronously so the very first painted
-    // frame is already at the target position — otherwise the view paints
-    // at scrollTop 0 for a frame, flashing the top of the feed.
+    // Correct once now, so the first frame isn't painted at the top.
     tick();
   }
 
   function pinAnchorToTop() {
-    // Anchor-first loading makes the anchor the first row, so resetting the
-    // viewport to it is simply scrollTop 0. Nothing is loaded above it, so
-    // 0 stays correct as the rows below compile and grow — no correction
-    // loop. Cancel any restore hold so the two don't fight over scrollTop.
+    // The anchor is the first row, so scrollTop 0 holds it. Cancel any restore
+    // hold.
     if (!containerRef) return;
     activeHoldStop?.();
     containerRef.scrollTop = 0;
@@ -640,22 +574,14 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
     });
   }
 
-  // Save the scroll position entry-anchored — the topmost visible entry's
-  // path plus its pixel offset from the viewport top. A raw `scrollTop`
-  // can't be restored after a remount (entries above may still be
-  // placeholders), but an entry + offset can.
-  //
-  // Runs synchronously on every scroll event (no rAF throttle): a throttled
-  // capture can be outrun by a tab switch — the unmount lands before the
-  // queued frame fires, so the *last* scroll never gets saved and the tab
-  // returns to a stale position. The scan breaks at the first entry
-  // crossing the viewport top, so it reads only a handful of rects.
+  // Save the position as the topmost visible entry's path and its offset from
+  // the top, which can be restored after a remount (a raw `scrollTop` can't).
+  // Runs on every scroll event, without throttling, so a tab switch can't beat
+  // the last save. Stops at the first entry crossing the top.
   function captureScrollPosition() {
     if (!containerRef) return;
-    // Suppress while a programmatic hold is steering scrollTop (the initial
-    // position restore): the in-flight value isn't the user's intent and
-    // would clobber the saved position we're restoring toward. A real user
-    // gesture stops the hold, after which captures resume normally.
+    // Not while a hold is restoring the position; the in-between values aren't
+    // the user's.
     if (activeHoldStop) return;
     const cTop = containerRef.getBoundingClientRect().top;
     const frames = containerRef.querySelectorAll<HTMLElement>(
@@ -717,13 +643,10 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
 
 // === Per-entry component ===
 
-// Connection badges shown in each entry's header. The colored accent strip
-// down the entry's left edge encodes the same relation by color alone; the
-// header icon + tooltip make that color self-documenting (and, unlike the
-// single-color strip, all applicable relations show at once). Icon colors
-// are set in CSS to match their corresponding strip color so the two cues
-// reinforce each other. Order here is the cascade order of the strip CSS:
-// anchor > links-to > linked-from > shares-tags.
+// Connection badges in each entry's header. They explain the coloured strip on
+// the entry's left edge (and show every relation at once); their colours match
+// the strip's. Order follows the strip CSS: anchor, links-to, linked-from,
+// shares-tags.
 const CONNECTION_BADGES: ReadonlyArray<{
   key: "is_anchor" | "links_to_anchor" | "linked_from_anchor" | "shares_tags";
   Icon: Component<{ size?: number }>;
@@ -807,19 +730,15 @@ const JournalScrollEntryView: Component<JournalScrollEntryViewProps> = (
     }
   }
 
-  // Compile diagnostics are hidden behind a header button by default — in
-  // Journal Scroll the warning is incidental and can be ignored; the button
-  // reveals the full message on demand.
+  // Diagnostics are behind a header button; in Journal Scroll they are
+  // incidental.
   const [showDiag, setShowDiag] = createSignal(false);
   const diagnostics = () => result()?.diagnostics ?? [];
   const hasError = () => diagnostics().some((d) => d.severity === "error");
 
-  // Journal Scroll is an in-app review surface, not a print preview, so its
-  // body text uses the Visual Editor font (`--md-body-font`) rather than the
-  // document text font — this distinguishes it as an app function instead of
-  // implying a preview of the printed output. Notes that override
-  // `#note(font-family:)` still bake that override into the compiled HTML;
-  // this only sets the fallback for notes with no override.
+  // Journal Scroll is a review view, not a print preview, so the fallback body
+  // font is the visual editor's (`--md-body-font`). A note's own
+  // `#note(font-family:)` still applies.
   const contentStyle = () => {
     const s: Record<string, string> = {};
     s["font-family"] = "var(--md-body-font, var(--editor-font-body, sans-serif))";
@@ -900,13 +819,9 @@ const JournalScrollEntryView: Component<JournalScrollEntryViewProps> = (
   );
 
   function handleTitleClick() {
-    // The header title button is "Open in new tab" — it always opens a
-    // fresh, regular file tab in the user's default editor mode.
-    // `allowDuplicate` is essential, not optional: the anchor entry's path
-    // IS the Journal Scroll tab's own path, so without it openTab would
-    // match the scroll tab and just re-focus the scroll instead of opening
-    // the note. (A new tabId carries no scroll state, so the new tab
-    // renders as a normal editor regardless of path.)
+    // The title button opens the note in a new regular tab. `allowDuplicate` is
+    // required: the anchor's path is the scroll tab's own path, so `openTab`
+    // would otherwise just focus the scroll.
     openTab(
       {
         type: "file",

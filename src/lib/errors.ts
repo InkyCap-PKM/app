@@ -1,25 +1,18 @@
-// Localizing the errors that cross the Tauri IPC boundary.
+// Showing errors from the backend in the user's language.
 //
-// The Rust backend serializes every `InkyCapError` as a structured envelope
-// (see src-tauri/src/errors.rs):
+// Every `InkyCapError` arrives as (see src-tauri/src/errors.rs):
 //
 //     { code: "file-not-found", message: "File not found: /x", detail: "/x" }
 //
-// `code` is a stable, never-localized machine identifier; `detail` is the single
-// interpolated value (a path, an external tool's message, a free-form sentence);
-// `message` is the composed English string the backend already had.
+// `code` is a fixed, untranslated identifier; `detail` the variable part (a
+// path, a tool's message, a sentence); `message` the backend's English text.
 //
-// `errorText` turns that envelope into a user-facing string in the active locale
-// by looking up `errors.<code>` and filling its `{detail}` placeholder, falling
-// back to the backend's English `message` when no key exists yet (a new variant,
-// or free-form `BadRequest` text that has no fixed translation). It also accepts
-// plain JS errors and strings, so it is the one safe stringifier for ANY caught
-// value at a display site — replacing scattered `String(err)` calls, which would
-// now render the envelope object as "[object Object]".
-//
-// `errorCode` exposes the machine code for control flow (e.g. treating a
-// user-driven `"cancelled"` as a non-error) without matching on a localized
-// message.
+// `errorText` looks up `errors.<code>` and fills `{detail}`, falling back to
+// `message` without a key (a new variant, or free-form `BadRequest` text). It
+// also takes JS errors and strings, so use it for any caught value shown to the
+// user instead of `String(err)`, which gives "[object Object]". `errorCode`
+// gives the code for branching (e.g. `"cancelled"` isn't an error) without
+// matching translated text.
 
 import { t } from "./i18n";
 
@@ -44,30 +37,26 @@ function isIpcError(value: unknown): value is IpcError {
 }
 
 /**
- * The backend machine code for a caught value, or `undefined` if it isn't an
- * IPC error. Use to branch on error kind without matching localized text —
- * e.g. `if (errorCode(e) === "cancelled") { …suppress… }`.
+ * The backend code for a caught value, or `undefined` if it isn't an IPC error,
+ * e.g. `if (errorCode(e) === "cancelled") …`.
  */
 export function errorCode(value: unknown): string | undefined {
   return isIpcError(value) ? value.code : undefined;
 }
 
 /**
- * The backend's `detail` value for a caught IPC error (a path, a name, a
- * tool message), or `undefined` if absent or the value isn't an IPC error.
- * Use to read structured data a variant carries — e.g. the existing note's
- * path on a `note-name-conflict` — without parsing the localized message.
+ * The backend `detail` of a caught IPC error (a path, a name, a tool message),
+ * or `undefined`, e.g. the existing note's path on `note-name-conflict`.
  */
 export function errorDetail(value: unknown): string | undefined {
   return isIpcError(value) ? (value.detail ?? undefined) : undefined;
 }
 
 /**
- * A user-facing, localized string for any caught value. For backend IPC errors
- * it resolves `errors.<code>` in the active locale (filling `{detail}`), falling
- * back to the backend's English `message` when the key is absent. For plain JS
- * errors it returns `.message`; otherwise `String(value)`. Safe at every display
- * site — toasts, inline error fields, status messages.
+ * A translated, user-facing string for any caught value: for IPC errors
+ * `errors.<code>` with `{detail}` filled, else the English `message`; for JS
+ * errors `.message`; otherwise `String(value)`. Safe in toasts, error fields and
+ * status messages.
  */
 export function errorText(value: unknown): string {
   if (isIpcError(value)) {

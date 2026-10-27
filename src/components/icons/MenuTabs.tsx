@@ -2,12 +2,11 @@ import type { Component } from "solid-js";
 import { lucideFrame } from "./frame";
 
 /**
- * Tab-options glyph: a tab-bar outline with a single tab "top" sitting on it —
- * the menu at the right edge of a pane's tab strip. Editable master:
- * `design-assets/menu-tabs.svg` — keep the two in sync by hand. The outline
- * uses a 1px stroke (overriding the shared 2px lucide frame, matching the
- * master SVG); the tab cap is filled with `currentColor` so the glyph reads at
- * small sizes.
+ * Tab options icon: a tab bar outline with one tab on it, for the menu at the
+ * right of a pane's tab strip. Master: `design-assets/menu-tabs.svg`, kept in
+ * step by hand. The outline has a 1px stroke (instead of the frame's 2px, as in
+ * the master); the tab is filled with `currentColor` so it reads at small
+ * sizes.
  */
 export const MenuTabsIcon: Component<{ size?: number; class?: string }> = (
   props,

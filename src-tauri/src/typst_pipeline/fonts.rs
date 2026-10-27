@@ -1,38 +1,27 @@
-//! Font discovery for the Typst compile pipeline.
+//! Fonts for the Typst compile pipeline: embedded (typst-assets and InkyCap's
+//! bundled fonts), system (via fontdb) and notebox fonts from
+//! `<notebox>/fonts/`. Used by NoteboxWorld and by the `list_system_fonts`
+//! command for the font picker.
 //!
-//! Loads embedded fonts (typst-assets + InkyCap-bundled), system fonts (via
-//! fontdb), and notebox-local fonts from `<notebox>/fonts/`. The combined set
-//! is used by NoteboxWorld for compilation and by the `list_system_fonts`
-//! command for the frontend font picker.
+//! ## Memory: metadata now, bytes on demand
 //!
-//! ## Memory model: eager metadata, lazy bytes
-//!
-//! Embedded fonts (Typst's defaults + InkyCap's bundled families) are the
-//! always-resident fallback floor. Their bytes are `'static` (baked into the
-//! binary via typst-assets / `include_bytes!`), so loading them eagerly costs
+//! Embedded fonts are always loaded; their bytes are `'static`, so this costs
 //! binary size, not heap.
 //!
-//! System and notebox-local fonts are loaded differently. Reading every
-//! installed font file into memory was the dominant source of the app's
-//! resident set (hundreds of MB on a machine with a normal font collection,
-//! most of it never used by any document). Instead we:
+//! Reading every system font into memory would cost hundreds of MB, mostly
+//! unused. Instead:
 //!
-//! 1. **Discover eagerly, byte-load lazily.** For every face we build a
-//!    [`FontInfo`] (family + variant + unicode coverage) so the `FontBook` is
-//!    complete. Typst's glyph fallback walks the *whole* book by coverage, so
-//!    the book must list every face or fallback silently breaks (tofu for CJK,
-//!    emoji, exotic scripts). `FontInfo` is small; the parsed `Font` (with its
-//!    full byte buffer) is what's expensive, and that's what we defer.
-//! 2. **Back faces with an mmap, not a heap read.** Each [`FontSlot`] holds a
-//!    shared memory-map of the file plus a face index. The actual `Font` is
-//!    parsed on first access in [`FontSlot::get`] (i.e. only for faces a
-//!    rendered document actually draws with). mmap pages are file-backed and
-//!    reclaimable by the kernel, so even touched faces don't pin heap.
+//! 1. **Every face is listed, bytes load later.** Each face gets a [`FontInfo`]
+//!    (family, variant, coverage) so the `FontBook` is complete; Typst's glyph
+//!    fallback searches the whole book, so a missing face breaks fallback (tofu
+//!    for CJK, emoji, other scripts). Only the parsed `Font` is deferred.
+//! 2. **Faces are memory-mapped.** Each [`FontSlot`] holds a shared mmap and a
+//!    face index, and parses the `Font` on first use in [`FontSlot::get`].
+//!    Mapped pages belong to the file and the kernel can reclaim them.
 //!
-//! This mirrors `typst-kit`'s own font-loading strategy (which we don't depend
-//! on directly, so the slot type is reimplemented here). Per CLAUDE.md's
-//! Typst-first principle: font provision is inherently host glue (the `World`
-//! is the host's job), so there's no Typst-native primitive to defer to here.
+//! This follows `typst-kit`'s approach (not a dependency, so the slot type is
+//! our own). Per CLAUDE.md's Typst-first principle: providing fonts is the
+//! host's job in a `World`, so there is no Typst feature to use instead.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -41,10 +30,9 @@ use std::sync::{Arc, OnceLock};
 use typst::foundations::Bytes;
 use typst::text::{Font, FontBook, FontInfo};
 
-/// A shared, reference-counted memory map of a font file. Cloning is cheap (an
-/// `Arc` bump) and lets every alias/face that resolves to the same file share
-/// one mapping. Implements `AsRef<[u8]>` so it can be handed straight to
-/// `Bytes::new` without copying the bytes onto the heap.
+/// A shared memory map of a font file. Cheap to clone, so all faces and aliases
+/// from one file share it. `AsRef<[u8]>` lets it go to `Bytes::new` without
+/// copying.
 #[derive(Clone)]
 struct SharedMmap(Arc<memmap2::Mmap>);
 
@@ -54,14 +42,9 @@ impl AsRef<[u8]> for SharedMmap {
     }
 }
 
-/// One slot per face in the `FontBook` (book index ↔ slot index are parallel;
-/// Typst calls `World::font(index)` against this vec).
-///
-/// Embedded fonts are *eager*: the parsed `Font` is stored directly, since its
-/// bytes are static and parsing is the only (small) cost. System and
-/// notebox-local fonts are *lazy*: the slot keeps a shared mmap + face index
-/// and parses the `Font` on first access, so unused faces never pay the parse
-/// or pin their bytes.
+/// One slot per face, in the same order as the `FontBook` (Typst calls
+/// `World::font(index)`). Embedded fonts store the parsed `Font`; system and
+/// notebox fonts keep a shared mmap and face index and parse on first use.
 pub struct FontSlot {
     /// Source bytes + face index for lazy parsing. `None` for eager slots,
     /// whose `Font` is already present in `font`.
@@ -96,28 +79,21 @@ impl FontSlot {
     }
 }
 
-/// Memory-map a font file, returning a shareable handle. `None` if the file
-/// can't be opened or mapped (the caller skips the face, matching the previous
-/// read-into-memory behaviour).
+/// Memory-map a font file, or `None` if it can't be opened (the face is
+/// skipped).
 fn mmap_path(path: &Path) -> Option<SharedMmap> {
     let file = std::fs::File::open(path).ok()?;
-    // SAFETY: font files are treated as read-only. If a file were truncated out
-    // from under the mapping a later glyph access could fault; this is the same
-    // accepted risk taken by typst-kit's mmap-based loader, and font files do
-    // not change during a session in practice.
+    // SAFETY: font files are treated as read-only. A file truncated under the
+    // mapping could fault on a later glyph read; typst-kit's loader accepts the
+    // same risk, and font files don't change during a session in practice.
     let mmap = unsafe { memmap2::Mmap::map(&file).ok()? };
     Some(SharedMmap(Arc::new(mmap)))
 }
 
-/// Load every embedded font from `typst-assets` into a `FontBook` plus a
-/// parallel `Vec<FontSlot>` indexed identically. Typst calls
-/// `World::font(index)` against indices into this vec.
-///
-/// Also includes any TTF/OTF files baked into the binary under
-/// `src-tauri/assets/fonts/` via `include_bytes!`. These are the
-/// InkyCap-bundled fonts (Inter, Junicode, JuliaMono, iA Writer Duo S) which
-/// the resolver references by family name. Embedded fonts are resolved eagerly:
-/// the bytes are static so the only cost is `Font::iter` parsing.
+/// Load the embedded fonts into a `FontBook` and a matching `Vec<FontSlot>`:
+/// typst-assets plus InkyCap's bundled fonts from `src-tauri/assets/fonts/`
+/// (Inter, Junicode, JuliaMono, iA Writer Duo S). Parsed straight away, since
+/// their bytes are static.
 pub fn load_embedded() -> (FontBook, Vec<FontSlot>) {
     let mut book = FontBook::new();
     let mut slots = Vec::new();
@@ -134,13 +110,11 @@ pub fn load_embedded() -> (FontBook, Vec<FontSlot>) {
         let buffer = Bytes::new(*data);
         for font in Font::iter(buffer) {
             let mut info = font.info().clone();
-            // Per-file family rename. Used to merge sibling families that
-            // ship as separate binaries (e.g. iA Writer's italic file is
-            // registered upstream under "<family> Italic", which would
-            // hide it from `text(font: "<family>", style: "italic")`
-            // lookups). Renaming the registration keeps the binary's
-            // own slant/weight info intact, so Typst's face matcher
-            // still picks the right face for the requested style.
+            // Register a file under another family name, to merge families
+            // shipped as separate files (iA Writer's italic is registered as
+            // "<family> Italic", which `text(font: "<family>", style:
+            // "italic")` wouldn't find). The file's own weight and slant are
+            // kept, so Typst still picks the right face.
             if let Some(name) = family_override {
                 info.family = (*name).to_string();
             }
@@ -152,15 +126,11 @@ pub fn load_embedded() -> (FontBook, Vec<FontSlot>) {
     (book, slots)
 }
 
-/// Static byte slices for fonts shipped with InkyCap. The files live
-/// under `src-tauri/assets/fonts/` and are `include_bytes!`'d at compile
-/// time. The `Option<&str>` second element overrides the family name
-/// the font registers under in Typst's `FontBook` — used to merge
-/// upstream sibling families (e.g. iA Writer's italic file ships under
-/// `"<family> Italic"`) into a single family so that `text(style: "italic")`
-/// resolves to the right face. `None` keeps the binary's own family name.
-/// To add a new face, drop the TTF/OTF under that directory and append
-/// an entry to this list.
+/// Fonts shipped with InkyCap, from `src-tauri/assets/fonts/` via
+/// `include_bytes!`. The second element overrides the registered family name,
+/// to merge families like iA Writer's separate italic so `text(style:
+/// "italic")` finds it; `None` keeps the file's own name. To add a face, put
+/// the file in that folder and add it here.
 fn inkycap_bundled_fonts() -> &'static [(&'static [u8], Option<&'static str>)] {
     static FONTS: &[(&[u8], Option<&str>)] = &[
         (include_bytes!("../../assets/fonts/Inter-Regular.ttf"), None),
@@ -199,12 +169,10 @@ fn inkycap_bundled_fonts() -> &'static [(&'static [u8], Option<&'static str>)] {
             include_bytes!("../../assets/fonts/JuliaMono-BoldItalic.ttf"),
             None,
         ),
-        // iA Writer Duo S — static cuts. Variable equivalents exist (V
-        // suffix) but Typst 0.14 doesn't interpolate variable axes in
-        // compiled output, so the weight chips would silently no-op.
-        // Statics give the Bold chip a real bold face; Light/Medium/
-        // Semibold map to whichever of Regular/Bold is closest, which
-        // is graceful and predictable.
+        // iA Writer Duo S, static cuts: Typst doesn't apply variable-font axes
+        // in output, so the weight options would do nothing with the variable
+        // files. Light, Medium and Semibold map to the nearer of Regular and
+        // Bold.
         (
             include_bytes!("../../assets/fonts/iAWriterDuoS-Regular.ttf"),
             None,
@@ -225,34 +193,20 @@ fn inkycap_bundled_fonts() -> &'static [(&'static [u8], Option<&'static str>)] {
     FONTS
 }
 
-/// Load fonts from the operating system's standard font directories.
+/// Load fonts from the system font folders. Every face is listed; bytes load on
+/// first use (see the module docs).
 ///
-/// Discovery is eager (every face gets a `FontBook` entry) but byte-loading is
-/// lazy (each slot keeps a shared mmap + index and parses on first use). See
-/// the module docs for why the book must be complete even though the bytes are
-/// deferred.
+/// Each face is registered under every family name fontdb reports (e.g.
+/// `"Newsreader"` and `"Newsreader 16pt"`), because:
 ///
-/// Each fontdb face is registered into the typst `FontBook` under every
-/// family-name alias that fontdb reports for it (e.g. `"Newsreader"` AND
-/// `"Newsreader 16pt"`). This matters for two reasons:
+/// 1. Typst's `FontInfo::family` comes from `nameID 1`, which for fonts with
+///    sub-families (Newsreader, Source Sans 3, many Adobe families) is the full
+///    name (`"Newsreader 16pt"`), not the preferred family (`nameID 16`).
+/// 2. The font picker lists fontdb's preferred names, so the user picks
+///    `"Newsreader"` and Typst wouldn't find it otherwise.
 ///
-/// 1. Typst's `FontInfo::family` reads `nameID 1` from the OpenType
-///    `name` table, which for sub-family-bearing fonts (Newsreader,
-///    Source Sans 3, many Adobe families) is the *full* family name
-///    like `"Newsreader 16pt"`, not the user-friendly preferred family
-///    `"Newsreader"` (`nameID 16`).
-/// 2. The frontend `FontPicker` lists fontdb's preferred-family names
-///    (via `face.families.first()`), so the user picks `"Newsreader"`,
-///    we inject `#set text(font: "Newsreader")` into the source, and
-///    typst's lookup against the book fails because no entry has that
-///    exact family — even though the bytes are loaded.
-///
-/// Pushing one book entry per alias (all backed by the same cheap shared mmap)
-/// keeps both views consistent. This also absorbs typst 0.15's variable-font
-/// family normalization (it strips "Variable"/"VF"/"Var" suffixes from
-/// `info.family`): the un-normalized fontdb name the `FontPicker` displays — and
-/// writes into `#set text(font:)` — is still registered as its own alias, so the
-/// lookup resolves regardless of which form typst settled on.
+/// This also covers Typst 0.15 dropping "Variable"/"VF"/"Var" from variable-font
+/// family names: the name the picker shows is still registered.
 fn load_system_fonts(book: &mut FontBook, slots: &mut Vec<FontSlot>) {
     let mut db = fontdb::Database::new();
     db.load_system_fonts();
@@ -284,9 +238,8 @@ fn load_system_fonts(book: &mut FontBook, slots: &mut Vec<FontSlot>) {
             continue;
         };
 
-        // Collect aliases: typst's own family + every fontdb alias.
-        // Dedupe case-insensitively so the same name doesn't get
-        // pushed twice when typst and fontdb agree.
+        // Typst's family plus every fontdb name, without duplicates (ignoring
+        // case).
         let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
         let mut aliases: Vec<String> = Vec::new();
         let mut push_alias = |name: &str| {
@@ -309,9 +262,8 @@ fn load_system_fonts(book: &mut FontBook, slots: &mut Vec<FontSlot>) {
     }
 }
 
-/// Load fonts from `<notebox_root>/fonts/` if the directory exists.
-///
-/// Like system fonts, these are discovered eagerly and byte-loaded lazily.
+/// Load fonts from `<notebox_root>/fonts/` if it exists, listed now and loaded
+/// on use like system fonts.
 fn load_notebox_fonts(notebox_root: &Path, book: &mut FontBook, slots: &mut Vec<FontSlot>) {
     let fonts_dir = notebox_root.join("fonts");
     if !fonts_dir.is_dir() {

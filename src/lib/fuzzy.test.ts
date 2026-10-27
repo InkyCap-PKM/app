@@ -1,10 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { fuzzyMatch, substringMatch, compareMatches } from "./fuzzy";
 
-// Quick open used to rank purely on points, and points rewarded matching at a
-// word boundary. A three-letter query could therefore collect three boundary
-// bonuses from letters scattered across a long name and beat a note whose name
-// spells the query out. Ranking is now decided by the kind of match first.
+// Ranking by points alone rewards matches at word starts, so a three-letter
+// query could collect three word-start bonuses across a long name and beat a
+// name that spells it out. So the kind of match is compared first.
 
 /** Names ordered the way a picker would list them for `query`. */
 function ranked(query: string, names: string[]): string[] {

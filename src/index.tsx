@@ -2,11 +2,10 @@ import { render } from "solid-js/web";
 import "./styles/bundled-fonts.css";
 import App from "./App";
 
-// Native OS file drops are handled by Tauri's own drag-drop event
-// listener (see src/lib/tauri-drag-drop.ts, attached from App.tsx).
-// Tauri intercepts the drop at the native layer — the webview
-// never sees it — so no window-level JS preventDefault is needed
-// to stop the default "navigate to file://" behavior.
+// Native file drops are handled by Tauri's drag-drop listener
+// (src/lib/tauri-drag-drop.ts, attached in App.tsx). Tauri takes the drop
+// before the webview sees it, so no preventDefault is needed here to stop
+// "navigate to file://".
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Root element not found");

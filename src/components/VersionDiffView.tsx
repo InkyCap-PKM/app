@@ -1,10 +1,8 @@
-// Read-only version-compare view: an inline diff between a note's current
-// content and a past version, opened from the "History" list. Renders the
-// current note with everything that changed since the chosen version
-// highlighted inline (deletions shown above their replacement) via
-// `@codemirror/merge`'s unified merge view. The editor is fully read-only — this
-// is for *reading* a diff, not editing; bringing the old version back is the
-// explicit Restore action in the header.
+// Read-only comparison of a note with a past version, opened from the History
+// list: the current note with everything changed since that version highlighted
+// inline (deletions above their replacement), using `@codemirror/merge`'s
+// unified view. Not for editing; the old version is brought back with Restore in
+// the header.
 
 import { Component, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { EditorView } from "@codemirror/view";
@@ -40,9 +38,9 @@ const VersionDiffView: Component<{
 
   const basename = () => props.path.split("/").pop() ?? props.path;
 
-  // Persist the (chunk-restored) doc back to the note, debounced so a burst of
-  // chunk restores coalesces into one write. A restore is an ordinary edit the
-  // user then Syncs — lossless (earlier content stays in git history).
+  // Save the document after chunk restores, debounced so several become one
+  // write. A restore is an ordinary edit the user then syncs; earlier content
+  // stays in git history.
   let persistTimer: ReturnType<typeof setTimeout> | undefined;
   function schedulePersist() {
     clearTimeout(persistTimer);
@@ -61,10 +59,11 @@ const VersionDiffView: Component<{
     }, 400);
   }
 
-  /** Per-chunk control: only "Restore" (revert this region to the old version).
-   *  "Accept" is intentionally omitted — in a unified merge it would rewrite the
-   *  *comparison baseline*, which is meaningless here (the baseline is the chosen
-   *  past version, not something to mutate). */
+  /**
+   * Per-chunk control: only "Restore" (revert this region to the old version).
+   * "Accept" would change the comparison base, which here is the chosen past
+   * version.
+   */
   function chunkControl(type: "accept" | "reject", action: (e: MouseEvent) => void): HTMLElement {
     if (type === "accept") return document.createElement("span");
     const btn = document.createElement("button");
@@ -90,10 +89,8 @@ const VersionDiffView: Component<{
         state: EditorState.create({
           doc: current,
           extensions: [
-            // Not typeable (a compare view, not free editing), but the per-chunk
-            // Restore buttons dispatch programmatically, so reverting a single
-            // change still works. `editable:false` blocks DOM input; it does not
-            // block those dispatches.
+            // Not typeable, but the Restore buttons still work: `editable:false`
+            // blocks typing, not the buttons' transactions.
             EditorView.editable.of(false),
             EditorView.lineWrapping,
             unifiedMergeView({
@@ -109,15 +106,12 @@ const VersionDiffView: Component<{
             EditorView.theme({
               "&": { height: "100%" },
               ".cm-scroller": { fontFamily: "var(--editor-font, var(--font-mono))" },
-              // The merge base theme (a) positions the per-chunk controls
-              // `position: absolute` at the chunk's top-right — which collapses
-              // to invisible on a pure-insertion chunk (its deleted-text widget
-              // has no height) — and (b) styles `.cm-deletedChunk button` as
-              // white-on-transparent (meant for its coloured accept/reject
-              // backgrounds). Both rules out-specify a plain class, so we
-              // override them here in the editor theme (higher precedence than
-              // the base theme): float the controls into normal flow and give the
-              // Restore button the app's muted-button look so it's actually visible.
+              // The merge base theme places the chunk controls with `position:
+              // absolute` at the chunk's top right, where they vanish on a pure
+              // insertion (its deleted-text widget has no height), and styles
+              // `.cm-deletedChunk button` white on transparent. Both outrank a plain
+              // class, so they are overridden in the editor theme: the controls go
+              // into normal flow, and Restore gets the app's muted button look.
               ".cm-deletedChunk": {
                 position: "relative",
                 backgroundColor: "color-mix(in srgb, var(--accent-danger) 8%, transparent)",
@@ -145,11 +139,11 @@ const VersionDiffView: Component<{
                 background: "var(--bg-hover)",
                 color: "var(--fg-secondary)",
               },
-              // Added and removed text differ by shape as well as colour, so
-              // the difference still reads without telling the colours apart:
-              // added text is underlined, removed text is struck through, and
-              // the margin shows + / − instead of a thin coloured bar. The
-              // selectors match the merge base theme's so these win over it.
+              // Added and removed text differ in shape as well as colour, so
+              // the difference reads without distinguishing colours: added text
+              // is underlined, removed text struck through, and the margin
+              // shows + / −. The selectors match the merge base theme's so
+              // these win.
               "&.cm-merge-b .cm-changedLine": {
                 backgroundColor: "color-mix(in srgb, var(--accent-success) 8%, transparent)",
               },

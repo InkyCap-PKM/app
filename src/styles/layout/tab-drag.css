@@ -1,15 +1,13 @@
-/* Tab drag-to-reorder feedback.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Tab drag-to-reorder feedback. Part of layout.css, whose import order (see
+   ../layout.css) keeps the cascade. */
 
 /* Tab drag-to-reorder */
 .tab--dragging {
   opacity: 0.5;
 }
 
-/* Insertion line shown on the side of the hovered tab the pointer is
-   nearest. Drawn with an inset box-shadow rather than a border so the
-   tab's content doesn't shift sideways as the cue appears. */
+/* Insertion line on the side of the hovered tab nearest the pointer, an
+   inset box-shadow rather than a border so the tab's content doesn't move. */
 .tab--drop-before {
   box-shadow: inset 2px 0 0 0 var(--accent);
 }

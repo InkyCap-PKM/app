@@ -1,15 +1,13 @@
-// ColorPicker — accent-color picker used in the Appearance settings panel.
-// Native `<input type="color">` wheel + hex text input, with an inline
-// WCAG contrast warning when the chosen color fails non-text contrast
-// against either InkyCap background.
+// Accent colour picker for Appearance settings: the native `<input
+// type="color">` and a hex field, with a WCAG warning when the colour fails
+// non-text contrast against either InkyCap background.
 
 import { Show } from "solid-js";
 import { passesNonTextContrast } from "../lib/contrast";
 import { useI18n } from "../lib/i18n";
 
-// Backgrounds the accent renders against. Kept in sync with themes.css
-// (`--bg-primary` for light and dark default palettes). If those values
-// move, update here too.
+// Backgrounds the accent appears on. Must match `--bg-primary` for the light
+// and dark default palettes in themes.css.
 const LIGHT_BG = "#fafafa";
 const DARK_BG = "#071e22";
 

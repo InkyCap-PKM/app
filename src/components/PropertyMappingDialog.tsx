@@ -1,15 +1,15 @@
 /**
- * PropertyMappingDialog — the in-between step of markdown import.
+ * PropertyMappingDialog: the middle step of Markdown import.
  *
- * After the user picks an archive and InkyCap scans its YAML frontmatter,
- * this dialog shows every distinct property found and how it will map onto
- * an InkyCap property. Each row lets the user:
- *   - re-map the YAML key to a different system / existing property,
- *   - auto-create a new property (and choose its value type),
- *   - or exclude the property from the import entirely.
+ * After the archive's YAML frontmatter is scanned, this shows each property
+ * found and the InkyCap property it will map to. For each row the user can:
  *
- * System properties are type-locked (their type column is disabled). On
- * confirm the assembled mappings are handed back to the importer.
+ *   - map the YAML key to another system or existing property,
+ *   - create a new property (and choose its type),
+ *   - or leave the property out.
+ *
+ * System properties have fixed types (the type column is disabled). On confirm
+ * the mappings go back to the importer.
  */
 
 import { For, Show, createMemo } from "solid-js";
@@ -50,10 +50,9 @@ const TYPE_LABEL_KEYS: Record<PropertyType, string> = {
   checkbox: "property.type.checkbox",
 };
 
-// Concrete types the user may assign to a newly-created property. "auto" is
-// intentionally excluded — a new property always gets a concrete type
-// (defaulting to the type inferred from the YAML values). Labels resolve
-// through i18n at render time.
+// Types a new property can be given. "auto" isn't offered: a new property
+// always gets a real type (by default the one inferred from the YAML). Labels
+// are translated when shown.
 const TYPE_VALUES: PropertyType[] = [
   "text", "number", "list", "commalist", "date", "datetime", "checkbox",
 ];
@@ -116,9 +115,8 @@ export function PropertyMappingDialog(props: PropertyMappingDialogProps) {
     () => new Set(systemTargets().map((t) => t.key.toLowerCase())),
   );
 
-  // "Create new" is always available — the user names the property (defaulting
-  // to the YAML key) — alongside mapping onto any existing system/user property
-  // or excluding it.
+  // "Create new" (named after the YAML key by default) is always offered, along
+  // with any existing property and excluding it.
   const targetOptions = (): DropdownOption<string>[] => [
     { value: CREATE, label: t("import.mapping.createNew"), group: t("import.mapping.groupNewExclude") },
     { value: SKIP, label: t("import.mapping.dontImport"), group: t("import.mapping.groupNewExclude") },
@@ -126,10 +124,10 @@ export function PropertyMappingDialog(props: PropertyMappingDialogProps) {
     ...userTargets().map((opt) => ({ value: opt.key, label: opt.key, group: t("import.mapping.groupUser") })),
   ];
 
-  // The effective value type a row will be formatted as — fixed for an
-  // existing/system target, user-chosen for a new property. An existing
-  // target that's still untyped ("auto") resolves to the type inferred from
-  // the YAML values, so the locked Type cell never shows "Auto".
+  // The type a row's values are formatted as: fixed for an existing or system
+  // property, chosen for a new one. An existing property still set to "auto"
+  // uses the type inferred from the YAML, so the locked Type cell never shows
+  // "Auto".
   const effectiveType = (i: number): PropertyType => {
     const s = sel[i];
     if (s.choice === CREATE) return s.createType;

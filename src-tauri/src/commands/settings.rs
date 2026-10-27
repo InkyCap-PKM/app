@@ -1,10 +1,7 @@
-// IPC commands for reading and writing settings.
-//
-// Settings come in two flavors: user-global (`UserSettings`, persisted at
-// `$CONFIG_DIR/inkycap/settings.json`) and per-notebox (`NoteboxSettings`,
-// persisted at `<notebox>/.inkycap/settings.json`). Each has its own pair
-// of read/write commands so the frontend can route a field-update to the
-// right backing store.
+// Commands for reading and writing settings. There are user settings
+// (`UserSettings`, in `$CONFIG_DIR/inkycap/settings.json`) and per-notebox
+// settings (`NoteboxSettings`, in `<notebox>/.inkycap/settings.json`), each
+// with its own read and write commands.
 
 use tauri::State;
 
@@ -14,10 +11,9 @@ use crate::scaffolds;
 use crate::settings::UserSettings;
 use crate::state::AppState;
 
-/// Resolve the effective bibliography style by overlaying the per-notebox
-/// custom CSL path on top of the user-global named style. The notebox's
-/// override (if any) wins; otherwise the user-global style is used, unless
-/// it's the sentinel value "custom" without a path (no style set).
+/// The bibliography style in effect: the notebox's custom CSL path if set,
+/// otherwise the user's named style, unless that is "custom" without a path (no
+/// style).
 fn resolve_bibliography_style(
     global: &crate::settings::CitationSettings,
     notebox: &crate::notebox_settings::NoteboxCitationSettings,
@@ -38,9 +34,8 @@ pub async fn get_settings(state: State<'_, AppState>) -> Result<UserSettings> {
     Ok(settings.clone())
 }
 
-/// Merge partial updates into the user-global settings and persist.
-/// Accepts a full UserSettings object — the frontend sends the complete
-/// updated settings after modifying whichever fields changed.
+/// Save the user settings. The frontend sends the whole updated UserSettings
+/// object.
 #[tauri::command]
 pub async fn update_settings(
     state: State<'_, AppState>,
@@ -50,9 +45,8 @@ pub async fn update_settings(
     let session = state.session(window.label()).await;
     crate::settings::save_settings(&settings)?;
 
-    // Propagate the citation-style change to the Typst compiler so a global
-    // style swap takes effect without reopening the notebox. The current
-    // notebox's `custom_csl_path` still wins if set.
+    // Pass a citation style change to the compiler so it applies without
+    // reopening the notebox. The notebox's `custom_csl_path` still wins if set.
     {
         let notebox = session.notebox_settings.read().await;
         if let Some(compiler) = session.typst_compiler.lock().await.as_mut() {
@@ -63,19 +57,15 @@ pub async fn update_settings(
 
     *state.settings.write().await = settings;
 
-    // Backup settings may have changed (interval, path, etc.). Wake
-    // the scheduler so a fresh interval takes effect immediately
-    // instead of at the next natural tick. Cheap and idempotent —
-    // safe to fire on every settings update even when nothing about
-    // backup changed.
+    // Backup settings may have changed (interval, path, …), so wake the
+    // scheduler to use them now. Harmless when nothing changed.
     crate::backup::schedule::wake_now(&state);
 
     Ok(())
 }
 
-/// Return the current notebox's settings. Returns defaults if no notebox
-/// is open — the frontend should not act on those values until a notebox
-/// is loaded.
+/// The current notebox's settings, or defaults if no notebox is open (which the
+/// frontend shouldn't act on).
 #[tauri::command]
 pub async fn get_notebox_settings(
     state: State<'_, AppState>,
@@ -86,9 +76,8 @@ pub async fn get_notebox_settings(
     Ok(settings.clone())
 }
 
-/// Persist the per-notebox settings and reapply downstream effects
-/// (compiler style, Zotero export). Errors out if no notebox is open —
-/// there's no destination to write to.
+/// Save the notebox settings and apply their effects (compiler style, Zotero
+/// export). An error if no notebox is open.
 #[tauri::command]
 pub async fn update_notebox_settings(
     state: State<'_, AppState>,
@@ -115,9 +104,9 @@ pub async fn update_notebox_settings(
         }
     }
 
-    // When the citation source is Zotero (or the bib path changed), refresh
-    // the notebox-local export/bibliography pointer so file-watching and
-    // explicit #bibliography() calls resolve.
+    // For a Zotero citation source (or a changed bib path), refresh the
+    // notebox's exported bibliography so file watching and `#bibliography()`
+    // calls find it.
     {
         let global = state.settings.read().await;
         crate::state::configure_bibliography(&notebox_root, &global.citations, &settings.citations);

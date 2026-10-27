@@ -1,18 +1,14 @@
-//! Re-exports of the `typst` crate's public AST and value types for the few
-//! call sites *outside* the compile pipeline that legitimately need them.
+//! Re-exports of the `typst` crate's syntax and value types for the few places
+//! outside the compile pipeline that need them.
 //!
-//! Why this module exists (CLAUDE.md Typst-first / the typst-upgrade runbook):
-//! a compiler bump's two real costs are finding which call sites broke and
-//! confirming output didn't shift. We attack the first by confining every
-//! `use typst::*` import to `typst_pipeline/`, so a bump's blast radius is one
-//! directory. The search projector ([`crate::search::text_projection`]) and the
-//! recurrence parser ([`crate::models::recurrence`]) need the real syntax/value
-//! types — they parse and walk the same AST the compiler does — so they import
-//! them from here rather than reaching for `typst::` directly.
+//! Every `use typst::*` is kept inside `typst_pipeline/`, so a Typst upgrade's
+//! breakage is in one folder. The search projector
+//! ([`crate::search::text_projection`]) and the recurrence parser
+//! ([`crate::models::recurrence`]) walk the same syntax tree as the compiler,
+//! so they import the types from here instead of `typst::` directly.
 //!
-//! These are pure re-exports, not wrappers: the consumers need the genuine
-//! types. Exposing a new symbol to the rest of the tree means adding it here,
-//! which keeps the `use typst::` surface greppable and in one place.
+//! Plain re-exports, not wrappers. Making another type available elsewhere
+//! means adding it here.
 
 pub use typst::foundations::{Dict, Value};
 pub use typst::syntax::{ast, parse, LinkedNode, Side, SyntaxKind};

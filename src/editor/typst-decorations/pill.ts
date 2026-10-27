@@ -1,10 +1,7 @@
-// Universal pill chip + super-context-menu for the visual editor.
-//
-// See documentation/developer/visual-editor/pill-system.md for the design
-// rules (R1–R11) this module implements. In short: every pill in the
-// visual editor renders the same chip DOM, has the same hover/focus
-// state, is keyboard accessible, and opens the same super-menu on
-// left-click, right-click, and Enter/Space.
+// The pill chip and its menu for the visual editor. Every pill uses the same
+// chip, hover and focus states and keyboard access, and opens the same menu on
+// left-click, right-click and Enter/Space. See
+// documentation/developer/visual-editor/pill-system.md.
 
 import { type EditorView, WidgetType } from "@codemirror/view";
 import { expandFunc } from "./effects";
@@ -27,9 +24,9 @@ export interface PillMenuItem {
   isActive?: boolean;
   /** Optional tooltip. */
   title?: string;
-  /** Optional longer help text. Renders a circled "?" trigger next to the
-   *  item's label that reveals this text inline within the menu — for
-   *  explanations too long to sit comfortably in a tooltip or placeholder. */
+  /**
+   * Longer help text, shown inline in the menu through a "?" next to the label.
+   */
   help?: string;
   /** Disable this item (renders dimmed, not clickable). */
   disabled?: boolean;
@@ -39,9 +36,10 @@ export interface PillMenuItem {
   /** When true, clicking does not close the menu (e.g. for live-edit
    *  fields like color swatches that should let the user try several). */
   keepOpen?: boolean;
-  /** Render this item as an inline input instead of a button.
-   *  When set, `onSelect` is ignored — `input.onCommit` fires when the
-   *  user presses Enter or the field loses focus, and the menu closes. */
+  /**
+   * Show the item as an input instead of a button. `onSelect` is ignored;
+   * `input.onCommit` runs on Enter or blur, and the menu closes.
+   */
   input?: {
     /** Current value to populate the field with. A colour field takes a
      *  `#rrggbb` string. */
@@ -66,18 +64,19 @@ export interface PillModel {
   callTo: number;
   /** Per-pill widget options sections (Section 1 in the menu). */
   optionSections?: PillMenuSection[];
-  /** Override the "Edit source" action (defaults to dispatching
-   *  `expandFunc` against `callFrom`). Used by embedded pills (verse,
-   *  bibliography) where "expanding" doesn't apply the same way. */
+  /**
+   * Replaces the "Edit source" action (default: `expandFunc` at `callFrom`),
+   * for embedded pills (verse, bibliography).
+   */
   onEditSource?: (view: EditorView) => void;
   /** When false, suppress the "Edit source" item even for simple calls
    *  (e.g. embedded pills where the widget's canvas IS the editor). */
   allowEditSource?: boolean;
-  /** When true, pill left-click always runs `runEditSource` regardless
-   *  of the simple/complex classifier (R5/R8). Used for block content-
-   *  bracket pills (callout, quote) where the body is the whole point —
-   *  the user almost always wants the source revealed for editing, not
-   *  the menu. The menu remains reachable via right-click. */
+  /**
+   * When true, left-click always reveals the source, whatever the call's
+   * complexity. For callout and quote, whose body is the content. Right-click
+   * still opens the menu.
+   */
   alwaysExpandOnClick?: boolean;
 }
 
@@ -99,28 +98,27 @@ export function pillHiddenRange(el: HTMLElement): SourceRange | null {
 
 // ── PillChip widget ─────────────────────────────────────────────────
 
-/** Build the canonical pill DOM: a `<button>` with a circled hash + label.
- *
- *  This is the single source of truth for pill appearance and event
- *  surface. All call sites — inline pills, block-pill-rows, verse,
- *  bibliography — must go through this builder so R1 (single visual
- *  identity), R2 (hover/focus), and R3 (keyboard accessible) are
- *  guaranteed by construction. */
+/**
+ * Build the pill DOM: a `<button>` with a circled hash and a label. Every pill
+ * must use this, so they all look and behave the same.
+ */
 export function buildPillButton(
   funcName: string,
   view: EditorView,
   modelFor: () => PillModel,
-  /** Presentation overrides for pills that aren't a single named call —
-   *  e.g. the document-style preamble chip, which shows a custom label plus a
-   *  rule-count accessory. Defaults reproduce the standard `funcName` chip. */
+  /**
+   * Overrides for pills that aren't one named call, such as the style preamble
+   * chip with its own label and rule count.
+   */
   opts?: {
     label?: string;
     title?: string;
     accessory?: Node;
-    /** For a pill that replaces its source rather than sitting beside it
-     *  (an annotation, a comment, a `#set` rule): the source it stands in
-     *  for, so a search match hidden there can be shown on the pill (see
-     *  hidden-match-pills.ts). */
+    /**
+     * For a pill that stands in for its source (an annotation, a comment, a
+     * `#set` rule): that source, so a search match hidden there can be shown on
+     * the pill (see hidden-match-pills.ts).
+     */
     hides?: () => SourceRange;
   },
 ): HTMLButtonElement {
@@ -142,29 +140,24 @@ export function buildPillButton(
   if (opts?.accessory) btn.appendChild(opts.accessory);
   if (opts?.hides) hiddenRanges.set(btn, opts.hides);
 
-  // Don't let a mousedown on the pill move CodeMirror's selection or
-  // start a text drag. The actual action runs on click so that focus
-  // moves to the pill and keyboard users can re-trigger via Enter.
+  // Keep mousedown from moving the selection or starting a drag. The action
+  // runs on click, so focus lands on the pill and Enter repeats it.
   btn.addEventListener("mousedown", (e) => {
     e.preventDefault();
     e.stopPropagation();
   });
-  // Same for right-click: prevent the native context menu, then open
-  // ours on the contextmenu event itself (not click), so users get
-  // the menu on the gesture they expect.
+  // Open our menu on contextmenu instead of the native one.
   btn.addEventListener("contextmenu", (e) => {
     e.preventDefault();
     e.stopPropagation();
     openPillMenu(btn, view, modelFor());
   });
-  // R5 click model:
-  //   simple pill  → enter inline source-edit directly (low-friction primary).
-  //   complex pill → open the super-menu (inline edit isn't safe).
-  //   embedded pill (allowEditSource === false) → open the super-menu
-  //     (verse / bibliography have no inline-source mode — their canvas
-  //     is the editor).
-  // Right-click always opens the menu (handler above) so every pill keeps
-  // the universal escape hatch regardless of complexity.
+  // Click:
+  //   - simple pill: edit its source inline
+  //   - complex pill: open the menu
+  //   - embedded pill (allowEditSource false, e.g. verse, bibliography): open
+  //     the menu
+  // Right-click always opens the menu.
   btn.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -180,25 +173,24 @@ export function buildPillButton(
       openPillMenu(btn, view, model);
     }
   });
-  // Enter / Space already trigger click on a <button>, so keyboard
-  // accessibility (R3) falls out of using the right element.
+  // Enter / Space already click a <button>, so keyboard access comes from
+  // using the right element.
 
   return btn;
 }
 
-/** Convenience wrapper for inline-flow pills that fire `expandFunc`
- *  with no per-pill options. Replaces the old `FuncPillWidget` and
- *  `FuncChipWidget` from visual-plugin.ts.
- *
- *  Call sites that need options should call `buildPillButton` directly
- *  with a `modelFor` closure that returns the appropriate `optionSections`. */
+/**
+ * An inline pill that fires `expandFunc` with no options of its own. Pills with
+ * options use `buildPillButton` with a `modelFor` returning `optionSections`.
+ */
 export class PillChip extends WidgetType {
   constructor(
     readonly pos: number,
     readonly funcName: string,
-    /** Document offset of the end of the call. If unknown, pass `pos + 1`
-     *  and the universal Copy/Duplicate/Delete actions will fall back to
-     *  expanding the call first. */
+    /**
+     * End offset of the call. If unknown, pass `pos + 1`; Copy, Duplicate and
+     * Delete then find the end themselves.
+     */
     readonly callTo: number = -1,
   ) {
     super();
@@ -221,15 +213,15 @@ export class PillChip extends WidgetType {
   ignoreEvent(): boolean { return true; }
 }
 
-// ── openPillMenu — the super-context-menu (R6) ──────────────────────
+// ── openPillMenu: the pill's context menu ──────────────────────────
 
-/** Render and show the super-menu anchored to `anchor`. The menu has
- *  three sections per R6:
- *    1. widget-specific options (model.optionSections)
- *    2. source access (Edit source / Open in source editor)
- *    3. universal actions (Copy / Duplicate / Delete)
- *
- *  Closes on outside click, Escape, or after a non-keepOpen item runs. */
+/**
+ * Show the pill menu at `anchor`, in three sections:
+ *   1. the pill's own options (model.optionSections)
+ *   2. Edit source / Open in source editor
+ *   3. Copy / Duplicate / Delete
+ * Closes on outside click, Escape, or after an item runs (unless keepOpen).
+ */
 export function openPillMenu(
   anchor: HTMLElement,
   view: EditorView,
@@ -308,9 +300,8 @@ export function openPillMenu(
   document.addEventListener("mousedown", onDocMouse, true);
   document.addEventListener("keydown", onDocKey, true);
 
-  // Focus the first interactive element so keyboard users can act
-  // immediately. Prefer an input if one is present (inline-input rows
-  // are the most common reason a user opened the menu via keyboard).
+  // Focus the first input, or else the first item, so keyboard users can act at
+  // once.
   const firstInput = menu.querySelector<HTMLInputElement>(".cm-typst-pill-menu-input");
   if (firstInput) {
     firstInput.focus();
@@ -339,9 +330,7 @@ function buildMenuItem(item: PillMenuItem, close: () => void): HTMLElement {
   label.textContent = item.label;
   el.appendChild(label);
 
-  // The checkmark sits on the right side of the row so the eye scans
-  // labels left-to-right without the indentation jitter that a
-  // left-side check would introduce on inactive items.
+  // The checkmark goes on the right so labels stay aligned.
   if (item.isActive) {
     const check = document.createElement("span");
     check.className = "cm-typst-pill-menu-check";
@@ -370,9 +359,8 @@ function buildInputItem(item: PillMenuItem, close: () => void): HTMLElement {
   label.textContent = item.label;
   wrap.appendChild(label);
 
-  // Optional inline help: a circled "?" next to the label toggles a wrapped
-  // explanation on its own line within the menu. Kept inside the menu DOM (not
-  // a portalled popover) so the menu's outside-click dismissal leaves it be.
+  // Optional help: a "?" next to the label shows the text on its own line.
+  // Inside the menu, so outside-click closing ignores it.
   let helpBlock: HTMLElement | null = null;
   if (item.help) {
     const helpWrap = document.createElement("span");
@@ -437,9 +425,8 @@ function buildInputItem(item: PillMenuItem, close: () => void): HTMLElement {
       item.input!.onCommit(input.value);
     }
   });
-  // A colour picker never blurs while the user drags around it, and closing it
-  // is the moment they have chosen — commit on `change` and leave the menu open
-  // so they can try another colour against the live preview.
+  // A colour picker doesn't blur while in use; commit on `change` and keep the
+  // menu open to try other colours.
   if (isColor) {
     input.addEventListener("change", () => {
       if (input.value === initial) return;
@@ -457,13 +444,12 @@ function buildInputItem(item: PillMenuItem, close: () => void): HTMLElement {
 
 // ── Source section (R8: simple vs complex) ──────────────────────────
 
-/** Run the "Edit source" action for a pill. Used both by the menu item
- *  and by the simple-pill left-click shortcut (R5), so the destination
- *  is identical whichever path the user takes. */
+/**
+ * The "Edit source" action, shared by the menu item and the simple-pill click.
+ */
 export function runEditSource(view: EditorView, model: PillModel): void {
-  // A selection inside the hidden source (Find leaves its current match
-  // selected there) stays where it is once the source shows, so the match
-  // keeps its highlight instead of the caret jumping to the call's start.
+  // Keep a selection inside the hidden source (Find's current match) where it
+  // is, so the match stays highlighted.
   const sel = view.state.selection.main;
   const held = !sel.empty && sel.from >= model.callFrom && sel.to <= model.callTo
     ? { anchor: sel.anchor, head: sel.head }
@@ -484,9 +470,8 @@ function buildSourceSection(view: EditorView, model: PillModel): PillMenuSection
   const items: PillMenuItem[] = [];
   const allowEdit = model.allowEditSource !== false;
   if (allowEdit) {
-    // Show "Edit source" when either the call is simple by the R8
-    // classifier, or the pill explicitly opts into always-expand
-    // behaviour (R5: callout / quote where the body is the point).
+    // Offer "Edit source" for simple calls, or when the pill always expands
+    // (callout, quote).
     const expandable = model.alwaysExpandOnClick === true
       || isSimpleCall(view, model.callFrom, model.callTo);
     if (expandable) {
@@ -634,11 +619,11 @@ function buildUnwrapItem(
 
 // ── Simple/complex classifier (R8) ──────────────────────────────────
 
-/** A pill call is "simple" — and thus may offer inline "Edit source" — when:
- *    - the call source fits on one line,
- *    - its source length is ≤ 120 chars,
- *    - it contains at most one level of nested function calls.
- *  Anything else routes the user to "Open in source editor" instead. */
+/**
+ * A call is simple (and can be edited inline) when it fits on one line, is at
+ * most 120 characters, and nests at most one call. Otherwise "Open in source
+ * editor" is offered.
+ */
 export function isSimpleCall(view: EditorView, from: number, to: number): boolean {
   if (to <= from) return true;
   const len = view.state.doc.length;
@@ -659,16 +644,12 @@ export function isSimpleCall(view: EditorView, from: number, to: number): boolea
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
-/** Find the end offset of the function call starting at `pos` (where
- *  source[pos] === '#'). Walks the source forward, tracking parens and
- *  brackets, treating strings as opaque. Returns the offset just past
- *  the final closing delimiter, or `pos + 1` if the call has no
- *  delimiters (e.g. a bare `#pagebreak` reference, though Typst calls
- *  in our editor always include `()` or `[]`).
- *
- *  This is a fallback used when callers don't supply `callTo`. Most
- *  pill construction sites already know the call range from their
- *  decoration logic and should pass it explicitly. */
+/**
+ * End offset of the call starting at `pos` (a `#`): walks forward balancing
+ * parens and brackets, skipping strings, and returns the offset after the last
+ * delimiter, or `pos + 1` if there is none. A fallback for callers that don't
+ * pass `callTo`.
+ */
 export function findCallEnd(viewOrState: EditorView | { doc: { length: number; sliceString: (a: number, b: number) => string } }, pos: number): number {
   // Accept either an EditorView (most call sites) or a plain { doc }
   // so a StateField update fn can call this without smuggling a view in.
@@ -689,21 +670,17 @@ export function findCallEnd(viewOrState: EditorView | { doc: { length: number; s
   return Math.min(pos + i, docLen);
 }
 
-// ── Named-argument upsert (R7 / R11) ────────────────────────────────
+// ── Named-argument upsert ────────────────────────────────────────────
 //
-// Single source of truth for editing one named argument inside a Typst
-// function call's source — used by every per-pill option (image alt,
-// quote attribution, callout kind, highlight color, etc.). Generalizes
-// the precedent set by VerseWidget.upsertAlignArg.
-//
-// Mutating only the targeted arg (and dropping it entirely when its
-// value matches the function's default) keeps surrounding whitespace
-// and untouched arguments byte-identical, satisfying the source ↔
-// visual round-trip invariant (R11 / CLAUDE.md).
+// Edits one named argument in a call's source, for every pill option (image
+// alt, quote attribution, callout kind, highlight colour, …). Only that
+// argument changes (it is removed when set to the function's default), so
+// whitespace and other arguments stay byte for byte.
 
-/** Locate the `(...)` argument list inside a call's source. Returns
- *  inclusive offsets of the opening and closing parens within
- *  `callSource`, or null if the call has no parens (e.g. `#highlight[…]`). */
+/**
+ * The opening and closing paren offsets (inclusive) of the call's argument
+ * list, or null without one (e.g. `#highlight[…]`).
+ */
 export function findArgList(callSource: string): { open: number; close: number } | null {
   const open = callSource.indexOf("(");
   if (open < 0) return null;
@@ -726,10 +703,11 @@ export function findArgList(callSource: string): { open: number; close: number }
   return null;
 }
 
-/** Find a named arg `name: <value>` inside an args string. Returns `null` if
- *  not present. `from..to` covers just the value (everything after `name:` and
- *  any whitespace, up to the next top-level `,` or end of string); `keyFrom` is
- *  where the name itself starts, for callers that need the whole argument. */
+/**
+ * A named argument `name: <value>` in an argument string, or `null`. `from..to`
+ * is the value (up to the next top-level `,` or the end); `keyFrom` is where
+ * the name starts.
+ */
 export function findNamedArgValue(
   argsText: string,
   name: string,
@@ -761,10 +739,11 @@ export interface UpsertOptions {
   defaultValue?: string;
 }
 
-/** Upsert a single named argument inside a call's source. Returns the
- *  rewritten call source. If the arg is already present, replaces just
- *  its value range; otherwise inserts `name: value` at the end of the
- *  arg list (creating the arg list if the call has none). */
+/**
+ * Set one named argument in a call's source and return the result: replace its
+ * value if present, otherwise add `name: value` at the end (creating the
+ * argument list if needed).
+ */
 export function upsertNamedArg(
   callSource: string,
   name: string,
@@ -794,11 +773,9 @@ export function upsertNamedArg(
   let newArgs: string;
   if (existing) {
     if (shouldDrop) {
-      // Remove the whole `name: value`, plus one adjoining comma so the
-      // remaining arguments stay well formed. The value's extent comes from
-      // `findNamedArgValue`, which walks nesting and string literals, so a
-      // value carrying commas of its own (`rgb(255, 145, 0)`) is removed whole
-      // rather than cut in half.
+      // Remove the whole `name: value` and one comma beside it.
+      // `findNamedArgValue` handles nesting and strings, so a value with commas
+      // (`rgb(255, 145, 0)`) is removed whole.
       let cutFrom = existing.keyFrom;
       let cutTo = existing.to;
       // Eat the space after the comma too, so the argument that follows keeps
@@ -835,9 +812,10 @@ export function readNamedArg(callSource: string, name: string): string | null {
   return argsText.substring(range.from, range.to).trim();
 }
 
-/** Read the first positional string argument (e.g. callout kind, image
- *  path). Returns the string content (without surrounding quotes), or
- *  null if not found. */
+/**
+ * The first positional string argument without quotes (e.g. callout kind, image
+ * path), or null.
+ */
 export function readFirstPositionalString(callSource: string): string | null {
   const argList = findArgList(callSource);
   if (!argList) return null;
@@ -859,22 +837,15 @@ export function replaceFirstPositionalString(callSource: string, newValue: strin
   return callSource.substring(0, argList.open + 1) + newArgs + callSource.substring(argList.close);
 }
 
-/** Apply a call-source-level transform to the document. Reads the
- *  current call source starting at `from` (the `#` of the call),
- *  runs `transform`, and dispatches a transaction with the new source
- *  if it changed. Used by all per-pill option handlers.
+/**
+ * Apply `transform` to the call starting at `from` (its `#`) and dispatch the
+ * result if it changed. Used by every pill option.
  *
- *  The call's end offset is re-resolved from the live document via
- *  `findCallEnd` on every invocation. This is the load-bearing detail:
- *  option builders capture `from`/`to` once when the menu opens, but
- *  if the user commits two menu fields in sequence (e.g. image width
- *  then alt), the first commit grows the call and any stored `to` is
- *  stale by the second. Using the stale `to` slices a truncated call,
- *  `findArgList` fails to find the matching `)`, and the no-arglist
- *  branch of `upsertNamedArg` wraps the new arg in parens at the wrong
- *  spot — producing corruption like `#line(l(stroke: 2pt)ength: 50%)`.
- *  Re-resolving `to` here makes the helpers re-entrant safe regardless
- *  of how many commits the user makes against an open menu. */
+ * The call's end is found again from the live document each time. Option
+ * builders capture `from` / `to` when the menu opens, and an earlier commit can
+ * change the call's length, so a stored `to` would be stale and corrupt the
+ * source.
+ */
 export function applyCallTransform(
   view: EditorView,
   from: number,

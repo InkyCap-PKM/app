@@ -1,28 +1,15 @@
-//! Build a zip archive from a notebox root (and optionally the user-global
-//! config folder). Uses the `zip` crate's AES-256 mode when a password is
-//! supplied — see CLAUDE.md and the planning thread for why ZIP+AES-256
-//! over 7z / tar.gz.
+//! Build a zip archive of a notebox (and optionally the user config folder),
+//! using AES-256 when a password is given.
 //!
-//! Path handling notes (per CLAUDE.md's Windows guidance):
-//!
-//!   - **Inside the archive**, all entries use forward slashes — that's
-//!     the zip spec convention and lets the archive round-trip cleanly
-//!     across OSes.
-//!   - **Outside**, callers pass `PathBuf` (`std::path::Path`) so the
-//!     OS-native separator is preserved for filesystem I/O.
-//!   - **Symlinks are followed**, not stored as link entries — Windows
-//!     can't recreate them on restore in the general case, and a
-//!     followed-link archive extracts identically everywhere.
-//!   - **`.git/`, `.DS_Store`, `Thumbs.db`, `desktop.ini`** are skipped —
-//!     `.git/` because it's large and recoverable from the remote, the
-//!     OS files because they're machine-local cruft.
-//!   - **`.inkycap/git/`** is skipped — once the git-collaboration
-//!     feature ships, this is where the per-collection mirror worktrees
-//!     live. They're recoverable by re-fetching from the configured
-//!     remotes, and including them would balloon every backup with a
-//!     full duplicate of the working notebox. The rest of `.inkycap/`
-//!     is intentionally *not* excluded — it holds user-authored content
-//!     (templates, scaffolds, settings) that belongs in the archive.
+//! - Entries use forward slashes (the zip convention), so archives work across
+//!   OSes; callers pass native `PathBuf`s.
+//! - Symlinks are followed and stored as content, since Windows can't generally
+//!   recreate them.
+//! - `.git/`, `.DS_Store`, `Thumbs.db` and `desktop.ini` are skipped: `.git/`
+//!   is large and recoverable from the remote, the others are machine-local.
+//! - `.inkycap/git/` (git mirror worktrees, recoverable by fetching) is
+//!   skipped; the rest of `.inkycap/` (templates, scaffolds, settings) is
+//!   included.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -35,51 +22,37 @@ use crate::storage::zip_archive::ZipBuilder;
 
 /// Inputs for one archive build.
 pub struct ArchiveJob<'a> {
-    /// Absolute path to the notebox root. Every file under this folder
-    /// (minus excludes) is added to the archive at the prefix
-    /// `notebox/`. The notebox name (filename of the root) is *not* in
-    /// the interior path — the archive is "this is a notebox", and the
-    /// filename on disk carries the identity via the configured pattern.
+    /// The notebox root. Its files (minus exclusions) go under `notebox/`. The
+    /// notebox's own name isn't in the path; the archive's file name carries
+    /// it.
     pub notebox_root: &'a Path,
     /// Path the archive will be written to. Caller is responsible for
     /// pre-creating the destination folder.
     pub destination: &'a Path,
-    /// Optional path to the user-global config folder (typically
-    /// `~/.config/inkycap/`). When `Some`, its contents are added at
-    /// the prefix `user-config/`. `backup_state.json` is excluded
-    /// inside (circular self-reference).
+    /// The user config folder (usually `~/.config/inkycap/`), added under
+    /// `user-config/`, without `backup_state.json`.
     pub user_config_root: Option<&'a Path>,
     /// AES-256 password. `None` produces an unencrypted archive.
     pub password: Option<&'a str>,
-    /// Cooperative cancellation flag. Polled before each new file
-    /// entry and between 64KiB chunks within a large file, so a
-    /// cancel request on a multi-gigabyte attachment doesn't have to
-    /// wait until the next file boundary.
+    /// Cancel flag, checked before each file and between 64KiB chunks, so a
+    /// large file doesn't delay cancelling.
     pub cancel: Arc<AtomicBool>,
 }
 
-/// One entry added to the archive. Exposed for diagnostics / future
-/// progress reporting; the public `write` returns the count + total
-/// bytes for the settings UI's "Last backup: 1.2 MB" line.
+/// One entry added to the archive. `write` returns the count and total size for
+/// Settings' "Last backup" line.
 #[derive(Debug, Default)]
 pub struct ArchiveSummary {
     pub file_count: u64,
     pub uncompressed_bytes: u64,
 }
 
-/// Path components that we never include in the archive — applies to
-/// any segment of any path, not just the leaf. `.git/` is excluded
-/// here both because of the directory itself and any nested `.git`
-/// folders under submodules.
+/// Path components never included, anywhere in a path (so nested `.git` folders
+/// too).
 const DIRECTORY_EXCLUDES: &[&str] = &[".git"];
 
-/// Pairs of consecutive path components that, when found adjacent in
-/// the path, mark the subtree for exclusion. Used when a single
-/// segment name would be too broad — e.g. excluding `.inkycap/git/`
-/// (the per-collection git mirror worktrees) without excluding the
-/// rest of `.inkycap/`, which holds user content like templates and
-/// scaffolds. Match order is `(parent, child)` and is detected by
-/// scanning adjacent components anywhere in the path.
+/// Adjacent `(parent, child)` components that exclude a subtree, where one name
+/// alone would be too broad: `.inkycap/git/` without the rest of `.inkycap/`.
 const DIRECTORY_PAIR_EXCLUDES: &[(&str, &str)] = &[(".inkycap", "git")];
 
 /// Leaf filenames that we never include. OS-specific cruft that bloats
@@ -96,10 +69,7 @@ pub fn write(job: ArchiveJob<'_>) -> Result<ArchiveSummary> {
         )));
     }
 
-    // Refuse to write the archive into the very tree we're archiving —
-    // recursive backup-inside-notebox would either blow up the archive
-    // (it would try to read the file currently being written) or
-    // succeed with garbled contents. Cheap to detect; spare the user.
+    // Refuse to write the archive inside the folder being archived.
     let dest_canonical = job
         .destination
         .parent()
@@ -129,9 +99,8 @@ pub fn write(job: ArchiveJob<'_>) -> Result<ArchiveSummary> {
     )?;
 
     if let Some(cfg) = job.user_config_root {
-        // Skip backup_state.json inside the user-config snapshot so the
-        // archive's own "last_success" record doesn't end up inside the
-        // archive (a confusing artefact at restore time).
+        // Leave `backup_state.json` out of the config snapshot, so the archive
+        // doesn't contain its own "last success" record.
         add_tree(
             &mut builder,
             cfg,
@@ -147,12 +116,10 @@ pub fn write(job: ArchiveJob<'_>) -> Result<ArchiveSummary> {
     Ok(summary)
 }
 
-/// Walk one source tree, adding each file to the archive under `prefix/`.
-/// Directory entries are written for empty folders only — populated
-/// folders are implied by their files' paths, which is how most zip
-/// extractors expect things. The per-entry mechanics (AES, chunked
-/// streaming, cancellation) live in [`ZipBuilder`]; this function owns
-/// the tree walk, exclusion rules, and interior-path construction.
+/// Add one folder's files under `prefix/`, with entries only for empty folders
+/// (others are implied by their files). The per-entry work (AES, chunked
+/// streaming, cancelling) is in [`ZipBuilder`]; this does the walk, exclusions
+/// and entry paths.
 fn add_tree(
     builder: &mut ZipBuilder,
     src: &Path,
@@ -161,19 +128,14 @@ fn add_tree(
     summary: &mut ArchiveSummary,
     cancel: &Arc<AtomicBool>,
 ) -> Result<()> {
-    // follow_links(true): per CLAUDE.md/our planning thread, symlinks
-    // are stored as their target contents rather than as link entries.
-    // Keeps the archive portable to Windows where symlink restoration
-    // is second-class.
+    // Store symlinks' target contents, so the archive restores on Windows.
     let walker = WalkDir::new(src).follow_links(true).into_iter();
 
     for entry in walker {
         let entry = match entry {
             Ok(e) => e,
-            // Don't fail the whole archive on one bad file — log and
-            // skip. A common cause is a file the OS held a lock on
-            // (anti-virus, indexer), and the right behaviour is to
-            // carry on with the rest of the notebox.
+            // Log and skip a file that can't be read (often locked by antivirus
+            // or an indexer) rather than failing the whole archive.
             Err(e) => {
                 log::warn!("backup walker skipping entry: {e}");
                 continue;
@@ -192,9 +154,7 @@ fn add_tree(
         interior.push_str(prefix);
         for component in rel.components() {
             interior.push('/');
-            // Use OsStr lossy conversion; the archive metadata
-            // is best-effort UTF-8 anyway, and the zip spec
-            // doesn't carry per-component encoding intent.
+            // Lossy conversion; zip names are UTF-8 at best.
             interior.push_str(&component.as_os_str().to_string_lossy());
         }
 
@@ -271,9 +231,7 @@ pub fn list_matching_archives(dir: &Path, pattern: &str) -> Result<Vec<PathBuf>>
     let mut out: Vec<(std::time::SystemTime, PathBuf)> = Vec::new();
     let read = match std::fs::read_dir(dir) {
         Ok(r) => r,
-        // Missing destination folder is not a programmer error — it's
-        // a normal pre-first-run state. Return an empty list and let
-        // the runner create the folder if needed.
+        // A missing folder is normal before the first backup: return nothing.
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(e) => return Err(e.into()),
     };

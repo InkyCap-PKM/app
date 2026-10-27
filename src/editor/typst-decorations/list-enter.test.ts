@@ -3,16 +3,9 @@ import { EditorState } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { typstKeymap } from "./keymaps";
 
-// These editors are built without a Typst language, so there is no syntax
-// tree to consult — which is fine, because the keymap's list behaviour is
-// parser-independent (`continueList` works off the raw line text). They lock
-// in the source ↔ visual shared invariant that a double-Enter at the end of a
-// list exits to regular text.
-//
-// (An earlier version of this note claimed Vitest's Node environment cannot
-// import the codemirror-lang-typst WASM parser. It can — see
-// typst-snippet-lang.test.ts, which parses Typst directly. Tests that need a
-// real syntax tree are therefore possible; these simply don't need one.)
+// These editors have no Typst language, so no syntax tree; the list keymap
+// doesn't need one (`continueList` uses the line text). They check that in both
+// modes a double Enter at the end of a list returns to regular text.
 function mk(doc: string) {
   return new EditorView({
     state: EditorState.create({
@@ -68,11 +61,10 @@ describe("list Enter behaviour", () => {
     v.destroy();
   });
 
-  // Visual-mode tolerance: the bullet's atomic widget spans [line.from,
-  // afterMarker], so a click at the start of an item's text can round the caret
-  // to the line start. Enter must still split cleanly at the content start
-  // rather than inserting a newline ahead of the marker (which would double the
-  // bullet). Splitting at line start pushes the text down under a fresh marker.
+  // Visual mode: the bullet widget spans [line.from, afterMarker], so a click
+  // at the start of an item's text can put the caret at the line start. Enter
+  // must still split at the start of the content, not add a newline before the
+  // marker (which would double the bullet).
   it("splits at content start when the caret is rounded to the line start", () => {
     const v = mk("- apple");
     v.dispatch({ selection: { anchor: 0 } }); // line.from, before the marker
@@ -83,9 +75,8 @@ describe("list Enter behaviour", () => {
     v.destroy();
   });
 
-  // Visual-mode tolerance: if the caret lands back on the previous (non-empty)
-  // item after the empty bullet was inserted below, the second Enter still
-  // exits by clearing that trailing empty marker.
+  // Visual mode: if the caret ends up on the item above the new empty bullet, a
+  // second Enter still ends the list by removing that empty marker.
   it("ends the list when the caret sits on the item above an empty marker", () => {
     const doc = "- apple\n- ";
     const v = mk(doc);
@@ -98,9 +89,9 @@ describe("list Enter behaviour", () => {
 });
 
 describe("numbered list Enter leaves existing numbers alone", () => {
-  // An explicit `N.` is a literal Typst prints as typed. Enter writes only the
-  // new line; numbers are brought back into step on Tab and Shift+Tab, when
-  // the list's shape actually changes.
+  // An explicit `N.` is printed as typed. Enter only writes the new line;
+  // numbers are brought back in order on Tab and Shift+Tab, when the list's
+  // shape changes.
   it("inserts mid-list without rewriting the items below", () => {
     const doc = "1. one\n2. two\n3. three";
     const v = mk(doc);

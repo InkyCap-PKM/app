@@ -66,10 +66,9 @@ import { pillBoundaryNav, createBlockBodyCaretEntry } from "./pill-boundary-nav"
 import { leadingWhitespace } from "./list-scan";
 
 /**
- * Inline formatting wrapping the node currently being decorated. Mark
- * decorations cover the source text on their own, so this only matters for
- * replace widgets (wikilink, link): CM6 renders those outside any mark that
- * spans them, so they have to reproduce the surrounding formatting themselves.
+ * Inline formatting around the node being decorated. Replace widgets (wikilink,
+ * link) render outside any mark that spans them, so they reproduce this
+ * formatting themselves.
  */
 export interface InlineFormatting {
   bold: boolean;
@@ -95,17 +94,13 @@ const mathDisplay = Decoration.mark({ class: "cm-typst-math-display" });
 const labelMark = Decoration.mark({ class: "cm-typst-label" });
 const refMark = Decoration.mark({ class: "cm-typst-ref" });
 const refPlainMark = Decoration.mark({ class: "cm-typst-ref-plain" });
-// A standalone `@target` that resolves to neither a bibliography entry nor a
-// document label — a dangling/typo reference. Flagged so the writer notices it
-// won't resolve (the backend escapes it to literal text at compile time).
+// A standalone `@target` that matches no bibliography entry or document label,
+// flagged so the writer notices it won't resolve.
 const refBrokenMark = Decoration.mark({ class: "cm-typst-ref-broken" });
-// A small atomic widget that renders a fixed glyph in place of hidden markup —
-// e.g. the inline-quote smart quotes over `#quote[` / `]`, or the `[[` `]]` `::`
-// brackets that re-skin an editable `#wikilink(...)`. A widget (rather than CSS
-// ::before/::after) gives the caret a definite edge to bind to: a caret at the
-// boundary sits on the widget's near side, so it renders before/after the glyph
-// as expected rather than being pushed past a trailing pseudo-element (the
-// "cursor after the closing quote" bug).
+// An atomic widget showing a fixed glyph in place of hidden markup, such as the
+// smart quotes of an inline `#quote` or the `[[` `]]` brackets of an editable
+// wikilink. A widget, unlike a CSS pseudo-element, gives the caret a definite
+// edge on each side.
 class GlyphWidget extends WidgetType {
   constructor(private readonly glyph: string, private readonly className: string) {
     super();
@@ -126,32 +121,23 @@ class GlyphWidget extends WidgetType {
 // Inline #quote[…] smart quotes (U+201C `“` / U+201D `”`).
 const openQuote = Decoration.replace({ widget: new GlyphWidget("“", "cm-typst-quote-glyph") });
 const closeQuote = Decoration.replace({ widget: new GlyphWidget("”", "cm-typst-quote-glyph") });
-// Editable-wikilink brackets: a cursor-adjacent `#wikilink("Name", label: "L")`
-// is re-skinned as `[[Name::L]]`, hiding the call wrapper behind these widgets
-// while the name/label stay as live source text the picker still operates on.
+// Brackets that show a cursor-adjacent `#wikilink("Name", label: "L")` as
+// `[[Name::L]]`. The name and label stay as editable source text.
 const openWikiBracket = Decoration.replace({ widget: new GlyphWidget("[[", "cm-typst-wikilink-bracket") });
 const closeWikiBracket = Decoration.replace({ widget: new GlyphWidget("]]", "cm-typst-wikilink-bracket") });
 const wikiHeadingSep = Decoration.replace({ widget: new GlyphWidget("::", "cm-typst-wikilink-bracket") });
 // Styling for the editable note/heading text shown between the brackets.
 const wikilinkEditMark = Decoration.mark({ class: "cm-typst-wikilink-edit" });
-// Block #quote(block:true)[…] body while editing — italic + muted, bounded to
-// the body so text trailing after the closing `]` on the same line is NOT
-// styled as part of the quote (the bar + geometry come from the line deco).
+// Body of a block `#quote` while editing. Bounded to the body so text after the
+// closing `]` isn't styled as part of the quote.
 const blockquoteBodyMark = Decoration.mark({ class: "cm-typst-blockquote-body" });
 
-// `inclusiveEnd` so a replaced widget sitting at the heading's end boundary —
-// e.g. the `]]` close-bracket of an editable wikilink whose call ends the line
-// (`=== [[Name]]`), or a trailing inline `#tag`/`#footnote` — is drawn *inside*
-// the heading span and inherits its font size. Without it, CM closes the
-// heading span before that trailing widget, so it renders at base size while
-// the rest of the heading stays large.
+// `inclusiveEnd` keeps a widget at the heading's end (a wikilink's `]]`, a
+// trailing `#tag`) inside the heading span, so it renders at heading size.
 //
-// NB: a line decoration (class on `.cm-line`) was tried here to fix a selection
-// measurement glitch, but it broke the first body heading: the preamble's
-// multi-line `Decoration.replace` swallows the line break just before it, so the
-// heading's line decoration had no line of its own to attach to and was dropped.
-// The mark has no such dependency on a real line break, so we keep it. The
-// selection glitch is addressed at the selection-rendering layer instead.
+// A mark is used rather than a line decoration because the preamble's multi-line
+// replace swallows the line break before the first body heading, which would
+// drop a line decoration there.
 const headingMarks = [
   Decoration.mark({ class: "cm-typst-h1", inclusiveEnd: true }),
   Decoration.mark({ class: "cm-typst-h2", inclusiveEnd: true }),
@@ -166,8 +152,7 @@ const termSep = Decoration.mark({ class: "cm-typst-term-sep" });
 
 const hide = Decoration.replace({});
 
-/** Push a mark range only when the range is non-empty (from < to).
- *  CM6 throws "Mark decorations may not be empty" on zero-length marks. */
+/** Push a mark only when the range is non-empty; CM6 throws on empty marks. */
 function pushMark(decos: Range<Decoration>[], mark: Decoration, from: number, to: number) {
   if (from < to) decos.push(mark.range(from, to));
 }
@@ -206,18 +191,16 @@ function isOnCursorLine(state: EditorState, from: number, to: number, focused: S
   return false;
 }
 
-/** Layout of a block content-bracket call's edit state (`#callout(...)[…]`,
- *  `#quote(block: true)[…]`): which ranges are hidden together with the
- *  brackets, and which document lines make up the editable body.
+/**
+ * Layout of a block content-bracket call's edit state (`#callout(...)[…]`,
+ * `#quote(block: true)[…]`): which ranges are hidden with the brackets, and which
+ * lines make up the editable body.
  *
- *  The rendered widget shows only the body rows, so the edit state must too.
- *  When the body starts on the line after `[`, that line break (and any
- *  indentation) is hidden along with the opener; when `]` sits alone on its
- *  own line, the line break before it is hidden along with the closer. A blank
- *  line the writer left inside the body stays visible so a caret on it has
- *  somewhere to be. A body that is entirely whitespace hides only the brackets.
- *
- *  Pure string/line arithmetic, so it runs (and is tested) without the parser. */
+ * The edit state shows only the body rows, like the rendered widget. A line break
+ * right after `[` or right before a `]` on its own line is hidden with the
+ * bracket. Blank lines inside the body stay visible so the caret has somewhere to
+ * go. A body that is all whitespace hides only the brackets.
+ */
 export function blockEditLayout(
   state: EditorState,
   bodyFrom: number,
@@ -243,10 +226,11 @@ export function blockEditLayout(
   };
 }
 
-/** Per-line decorations for a block's edit state. Every line gets `className`;
- *  the first and last additionally get `cm-typst-block-edit-first` /
- *  `cm-typst-block-edit-last`, which the theme uses to add the outer gap and
- *  inner padding the rendered widget has. */
+/**
+ * Per-line decorations for a block's edit state. Every line gets `className`;
+ * the first and last also get `cm-typst-block-edit-first` / `-last` for the
+ * outer gap and padding.
+ */
 function pushBlockEditLines(
   decos: Range<Decoration>[],
   state: EditorState,
@@ -267,11 +251,11 @@ function pushBlockEditLines(
   }
 }
 
-/** Splits a fenced raw block's source into its language tag and body text.
- *  The body keeps every line the source has, blank ones included, so the
- *  rendered widget shows the same number of rows as the edit state. `hasBody`
- *  tells an empty body line (```\n\n```) apart from no body at all (```\n```),
- *  since both give an empty `code`. */
+/**
+ * Splits a fenced raw block's source into its language tag and body. The body
+ * keeps every source line, blank ones included. `hasBody` tells an empty body
+ * line (```\n\n```) apart from no body (```\n```).
+ */
 export function parseRawBlock(text: string): { lang: string; code: string; hasBody: boolean } {
   const ticks = text.match(/^`+/)?.[0].length ?? 3;
   const firstNewline = text.indexOf("\n");
@@ -284,11 +268,11 @@ export function parseRawBlock(text: string): { lang: string; code: string; hasBo
   return { lang, code, hasBody: codeEnd > codeStart };
 }
 
-/** Edit-state classes for each line of a fenced raw block, first line to last.
- *  The opening fence line stands in for the rendered widget's header strip and
- *  the closing fence line (when the fence is alone on it) for the footer strip;
- *  the lines between are the code area, with the first and last carrying the
- *  area's padding. See the code block rules in visual-theme.ts. */
+/**
+ * Edit-state classes for each line of a fenced raw block. The opening and
+ * closing fence lines stand in for the widget's header and footer; the lines
+ * between are the code area. See the code block rules in visual-theme.ts.
+ */
 export function rawBlockEditLineClasses(state: EditorState, from: number, to: number): string[] {
   const open = state.doc.lineAt(from);
   const end = state.doc.lineAt(to);
@@ -311,9 +295,9 @@ export function rawBlockEditLineClasses(state: EditorState, from: number, to: nu
 }
 
 /**
- * True once an equation has a `$` at both ends. Typst's parser is
- * error-tolerant, so a lone `$` already parses as an Equation node that runs
- * to the end of the document; nothing should decorate it until it closes.
+ * True once an equation has a `$` at both ends. A lone `$` already parses as an
+ * equation running to the end of the document, so nothing decorates it until it
+ * closes.
  */
 export function isClosedEquation(node: SyntaxNode): boolean {
   const open = node.firstChild;
@@ -328,29 +312,20 @@ function pushRawBlockEditLines(decos: Range<Decoration>[], state: EditorState, f
   });
 }
 
-// Funcs whose `(...)` is never followed by a trailing `[...]` content block.
-// Used by the call-end correction so the scanner doesn't sweep an unrelated
-// `[` on a following line into the call.
+// Functions never followed by a trailing `[...]` body, so the call-end scan
+// doesn't pick up an unrelated `[` on a later line.
 const NO_TRAILING_BRACKET_FUNCS = new Set([
   "table", "note", "bibliography", "image", "video", "audio", "verse", "cite",
 ]);
 
 /**
- * The true end offset of a `FuncCall` whose lezer node may be wrong.
+ * The true end offset of a `FuncCall`. The lezer-typst parser can end a
+ * multi-line call at the first inner `)` or `]`, or run past its closing
+ * bracket, so the end is found by balanced scanning from the first `(`,
+ * including an optional trailing `[…]` body.
  *
- * The lezer-typst parser truncates multi-line function calls at the first
- * inner `)`/`]`, so a block call's `node.to` can land in the middle of its
- * own arguments; conversely it can trail past the closing bracket. We recompute
- * the real end by balanced scanning from the first `(`, following an optional
- * trailing `[…]` content block.
- *
- * Crucially this is the SINGLE source of truth shared by the decoration builder
- * (which emits the widget / editing decorations over `funcFrom..funcTo`) and by
- * `expandRangesToBlockElements` (which decides how far to grow a dirty range on
- * a cursor move). If those two disagree on where a block call ends, a partial
- * rebuild grows the wrong line span and keeps a stale editing border behind the
- * freshly rendered widget — the doubled / "nested" bar. Sharing one answer
- * keeps every incremental rebuild covering the whole element.
+ * The decoration builder and `expandRangesToBlockElements` must both use this,
+ * so that incremental rebuilds always cover a whole block element.
  */
 export function correctedFuncCallEnd(state: EditorState, funcFrom: number, lezerTo: number): number {
   let funcTo = lezerTo;
@@ -384,9 +359,9 @@ export function correctedFuncCallEnd(state: EditorState, funcFrom: number, lezer
           if (trimmed.startsWith("[")) {
             const bStart = realEnd + (after.length - trimmed.length);
             const bScan = state.doc.sliceString(bStart, Math.min(bStart + 50000, state.doc.length));
-            // Balance the content `[…]` while treating brackets inside inline
-            // raw / behind `\`-escapes as literal, so a `[[` documented inside
-            // a callout body's backticks doesn't run the call end past its `]`.
+            // Treat brackets inside inline raw or behind `\` as literal, so a
+            // `[[` in backticks inside a callout body doesn't move the call's
+            // end.
             const bClose = matchContentBracket(bScan, 0, bScan.length);
             if (bClose >= 0) realEnd = bStart + bClose + 1;
           }
@@ -402,14 +377,11 @@ export function correctedFuncCallEnd(state: EditorState, funcFrom: number, lezer
 }
 
 /**
- * If `line` ends with a managed paragraph soft break — a single unescaped
- * trailing `\` outside any verbatim context — return the document position of
- * that `\`; otherwise null. This is the marker the visual editor inserts on
- * Enter (see `enterInsertsLineBreakFacet`): it is rendered invisibly and the
- * `\␤` pair is made atomic so the writer never sees or lands inside it. Source
- * mode does neither, so the `\` shows there as ordinary text. The
- * verbatim-context check is shared with the Enter keymap so insertion and
- * rendering agree on exactly which `\` are managed breaks.
+ * Position of the managed soft break at the end of `line` (a single unescaped
+ * trailing `\` outside verbatim text), or null. The visual editor inserts it on
+ * Enter and renders it invisibly (see `enterInsertsLineBreakFacet`); source
+ * mode shows it as text. The verbatim check is shared with the Enter keymap so
+ * both agree on which `\` are managed breaks.
  */
 function softBreakSlashPos(state: EditorState, line: Line): number | null {
   const text = line.text;
@@ -418,9 +390,8 @@ function softBreakSlashPos(state: EditorState, line: Line): number | null {
   if (text.length >= 2 && text[text.length - 2] === "\\") return null;
   const slashPos = line.from + text.length - 1;
   if (inVerbatimLineContext(state, slashPos)) return null;
-  // A `\` trailing a code statement / heading / standalone block call is not a
-  // managed soft break — leave it visible so the user can see (and fix) source
-  // that would mis-render, rather than silently hiding it.
+  // A `\` after a code statement, heading or block call isn't a managed break;
+  // leave it visible so the writer can fix it.
   if (lineIsNonProse(state, line)) return null;
   return slashPos;
 }
@@ -441,20 +412,14 @@ function isCursorAdjacentOrInside(_state: EditorState, from: number, to: number,
 }
 
 /**
- * True when collapsing a call into a chip/widget that replaces its whole
- * source range would swallow the caret.
+ * True when collapsing a call into a widget that replaces its whole range would
+ * swallow the caret. `closeBrackets()` inserts `)` as soon as `(` is typed, so
+ * a half-written `#figure(` is already a complete call; collapsing it would
+ * hide it before the arguments are typed (issue #20).
  *
- * `closeBrackets()` auto-inserts the `)` the moment the user types `(`, so a
- * half-written `#figure(` is already a *syntactically complete* call with the
- * caret parked between the parens. Replacing that range mid-keystroke makes
- * the call vanish before its arguments have been typed — the visual editor's
- * most jarring failure mode (issue #20).
- *
- * Proximity, not line, is the right granularity: these calls sit inline in
- * prose, so revealing the whole line's source (the `showPill` rule) would
- * churn the surrounding paragraph. The call re-collapses as soon as the caret
- * leaves. Every branch of {@link handleFuncCall} that replaces a call's full
- * range must consult this first.
+ * The check is by caret proximity rather than by line, so surrounding prose
+ * isn't revealed. Every branch of {@link handleFuncCall} that replaces a call's
+ * full range must check this first.
  */
 function collapseWouldSwallowCaret(
   state: EditorState,
@@ -475,18 +440,11 @@ function nodeOverlapsRanges(from: number, to: number, ranges: { from: number; to
 type StylePreamble = { from: number; to: number; count: number };
 
 /**
- * Locate a contiguous *leading* run of `#set` / `#show` / `#let` rules — the
- * document style preamble — returning its line-aligned range and rule count,
- * or null when there is none. The imports and the `#note(...)` properties
- * call may precede the run; any other header item or body content before
- * the first rule means there is nothing to collapse. A `#set` that appears
- * only after content (a deliberate local style change) is intentionally left
- * alone — it never starts a preamble. Comments are passed over.
- *
- * `#let` bindings join the run: they're document setup (helper definitions,
- * e.g. a doc's `#let demo(...) = …`), not flowing content, so the visual
- * editor folds them into the same expandable chip rather than showing raw
- * code. They stay fully visible and editable in the source editor.
+ * The leading run of `#set` / `#show` / `#let` rules (the document's style
+ * preamble) as a line-aligned range with its rule count, or null. Imports and
+ * the `#note(...)` call may come first; any other content before the first rule
+ * means there is no preamble. Comments are skipped. A `#set` after content is a
+ * local style change and is left alone.
  */
 export function findStylePreamble(state: EditorState): StylePreamble | null {
   let firstFrom = -1;
@@ -498,12 +456,10 @@ export function findStylePreamble(state: EditorState): StylePreamble | null {
     const isRule =
       item.kind === "set" || item.kind === "show" || item.kind === "let" || item.kind === "locale";
     if (isRule) {
-      // A document-language directive before the `#note(...)` is locale
-      // typesetting machinery, hidden with the imports (see
-      // `computePreambleImportRanges`), so it must neither start nor join this
-      // chip — otherwise it forms a lone chip ahead of the note and strands
-      // the real setup block that follows it. After the note (or once a real
-      // rule has started the run) a language change is ordinary setup.
+      // A language directive before `#note(...)` is hidden with the imports
+      // (see `computePreambleImportRanges`), so it neither starts nor joins the
+      // preamble chip. After the note, or once the run has started, it is
+      // ordinary setup.
       if (firstFrom < 0 && !sawNote && item.kind === "locale") continue;
       if (firstFrom < 0) firstFrom = item.from;
       lastTo = item.to;
@@ -531,11 +487,8 @@ function posWithinPreamble(pos: number, preamble: StylePreamble): boolean {
 }
 
 /**
- * Top-level named-argument keys of a function-call argument list, starting at
- * the `(` at `openParen`. Returns only depth-1 `name:` keys — nested keys
- * (`margin: (top: …)`) and positional args are skipped — so the set-rule label
- * names the property being configured, not the values. String literals are
- * treated as opaque so a `:` or `(` inside `"…"` never registers.
+ * Top-level named-argument keys of the argument list opening at `openParen`.
+ * Nested keys and positional arguments are skipped, and strings are opaque.
  */
 function topLevelArgKeys(text: string, openParen: number): string[] {
   if (openParen < 0 || text[openParen] !== "(") return [];
@@ -572,14 +525,10 @@ function topLevelArgKeys(text: string, openParen: number): string[] {
 }
 
 /**
- * Friendly chip label for a standalone `#set` / `#show` rule, derived from its
- * source: the rule keyword, its target, and — for set rules — the property
- * being configured, so two `#set text(…)` rules read distinctly:
- * `#set text(size: 12pt)` → `set text: size`, `#set text(font: …)` → `set text:
- * font`. Up to two keys are shown (`…` beyond that); a rule with no recognizable
- * key, a `#show heading: …`, or a bare `#show: …` falls back to keyword+target
- * (or just the keyword). Kept literal — Typst identifiers aren't translatable,
- * matching how every other pill shows its raw `funcName`.
+ * Chip label for a standalone `#set` / `#show` rule: the keyword, target and up
+ * to two configured keys, e.g. `#set text(size: 12pt)` → `set text: size`. Falls
+ * back to keyword and target, or just the keyword. Not translated, since Typst
+ * identifiers aren't.
  */
 export function setRuleLabel(raw: string): string {
   const body = raw.startsWith("#") ? raw.slice(1) : raw;
@@ -598,39 +547,21 @@ export function setRuleLabel(raw: string): string {
 }
 
 /**
- * Display number for an ordered-list (`EnumMarker`) item, computed purely
- * from the document text so it is identical whether the whole document or a
- * single slice is being re-decorated.
- *
- * Typst accepts two ordered-list markers: an explicit number (`1.`) and the
- * auto-numbering `+`. We honour an explicit number verbatim — the writer
- * typed it, so we show exactly that — which is both predictable and correct
- * for `1. / 2.` lists. For `+` we count the run of consecutive enum items at
- * the same indent immediately above this one (a blank line, a shallower
- * item, or any non-enum line ends the run), giving the natural 1, 2, 3…
- * sequence. Counting locally — rather than threading a mutable counter across
- * the iteration and reseeding it from a pre-scan — is what keeps the number
- * stable when the cursor moves and only part of the document is rebuilt; the
- * old shared-counter approach drifted on every partial rebuild.
+ * Display number for an ordered-list item, computed from the document text
+ * alone so it is the same in full and partial rebuilds. An explicit number
+ * (`1.`) is shown as typed; a `+` item counts the run of same-indent items
+ * above it.
  */
 function enumItemNumber(state: EditorState, markerFrom: number): string {
   const line = state.doc.lineAt(markerFrom);
-  // Read the indent from the line text rather than from the marker's position.
-  // A list marker is always the first thing on its line, so the two agree —
-  // except in the moment after an edit, when the syntax tree may still hold
-  // the marker's pre-edit position. Taking it from the text keeps the number
-  // right through an indent, where a stale position made every item read as
-  // nested and restart at 1.
+  // Take the indent from the line text: just after an edit, the tree may still
+  // hold the marker's old position.
   const indent = leadingWhitespace(line.text);
   const explicit = line.text.slice(indent).match(/^(\d+)\./);
   if (explicit) return `${explicit[1]}.`;
 
-  // "+" marker: its position is the length of the same-indent enum run above.
-  // What counts as "the run above" follows the same rules the source-side
-  // renumbering uses (see list-renumber.ts), so the number shown here matches
-  // both the source and what Typst compiles: blank lines and an item's wrapped
-  // text do not end a list, an explicit `N.` above anchors the count, and
-  // prose or a shallower item starts the run.
+  // Count the `+` item's position with the same rules as list-renumber.ts, so
+  // the number matches the source and Typst's output.
   let count = 1;
   for (let n = line.number - 1; n >= 1; n--) {
     const text = state.doc.line(n).text;
@@ -651,80 +582,41 @@ function enumItemNumber(state: EditorState, markerFrom: number): string {
 }
 
 /**
- * Amplify nested-list indentation in the visual editor so the levels are easy
- * to tell apart at a glance. Typst encodes nesting purely as leading
- * whitespace, which renders at the (narrow, proportional) space width of the
- * body font — too subtle to read as distinct levels, especially next to a tool
- * like Obsidian that indents by a fixed, generous step. We add left padding to
- * the list line proportional to its leading whitespace, which roughly doubles
- * the visual step per level without touching the source. The marker and text
- * still sit after the marker widget (which replaces the leading whitespace and
- * the marker together — see the `ListMarker`/`EnumMarker` cases), so editing
- * the raw line is unchanged; this is a display-only nicety (visual editor as a
- * friendliness tool — see CLAUDE.md). `LIST_INDENT_CH` is the amount added per
- * leading column, in `ch` units (wider than a proportional space, which is what
- * gives the amplification).
+ * Extra left padding per leading column of a list item, in `ch`, so nesting
+ * levels are easy to tell apart. Display only; the source is unchanged.
  *
- * The same line decoration also applies a hanging indent. The line carries
- * `padding-left` of (nesting + one bullet width), which pushes every *wrapped*
- * continuation line in to align with the item's text. The first line's bullet
- * is then pulled back under the marker by a negative `margin-left` of one bullet
- * width on the bullet widget itself (see `.cm-typst-list-bullet`) — NOT by a
- * negative `text-indent` on the line. WebKitGTK (the app's renderer) does not
- * reliably offset a leading inline-block by `text-indent`, so the indent and the
- * widget failed to cancel there and the bullet escaped a full bullet-width into
- * the left margin, landing outside the heading/text column. A negative margin on
- * the concrete widget element is honoured consistently. Because the marker widget
- * replaces the leading whitespace (the spaces are not laid out inline), the first
- * line and its wrapped continuations share one content-box edge, so the alignment
- * is exact at every nesting level — no proportional-space-width guesswork.
+ * The line's `padding-left` (nesting plus one bullet width) aligns wrapped lines
+ * with the item text. The bullet widget's negative `margin-left` (see
+ * `.cm-typst-list-bullet`) pulls the bullet back into that space. A negative
+ * `text-indent` on the line isn't used because WebKitGTK doesn't apply it
+ * reliably to a leading inline-block.
  */
 const LIST_INDENT_CH = 1.2;
 
 /**
- * The document range the bullet/number widget replaces for a list marker node.
- * Spans from the line start — swallowing the leading indentation so the bullet
- * stands alone at the content-box edge — through the marker's *single* separating
- * space, so the item's text begins exactly at the bullet box's end.
- *
- * Both ends matter for the hanging indent. Leaving the leading whitespace in
- * the flow would offset the first line from its wrapped continuations; leaving
- * the marker's one separator space in the flow would push the first line one
- * space-width right of those continuations (which have no such space). With both
- * folded into the widget, text starts at exactly `--list-bullet-width` past the
- * bullet on every visual row, so wrapped lines align precisely.
- *
- * Crucially, only ONE space is folded in — not the whole whitespace run. If the
- * caret sits at the start of the item text and the user types a space, that
- * extra space must stay in the flow and be visible; folding the entire run would
- * absorb each typed space back into the widget, making the keystroke look like a
- * no-op (the text never moves right).
- */
-/**
- * Whether a list/enum marker is immediately followed by a separating space or
- * tab — the character that turns `-`/`+`/`N.` into an actual Typst list item.
- * A bare marker with no separator is just typed text, so the visual editor
- * leaves it undecorated until the writer types the space.
+ * Whether a list/enum marker is followed by the space or tab that makes it a
+ * Typst list item. A bare marker is left undecorated until the space is typed.
  */
 function markerHasSeparator(state: EditorState, node: { to: number }): boolean {
   return /^[ \t]/.test(state.doc.sliceString(node.to, node.to + 1));
 }
 
 /**
- * Whether a list/enum marker opens its line — nothing but whitespace before it.
- *
- * Typst also reads a second marker further along the line (`- - item`) as a
- * nested list, but the visual editor leaves that one as plain text. Its bullet
- * would have to sit mid-line rather than in the hanging-indent margin, and
- * hiding it is how a stray marker left behind by an edit stays invisible: the
- * line renders as one bullet with a mysterious extra indent and no way to
- * outdent it. Drawn as a literal `-`, the writer can see it and delete it.
+ * Whether a list/enum marker opens its line. A second marker further along (`-
+ * - item`) stays plain text, so a stray marker left by an edit is visible and
+ * can be deleted.
  */
 function markerOpensLine(state: EditorState, node: { from: number }): boolean {
   const line = state.doc.lineAt(node.from);
   return state.doc.sliceString(line.from, node.from).trim() === "";
 }
 
+/**
+ * The range the bullet/number widget replaces: from the line start through
+ * the marker's single separating space, so the item text begins right after
+ * the bullet and wrapped lines align with it. Only one space is included, so
+ * further spaces the writer types stay visible.
+ */
 function markerReplaceRange(
   state: EditorState,
   node: { from: number; to: number },
@@ -737,19 +629,10 @@ function markerReplaceRange(
 }
 
 /**
- * The indentation, in characters, that counts as no indentation at all for the
- * list items inside `range`.
- *
- * A table cell's source lines are indented to sit inside the `#table(...)`
- * call that holds them, and that indentation is not list nesting: counted as
- * nesting it pushed a cell's bullets deep into the cell. The shallowest line
- * of the cell is the baseline instead, so a list still nests relative to it.
- * Outside a cell there is nothing to discount and the baseline is zero.
- *
- * Only lines that begin inside the range count. A first line the cell shares
- * with its opening `[` has no indentation of its own: whatever precedes its
- * text is the bracket and the table's layout, not white space a list could
- * nest against.
+ * Indentation, in characters, that counts as zero for list items in `range`.
+ * Inside a table cell, the cell's own indentation within the `#table(...)` call
+ * isn't nesting, so the shallowest line of the cell is the baseline. Outside a
+ * cell it is zero. Only lines that begin inside the range count.
  */
 function listIndentBase(state: EditorState, range: { from: number; to: number } | null): number {
   if (!range) return 0;
@@ -781,12 +664,9 @@ function pushListIndent(
   decos.push(
     Decoration.line({
       attributes: {
-        // padding-left sets the text column (and where wrapped lines align);
-        // the bullet widget's own negative margin-left pulls the marker back to
-        // the column edge for the hanging indent (see the doc comment above —
-        // text-indent is unreliable for a leading inline-block on WebKitGTK).
-        // `--line-block-inset` is set by the block quote / callout edit-line
-        // rules so a list inside one keeps the block's inset as well.
+        // `padding-left` sets the text column; the bullet's negative margin
+        // pulls it back for the hanging indent. `--line-block-inset` keeps a
+        // block quote or callout's inset for a list inside one.
         style: `padding-left: calc(var(--line-block-inset, 0px) + ${nest}var(--list-bullet-width))`,
       },
     }).range(line.from),
@@ -794,11 +674,10 @@ function pushListIndent(
 }
 
 /**
- * Draw a list item's marker as a bullet (or number) with the item's hanging
- * indent. Returns false, drawing nothing, when the marker has been revealed as
- * source: a second Home or a Left from the item's text expands it (keyed on
- * the line start) so the caret in front of it can be seen and the item deleted
- * along with its bullet. See `smartLineStart` and `lineStartCaretFilter`.
+ * Draw a list item's marker as a bullet or number with a hanging indent. Draws
+ * nothing and returns false when the marker has been revealed as source (by
+ * Home or Left at the item start; see `smartLineStart` and
+ * `lineStartCaretFilter`).
  */
 function pushListMarker(
   decos: Range<Decoration>[],
@@ -815,18 +694,17 @@ function pushListMarker(
   return true;
 }
 
-/** Build the visual layer's whole decoration set for `state`. Exported so
- *  tests can assert on decorations that only appear once the syntax tree is
- *  walked (nested calls, markers); the editor reaches it through
- *  `typstVisualMode()`. */
+/**
+ * Build the visual layer's decoration set for `state`. Exported for tests; the
+ * editor uses it through `typstVisualMode()`.
+ */
 export function buildDecorations(
   state: EditorState,
   onlyRanges?: { from: number; to: number }[],
   options?: { inlineOnly?: boolean },
 ): DecorationSet {
-  // Inline-only mode (a table cell editor, or an idle cell rendered from the
-  // note's own state): block constructs are left as raw markup — see
-  // cell-scope.ts. A cell editor also narrows the build to its own range.
+  // Inline-only mode (table cells): block constructs stay raw markup (see
+  // cell-scope.ts). A cell editor also limits the build to its own range.
   const inlineOnly = options?.inlineOnly === true || state.facet(inlineOnlyFacet);
   if (!options?.inlineOnly && state.facet(inlineOnlyFacet)) {
     const scope = state.field(scopeRangeField, false);
@@ -840,10 +718,8 @@ export function buildDecorations(
   const expandedPos = state.field(expandedFuncField, false) ?? null;
   const decos: Range<Decoration>[] = [];
 
-  // Document style preamble: a contiguous leading run of #set/#show rules is
-  // collapsed to a single chip unless the cursor is inside it or it was clicked
-  // open (expandFunc). Collapsing skips its inner nodes during iteration so the
-  // raw markup isn't rendered behind the widget.
+  // The style preamble collapses to one chip unless the cursor is inside it or
+  // it was expanded. Its inner nodes are then skipped.
   const stylePreamble = findStylePreamble(state);
   const stylePreambleCollapsed = stylePreamble
     ? !isOnCursorLine(state, stylePreamble.from, stylePreamble.to, focused)
@@ -854,9 +730,8 @@ export function buildDecorations(
     stylePreambleCollapsed &&
     (!onlyRanges || nodeOverlapsRanges(stylePreamble.from, stylePreamble.to, onlyRanges))
   ) {
-    // Inline replace spanning the block's lines — same recipe the cursor-away
-    // callout/quote widgets use. The widget's root is a block-level element, so
-    // it occupies its own line even though the decoration is inline.
+    // Inline replace spanning the block's lines; the widget's root is
+    // block-level, so it takes its own line.
     decos.push(
       Decoration.replace({
         widget: new StylePreambleWidget(stylePreamble.from, stylePreamble.to, stylePreamble.count),
@@ -869,9 +744,9 @@ export function buildDecorations(
   const activeFormatting: InlineFormatting = { bold: false, italic: false, strike: false, highlight: null };
   let consumedUntil = -1;
 
-  // Document labels, computed once per pass on first `@reference` encountered.
-  // Must cover the whole document (not just `onlyRanges`): a reference inside an
-  // incrementally-updated range can point at a label defined elsewhere.
+  // Document labels, computed on the first `@reference`. They cover the whole
+  // document, since a reference can point at a label outside the ranges being
+  // rebuilt.
   let docLabelMap: Map<string, DocLabel> | null = null;
   const getDocLabelMap = (): Map<string, DocLabel> => {
     if (!docLabelMap) {
@@ -881,11 +756,9 @@ export function buildDecorations(
     return docLabelMap;
   };
 
-  // Hide the leading import block — the notebox import plus any package
-  // imports (e.g. `#import "@preview/mitex:…": …`) a user or template added.
-  // They stay visible/editable in the source editor; here they're collapsed
-  // away so the visual editor opens on the document body. (Locking is handled
-  // by computeProtectedRanges, which covers the same ranges.)
+  // Hide the leading imports (the notebox import and any package imports) so
+  // the visual editor opens on the body. They remain in the source editor;
+  // `computeProtectedRanges` locks the same ranges.
   const preambleImportRanges = computePreambleImportRanges(state);
   for (const r of preambleImportRanges) {
     if (!onlyRanges || nodeOverlapsRanges(r.from, r.to, onlyRanges)) {
@@ -910,12 +783,8 @@ export function buildDecorations(
         switch (node.name) {
           case "LineComment":
           case "BlockComment": {
-            // Typst comments collapse to a pill — one per run of comment
-            // lines — so the writer knows they are there; the protected-range
-            // machinery locks them and moves the caret past. Clicking the
-            // pill reveals the run for editing. An unclosed `/*` runs to the
-            // end of the document, so it stays visible until its closing
-            // delimiter exists.
+            // A run of comment lines collapses to one pill; clicking it reveals
+            // the run. An unclosed `/*` stays visible until it is closed.
             if (!isCommentClosed(state, node.name, node.from, node.to)) return false;
             const run = commentRunAt(state, node.from, node.to);
             consumedUntil = Math.max(consumedUntil, run.replaceTo);
@@ -927,13 +796,9 @@ export function buildDecorations(
             );
             return false;
           }
-          // Direct formatting (`*bold*`, `_italic_`): the `*` / `_` delimiters
-          // are hidden while the caret is elsewhere and shown once it lands
-          // inside, so they can be edited. Showing them must not take the
-          // content down with them — the body keeps its bold/italic mark and,
-          // crucially, is still traversed, so a nested call inside it (e.g.
-          // `*a #highlight[b] c*`) keeps its own decoration and pill instead of
-          // dropping to raw source.
+          // `*bold*` / `_italic_`: the delimiters are hidden unless the caret
+          // is inside. The body keeps its mark and is still traversed, so
+          // nested calls (`*a #highlight[b] c*`) keep their own decorations.
           case "Strong": {
             if (autoExpand && onCursor) return false;
             activeFormatting.bold = true;
@@ -980,13 +845,8 @@ export function buildDecorations(
             break;
           }
           case "ListMarker": {
-            // Only render the bullet once the marker is followed by a real
-            // separating space — i.e. `- ` is a list item but a bare `-` is
-            // just a typed character. Rendering a bullet on a bare marker made
-            // the line *look* like a list before the writer had typed the
-            // space, so their next keystroke produced `-text` (not a list) and
-            // the bullet vanished. Gating on the space matches how markdown
-            // editors form lists and keeps the display honest.
+            // Render a bullet only once the marker is followed by a space, so a
+            // bare `-` doesn't look like a list before it is one.
             if (!markerHasSeparator(state, node) || !markerOpensLine(state, node)) break;
             if (!pushListMarker(decos, state, node, listBase, expandedPos, "•")) break;
             return false;
@@ -1003,11 +863,9 @@ export function buildDecorations(
             // content spans a line break; a one-line ```…``` is inline raw.
             const isBlock = ticks >= 3 && text.includes("\n");
             if (!isBlock) {
-              // Typst's parser is error-tolerant, so a lone or still-unclosed
-              // backtick already parses as a Raw node. Hiding its delimiters
-              // here would make the backtick the user just typed disappear the
-              // moment the cursor moves off it. Only collapse the markup once a
-              // real closing delimiter exists (matched pair).
+              // An unclosed backtick already parses as raw. Hide the delimiters
+              // only once a matching closing run exists, so a just-typed
+              // backtick doesn't vanish.
               const closed = text.length >= 2 * ticks && text.endsWith("`".repeat(ticks));
               if (!closed) return false;
               if (isCursorAdjacentOrInside(state, node.from, node.to, cursors)) return false;
@@ -1030,33 +888,19 @@ export function buildDecorations(
             return false;
           }
           case "Equation": {
-            // Typst's parser is error-tolerant, so a lone `$` already opens an
-            // Equation node that runs to the end of the document. Decorating
-            // that would restyle every following line until the closing `$`
-            // arrives. Wait for a matched pair of delimiters, the same rule
-            // the raw spans above use.
-            //
-            // A matched pair is not proof the equation is finished: a `$`
-            // typed above other equations pairs with the next equation's
-            // opening `$`, so this node can span several lines of prose until
-            // the writer closes it. That is why the math marks in
-            // visual-theme.ts are colour and font only (a layout-affecting
-            // style would move the text on every keystroke) and why nothing
-            // is painted while the caret is inside.
+            // A lone `$` already parses as an equation running to the end of
+            // the document, so wait for a matched pair. A matched pair can
+            // still span several lines (a new `$` pairs with the next
+            // equation's opener), which is why the math marks only change
+            // colour and font.
             if (!isClosedEquation(node.node)) return false;
-            // With the caret inside, an equation is shown as plain source:
-            // no mark and, for inline math, no hidden `$`. Besides matching
-            // how the other markup behaves under the caret, this keeps a
-            // half-typed equation from tinting the note below it. A `$`
-            // typed above other equations pairs with the next equation's
-            // opener, so until the writer closes it the node spans lines of
-            // prose, and the incremental rebuild leaves those lines alone as
-            // long as nothing here paints them.
+            // With the caret inside, show an equation as plain source, so a
+            // half-typed one doesn't tint the text below it.
             if (isCursorAdjacentOrInside(state, node.from, node.to, cursors)) return false;
             if (autoExpand && onCursor) return false;
-            // Typst sets an equation on its own line only when a space sits
-            // just inside both delimiters (`$ x $`); `$ x$` stays inline. This
-            // mirrors `Equation::block()` in typst-syntax.
+            // An equation is set as a block only with a space inside both
+            // delimiters (`$ x $`), matching `Equation::block()` in
+            // typst-syntax.
             const isDisplay =
               node.node.firstChild?.nextSibling?.name === "Space" &&
               node.node.lastChild?.prevSibling?.name === "Space";
@@ -1089,29 +933,23 @@ export function buildDecorations(
           case "Ref": {
             const refText = state.doc.sliceString(node.from, node.to);
             if (refText.startsWith("@")) {
-              // Typst's `@` is the universal reference operator: it resolves to a
-              // bibliography entry (a citation) OR an in-document `<label>`
-              // (heading, figure, equation, table). Decide which by consulting
-              // both the cached bib keys and the document's labels.
+              // `@` refers either to a bibliography entry or to a document
+              // `<label>`; check both.
               const key = refText.slice(1);
               const bibKeys = getCachedBibKeys();
               const label = getDocLabelMap().get(key);
-              // An unresolved `@` glued to an email local part (`athena@inkycap.org`)
-              // is an address, not a reference — the one rule shared with the
-              // `@` popup and the compile pipeline's escape pass. It is marked
-              // as plain text even with the caret on it: a mark never swallows
-              // the caret, and without it the syntax highlighter colours the
-              // address like a reference for as long as it is being typed.
+              // An unresolved `@` after an email local part (`athena@inkycap.org`) is
+              // an address, not a reference (the same rule the `@` popup and compile
+              // pipeline use). It is marked as plain text even under the caret, so it
+              // isn't highlighted as a reference while being typed.
               const before = node.from > 0 ? state.doc.sliceString(node.from - 1, node.from) : "";
               if (isEmailLikeAt(before) && !bibKeys.has(key) && !label) {
                 decos.push(refPlainMark.range(node.from, node.to));
                 return false;
               }
               if (isCursorAdjacentOrInside(state, node.from, node.to, cursors)) return false;
-              // While this `@…` is the target of a live citation search, leave it
-              // as plain editable text — pilling it mid-search (e.g. `@einstein`
-              // while the writer is still typing `relativity` to find the paper)
-              // would make a multi-word query feel like it had already resolved.
+              // Leave the `@…` of an active citation search as plain text, so a
+              // multi-word query doesn't look resolved.
               if (activeReferenceSearchAt() === node.from) return false;
               if (bibKeys.has(key)) {
                 decos.push(
@@ -1130,9 +968,8 @@ export function buildDecorations(
                   }).range(node.from, node.to),
                 );
               } else if (bibKeys.size === 0) {
-                // Bibliography not loaded yet — render optimistically as a
-                // citation so a real `@cite` doesn't flash a broken state before
-                // entries arrive. Flips to its true form once the cache fills.
+                // Bibliography not loaded yet: render as a citation so it
+                // doesn't flash as broken.
                 decos.push(
                   Decoration.replace({
                     widget: new CitationWidget(key, node.from, node.to),
@@ -1173,10 +1010,8 @@ export function buildDecorations(
             if (autoExpand && onCursor) return false;
             const text = state.doc.sliceString(node.from, node.to);
             let replacement: string | null = null;
-            // `ghost` renders a dimmed placeholder for non-printing shorthands —
-            // a soft hyphen is invisible in output, so we show a faint "-" to
-            // mark the optional break point rather than letting the source
-            // silently vanish in the visual editor.
+            // `ghost` shows a faint placeholder for non-printing shorthands,
+            // such as a soft hyphen.
             let ghost = false;
             if (text === "---") replacement = "—";
             else if (text === "--") replacement = "–";
@@ -1196,11 +1031,10 @@ export function buildDecorations(
             return false;
           }
           case "FieldAccess": {
-            // `#sym.*` named-symbol references render as a glyph pill. The `#`
-            // is a separate sibling Hash node, so a sym reference is a
-            // FieldAccess whose preceding char is `#`. Only the outermost
-            // FieldAccess is handled (we return false to skip the nested ones).
-            // Any other field access falls through to default raw rendering.
+            // `#sym.*` renders as a glyph pill. The `#` is a separate node, so
+            // a sym reference is a FieldAccess preceded by `#`; only the
+            // outermost one is handled. Other field accesses render as raw
+            // source.
             if (node.from > 0 && state.doc.sliceString(node.from - 1, node.from) === "#") {
               const text = state.doc.sliceString(node.from, node.to);
               if (text.startsWith("sym.")) {
@@ -1220,27 +1054,18 @@ export function buildDecorations(
           }
           case "SetRule":
           case "ShowRule": {
-            // A contiguous *leading* run of set/show rules is the document
-            // style preamble, collapsed into a single StylePreambleWidget
-            // above — skip those here (when that preamble is expanded for
-            // editing we also want raw source, so returning false is correct
-            // either way). A set/show rule that appears *after* content — e.g.
-            // a local `#set text(…)` / `#set par(…)` inserted from the `/` Style
-            // menu — reaches here and gets the same pill affordance as every
-            // other Typst call instead of rendering as raw markup.
+            // Rules in the leading style preamble are handled by its chip. A
+            // set/show rule after content (e.g. inserted from the `/` Style
+            // menu) gets the usual pill.
             if (stylePreamble && posWithinPreamble(node.from, stylePreamble)) return false;
-            // A leading document-language directive (`#set text(lang/region)`)
-            // is already collapsed with the imports above (see
-            // computePreambleImportRanges) — it's preamble machinery, not a
-            // body style change, so it must not also surface as a pill here. A
-            // `#set text(lang: …)` placed later in the body is genuine style and
-            // falls outside these ranges, so it still gets its pill.
+            // A leading language directive is hidden with the imports (see
+            // computePreambleImportRanges). A later `#set text(lang: …)` is a
+            // style change and gets its pill.
             if (preambleImportRanges.some((r) => node.from >= r.from && node.from < r.to)) return false;
             const ruleFrom = (node.from > 0 && state.doc.sliceString(node.from - 1, node.from) === "#")
               ? node.from - 1 : node.from;
-            // Reveal raw source when the cursor is on the rule's line or the
-            // pill was clicked open — the standard collapse decision the other
-            // block pills use, so the rule stays directly editable in place.
+            // Show raw source when the cursor is on the rule's line or the pill
+            // was expanded.
             if (onCursor) return false;
             if (expandedPos === ruleFrom) return false;
             const raw = state.doc.sliceString(ruleFrom, node.to);
@@ -1256,26 +1081,18 @@ export function buildDecorations(
               ? node.from - 1 : node.from;
             const lastChar = state.doc.sliceString(node.to - 1, node.to);
             if (lastChar !== ")" && lastChar !== "]") return false;
-            // The lezer-typst parser truncates multi-line FuncCalls at the
-            // first inner `)`/`]`, so `node.to` (and the `onCursor` computed
-            // from it above) misses lines added by the user. Recompute the true
-            // end via the shared correction so the cursor staying inside a
-            // growing callout/quote body keeps the live-edit decoration stable,
-            // and so the dirty-range expander agrees on the same bounds (see
-            // correctedFuncCallEnd / expandRangesToBlockElements).
+            // `node.to` can be short for multi-line calls (see
+            // `correctedFuncCallEnd`); use the corrected end so the edit state
+            // stays stable and matches the dirty-range expander.
             const funcTo = correctedFuncCallEnd(state, funcFrom, node.to);
             const callOnCursor = isOnCursorLine(state, funcFrom, funcTo, focused);
             const fn = funcCallName(state.doc.sliceString(funcFrom, funcTo));
-            // Inline-only: a block-level call keeps its raw markup and its
-            // body is still traversed, so inline markup inside it decorates.
+            // Inline-only: a block call keeps its raw markup, and its body is
+            // still traversed.
             if (inlineOnly && fn !== null && BLOCK_LEVEL_FUNCS.has(fn)) break;
-            // Decorate this call defensively: a single malformed or unusual call
-            // — e.g. a collaborator's `#suggestion(…)` tracked-change markup with
-            // content the extractors don't expect — must not throw out of the
-            // build and drop the *entire* visual layer, which renders the whole
-            // note as raw source. On failure, discard any partial decorations
-            // from this call and skip it (it falls back to raw source locally)
-            // while the rest of the note still renders.
+            // Decorate each call defensively: a malformed call must not throw and
+            // drop the whole visual layer. On failure, discard its partial
+            // decorations and leave it as raw source.
             const decoMark = decos.length;
             let traverseChildren: boolean;
             try {
@@ -1292,9 +1109,8 @@ export function buildDecorations(
             }
             if (fn === "strike") activeFormatting.strike = true;
             else if (fn === "highlight") {
-              // Carry the call's fill/stroke/radius, not just a flag: a
-              // wikilink or link inside it renders as a replace widget, which
-              // falls outside the highlight's mark decoration and has to paint
+              // Carry the highlight's fill/stroke/radius: a wikilink or link
+              // inside renders as a replace widget outside the mark and paints
               // itself.
               activeFormatting.highlight = widgetHighlightFor(state.doc.sliceString(funcFrom, funcTo));
             }
@@ -1314,9 +1130,8 @@ export function buildDecorations(
     },
   });
 
-  // Text-level escape scan — fallback for cases where the parser doesn't
-  // emit Escape nodes (e.g. \# may be parsed as code-mode entry instead).
-  // Use escapeRanges (populated by tree-based Escape handler) to avoid doubles.
+  // Text-level escape scan, for escapes the parser doesn't emit as Escape nodes
+  // (e.g. `\#`). `escapeRanges` prevents doubles.
   const ESCAPE_CHARS = "#*_$=~`\\";
   const escScanLines = onlyRanges
     ? onlyRanges.flatMap(r => {
@@ -1327,8 +1142,7 @@ export function buildDecorations(
         return lines;
       })
     : Array.from({ length: state.doc.lines }, (_, i) => i + 1);
-  // Fetched once for the raw/code-context check below; the tree is invariant
-  // across this scan.
+  // The tree doesn't change during this scan.
   const escTree = syntaxTree(state);
   for (const i of escScanLines) {
     const line = state.doc.line(i);
@@ -1366,13 +1180,9 @@ export function buildDecorations(
     }
   }
 
-  // Hide trailing `\` paragraph-break markers in visual mode — always, even on
-  // the cursor line. The `\` is meaningful in source mode and the compiled
-  // output, but in the visual editor the line break itself is the feedback and
-  // the marker only gets in the way of writing. We keep it invisible at all
-  // times and instead make the `\␤` pair atomic (see `softBreakRangesField`)
-  // so the writer edits across the break — type, backspace, delete — without
-  // ever seeing or landing inside the `\`.
+  // Always hide a trailing `\` soft break in visual mode, even on the cursor
+  // line. The `\␤` pair is atomic (see `softBreakRangesField`), so the writer
+  // edits across the break without landing inside it.
   for (const i of escScanLines) {
     const line = state.doc.line(i);
     const slashPos = softBreakSlashPos(state, line);
@@ -1415,7 +1225,7 @@ export function buildDecorations(
   }
 
   // Only the note's own decorations render tables; a cell editor leaves the
-  // call as inline markup and must not get a stand-in painted over its cell.
+  // call as inline markup.
   if (!inlineOnly) keepEditedTables(state, decos, onlyRanges);
 
   decos.sort((a, b) => a.from - b.from || a.value.startSide - b.value.startSide);
@@ -1423,11 +1233,9 @@ export function buildDecorations(
 }
 
 /**
- * Mid-keystroke in a cell editor, a table's source can be momentarily
- * unparseable — a bracket typed before its closer — and the syntax tree may
- * not even show the call any more. Rather than dropping the rendered table
- * (and the editor in it) to raw source, keep a stand-in widget over the
- * range the table is known to occupy; the next parseable state repaints.
+ * While a table's source is briefly unparseable during cell editing, keep a
+ * stand-in widget over its known range instead of dropping to raw source. The
+ * next parseable state repaints it.
  */
 function keepEditedTables(state: EditorState, decos: Range<Decoration>[], onlyRanges?: { from: number; to: number }[]) {
   for (const from of editingTableStarts()) {
@@ -1454,27 +1262,18 @@ function funcCallName(funcText: string): string | null {
   return delim >= 0 ? funcText.substring(hashOff, delim).trim() : null;
 }
 
-// These funcs always render as widgets even on cursor line — click navigates,
-// edit via source mode or cursor-adjacent positioning.
-// `task` and `due` are NOT in INTERACTIVE_FUNCS: they render as widgets,
-// but on cursor-line they also surface a `FuncPillWidget` so the user can
-// edit body/due/done/label through the standard pill menu (see
-// pill-options.ts taskOptions / dueOptions). Their case branches handle
-// both decorations explicitly, mirroring how `cite` combines a pill with
-// the citation widget.
-// `footnote` joins this set so it renders as its compact widget but reveals
-// the raw `#footnote[…]` source the moment the cursor is adjacent or inside —
-// the same temporary-expand-on-cursor affordance wikilinks use — instead of
-// staying an opaque widget that can only be edited from source mode.
-// `suggestion` is deliberately NOT here: like `task` it always renders its
-// widget (click → Accept/Reject/Comment dialogue) and surfaces a standard
-// FuncPillWidget on the cursor line — clicking the pill expands the raw source
-// inline for editing. Its case below pushes both decorations.
+// Functions that always render as widgets, even on the cursor line. `footnote`
+// reveals its source when the cursor is adjacent or inside, like wikilinks.
+//
+// `task`, `due` and `suggestion` aren't here: they also render widgets, but
+// show a pill on the cursor line for editing through the pill menu. Their cases
+// push both decorations.
 const INTERACTIVE_FUNCS = new Set(["wikilink", "tag", "link", "footnote"]);
 
-/** Best-effort extraction of an ISO `YYYY-MM-DD` date from a snippet of
- *  Typst source — recognizes a `datetime(...)` call (positional or named
- *  args) and a quoted `"YYYY-MM-DD"` string. Returns null when neither. */
+/**
+ * Extract an ISO `YYYY-MM-DD` date from a `datetime(...)` call or a quoted
+ * string, or null.
+ */
 function extractDateLiteral(s: string): string | null {
   const dt = s.match(
     /datetime\(\s*(?:year\s*:\s*)?(\d{1,4})\s*,\s*(?:month\s*:\s*)?(\d{1,2})\s*,\s*(?:day\s*:\s*)?(\d{1,2})/,
@@ -1494,14 +1293,12 @@ const BLOCK_WIDGET_FUNCS = new Set(["image", "video", "audio"]);
 const BLOCK_LEVEL_FUNCS = new Set([...BLOCK_FUNCS, ...BLOCK_WIDGET_FUNCS]);
 
 /**
- * Decorate a single `#func(...)` / `#func[...]` call, pushing its decorations
- * onto `decos`. Returns true when the caller should keep traversing the call's
- * children (the body stays live source), false when this call owns its whole
- * range (a widget replaced it, or the raw markup is deliberately exposed).
+ * Decorate one `#func(...)` / `#func[...]` call. Returns true when the caller
+ * should traverse the call's children (its body is live source), false when
+ * this call handles its whole range.
  *
- * Deliberately parser-independent — it works off the sliced source text, not
- * the syntax tree — so the collapse rules can be unit-tested against a plain
- * `EditorState` with no language configured (see func-collapse.test.ts).
+ * Works from the source text, not the syntax tree, so the collapse rules can be
+ * tested without a language configured (see func-collapse.test.ts).
  */
 export function handleFuncCall(
   state: EditorState,
@@ -1526,54 +1323,40 @@ export function handleFuncCall(
 
   const funcName = text.substring(hashOffset, delimIdx).trim();
 
-  // `#align(left|center|right)[#image(...)]` is treated as a placed image —
-  // it renders as the image block widget (with the alignment applied), not a
-  // generic align pill. Any other `#align` use stays generic.
+  // `#align(left|center|right)[#image(...)]` renders as the image widget with
+  // the alignment applied.
   const alignedImage = funcName === "align" ? parseAlignedImage(text) : null;
 
   if (INTERACTIVE_FUNCS.has(funcName)) {
-    // wikilink stays interactive (no generic pill) but renders an editable
-    // `[[Name]]` form on cursor instead of dropping to raw `#wikilink(...)`
-    // source — handled in its case below, so it must not early-return here.
+    // A wikilink shows an editable `[[Name]]` form on the cursor (handled in
+    // its case below), so it doesn't return early.
     if (funcName !== "wikilink" && isCursorAdjacentOrInside(state, from, to, cursors)) return false;
   } else if (BLOCK_WIDGET_FUNCS.has(funcName) || funcName === "callout" || funcName === "quote" || alignedImage) {
-    // image, callout, quote use the pill-above-element pattern:
-    // the element stays rendered; a pill is shown above it on cursor
-    // entry; clicking the pill exposes the raw markup for editing while
-    // the element re-renders as a block widget below. All handled in
-    // the case below — no early return here.
+    // Block elements (image, callout, quote) stay rendered with a pill above
+    // them; handled in their cases below.
   } else if (BLOCK_FUNCS.has(funcName)) {
     if (funcName === "table" && expandedPos === from) return false;
-    // Verse always renders as its widget — the contentEditable canvas
-    // inside owns the editing experience. Focus routing on insertion
-    // is handled inside the widget's toDOM (auto-focus the canvas
-    // when CM selection is inside the widget's body range).
+    // Verse always renders as its widget, which handles editing and focus
+    // itself.
   } else if (funcName === "task") {
-    // A task reveals its raw source in its case below while keeping its pill,
-    // so the done/due/label menu is reachable straight after insertion (the
-    // slash menu, palette and `- [ ]` shortcut all insert it expanded).
+    // A task reveals its source in its case below while keeping its pill, so
+    // the done/due/label menu is reachable right after insertion.
   } else {
     const isExpanded = expandedPos === from;
     if (isExpanded || (autoExpand && onCursor)) return false;
   }
 
-  // For inline pill-eligible funcs (strike/highlight/etc.): show pill
-  // when cursor is on line, hide when far away. Block-element funcs
-  // handle their pill placement themselves below.
+  // Inline functions show the pill when the cursor is on the line. Block
+  // functions place their own pill below.
   const showPill = onCursor && hashOffset === 1
     && !BLOCK_FUNCS.has(funcName) && !INTERACTIVE_FUNCS.has(funcName)
     && !BLOCK_WIDGET_FUNCS.has(funcName) && !alignedImage;
 
-  // Decoration recipe for block elements (image, callout, quote)
-  // that uses the pill-above-element pattern. Three states:
-  //   • cursor away: replace [from..to] with the element widget.
-  //   • cursor on line: same replace, but the widget renders a small
-  //     pill row at its top (withPill = true). Element is pushed down
-  //     by ~1 row but stays fully visible.
-  //   • expanded (or autoExpand on cursor): drop the replace so raw
-  //     markup is visible, and render the element as a block widget
-  //     below via side: 1 at `to` (withPill = false there — the raw
-  //     markup itself is the editing affordance).
+  // Decorations for a block element with a pill above it. Three states:
+  //   - cursor away: the element widget replaces the call.
+  //   - cursor on the line: the same widget, with a pill row at its top.
+  //   - expanded: raw markup is shown, with the element rendered as a block
+  //     widget after it.
   const pushBlockElement = (build: (withPill: boolean) => WidgetType) => {
     const isExpanded = expandedPos === from || (autoExpand && onCursor);
     if (isExpanded) {
@@ -1638,10 +1421,8 @@ export function handleFuncCall(
     case "overline":
     case "sub":
     case "super": {
-      // R12 inline content-bracket pills: hide #fn[ and ] when cursor is
-      // off the line (pill replaces the leading marker), apply a CSS
-      // mark to the body so the visual representation matches the
-      // function while keeping the body live-editable Typst source.
+      // Inline content-bracket functions: hide `#fn[` and `]` when the cursor
+      // is off the line and style the body with a mark, keeping it editable.
       const content = extractContentBracket(text, from);
       if (content) {
         decos.push((showPill
@@ -1658,9 +1439,8 @@ export function handleFuncCall(
       return true;
     }
     case "line": {
-      // `#line(length: …, stroke: …)` takes arguments, so a hand-typed call
-      // must stay editable while the caret is in it — the rule renders once
-      // the caret leaves.
+      // `#line(...)` takes arguments, so it stays editable while the caret is
+      // in it.
       if (collapseWouldSwallowCaret(state, from, to, cursors)) return false;
       if (/^#line\b/.test(text)) {
         decos.push(Decoration.replace({
@@ -1674,24 +1454,18 @@ export function handleFuncCall(
       if (!kind) return false;
       const bodyRange = bracketRangeAfterArgs(text, from);
       if (bodyRange === null) return false;
-      // Read the overrides from the argument list alone: a body that happens to
-      // contain the words `title:` or `color:` is prose, not an argument.
+      // Read overrides from the argument list only, so words like `title:` in
+      // the body aren't mistaken for arguments.
       const argsText = text.slice(0, bodyRange.from - from);
       const title = extractNamedStringArg(argsText, "title");
       const color = calloutColor(kind, readCalloutColorArg(argsText));
-      // "Edit source": callout is an ALWAYS_EXPAND_PILL, so clicking its pill
-      // (or the menu's "Edit source") dispatches expandFunc against `from`. The
-      // in-place body editing below only exposes the body text — it can't reach
-      // the kind/title/other args — so honour the expand request the same way
-      // figure/bibliography/annotation do: drop all decorations and reveal the
-      // raw `#callout(...)` markup. Re-collapses once the cursor leaves.
-      // `autoExpand` (the "edit raw source in visual mode" setting) reveals it
-      // on every cursor-line entry, like the other funcs.
+      // Callout always expands from its pill. The in-place body editing can't
+      // reach its arguments, so an expand request (or the auto-expand setting)
+      // shows the raw markup. It collapses when the cursor leaves.
       if (expandedPos === from || (autoExpand && onCursor)) return false;
-      // Same model as block quote: a single rendered widget when the cursor is
-      // away, and an in-place editable body (real text + callout styling, no
-      // duplicate, no caret trap) when it's on. Both states are built from the
-      // same geometry variables so the block never changes height.
+      // A rendered widget when the cursor is away, an editable body with
+      // callout styling when it is on. Both use the same geometry so the height
+      // doesn't change.
       if (!onCursor) {
         const bodyText = state.doc.sliceString(bodyRange.from, bodyRange.to);
         decos.push(
@@ -1701,9 +1475,9 @@ export function handleFuncCall(
         );
         return false;
       }
-      // Cursor on the callout: the opener becomes the heading row (pill +
-      // label) at the top of the first body line, the closer is hidden, and
-      // each body line carries the frame's inset and tint.
+      // Cursor on the callout: the opener becomes the heading row (pill and
+      // label) on the first body line, the closer is hidden, and each body line
+      // gets the frame's inset and tint.
       const layout = blockEditLayout(state, bodyRange.from, bodyRange.to);
       decos.push(
         Decoration.replace({
@@ -1721,10 +1495,9 @@ export function handleFuncCall(
       return false;
     }
     case "annotation": {
-      // An annotation is a remark on the writing, not part of it: a pill marks
-      // its place and the comment reads in the Changes & History pane (the
-      // pill's click opens it there). When expanded, the raw source shows
-      // instead (the generic expanded check above returned before this).
+      // An annotation is a remark on the writing: a pill marks its place and
+      // opens the comment in the Changes & History pane. When expanded, the raw
+      // source shows instead.
       const attribution = [extractNamedStringArg(text, "by"), extractNamedStringArg(text, "on")]
         .filter(Boolean).join(" · ");
       const body = extractBracketContent(text) ?? "";
@@ -1763,11 +1536,8 @@ export function handleFuncCall(
     }
     case "task": {
       const body = extractFirstStringArg(text);
-      // Pill shows even when the body is missing — an auto-paired `#task()`
-      // (typed by hand, before a description exists) still gets the pill, so the
-      // visual editor confirms "yes, this function exists" while the user is
-      // still typing rather than staying silent until the call is fully formed.
-      // Mirrors the `due` case; addresses issue #24.
+      // Show the pill even without a body, so an unfinished `#task()` is still
+      // recognized (issue #24).
       if (showPill) {
         decos.push(
           Decoration.widget({ widget: new FuncPillWidget(from, "task"), side: -1 }).range(from),
@@ -1779,11 +1549,9 @@ export function handleFuncCall(
         // inside the body string can't be mistaken for it.
         const dueIdx = text.search(/\bdue\s*:/);
         const due = dueIdx >= 0 ? extractDateLiteral(text.slice(dueIdx)) : null;
-        // Caret on/adjacent to the call → reveal the raw `#task("…")` source
-        // for inline editing, the same temporary-expand-on-cursor affordance
-        // footnote and wikilink use. The pill above stays available for the
-        // done/due/label menu; moving the caret away collapses the source back
-        // to the checkbox widget below.
+        // Caret on or next to the call: reveal the raw source for editing,
+        // keeping the pill for the menu. Moving away collapses it back to the
+        // checkbox.
         const revealSource = expandedPos === from
           || (autoExpand && onCursor)
           || isCursorAdjacentOrInside(state, from, to, cursors);
@@ -1801,8 +1569,8 @@ export function handleFuncCall(
     case "due": {
       const date = extractDateLiteral(text);
       const label = extractNamedStringArg(text, "label");
-      // Pill shows even when the date is missing — that's how the user
-      // fills one in via the menu after a slash-inserted `#due()`.
+      // Show the pill even without a date, so one can be filled in through the
+      // menu.
       if (showPill) {
         decos.push(
           Decoration.widget({ widget: new FuncPillWidget(from, "due"), side: -1 }).range(from),
@@ -1825,12 +1593,9 @@ export function handleFuncCall(
       const display = extractNamedStringArg(text, "display");
       const label = extractNamedStringArg(text, "label");
 
-      // Editing affordance: when the cursor is on/adjacent to the call, re-skin
-      // it as an editable `[[Name]]` / `[[Name::label]]` instead of revealing
-      // raw `#wikilink(...)`. The call's own source is untouched, so the
-      // wikilink suggestion picker (which scans the source) keeps working; the
-      // bracket/`::` widgets just hide the function wrapper, and the name/label
-      // stay as live editable text between them.
+      // Cursor on or next to the call: show it as an editable `[[Name]]` /
+      // `[[Name::label]]`. The source is unchanged, so the suggestion picker
+      // still works; widgets hide the function wrapper.
       if (isCursorAdjacentOrInside(state, from, to, cursors)) {
         // A `display:` alias has no `[[ ]]` form — fall back to raw source.
         if (display !== null && display !== undefined) return false;
@@ -1881,9 +1646,8 @@ export function handleFuncCall(
         );
         return false;
       }
-      // `#link(<label>)[…]` — a label reference (intra-document anchor) rather
-      // than a string URL. Render it as an internal link instead of letting it
-      // fall through to raw source.
+      // `#link(<label>)[…]` links to a label in the document; render it as an
+      // internal link.
       const label = extractFirstLabelArg(text);
       if (label) {
         decos.push(
@@ -1897,12 +1661,9 @@ export function handleFuncCall(
       return false;
     }
     case "suggestion": {
-      // Same model as #task: the tracked-change marks always render as the
-      // SuggestionWidget (click → Accept/Reject/Comment dialogue), and when the
-      // cursor is on the line a standard FuncPillWidget appears. Clicking the
-      // pill expands the raw `#suggestion(...)` source inline (the standard pill
-      // behaviour), so multi-paragraph proposals are edited as real text rather
-      // than crammed into a popup field; source mode remains available too.
+      // Like `#task`: the tracked change always renders as a SuggestionWidget
+      // (click to accept, reject or comment), with a pill on the cursor line
+      // that expands the raw source for editing.
       const kind = (extractNamedStringArg(text, "kind") ?? "insert") as SuggestionKind;
       const by = extractNamedStringArg(text, "by") ?? "";
       const on = extractNamedStringArg(text, "on") ?? "";
@@ -1960,10 +1721,8 @@ export function handleFuncCall(
         const source = state.doc.sliceString(range.from, range.to);
         const alignArg = (text.match(/align-to\s*:\s*(left|center|right)\b/) ?? [])[1];
         const fontArg = extractNamedStringArg(text, "font");
-        // weight: integer (the pill emits this) — named-string literals
-        // like `"bold"` aren't surfaced by the pill but still parse fine
-        // in lib.typ; we just don't reflect them in the chip's active
-        // state.
+        // Only an integer weight (what the pill emits) is reflected in the
+        // chip; named weights like `"bold"` still work in Typst.
         const weightMatch = text.match(/\bweight\s*:\s*(\d+)\b/);
         const weight = weightMatch ? Number(weightMatch[1]) : null;
         decos.push(
@@ -1994,44 +1753,32 @@ export function handleFuncCall(
       return false;
     }
     case "quote": {
-      // Branch on `block:` so the visual editor matches what Typst
-      // actually renders. Block form → display blockquote widget with
-      // attribution. Inline form → mid-paragraph live-edit pill with
-      // CSS smart-quote brackets (the inline form is essentially HTML
-      // `<q>` — Typst doesn't render attribution inline either).
+      // Match Typst's rendering: `block: true` is a display quote with
+      // attribution; the inline form is a live-edit pill between smart quotes,
+      // without attribution.
       const isBlock = /\bblock\s*:\s*true\b/.test(text);
       if (isBlock) {
         const bodyRange = bracketRangeAfterArgs(text, from);
         if (bodyRange === null) return false;
-        // "Edit source": block quote is an ALWAYS_EXPAND_PILL, so its pill (and
-        // the menu's "Edit source") dispatches expandFunc against `from`. The
-        // in-place body editing below can't reach the attribution/other args, so
-        // honour the expand request by revealing the raw `#quote(...)` markup —
-        // matching callout/figure/bibliography. Re-collapses when the cursor leaves.
-        // `autoExpand` (the "edit raw source" setting) reveals it on every
-        // cursor-line entry, like the other funcs.
+        // Block quote always expands from its pill. The in-place body editing can't
+        // reach its arguments, so an expand request (or the auto-expand setting)
+        // shows the raw markup.
         if (expandedPos === from || (autoExpand && onCursor)) return false;
         // Edit in place when the cursor is on the quote; render a widget when
-        // it's away. We deliberately do NOT use the old "raw source + side:1
-        // preview widget" pattern: it rendered the quote twice and left a
-        // block widget at `to` that trapped the caret. Instead we follow the
-        // Tier-1 decoration model used by the inline content-bracket pills.
+        // it is away.
         const attribution = extractAttributionDisplay(text);
         if (!onCursor) {
-          // Cursor away → one rendered blockquote widget. Single, atomic,
-          // no trailing block widget, so nothing to duplicate or trap.
+          // Cursor away: one atomic blockquote widget.
           const content = state.doc.sliceString(bodyRange.from, bodyRange.to);
           decos.push(
             Decoration.replace({ widget: new BlockquoteBlockWidget(content, attribution, from, bodyRange.from) }).range(from, to),
           );
           return false;
         }
-        // Cursor on the quote → edit the body as real CodeMirror text: a
-        // quote pill replaces the `#quote(block: true)[…]` opener, the
-        // closing `]` is hidden (or, with an attribution, replaced by the
-        // same attribution row the widget shows), and the body's lines get
-        // blockquote styling built from the same geometry as the widget.
-        // Native cursor/undo, no contentEditable, no round-trip.
+        // Cursor on the quote: the body is edited as ordinary text. A pill
+        // replaces the opener, the closing `]` is hidden (or replaced by the
+        // attribution row), and body lines get blockquote styling with the
+        // widget's geometry.
         const layout = blockEditLayout(state, bodyRange.from, bodyRange.to);
         decos.push(
           Decoration.replace({ widget: new FuncPillWidget(from, "quote") }).range(from, layout.hideOpenTo),
@@ -2043,21 +1790,15 @@ export function handleFuncCall(
           ).range(layout.hideCloseFrom, to));
         }
         pushBlockEditLines(decos, state, layout, "cm-typst-blockquote-line");
-        // Italic/colour only over the body — keeps any text trailing after the
-        // closing `]` on the same line looking like the ordinary text it is.
+        // Style only the body, not text after the closing `]`.
         if (layout.hideOpenTo < layout.hideCloseFrom) {
           decos.push(blockquoteBodyMark.range(layout.hideOpenTo, layout.hideCloseFrom));
         }
         return false;
       }
-      // Inline: same content-bracket pill pattern as #strike, #emph, etc.
-      // The body stays live-editable Typst source between two atomic smart-
-      // quote widgets that stand in for the hidden `#quote[` opener and `]`
-      // closer, so the visual representation tracks Typst's `<q>`-like
-      // rendering. Widgets (rather than ::before/::after on the body) keep the
-      // caret on the correct side of each quote — see QuoteGlyphWidget.
-      // Note: "quote" is in BLOCK_FUNCS (for the block form), so the
-      // generic showPill is always false. Compute it locally for inline.
+      // Inline quote: the body stays editable between two smart-quote widgets
+      // standing in for the hidden `#quote[` and `]`. "quote" is in BLOCK_FUNCS
+      // for its block form, so the pill condition is computed here.
       const inlineShowPill = onCursor && hashOffset === 1;
       const content = extractContentBracket(text, from);
       if (content) {
@@ -2088,9 +1829,7 @@ export function handleFuncCall(
       return false;
     }
     case "bibliography": {
-      // When the user clicks the pill, expandedPos === from, exposing the
-      // raw `#bibliography(...)` source for inspection or editing — same
-      // pattern as other expandable funcs.
+      // When expanded, show the raw `#bibliography(...)` source.
       if (expandedPos === from) return false;
       // Typing the path by hand must not be interrupted by the block widget
       // replacing the call out from under the caret.
@@ -2098,8 +1837,8 @@ export function handleFuncCall(
       const path = extractFirstStringArg(text) ?? "";
       let replaceEnd = to;
       const docLen = state.doc.length;
-      // Absorb a trailing newline + blank line so the line doesn't leave a
-      // stray empty line above/below the pill.
+      // Include a trailing newline and blank line so no stray empty line
+      // remains.
       if (replaceEnd < docLen) {
         const afterLine = state.doc.lineAt(replaceEnd);
         if (replaceEnd === afterLine.to) {
@@ -2120,22 +1859,14 @@ export function handleFuncCall(
       return false;
     }
     case "figure": {
-      // Always render as a chip — figure's body is the first positional
-      // arg (often `image(...)`), not a `[...]` bracket. The default
-      // case's "first [ is the body" heuristic would mistakenly hide a
-      // `caption: [...]`, so figure opts out and exposes the caption
-      // through the menu instead (R7).
+      // Figure always renders as a chip: its body is a positional argument, and
+      // the default "first `[` is the body" rule would hide a `caption: [...]`.
+      // The caption is edited through the menu.
       //
-      // When explicitly expanded — right after insertion (the slash
-      // command dispatches `expandFunc`) or via the chip menu's "Edit
-      // source" — drop the chip so the raw multi-line source is visible
-      // and the cursor can land inside the body `[…]`. Re-collapses to
-      // the chip once the cursor leaves, like the bibliography pill.
-      //
-      // "Always a chip" describes how the call reads when idle; it was written
-      // assuming insertion via the `/` palette (which dispatches expandFunc, so
-      // the source stays open). A hand-typed `#figure(` gets neither, so it
-      // needs the same caret guard every other call has.
+      // When expanded (after insertion from the `/` palette, or via "Edit
+      // source"), the raw source is shown so the cursor can reach the body. It
+      // collapses when the cursor leaves. A hand-typed `#figure(` also needs
+      // the caret guard.
       if (expandedPos === from) return false;
       if (collapseWouldSwallowCaret(state, from, to, cursors)) return false;
       decos.push(Decoration.replace({
@@ -2144,11 +1875,8 @@ export function handleFuncCall(
       return false;
     }
     case "align": {
-      // A lone aligned image renders as the image block widget, with the
-      // alignment applied. The pill anchors at `from` (the `#align`) so its
-      // menu — built via imageOptions, which detects the wrapper — edits the
-      // image's file/alt/width and the alignment together. Other `#align`
-      // uses fall through to the generic content-bracket handling below.
+      // An aligned image renders as the image widget. Its pill sits at the
+      // `#align`, so the menu edits the image and the alignment together.
       if (alignedImage) {
         const path = extractFirstStringArg(alignedImage.imgText);
         if (path) {
@@ -2174,8 +1902,8 @@ export function handleFuncCall(
         decos.push(hide.range(content.to, to));
         return true;
       }
-      // An arguments-only call (`#func(…)`, no `[…]` body) collapses to a
-      // chip — but not while the caret is inside it.
+      // An arguments-only call collapses to a chip, but not while the caret is
+      // inside it.
       if (collapseWouldSwallowCaret(state, from, to, cursors)) return false;
       decos.push(Decoration.replace({
         widget: new FuncChipWidget(from, funcName),
@@ -2193,9 +1921,8 @@ function addSplitMarks(
   decos: Range<Decoration>[],
 ) {
   const innerRanges: { from: number; to: number }[] = [];
-  // Find inner #func(...) calls by scanning the content text directly.
-  // The syntax tree may have incorrect boundaries due to parser truncation,
-  // so text scanning is more reliable here.
+  // Find inner calls by scanning the text: the tree's boundaries can be wrong
+  // here (see `correctedFuncCallEnd`).
   const contentText = state.doc.sliceString(contentFrom, contentTo);
   const funcRe = /#(\w[\w-]*)\s*\(/g;
   let m: RegExpExecArray | null;
@@ -2242,30 +1969,13 @@ function extractContentBracket(
     }
   }
   if (closeIdx < 0) return null;
-  // Empty content brackets (e.g. just-inserted "#highlight[]") return a
-  // zero-width range. Callers need this so they can still hide the wrapping
-  // markup and place the cursor in a clean typing slot — without it the
-  // visual editor falls back to raw source the moment a slash-command or
-  // shortcut produces an empty pair.
+  // An empty body (`#highlight[]`) returns a zero-width range, so callers can
+  // still hide the markup and leave a typing slot.
   return { from: nodeFrom + open + 1, to: nodeFrom + closeIdx };
 }
 
-/**
- * Range of the body content bracket that follows a call's argument list —
- * the `[…]` after `(…)`. Use this instead of {@link extractContentBracket}
- * when a named bracket argument can precede the body (e.g.
- * `#quote(block: true, attribution: [Smith])[body]`), where the first `[`
- * belongs to the argument, not the body. Quote- and depth-aware so a `)` or
- * `[` inside a string argument doesn't close the list early. Returns a
- * zero-width range for an empty body (`[]`), like extractContentBracket.
- */
-/** Skip an inline raw span (`` `…` ``, `` ``…`` ``) whose opening backtick run
- *  starts at `i`. Returns the index just past the matching closing fence, or
- *  `end` when the span is unterminated within `[i, end)`. */
-/** True when `pos` falls inside a Typst node where `\` is literal content, not
- *  an escape — inline/block raw (backticks), code blocks, comments, strings.
- *  The text-level escape scan must skip these so a backslash typed inside
- *  `` `\` `` (or code mode) survives instead of being hidden as an escape. */
+/** True when `pos` is inside a node where `\` is literal (raw, code, comment,
+ *  string). The escape scan skips these. */
 function posInsideRawOrCode(tree: ReturnType<typeof syntaxTree>, pos: number): boolean {
   let n: ReturnType<typeof tree.resolveInner> | null = tree.resolveInner(pos, 1);
   while (n) {
@@ -2278,6 +1988,8 @@ function posInsideRawOrCode(tree: ReturnType<typeof syntaxTree>, pos: number): b
   return false;
 }
 
+/** Skip an inline raw span starting at `i`. Returns the index after its closing
+ *  backticks, or `end` when it is unterminated. */
 function skipInlineRaw(text: string, i: number, end: number): number {
   let n = 0;
   while (i + n < end && text[i + n] === "`") n++;
@@ -2286,12 +1998,11 @@ function skipInlineRaw(text: string, i: number, end: number): number {
   return close >= 0 && close < end ? close + n : end;
 }
 
-/** Index of the `]` that closes the `[` at `open`, balancing nested brackets
- *  but treating any `[`/`]` inside an inline raw span (`` `…` ``) or behind a
- *  `\`-escape as literal — Typst markup rules. -1 if unbalanced in `[open, end)`.
- *  This is what keeps a literal `[[` written inside backticks (e.g. a callout
- *  body that documents the wikilink shortcut) from unbalancing the call's `[…]`
- *  body and dropping the whole block back to raw source. */
+/**
+ * Index of the `]` closing the `[` at `open`, or -1. Brackets inside inline raw
+ * or behind `\` are literal, as in Typst markup, so a `[[` in backticks doesn't
+ * unbalance the body.
+ */
 function matchContentBracket(text: string, open: number, end: number): number {
   let depth = 0;
   let i = open;
@@ -2306,6 +2017,12 @@ function matchContentBracket(text: string, open: number, end: number): number {
   return -1;
 }
 
+/**
+ * Range of the `[…]` body after a call's argument list. Use instead of
+ * {@link extractContentBracket} when a bracket argument can come before the
+ * body (`#quote(attribution: [Smith])[body]`). String- and depth-aware.
+ * Returns a zero-width range for an empty body.
+ */
 function bracketRangeAfterArgs(
   text: string,
   nodeFrom: number,
@@ -2337,9 +2054,7 @@ function extractFirstStringArg(text: string): string | null {
   return m ? m[1] : null;
 }
 
-/** A Typst label reference as the first argument: `#link(<my-label>)…`. This is
- *  the intra-document anchor form of a link, distinct from the string-URL form
- *  read by extractFirstStringArg. */
+/** A label as the first argument: `#link(<my-label>)…`. */
 function extractFirstLabelArg(text: string): string | null {
   const m = text.match(/\(\s*<([^>\s]+)>/);
   return m ? m[1] : null;
@@ -2358,9 +2073,10 @@ function extractFirstStringArgRange(
   return { from: nodeFrom + contentStart, to: nodeFrom + contentEnd };
 }
 
-/** Like {@link extractFirstStringArgRange} but honors `\\X` escapes inside
- *  the string literal — needed for verse bodies, which routinely contain
- *  `\"`, `\\`, `\n`, and markup-escape pairs like `\*`. */
+/**
+ * Like {@link extractFirstStringArgRange}, but honours `\X` escapes in the
+ * string (verse bodies often contain `\"`, `\\`, `\*`).
+ */
 function extractFirstEscapedStringArgRange(
   text: string,
   nodeFrom: number,
@@ -2408,11 +2124,10 @@ function callParenEnd(s: string, start: number): number {
   return -1;
 }
 
-/** Recognize `#align(left|center|right)[ #image(...) ]` wrapping a lone
- *  image — the source form for a horizontally-placed image (CLAUDE.md
- *  Typst-first: `#align` is Typst's native placement primitive). Returns
- *  the keyword and the inner image source, or null for any other `#align`
- *  use (which keeps the generic content-bracket pill). */
+/**
+ * Recognize `#align(left|center|right)[#image(...)]` around a lone image.
+ * Returns the alignment and the image source, or null.
+ */
 function parseAlignedImage(
   text: string,
 ): { kw: "left" | "center" | "right"; imgText: string } | null {
@@ -2446,21 +2161,20 @@ function extractNamedBracketArg(text: string, name: string): string | null {
   return m ? m[1] : null;
 }
 
-/** Return a display string for `attribution: …` covering the four shapes
- *  the pill emits: string, label, `link("…")[…]`, raw bracket content.
- *  Returns "" if no attribution arg is present. */
+/**
+ * Display text for `attribution: …` in the four forms the pill writes (string,
+ * label, `link("…")[…]`, bracket content), or "".
+ */
 function extractAttributionDisplay(text: string): string {
   const str = extractNamedStringArg(text, "attribution");
   if (str !== null) return str;
-  // link("url")[Text] — show the inner Text, drop the URL (the visual
-  // preview doesn't render the link styling either way).
+  // `link("url")[Text]`: show only the text.
   const linkMatch = text.match(
     /attribution\s*:\s*link\(\s*"(?:\\.|[^"\\])*"\s*\)\s*\[([\s\S]*?)\]/,
   );
   if (linkMatch) return linkMatch[1];
-  // Label literal: attribution: <bibkey>. Show the literal so the author
-  // can confirm which key they referenced; the rendered output is a
-  // citation in the bibliography style.
+  // `attribution: <bibkey>`: show the label so the author can see which key
+  // they used.
   const labelMatch = text.match(/attribution\s*:\s*(<[^\s<>]+>)/);
   if (labelMatch) return labelMatch[1];
   // Bracket content: attribution: [free content].
@@ -2505,10 +2219,10 @@ export function extractNamedBracket(text: string, name: string): string | null {
   return extractBracketAfter(text, m.index + m[0].length);
 }
 
-/** Inner content of the trailing `[body]` content block — the `[...]` that
- *  follows the balanced `(...)` argument list (so a `old: [..]` inside the
- *  args isn't mistaken for it). String-aware so a `)` inside a quoted arg
- *  doesn't end the arg list early. */
+/**
+ * Content of the `[body]` after the argument list, so a bracket argument like
+ * `old: [..]` isn't mistaken for it. String-aware.
+ */
 export function extractBodyBracket(text: string): string | null {
   const parenOpen = text.indexOf("(");
   let after = 0;
@@ -2545,23 +2259,16 @@ const expandedFuncField = StateField.define<number | null>({
         next = e.value;
         return next;
       }
-      // External reloads (sidebar property edits) dispatch this effect to
-      // force visualField to rebuild against a fresh tree. The mapped
-      // expanded position is meaningless after a full-doc replace and would
-      // otherwise leave the previous #note() (or similar) func expanded —
-      // showing raw source until the user clicks elsewhere. Clear it.
+      // After an external reload (e.g. a property edit), the mapped expanded
+      // position is meaningless; clear it.
       if (e.is(rebuildVisualDecorations)) {
         return null;
       }
     }
     if (tr.selection && next !== null && next <= tr.state.doc.length) {
-      // The call may span multiple lines (a multi-paragraph callout, a
-      // long quote). Treat any cursor on any line of the call as
-      // "nearby" so editing the body doesn't auto-collapse the
-      // expansion. findCallEnd walks the doc directly here — we don't
-      // have a view in this StateField update fn.
-      // A revealed comment run spans its own lines (a call's end can't be
-      // found by bracket matching), so it is looked up from the syntax tree.
+      // Keep the expansion open while the cursor is on any line of the call. A
+      // revealed comment run has no brackets, so its end comes from the syntax
+      // tree.
       const callEnd = commentRunStartingAt(tr.state, next)?.to
         ?? findCallEnd({ doc: tr.state.doc }, next);
       const startLine = tr.state.doc.lineAt(next).number;
@@ -2604,14 +2311,9 @@ function cursorNearDecoTrigger(state: EditorState): boolean {
 }
 
 /**
- * Grow each dirty range so it fully contains any `FuncCall` it overlaps. A
- * block element (callout, quote, …) renders as several decorations spread
- * across its lines — a pill, hidden markup, a per-line style. If a partial
- * rebuild covered only some of those lines it would rebuild part of the set
- * and keep the rest stale, leaving self-contradictory decorations: a leftover
- * editing line-border doubling the rendered widget's bar, or a stale pill
- * replace overlapping a fresh whole-element widget so the body vanishes.
- * Rebuilding the whole element at once keeps its decoration set consistent.
+ * Grow each dirty range to contain any `FuncCall` it overlaps. A block
+ * element's decorations span several lines; rebuilding only some of them leaves
+ * stale, conflicting decorations.
  */
 function expandRangesToBlockElements(
   state: EditorState,
@@ -2625,14 +2327,9 @@ function expandRangesToBlockElements(
       if (nodeFrom < from) from = nodeFrom;
       if (nodeTo > to) to = nodeTo;
     };
-    // Grow to a FuncCall's *corrected* bounds, not lezer's raw `n.from..n.to`.
-    // The decoration builder renders each call over correctedFuncCallEnd(...);
-    // growing to anything shorter would leave part of a multi-line block call
-    // outside the rebuild, stranding a stale editing border behind the widget
-    // (the doubled "nested" bar).
-    // A fenced code block is the other multi-line element with an edit state:
-    // its per-line header/body/footer styling must be dropped as one unit when
-    // the widget comes back, so it grows to the whole raw node too.
+    // Grow to the call's corrected end (see `correctedFuncCallEnd`), which is
+    // what the builder uses. A fenced code block's per-line edit styling must
+    // also be rebuilt as one unit.
     const growCall = (n: { name: string; from: number; to: number }) => {
       if (n.name === "Raw" || n.name === "RawBlock") {
         grow(n.from, n.to);
@@ -2666,9 +2363,8 @@ function expandRangesToBlockElements(
       to: r.to,
       enter(n) { growCall(n); },
     });
-    // The style preamble collapses/expands as one multi-line block widget, so a
-    // dirty line anywhere inside it must rebuild the whole range — otherwise a
-    // partial rebuild leaves the block decoration half-applied.
+    // The style preamble is one block widget, so a dirty line inside it
+    // rebuilds the whole range.
     if (preamble && r.from < preamble.to && r.to > preamble.from) {
       grow(preamble.from, preamble.to);
     }
@@ -2677,16 +2373,9 @@ function expandRangesToBlockElements(
 }
 
 /**
- * Grow each dirty range out to whole lines.
- *
- * Line decorations (`Decoration.line`) sit at a line's *start*. A block
- * element indented inside a list opens mid-line — the fence of a code block
- * written as a list item starts after the `- ` marker — so a range grown to
- * that element still begins past the line start, and the element's own line
- * decorations fall outside it. `rebuildRanges` would then keep them: the block
- * collapses back to its widget while the edit-state background stays painted
- * behind it. At the top level the element starts at column 0 and the two
- * coincide, which is why the same block outside a list was unaffected.
+ * Grow each dirty range to whole lines. Line decorations sit at the line start,
+ * and a block inside a list item starts mid-line, so without this its line
+ * decorations would be left stale.
  */
 function snapRangesToLines(
   state: EditorState,
@@ -2735,18 +2424,10 @@ function rebuildRanges(
   while (iter.value) {
     let inDirty = false;
     for (const r of merged) {
-      // Range decorations: standard half-open overlap.
-      // Point decorations (from === to) count as dirty anywhere in
-      // [r.from, r.to], both ends included. Dirty ranges are whole lines, so a
-      // point at either end belongs to a dirty line. A strict overlap test
-      // would keep points sitting exactly on a boundary, stranding stale
-      // copies next to the rebuilt ones:
-      //   • a line style at the start of a callout/quote (doubled bar);
-      //   • an expanded image/embed preview anchored at the element's end
-      //     (doubled preview);
-      //   • a pill whose call was just deleted, which collapses to the end of
-      //     its line, or onto an empty line, and would otherwise stay on
-      //     screen with nothing behind it.
+      // Range decorations use half-open overlap. Point decorations count as
+      // dirty at either end of the range, since ranges are whole lines;
+      // otherwise stale copies at a boundary (a callout's line style, an image
+      // preview, a deleted call's pill) would remain.
       const overlaps = iter.from < r.to && iter.to > r.from;
       const pointInRange = iter.from === iter.to && iter.from >= r.from && iter.from <= r.to;
       if (overlaps || pointInRange) {
@@ -2770,9 +2451,10 @@ function rebuildRanges(
   return RangeSet.of([...kept, ...rebuilt], true);
 }
 
-/** Incremental rebuild for a cursor move: only the lines the caret left and
- *  arrived on are rebuilt (grown to whole block elements first). Exported so
- *  tests can pin that its result matches a full rebuild. */
+/**
+ * Incremental rebuild for a cursor move: only the lines the caret left and
+ * arrived on, grown to whole block elements. Exported for tests.
+ */
 export function rebuildDirtyLines(
   existing: DecorationSet,
   state: EditorState,
@@ -2789,9 +2471,10 @@ export function rebuildDirtyLines(
   return rebuildRanges(existing, state, dirtyRanges);
 }
 
-/** Incremental rebuild for a document edit: the changed lines and the caret
- *  lines are rebuilt, everything else is mapped through the change. Exported
- *  so tests can pin that its result matches a full rebuild. */
+/**
+ * Incremental rebuild for a document edit: the changed lines and caret lines
+ * are rebuilt, the rest is mapped through the change. Exported for tests.
+ */
 export function rebuildDocChange(
   existing: DecorationSet,
   tr: { startState: EditorState; state: EditorState; changes: ChangeSet },
@@ -2818,20 +2501,14 @@ export function rebuildDocChange(
 }
 
 /**
- * The span of the new document whose top-level parse differs from the old
- * one, or null if only the edited text itself changed.
+ * The span of the new document whose top-level parse differs from the old one,
+ * or null.
  *
- * An edit can change how text far beyond it parses: closing an unterminated
- * bracket or backtick hands back the lines it had swallowed, and opening one
- * swallows them. Those lines are outside the change set, so without this they
- * keep their old decorations until the caret visits them. The top-level nodes
- * before and after the edit are compared from both ends; whatever lies between
- * the matching runs is the region whose structure changed.
- *
- * Typing inside a line updates the parse tree in place, so the old and new
- * trees are the same object and there is nothing to compare. A fresh tree only
- * appears after the reparse that structural edits trigger (see
- * `typst-editor.ts`), which is exactly when this matters.
+ * An edit can change how distant text parses: closing an unterminated bracket
+ * or backtick releases the lines it swallowed. Those lines lie outside the
+ * change set, so they are found by comparing top-level nodes from both ends.
+ * Typing inside a line updates the tree in place, so there is only something to
+ * compare after a structural reparse (see `typst-editor.ts`).
  */
 function reparsedSpan(
   oldTree: ReturnType<typeof syntaxTree>,
@@ -2872,27 +2549,17 @@ function topLevelNodes(tree: ReturnType<typeof syntaxTree>): TopLevelNode[] {
 
 
 
-// Effect dispatched by the post-history-rebuild plugin (below) once the
-// incremental parser has caught up after an undo/redo. Forces visualField
-// to re-iterate the now-complete tree and rebuild decorations.
-//
-// Also dispatched externally after a wholesale buffer replacement (e.g.
-// the right-panel "property changed" reload) — that path replaces the
-// doc and runs `ensureSyntaxTree` synchronously, but neither step fires
-// a follow-up transaction that visualField would treat as a "tree
-// changed" trigger, so its decorations otherwise stay anchored to the
-// pre-replace parse tree (with widget Replace ranges that mask the new
-// content, producing a blank-looking editor).
+// Forces `visualField` to rebuild from the current tree. Dispatched after an
+// undo/redo once the parser catches up, and after a whole-document replacement,
+// which otherwise leaves decorations from the old tree in place.
 export const rebuildVisualDecorations = StateEffect.define<null>();
 
 /**
- * The visual-field decoration update, factored out so the field wrapper can
- * guard it (see below). Returns the decoration set for `tr.state`, choosing a
- * full rebuild or an incremental one depending on what changed.
+ * Decoration update for `visualField`: a full or incremental rebuild depending
+ * on what changed.
  */
 function computeVisualDecorations(decos: DecorationSet, tr: Transaction): DecorationSet {
-  // A cell editor builds for one small range, so a rebuild per transaction
-  // is cheaper than working out what an incremental pass may keep.
+  // A cell editor covers a small range, so a full rebuild is cheapest.
   if (tr.state.facet(inlineOnlyFacet)) return buildDecorations(tr.state);
   for (const e of tr.effects) {
     if (e.is(rebuildVisualDecorations)) {
@@ -2902,17 +2569,12 @@ function computeVisualDecorations(decos: DecorationSet, tr: Transaction): Decora
   if (tr.docChanged) {
     const ep = tr.state.field(expandedFuncField, false) ?? null;
     if (ep !== null) return buildDecorations(tr.state);
-    // Document edits (including newline/paste/undo/redo) carry change sets we
-    // can map decoration ranges against — handle them incrementally.
+    // Document edits are mapped and rebuilt incrementally.
     return rebuildDocChange(decos, tr);
   }
   if (syntaxTree(tr.state) !== syntaxTree(tr.startState)) {
-    // Tree identity changed WITHOUT a doc change: the async (WASM) parser
-    // finished re-parsing in a later transaction. There is no change set to
-    // map old decoration ranges against, so an incremental update can't be
-    // applied safely — a full rebuild against the freshly-available tree is
-    // the correct (and only sound) response. Doc-driven edits never reach
-    // here; they took the incremental `rebuildDocChange` path above.
+    // The tree changed without a document change (the async parser finished).
+    // There is no change set to map, so rebuild fully.
     return buildDecorations(tr.state);
   }
   if (tr.startState.facet(autoExpandFacet) !== tr.state.facet(autoExpandFacet)) {
@@ -2935,9 +2597,7 @@ function computeVisualDecorations(decos: DecorationSet, tr: Transaction): Decora
 
 const visualField = StateField.define<DecorationSet>({
   create(state) {
-    // A malformed/partial parse tree must never abort the field's creation —
-    // that would throw out of the whole editor setup. Fall back to no
-    // decorations; the next clean reparse rebuilds everything.
+    // A bad parse tree must not break editor setup; start with no decorations.
     try {
       return buildDecorations(state);
     } catch (err) {
@@ -2946,17 +2606,9 @@ const visualField = StateField.define<DecorationSet>({
     }
   },
   update(decos, tr) {
-    // The decoration set is provided by this StateField, so a throw here would
-    // tear down the ENTIRE visual layer — every wikilink, pill, and widget —
-    // until the EditorView is recreated (i.e. the note is reopened). That is
-    // exactly the "wikilinks stop working until I leave and come back" symptom
-    // a transient parse error (e.g. a half-typed/corrupted table) can trigger.
-    // The per-FuncCall guard in buildDecorations covers most of it, but a throw
-    // anywhere else in the build (escape/angle-bracket scans, range math,
-    // RangeSet assembly) would still escape. Catch at the field boundary and
-    // keep the previous decorations — mapped through any doc change so their
-    // positions stay valid — so the layer survives and the next successful
-    // rebuild (a cursor move or async reparse) restores everything in place.
+    // A throw here would remove the whole visual layer until the note is
+    // reopened. Keep the previous decorations, mapped through any change, until
+    // the next successful rebuild.
     try {
       return computeVisualDecorations(decos, tr);
     } catch (err) {
@@ -2969,12 +2621,9 @@ const visualField = StateField.define<DecorationSet>({
   },
 });
 
-// Re-runs buildDecorations one frame after every undo/redo. The actual fix
-// for stale-tree decorations is the Prec.high wrapping of typst's
-// updateListener in typst-editor.ts (so its applyTreeEdit lands before
-// Language.state.apply takes the tree). This rebuild is a belt-and-braces
-// guard for any residual ordering quirk in other state fields (e.g.
-// protectedRangesField) that depend on the syntax tree.
+// Rebuilds decorations one frame after each undo/redo, as a safeguard for state
+// fields that depend on the syntax tree. The main fix is the `Prec.high`
+// wrapping of typst's updateListener in typst-editor.ts.
 const postHistoryRebuild = ViewPlugin.fromClass(class {
   pending: number | null = null;
 
@@ -3012,15 +2661,9 @@ const protectedChangeFilter = createProtectedChangeFilter(protectedRangesField);
 const tableEntryKeymap = createTableEntryKeymap(visualField);
 const verseEntryKeymap = createVerseEntryKeymap(visualField);
 
-// A trailing paragraph-break `\` is hidden in visual mode (see
-// `buildDecorations`) and registered here as an atomic range spanning the `\`
-// *and* the following newline. Atomicity makes CodeMirror treat the whole soft
-// break as one unit: the cursor can't land between the `\` and its newline
-// (which would otherwise let a keystroke insert text after the `\`, silently
-// turning the line break into a literal `\x` escape), and a single
-// Backspace/Delete at the break removes both characters at once, merging the
-// lines exactly as the writer expects. So the marker behaves like a seamless
-// line break even though the `\` is still present in the source.
+// Atomic ranges over each hidden soft-break `\` and its newline. The caret
+// can't land between them, and one Backspace or Delete removes both, so the
+// break behaves like an ordinary line break.
 class SoftBreakRange extends RangeValue {}
 const softBreakMarker = new SoftBreakRange();
 
@@ -3029,8 +2672,7 @@ function computeSoftBreakRanges(state: EditorState): RangeSet<SoftBreakRange> {
   for (let i = 1; i <= state.doc.lines; i++) {
     const slashPos = softBreakSlashPos(state, state.doc.line(i));
     if (slashPos === null) continue;
-    // Extend over the trailing newline when one exists (every line but the
-    // last); a soft break on the final line covers just the `\`.
+    // Include the newline when there is one (not on the last line).
     ranges.push(softBreakMarker.range(slashPos, Math.min(slashPos + 2, state.doc.length)));
   }
   return RangeSet.of(ranges);
@@ -3039,10 +2681,8 @@ function computeSoftBreakRanges(state: EditorState): RangeSet<SoftBreakRange> {
 const softBreakRangesField = StateField.define<RangeSet<SoftBreakRange>>({
   create: (state) => computeSoftBreakRanges(state),
   update(value, tr) {
-    // Recompute on doc edits, on async reparse (a trailing `\` can move
-    // in/out of a verbatim context once the tree settles), and on the
-    // explicit rebuild effect — the same triggers `visualField` uses, so the
-    // hidden markers and their atomic ranges never drift apart.
+    // Recompute on the same triggers as `visualField`, so the hidden markers
+    // and their atomic ranges stay in step.
     for (const e of tr.effects) if (e.is(rebuildVisualDecorations)) return computeSoftBreakRanges(tr.state);
     if (tr.docChanged || syntaxTree(tr.state) !== syntaxTree(tr.startState)) {
       return computeSoftBreakRanges(tr.state);
@@ -3055,16 +2695,13 @@ const softBreakAtomicRanges = EditorView.atomicRanges.of(
   (view) => view.state.field(softBreakRangesField, false) ?? RangeSet.empty,
 );
 
-// ── Atomic markup ranges ────────────────────────────────────────────
-// Every *replacing* decoration — a pill, hidden markup like `#callout("…")[`
-// or a closing `]`, a list marker, a block widget — should behave as a single
-// unit under cursor motion: one arrow press crosses it, not one press per
-// hidden character (which felt like the arrow key was stuck). CodeMirror does
-// not make replace decorations atomic on its own, so we derive an atomic
-// RangeSet from the visual decoration set: include the shared `hide` replace
-// and any widget-bearing replace, but NOT mark decorations (bold / italic /
-// highlight), whose text must stay editable. Memoised per decoration-set
-// instance so cursor moves don't re-scan an unchanged set.
+// ── Atomic markup ranges ──
+//
+// Replacing decorations (pills, hidden markup, list markers, block widgets)
+// should be crossed by one arrow press. CodeMirror doesn't make them atomic, so
+// an atomic set is derived from the visual decorations: hidden and widget
+// replaces, but not marks, whose text stays editable. Cached per decoration
+// set.
 class AtomicMarkupRange extends RangeValue {}
 const atomicMarkupMarker = new AtomicMarkupRange();
 const atomicMarkupCache = new WeakMap<DecorationSet, RangeSet<AtomicMarkupRange>>();
@@ -3090,17 +2727,13 @@ const markupAtomicRanges = EditorView.atomicRanges.of(
   (view) => atomicMarkupRanges(view.state.field(visualField, false)),
 );
 
-// Markup that hides a *line's prefix*, which is what the line-start caret rule
-// is about: the caret in front of it and the caret after it are drawn in the
-// same place, so a caret sent to the line start belongs after the markup.
+// Markup hiding the start of a line. A caret sent to the line start belongs
+// after it, since both positions are drawn in the same place.
 //
-// Two things are deliberately not in here. Markup that replaces the whole line
-// is the element itself — a rendered verse, a collapsed callout — and the
-// position in front of it is a real place on screen that the caret is
-// sometimes sent to on purpose; landing inside such an element is
-// `blockBodyCaretEntry`'s job instead. The exception is an empty list item,
-// whose bullet also runs to the end of the line but whose content is simply
-// not typed yet, so the position after it is where typing has to go.
+// Markup replacing a whole line (a rendered verse, a collapsed callout) isn't
+// included: the position in front of it is a real place on screen, and entering
+// it is `blockBodyCaretEntry`'s job. An empty list item is the exception, since
+// typing goes after its bullet.
 const lineLeadingMarkupCache = new WeakMap<DecorationSet, RangeSet<AtomicMarkupRange>>();
 
 function lineLeadingMarkupRanges(state: EditorState): RangeSet<AtomicMarkupRange> {
@@ -3132,26 +2765,13 @@ const blockBodyCaretEntry = createBlockBodyCaretEntry(visualField);
 
 const lineStartCaretGuard = lineStartCaretFilter(lineLeadingMarkupRanges);
 
-// Round the caret OUT of a rendered `#due(...)` pill to just past the call.
+// Move the caret out of a rendered `#due(...)` pill to just after the call. The
+// pill appears once the date is complete, with the caret still inside the call,
+// where the next keystroke would corrupt it. A due date is only edited through
+// its pill menu, so moving the caret is safe.
 //
-// The pill renders only once the date is a complete `YYYY-MM-DD` (see
-// extractDateLiteral), so when the user finishes typing the date the call
-// collapses to an atomic pill — but the caret, placed by that final keystroke,
-// sits INSIDE the call (before the closing `")`). CM's atomicRanges only skip
-// the caret during arrow-key motion, not after an insertion drops it inside, so
-// it stays there and the next Enter/keystroke corrupts the call (pushing `")`
-// onto the next line). A `#due` value is only ever edited via its pill menu, not
-// by typing in the raw call, so pushing the caret to the call's end is safe.
-//
-// Implemented as a view plugin, NOT a transactionFilter: the WASM parser
-// reparses asynchronously, so the DueWidget appears a frame AFTER the date-
-// completing keystroke, in a later tree-driven decoration rebuild with no doc or
-// selection change — a transactionFilter reading `tr.state` wouldn't see the
-// pill yet. The plugin re-checks whenever the decoration set changes and, if the
-// caret is sitting inside a freshly-rendered due pill, nudges it past the call
-// (deferred out of the update cycle). Other interactive elements don't need
-// this: wikilink/tag/link reveal editable raw markup when the caret is on them,
-// so a caret inside is intentional.
+// This is a view plugin, not a transaction filter, because the pill appears a
+// frame later after the async reparse.
 const dueCursorRoundOut = ViewPlugin.fromClass(class {
   pending: number | null = null;
 
@@ -3198,19 +2818,14 @@ const dueCursorRoundOut = ViewPlugin.fromClass(class {
   }
 });
 
-// Scroll stability across decoration changes is CodeMirror's own job: it
-// anchors on the line at the top of the visible area and corrects scrollTop
-// after every measure, so content above a height change stays put and content
-// below it moves. There was once a plugin here that anchored on the *clicked*
-// line instead; holding that line still dragged everything above it whenever a
-// block collapsed higher up the page, which is the opposite of what should
-// happen. Don't reintroduce one — if a click makes the page jump, the cause is
-// a block whose two states measure differently, and that belongs in the block's
-// own geometry (see the shared block variables in visual-theme.ts).
+// CodeMirror keeps scrolling stable across decoration changes by anchoring on
+// the top visible line. Don't add a plugin that anchors on the clicked line; if
+// a click makes the page jump, a block's two states measure differently, and
+// the fix belongs in its geometry (see the shared block variables in
+// visual-theme.ts).
 export function typstVisualMode(options?: { inlineOnly?: boolean }) {
-  // The inline-only variant serves a table cell editor: it edits a copy of
-  // the note narrowed to one cell, so table/verse entry, the table clipboard
-  // routing, and the post-undo rebuild (undo runs in the main editor) stay out.
+  // The inline-only variant serves a table cell editor, so table/verse entry,
+  // table clipboard routing and the post-undo rebuild are left out.
   if (options?.inlineOnly) {
     return [inlineOnlyFacet.of(true), expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, lineStartCaretGuard, blockBodyCaretEntry, visualField, softBreakRangesField, softBreakAtomicRanges, markupAtomicRanges, visualTheme, linkClickHandler, urlTyping, pillBoundaryNav];
   }

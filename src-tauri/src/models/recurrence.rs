@@ -1,44 +1,36 @@
 //! Recurrence rules for dated reminders.
 //!
-//! A [`Recurrence`] describes how a `#due(...)` reminder (or a note-level
-//! `#note(due: …)`) repeats. It mirrors the Typst `recurrence: (…)` dict
-//! emitted by `inkycap-notebox/lib.typ` — the rule is stored Typst-side so any
-//! Typst tool can read or author it, and InkyCap expands the occurrences
-//! *virtually* against the current date at view time. The note source is never
-//! rewritten, so a reminder keeps its single anchor date plus rule forever and
-//! the user's history stays intact.
+//! A [`Recurrence`] says how a `#due(...)` reminder (or `#note(due: …)`)
+//! repeats. It matches the Typst `recurrence: (…)` dict from
+//! `inkycap-notebox/lib.typ`, so any Typst tool can read or write the rule.
+//! Occurrences are computed from today's date when displayed; the source keeps
+//! its one date and rule and is never rewritten. Only reminders recur, not
+//! checkbox tasks, so there is no per-occurrence completion.
 //!
-//! "Reminder-only": recurrence attaches to dates, never to checkbox tasks, so
-//! there is no per-occurrence completion state to track.
-//!
-//! Why the occurrence math lives in Rust and not in Typst (CLAUDE.md
-//! Typst-first, tier 3): expansion is relative to *today* and the agenda's
-//! current view window — runtime state a static `.typ` document can't know —
-//! and it runs on the agenda hot path, which must not take a Typst compile per
-//! view. The *rule* stays Typst-native (stored, queried, portable); only the
-//! windowed expansion is Rust glue threading per-view date state.
+//! Per CLAUDE.md's Typst-first principle the rule stays in Typst, but expanding
+//! it is done here: it depends on today and the Agenda's view window, which a
+//! document can't know, and runs on the Agenda's hot path, which can't afford a
+//! compile per view.
 
 use crate::typst_pipeline::syntax::{Dict, Value};
 use chrono::{Datelike, Duration, NaiveDate, Weekday};
 use serde::{Deserialize, Serialize};
 
-/// Hard ceiling on internal occurrence stepping — a safety net against a
-/// pathological rule, never reached by real agenda windows (which pass a small
-/// `max`).
+/// Upper limit on stepping through occurrences, a safety net never reached by
+/// real views (which pass a small `max`).
 const ITER_CAP: usize = 4000;
 
-/// A repeat rule for a dated reminder. Field shapes match the queryable Typst
-/// dict in `inkycap-notebox/lib.typ::_fmt-recurrence`, so a value parsed from a
-/// note round-trips back to the same source.
+/// A repeat rule for a dated reminder. Fields match the dict from
+/// `inkycap-notebox/lib.typ::_fmt-recurrence`, so a parsed rule writes back as
+/// the same source.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Recurrence {
     /// `"day" | "week" | "month" | "year"`. Validated on parse.
     pub freq: String,
     /// Repeat every N periods. Always `>= 1`.
     pub interval: u32,
-    /// Weekly only: the weekdays the rule lands on, as lowercase two-letter
-    /// codes (`"mo".."su"`). Empty means "the anchor's own weekday". Ignored
-    /// for non-weekly frequencies.
+    /// Weekly only: the weekdays, as two-letter codes (`"mo".."su"`). Empty
+    /// means the anchor's weekday. Ignored otherwise.
     #[serde(default)]
     pub by_day: Vec<String>,
     /// Inclusive end date (`YYYY-MM-DD`), if the series is bounded by a date.
@@ -79,10 +71,9 @@ fn last_day_of_month(year: i32, month: u32) -> u32 {
         .unwrap_or(28)
 }
 
-/// Add `months` calendar months to `date`, clamping the day to the target
-/// month's length (Jan 31 + 1 month → Feb 28/29). Computed from the original
-/// anchor each call (not iteratively) so a clamped month doesn't permanently
-/// shrink later occurrences.
+/// Add `months` to `date`, clamping the day to the month's length (Jan 31 + 1
+/// month → Feb 28/29). Computed from the anchor each time, so one clamped month
+/// doesn't shift later ones.
 fn add_months(date: NaiveDate, months: i64) -> NaiveDate {
     let total = date.month0() as i64 + months;
     let year = date.year() + total.div_euclid(12) as i32;
@@ -92,9 +83,9 @@ fn add_months(date: NaiveDate, months: i64) -> NaiveDate {
 }
 
 impl Recurrence {
-    /// Parse a recurrence from the Typst `recurrence: (…)` metadata dict. Returns
-    /// `None` for a missing/invalid `freq` — i.e. the item simply doesn't recur.
-    /// Defensive about types even though `lib.typ` already normalizes the dict.
+    /// A rule from the Typst `recurrence: (…)` dict, or `None` for a missing or
+    /// invalid `freq` (no repeat). Checks types even though `lib.typ` normalizes
+    /// the dict.
     pub fn from_typst_dict(dict: &Dict) -> Option<Recurrence> {
         let freq = match dict.get("freq").ok()? {
             Value::Str(s) => s.as_str().to_lowercase(),
@@ -142,10 +133,9 @@ impl Recurrence {
         })
     }
 
-    /// Render the rule as Typst source for a `recurrence:` argument, e.g.
-    /// `(freq: "week", interval: 2, by-day: ("mo",), until: datetime(year: 2026, month: 12, day: 7))`.
-    /// Emits a native `datetime(...)` for `until` (the recommended authoring
-    /// form). Used when InkyCap writes a rule back into a note's source.
+    /// The rule as Typst source for `recurrence:`, e.g. `(freq: "week", interval: 2, by-day:
+    /// ("mo",), until: datetime(year: 2026, month: 12, day: 7))`, with `until` as a
+    /// `datetime(...)`. Used when InkyCap writes a rule into a note.
     pub fn to_typst_source(&self) -> String {
         let mut parts = vec![format!("freq: \"{}\"", self.freq)];
         parts.push(format!("interval: {}", self.interval.max(1)));
@@ -192,9 +182,8 @@ impl Recurrence {
         self.freq == "week" && !self.by_day.is_empty()
     }
 
-    /// The `k`-th occurrence (0-based) for the arithmetic frequencies
-    /// (day / week-without-byday / month / year). Not used for weekly+byday,
-    /// whose occurrences aren't a single arithmetic step.
+    /// The `k`-th occurrence (0-based) for the arithmetic frequencies (day,
+    /// week without by-day, month, year).
     fn nth(&self, anchor: NaiveDate, k: i64) -> NaiveDate {
         let step = self.interval_i64() * k;
         match self.freq.as_str() {
@@ -207,9 +196,8 @@ impl Recurrence {
     }
 
     /// Smallest `k >= 0` whose occurrence is on or after `from` (arithmetic
-    /// frequencies only). Estimates from an approximate period length, then
-    /// corrects in a handful of steps — so a far-past anchor never iterates the
-    /// whole intervening span.
+    /// frequencies only), estimated from the period and corrected in a few
+    /// steps, so a distant anchor doesn't iterate through the whole span.
     fn first_k_at_or_after(&self, anchor: NaiveDate, from: NaiveDate) -> i64 {
         if from <= anchor {
             return 0;
@@ -234,9 +222,8 @@ impl Recurrence {
         k
     }
 
-    /// The inclusive end date implied by `count`, if set: the date of the
-    /// `count`-th occurrence. Lets the windowed expansion treat `count` as just
-    /// another upper bound and always fast-forward to the view window.
+    /// The end date implied by `count` (the `count`-th occurrence), so `count`
+    /// is just another upper bound.
     fn count_end(&self, anchor: NaiveDate) -> Option<NaiveDate> {
         let c = self.count?;
         if c == 0 {
@@ -274,10 +261,9 @@ impl Recurrence {
         anchor_monday + Duration::days(w * self.interval_i64() * 7)
     }
 
-    /// Occurrence dates within `[from, to]` (both inclusive), in increasing
-    /// order, at most `max` of them. `anchor` is the rule's seed date. Bounds
-    /// from `until` and `count` are folded in. Past occurrences (before `from`)
-    /// are skipped, so callers pass `from = today` to get the upcoming series.
+    /// Occurrences within `[from, to]`, in order, at most `max`. `anchor` is
+    /// the rule's start date; `until` and `count` are applied. Occurrences
+    /// before `from` are skipped, so `from = today` gives the upcoming ones.
     pub fn occurrences(
         &self,
         anchor: NaiveDate,

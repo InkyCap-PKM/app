@@ -6,10 +6,10 @@ import { EditorView } from "@codemirror/view";
 import { WikilinkWidget, LinkWidget, CalloutBlockWidget } from "./widgets";
 import { highlightInlineStyle } from "./visual-colors";
 
-// A wikilink or an external link renders as a replace widget, and CodeMirror
-// draws a replace widget outside any mark decoration spanning it — so the
-// highlight painted over the surrounding text never reached the link. The
-// widget therefore carries the highlight's own styling and paints itself.
+// A wikilink or external link is a replace widget, which CodeMirror draws
+// outside any mark spanning it, so a highlight over the surrounding text
+// wouldn't reach the link. The widget therefore applies the highlight's style
+// itself.
 
 /** The first wikilink/link widget in the decoration set for `doc`, built with
  *  the caret parked on a trailing line so nothing is revealed as raw source. */
@@ -79,9 +79,9 @@ describe("highlightInlineStyle", () => {
   });
 });
 
-// Callouts and block quotes render their body with a second,
-// simpler renderer while the caret is away. It paints formatting from a CSS
-// class, which alone would show every highlight in the default yellow.
+// Callouts and block quotes draw their body with a simpler renderer while the
+// caret is away, which styles formatting by CSS class; on its own that would
+// show every highlight in the default yellow.
 
 /** The highlight span in a rendered callout whose body is `body`. */
 function calloutHighlight(body: string): HTMLElement {

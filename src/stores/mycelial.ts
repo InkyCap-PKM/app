@@ -25,11 +25,9 @@ const EMPTY_PUBLISHED: MycelialPublished = {
   openQuestions: [],
 };
 
-// Published state keyed by the owning tab id. Several Mycelial View tabs can be
-// open at once (split panes); a single global signal let them clobber each
-// other, so the right panel showed whichever view rendered last. Keying by tab
-// id lets the panel resolve the *focused* tab's slice — mirroring the editor
-// view registry in stores/editor.ts.
+// Published state by owning tab id. Several Mycelial View tabs can be open
+// (split panes), so the right panel reads the focused tab's state, as with the
+// editor registry in stores/editor.ts.
 const [publishedByTab, setPublishedByTab] = createSignal<Record<string, MycelialPublished>>({});
 
 /** Publish a Mycelial View's current context/excluded-term state under its tab

@@ -1,9 +1,8 @@
 /* Compose panel (components/ComposePanel.tsx): passage cards beside a draft.
    Drag states come from the shared .reorder--* classes (utilities.css).
 
-   Every colour here is mixed from theme tokens (--accent, --fg-*, --surface-*)
-   so it follows the light and dark themes, the palettes and a custom accent
-   without per-theme overrides. */
+   All colours are mixed from theme tokens (--accent, --fg-*, --surface-*),
+   so they follow the themes, palettes and custom accent without overrides. */
 
 /* The Compose notice above the draft carries a faint wash of the accent. */
 .editor-notice--compose {

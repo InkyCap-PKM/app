@@ -1,8 +1,7 @@
-/* Attachment-folder rename row and preview.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Attachment folder rename row and preview. Part of layout.css, whose import
+   order (see ../layout.css) keeps the cascade. */
 
-/* ── Attachment-folder rename row & preview (Phase C of portable-paths) ── */
+/* ── Attachment folder rename row and preview ── */
 
 .attachment-folder-field__control {
   display: flex;

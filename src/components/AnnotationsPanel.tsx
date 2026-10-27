@@ -1,10 +1,8 @@
-// Right-panel Annotations pane: lists every `#annotation` comment and
-// `#suggestion` tracked change in the active note. Clicking a row jumps to the
-// change in the editor (scroll + caret) so the reviewer sees where it is;
-// resolving a tracked change (Accept/Reject/Comment) is a separate per-row
-// action via the row's menu button, so the menu never obscures the list on a
-// navigation click. Filters by text at the top, and a fixed bottom toolbar
-// inserts new markup at the editor cursor.
+// Right-panel Annotations pane: every `#annotation` comment and `#suggestion`
+// tracked change in the active note. Clicking a row jumps to it in the editor;
+// resolving a change (Accept/Reject/Comment) is in the row's menu button, so
+// the menu doesn't cover the list on a click. A filter at the top; a toolbar at
+// the bottom inserts new markup at the cursor.
 
 import { Component, For, Show, createSignal, createMemo, createEffect } from "solid-js";
 import { EditorView } from "@codemirror/view";
@@ -82,19 +80,19 @@ function preview(text: string): string {
   return (line ?? "").trim();
 }
 
-/** The merge-first "Incoming since last sync" review section, shown at the top of
- *  the Changes view for a collaborative note. Lists the changes the last Sync /
- *  import folded into THIS note (relative to the recorded pre-sync baseline) and
- *  lets the reviewer revert any hunk — or the whole note — back to their version.
- *  Empty (renders nothing) when the note matches its baseline. Separate from the
- *  manual `#annotation`/`#suggestion` author tools listed below it. */
+/**
+ * "Incoming since last sync" section at the top of the Changes view for a
+ * collaborative note: the changes the last Sync or import brought into this note
+ * (compared with the pre-sync baseline), each revertible, or the whole note.
+ * Shows nothing when the note matches its baseline.
+ */
 const IncomingChanges: Component<{ path: string | null }> = (props) => {
   const t = useI18n();
   const [diff, setDiff] = createSignal<GitSyncNoteDiff | null>(null);
 
-  // Refetch the per-note diff when the note changes, when this pane mounts, and
-  // whenever the working tree moved (an edit or a revert bumps the store's
-  // sync-review version) so the two change lists stay current.
+  // Fetch the note's diff again when the note changes, when the pane mounts,
+  // and when the files change (an edit or revert bumps the store's sync-review
+  // version).
   createEffect(() => {
     syncReviewVersion(); // dependency: refetch after edits / reverts / syncs
     const path = props.path;
@@ -122,10 +120,11 @@ const IncomingChanges: Component<{ path: string | null }> = (props) => {
     return p ? p.split("/").pop() ?? p : "";
   };
 
-  /** Revert the whole note to its pre-sync baseline, with a confirm — this
-   *  discards every incoming change at once (unlike the per-hunk reverts, which
-   *  are individually visible). When the sync *added* the note, reverting deletes
-   *  it, so the confirm says so. Recoverable from git history either way. */
+  /**
+   * Revert the whole note to its pre-sync version, after a confirm, since this
+   * discards every incoming change. If the sync added the note, reverting deletes
+   * it, and the confirm says so. Git history keeps it either way.
+   */
   async function revertWholeNote() {
     const path = props.path;
     if (!path) return;
@@ -268,10 +267,10 @@ const IncomingChanges: Component<{ path: string | null }> = (props) => {
   );
 };
 
-/** Which half of the Changes & History pane is showing. Persisted as a UI
- *  preference (module-level + localStorage) so it survives note/tab switches and
- *  app restarts rather than snapping back to "Changes" each time the pane
- *  remounts. */
+/**
+ * Which half of the Changes & History pane is shown. Saved (module variable and
+ * localStorage) so it survives tab switches and restarts.
+ */
 const VIEW_STORAGE_KEY = "inkycap.annotationsPanel.view";
 function loadPanelView(): "changes" | "history" {
   try {
@@ -303,16 +302,14 @@ const AnnotationsPanel: Component = () => {
     return tab && tab.type === "file" ? tab.path : null;
   });
 
-  // Scan the active editor when this pane opens (the component mounts) and
-  // whenever the active editor changes (tab switch). Live edits while the pane
-  // is open are kept current by the annotation tracker plugin.
+  // Scan the active editor when the pane opens and when the active editor
+  // changes. While open, the annotation tracker plugin keeps it current.
   createEffect(() => {
     rescanAnnotations(activeEditorView()?.view);
   });
 
-  // The row last jumped to or asked for by an annotation pill, by its call's
-  // source offset. Highlighted so the reader can tell which comment the pill
-  // stands for.
+  // The row last jumped to or requested by an annotation pill (by its call's
+  // source offset), highlighted so the reader sees which comment the pill is.
   const [selectedFrom, setSelectedFrom] = createSignal<number | null>(null);
   let listEl: HTMLDivElement | undefined;
 
@@ -360,10 +357,10 @@ const AnnotationsPanel: Component = () => {
   const attribution = (a: AnnotationEntry): string =>
     [a.by, a.on].filter(Boolean).join(" · ");
 
-  /** Click a row: jump to the change in the document — scroll it into view and
-   *  place the caret at it — so the reviewer can see *where* it is. Resolving a
-   *  tracked change (Accept / Reject / Comment) is a separate, explicit action
-   *  via the row's menu button ([`openMenu`]), so it doesn't obscure the list. */
+  /**
+   * Click a row: scroll to the change and place the caret there. Resolving a
+   * change is a separate action in the row's menu ([`openMenu`]).
+   */
   function activate(a: AnnotationEntry) {
     setSelectedFrom(a.from);
     const handle = activeEditorView();
@@ -381,9 +378,9 @@ const AnnotationsPanel: Component = () => {
    *  row's menu button. Suggestions only — a plain comment has no resolution. */
   function openMenu(a: AnnotationEntry, anchorEl: HTMLElement) {
     const view = activeEditorView()?.view;
-    // The menu resolves a tracked change; a plain comment has none (and only
-    // suggestions render this button). The guard also narrows `a.kind` to the
-    // suggestion kinds the menu accepts.
+    // The menu resolves a tracked change, which a comment isn't (only
+    // suggestions show this button). The check also narrows `a.kind` for the
+    // menu.
     if (!view || a.kind === "annotation") return;
     openSuggestionMenu(
       view,

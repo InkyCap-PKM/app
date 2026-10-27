@@ -1,15 +1,11 @@
-// How InkyCap writes a cross-reference, and what a document currently allows.
+// How InkyCap writes cross-references, and what the document allows.
 //
-// Typst's `@name` shorthand is `#ref(<name>)`, and `ref` renders the *number*
-// of the element the label tags. Only numbered elements can be referenced that
-// way: figures, tables, numbered equations, and headings once heading numbering
-// is switched on. A label on ordinary prose has no number, so `@name` fails to
-// compile with "cannot reference text".
-//
-// `#link(<name>)[text]` carries no such restriction — it points at any label and
-// shows whatever words the writer chooses. The `@` suggestion popup and the
-// compile-error quick-fix both fall back to that form, so the rules for picking
-// between them live here once instead of in each caller.
+// `@name` is `#ref(<name>)`, which shows the referenced element's number, so it
+// only works for numbered elements: figures, tables, numbered equations, and
+// headings when numbering is on. A label on prose has no number and fails with
+// "cannot reference text". `#link(<name>)[text]` works for any label with any
+// words; the `@` popup and the compile-error quick fix fall back to it, using
+// the rules here.
 
 import type { LabelKind } from "./document-labels";
 
@@ -21,9 +17,8 @@ export function setRuleForElement(element: string): string {
 }
 
 /**
- * Label kinds `@name` can reference on its own. Headings are absent because
- * they only qualify once the document numbers them — ask
- * [`canReferenceWithAt`](#canReferenceWithAt) rather than this set directly.
+ * Label kinds `@name` can always reference. Headings only qualify when
+ * numbered; use [`canReferenceWithAt`](#canReferenceWithAt).
  */
 const ALWAYS_REFERENCEABLE: ReadonlySet<LabelKind> = new Set<LabelKind>([
   "figure",
@@ -32,29 +27,27 @@ const ALWAYS_REFERENCEABLE: ReadonlySet<LabelKind> = new Set<LabelKind>([
 ]);
 
 /**
- * Whether `@name` compiles for a label of this kind. `headingsNumbered` comes
- * from [`documentNumbersHeadings`](#documentNumbersHeadings); the catch-all
- * `"label"` kind (a label on prose) can never be referenced with `@`.
+ * Whether `@name` compiles for this kind of label. `headingsNumbered` comes
+ * from [`documentNumbersHeadings`](#documentNumbersHeadings); the `"label"`
+ * kind (prose) never can.
  */
 export function canReferenceWithAt(kind: LabelKind, headingsNumbered: boolean): boolean {
   if (kind === "heading") return headingsNumbered;
   return ALWAYS_REFERENCEABLE.has(kind);
 }
 
-// Typst lexes an `@` as a reference wherever a label character follows it,
-// even in the middle of a word: `athena@inkycap.org` is text plus a reference
-// to `<inkycap.org>`. InkyCap deliberately reads that shape as an email address
-// or handle instead, on every surface that looks at an `@` — the suggestion
-// popup does not open, the visual editor shows it as plain text, and the
-// compile pipeline escapes it so the note still builds. The test is ASCII-only
-// on purpose: an email's local part is ASCII, and a citation written directly
-// after a CJK word (`参见@smith2020`) is a real reference that must keep working.
+// Typst reads `@` as a reference wherever a label character follows, even
+// mid-word, so `athena@inkycap.org` is text plus a reference to
+// `<inkycap.org>`. InkyCap treats it as an email address or handle everywhere:
+// no `@` popup, plain text in the visual editor, escaped when compiling. ASCII
+// only, since email local parts are ASCII and a citation right after a CJK word
+// (`参见@smith2020`) must still work.
 const EMAIL_LOCAL_PART_TAIL_RE = /[A-Za-z0-9._+-]/;
 
 /**
- * Whether an `@` preceded by `charBefore` is the join of an email address or
- * handle rather than the start of a reference. `charBefore` is the single
- * character before the `@`, or an empty string at the start of the document.
+ * Whether an `@` after `charBefore` joins an email address or handle rather
+ * than starting a reference. `charBefore` is the character before the `@`, or
+ * "" at the start of the document.
  */
 export function isEmailLikeAt(charBefore: string): boolean {
   return charBefore.length > 0 && EMAIL_LOCAL_PART_TAIL_RE.test(charBefore);
@@ -76,9 +69,9 @@ export interface LinkReference {
 }
 
 /**
- * Build a `#link(<name>)[display]` cross-reference. Selecting the display range
- * after insertion lets the writer type over the placeholder wording immediately,
- * which matters most for prose labels where the label name is only a stand-in.
+ * A `#link(<name>)[display]` reference. The display text is selected after
+ * insertion so it can be typed over, which matters for prose labels whose name
+ * is only a stand-in.
  */
 export function linkReference(name: string, display: string): LinkReference {
   const body = escapeLinkContent(display);
@@ -90,17 +83,15 @@ export function linkReference(name: string, display: string): LinkReference {
   };
 }
 
-// Matches a `#set heading(...)` rule and captures its argument list. The
-// argument scan stops at the first `)`, so a numbering *function* spanning
-// parentheses is not recognized; the only cost is offering a shortcut the
-// document doesn't need, never a wrong reference.
+// A `#set heading(...)` rule and its arguments. The scan stops at the first
+// `)`, so a numbering function with parentheses isn't recognized; that only
+// offers an unneeded shortcut, never a wrong reference.
 const SET_HEADING_RE = /#set\s+heading\s*\(([^)]*)\)/g;
 const NUMBERING_ARG_RE = /\bnumbering\s*:\s*([^,)]+)/;
 
 /**
- * Whether this document numbers its headings, which is what `@heading-label`
- * needs to compile. Later rules win, so `numbering: none` after an enabling
- * rule correctly reads as "not numbered".
+ * Whether the document numbers headings, which `@heading-label` needs. Later
+ * rules win, so `numbering: none` after an enabling rule means not numbered.
  */
 export function documentNumbersHeadings(docText: string): boolean {
   SET_HEADING_RE.lastIndex = 0;

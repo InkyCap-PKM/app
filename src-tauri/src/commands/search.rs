@@ -24,10 +24,9 @@ pub async fn get_all_tags(
     Ok(pi.all_tags_sorted())
 }
 
-/// Full-text search across the notebox. When `case_sensitive` is true,
-/// the (case-insensitive) inverted index is used to find candidate lines
-/// but every emitted match range is verified against the original-case
-/// query terms, so a search for `Tool` won't return `tool`.
+/// Full-text search across the notebox. With `case_sensitive`, the
+/// case-insensitive index finds candidates and each match is checked against
+/// the query's original case, so `Tool` doesn't find `tool`.
 #[tauri::command]
 pub async fn notebox_search(
     state: State<'_, AppState>,
@@ -57,12 +56,10 @@ pub async fn notebox_search(
             .ok_or_else(|| InkyCapError::FilterParse("Empty or invalid search query".to_string()))?
     };
 
-    // Case-sensitive search verifies each matched span against the original-case
-    // query terms. The inverted index is case-insensitive, so this runs as a
-    // span predicate inside the engine — *before* counting and pagination — so a
-    // dropped line is dropped from `total_count` too. With no case-sensitive
-    // terms (e.g. a pure `tag:` filter), there's nothing to verify and the
-    // predicate is omitted so filter-only results survive unchanged.
+    // Case-sensitive search checks each matched span inside the engine, before
+    // counting and paging, so dropped lines aren't counted. With no terms to
+    // check (e.g. only a `tag:` filter), no check is passed, so filter results
+    // survive.
     let terms = if case_sensitive.unwrap_or(false) {
         original_case_terms(&query)
     } else {
@@ -71,10 +68,9 @@ pub async fn notebox_search(
     let verify =
         (!terms.is_empty()).then_some(move |span: &str| terms.iter().any(|t| t.matches(span)));
 
-    // Resolve membership for any `collection:` filter in the query before we
-    // take the search-engine lock (resolution reads the collection files and
-    // property index). The engine itself has no notion of collections — it
-    // just intersects the precomputed member paths with document paths.
+    // Resolve `collection:` membership before taking the search lock (it reads
+    // collection files and the property index); the engine only intersects the
+    // paths.
     let mut collections = crate::search::engine::CollectionMembership::new();
     for name in crate::search::query::collection_filter_values(&parsed) {
         let key = name.to_lowercase();
@@ -95,14 +91,10 @@ pub async fn notebox_search(
         &collections,
     );
 
-    // Match ranges are computed as *byte* offsets into each line (Rust `&str`),
-    // but the webview indexes line text — and CodeMirror places selections — in
-    // UTF-16 code units. On a line with multi-byte characters (curly quotes,
-    // em-dashes, accents) the two diverge, drifting every highlight after the
-    // first such character onto the wrong text. Convert to UTF-16 here, the
-    // single boundary every frontend highlight consumer (result excerpt, editor
-    // jump, in-note highlight) reads from. This runs *after* the case-sensitive
-    // check above, which still needs byte offsets to slice `line_text`.
+    // Match ranges are byte offsets, but the webview and CodeMirror use UTF-16,
+    // so on lines with multi-byte characters highlights would drift. Convert
+    // here, the one point every highlight reads from, after the case check,
+    // which needs bytes.
     for r in &mut results {
         for (start, end) in &mut r.match_ranges {
             *start = byte_to_utf16(&r.line_text, *start);
@@ -115,10 +107,8 @@ pub async fn notebox_search(
         }
     }
 
-    // Join each result against the property index for its `zid`, so the panel
-    // can offer the zid sort orders the rest of the app has. One brief read
-    // lock and a hashmap lookup per row (results are already paginated), the
-    // same enrichment `get_file_tree` does for the tree.
+    // Add each result's `zid` from the property index, for the zid sort orders;
+    // one brief lock and a lookup per row, as `get_file_tree` does.
     {
         let pi = session.property_index.read().await;
         for r in &mut results {
@@ -132,17 +122,14 @@ pub async fn notebox_search(
     })
 }
 
-/// A single original-case verification predicate for case-sensitive search.
-/// Built from the raw query so a candidate span (found via the case-insensitive
-/// index) can be re-checked against exactly what the user typed.
+/// A case-sensitive check, built from the raw query, for re-checking a span the
+/// index found.
 enum CaseTerm {
     /// A plain term — the matched word must equal this verbatim.
     Exact(String),
-    /// A wildcard term (`DOG*`, `d*g`) — the matched word must match this
-    /// case-sensitive, anchored regex. The engine reports a wildcard hit's
-    /// span as the whole matched word, so an exact-equality check against the
-    /// `*`-stripped stem would wrongly reject it (e.g. stem `DOG` ≠ word
-    /// `DOGGZ`); the wildcard pattern accepts the full word instead.
+    /// A wildcard term (`DOG*`, `d*g`): the matched word must match this
+    /// case-sensitive, anchored regex. A wildcard hit's span is the whole word,
+    /// so comparing with the stem would reject `DOGGZ` for `DOG*`.
     Wildcard(regex::Regex),
 }
 
@@ -155,12 +142,9 @@ impl CaseTerm {
     }
 }
 
-/// Re-extract original-case query terms from a raw query string. Used by
-/// case-sensitive search to verify that a match-range substring really
-/// corresponds to what the user typed. Filter prefixes (`tag:foo`, `path:bar`,
-/// `property:k=v`, etc.), boolean operators, regex literals, and quoted
-/// phrases are skipped — none of them participate in the case-sensitivity
-/// check.
+/// The query's terms in their original case, for case-sensitive checking.
+/// Filters (`tag:foo`, `property:k=v`, …), operators, regex literals and quoted
+/// phrases are skipped.
 fn original_case_terms(query: &str) -> Vec<CaseTerm> {
     const FILTER_PREFIXES: &[&str] = &[
         "path:",
@@ -205,9 +189,8 @@ fn original_case_terms(query: &str) -> Vec<CaseTerm> {
     out
 }
 
-/// Compile a wildcard term (`*` = any run of characters) into a case-sensitive,
-/// fully-anchored regex. Non-`*` segments are escaped so regex metacharacters in
-/// the user's term are matched literally.
+/// A wildcard term (`*` = any run) as a case-sensitive anchored regex, with
+/// other characters escaped.
 fn wildcard_to_regex(term: &str) -> Option<regex::Regex> {
     let mut pattern = String::from("^");
     for (i, segment) in term.split('*').enumerate() {
@@ -240,9 +223,8 @@ pub async fn search_and_replace(
     let paths: Vec<PathBuf> = if let Some(specified) = file_paths {
         specified.into_iter().map(PathBuf::from).collect()
     } else {
-        // No paths specified — pass all indexed files. The regex
-        // replacement itself filters to only files with matches, so
-        // there's no need to pre-filter via the search query parser.
+        // No paths given: use all indexed files; the replacement only touches
+        // files with matches.
         let engine = session.search_engine.read().await;
         engine.all_indexed_paths()
     };
@@ -315,9 +297,8 @@ mod tests {
 
     #[test]
     fn case_sensitive_wildcard_accepts_full_matched_word() {
-        // Regression: a wildcard hit's span is the whole matched word, so a
-        // case-sensitive `DOG*` must accept `DOGGZ` (not just the stem `DOG`),
-        // while still rejecting a lowercase word.
+        // A wildcard's span is the whole word, so `DOG*` accepts `DOGGZ` and
+        // still rejects lowercase.
         assert!(verify("DOG*", "DOGGZ"));
         assert!(verify("DOG*", "DOG"));
         assert!(!verify("DOG*", "doggz"));

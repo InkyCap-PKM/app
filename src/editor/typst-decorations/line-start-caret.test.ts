@@ -6,11 +6,10 @@ import { typst } from "codemirror-lang-typst";
 import { buildDecorations, typstVisualMode } from "./visual-plugin";
 import { typstKeymap } from "./keymaps";
 
-// The visual editor's bullet widget has a zero-width margin box (it is pulled
-// into the hanging-indent margin), so the caret in front of a list marker and
-// the caret after it are drawn at the same place. These cover the two bugs
-// that came out of that: characters typed in front of the bullet, and a
-// deletion that leaves the marker behind as `- - item`.
+// The visual editor's bullet widget has zero width (it sits in the hanging
+// indent), so the caret before and after a list marker are drawn in the same
+// place. These cover the resulting problems: text typed before the bullet, and
+// a deletion leaving `- - item`.
 
 const visual = (doc: string, selection?: { anchor: number; head?: number }) =>
   EditorState.create({
@@ -73,9 +72,9 @@ describe("caret in front of a list marker", () => {
 
 describe("stepping back onto a list marker", () => {
   // Left from the start of an item's text: CodeMirror's atomic handling has
-  // already pushed the caret from after the marker to the line start. There
-  // the marker is revealed as source, so the caret visibly sits in front of
-  // it; the next step back continues to the previous line.
+  // already moved the caret from after the marker to the line start, where the
+  // marker shows as source with the caret before it; the next step goes to the
+  // previous line.
   const DOC = "- alpha\n- beta\n- gamma";
   const BETA = DOC.indexOf("- beta");
   const ALPHA_END = DOC.indexOf("\n");
@@ -230,9 +229,9 @@ describe("a marker that does not open its line", () => {
   };
 
   it("draws one bullet and leaves the stray marker as text", () => {
-    // `- - beta` is a nested list to Typst. Rendering the inner marker put two
-    // overlapping widgets and two indent decorations on one line, so the item
-    // looked indented with no leading whitespace for Shift+Tab to remove.
+    // `- - beta` is a nested list to Typst. Drawing the inner marker would put
+    // two widgets and two indents on one line, so it would look indented with
+    // no whitespace for Shift+Tab to remove.
     expect(decorate("- - beta")).toEqual(["0-0 indent", "0-2 bullet"]);
   });
 

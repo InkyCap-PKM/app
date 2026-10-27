@@ -1,20 +1,16 @@
-// Shared YAML frontmatter parsing for markdown import.
+// YAML frontmatter parsing for Markdown import.
 //
-// Both the import-time scan (`scan_markdown_frontmatter`, which builds the
-// property-mapping grid the user confirms) and the conversion-time emit
-// (`frontmatter_to_note*` in `md_to_typst`) parse frontmatter through the
-// one function here, so the keys the user maps are exactly the keys that
-// get written. Parsing goes through `serde_yaml` rather than a hand-rolled
-// line scanner — per CLAUDE.md's Typst-first / don't-reimplement-a-parser
-// principle — which means block-style lists (`tags:\n  - a\n  - b`), typed
-// scalars, booleans, and numbers all parse correctly instead of being
-// silently dropped.
+// The import scan (`scan_markdown_frontmatter`, which builds the mapping grid
+// the user confirms) and the conversion (`frontmatter_to_note*` in
+// `md_to_typst`) both use this, so the keys mapped are exactly the keys
+// written. It uses `serde_yaml` rather than a hand-written parser, so block
+// lists (`tags:\n  - a\n  - b`), typed values, booleans and numbers all parse
+// correctly.
 
 use crate::property_types::PropertyType;
 
-/// One frontmatter field, with its raw key and a value that remembers
-/// whether YAML gave us a scalar or a sequence (and, for scalars, the
-/// type `serde_yaml` decoded).
+/// One frontmatter field: its key, and a value that keeps whether it was a
+/// scalar or a list (and a scalar's YAML type).
 #[derive(Debug, Clone)]
 pub struct ParsedField {
     /// The key exactly as authored (trimmed), e.g. `"Created"`.
@@ -22,9 +18,9 @@ pub struct ParsedField {
     pub value: ParsedYamlValue,
 }
 
-/// A parsed frontmatter value. Lists stay lists so a multi-tag field
-/// round-trips into a Typst tuple; scalars carry the type YAML implied so
-/// the scan can suggest `Number`/`Checkbox`/`Date` without re-guessing.
+/// A frontmatter value. Lists stay lists, so a multi-tag field becomes a Typst
+/// array; scalars keep their YAML type, so the scan can suggest
+/// `Number`/`Checkbox`/`Date`.
 #[derive(Debug, Clone)]
 pub enum ParsedYamlValue {
     Scalar { raw: String, ty: PropertyType },
@@ -50,10 +46,9 @@ impl ParsedYamlValue {
     }
 }
 
-/// Parse YAML frontmatter into an ordered list of fields. Order follows the
-/// source document. Null/empty values and nested mappings are skipped (a
-/// `#note(...)` argument can't be a bare mapping). A document that isn't a
-/// top-level YAML mapping yields an empty list.
+/// Parse YAML frontmatter into fields, in document order. Null or empty values
+/// and nested mappings are skipped (a `#note(...)` argument can't be a
+/// mapping). Anything other than a top-level mapping gives an empty list.
 pub fn parse_frontmatter_fields(yaml: &str) -> Vec<ParsedField> {
     let value: serde_yaml::Value = match serde_yaml::from_str(yaml) {
         Ok(v) => v,
@@ -80,9 +75,8 @@ pub fn parse_frontmatter_fields(yaml: &str) -> Vec<ParsedField> {
     fields
 }
 
-/// Convert a `serde_yaml::Value` into a `ParsedYamlValue`, or `None` for
-/// values that don't belong in a `#note(...)` call (null, empty, nested
-/// mappings).
+/// Convert a `serde_yaml::Value`, or `None` for values that don't belong in
+/// `#note(...)` (null, empty, nested mappings).
 fn convert_value(v: &serde_yaml::Value) -> Option<ParsedYamlValue> {
     match v {
         serde_yaml::Value::Null => None,
@@ -131,9 +125,9 @@ fn scalar_to_string(v: &serde_yaml::Value) -> Option<String> {
     }
 }
 
-/// Heuristic date detection: a leading ISO `YYYY-MM-DD`. `serde_yaml` has no
-/// date type, so unquoted timestamps arrive as strings — this lets the scan
-/// suggest the `Date` editor for them.
+/// Whether a string starts with an ISO `YYYY-MM-DD` date. `serde_yaml` has no
+/// date type, so dates arrive as strings; this lets the scan suggest the `Date`
+/// editor.
 fn looks_like_date(s: &str) -> bool {
     let bytes = s.as_bytes();
     if bytes.len() < 10 {
@@ -152,10 +146,9 @@ fn looks_like_date(s: &str) -> bool {
         && is_digit(9)
 }
 
-/// Map a common frontmatter key (case-insensitively) to the InkyCap system
-/// property it should default to. Covers the Obsidian/CommonMark aliases the
-/// importer has always understood (`created`→`date`, `summary`→`description`,
-/// `url`→`source`, …). Returns `None` for keys with no system equivalent.
+/// The system property a common frontmatter key (any case) maps to by default,
+/// for Obsidian and CommonMark names (`created`→`date`,
+/// `summary`→`description`, `url`→`source`, …). `None` if there is none.
 pub fn system_alias(key: &str) -> Option<&'static str> {
     match key.trim().to_lowercase().as_str() {
         "title" => Some("title"),
@@ -172,10 +165,9 @@ pub fn system_alias(key: &str) -> Option<&'static str> {
     }
 }
 
-/// Coerce an arbitrary frontmatter key into a valid Typst identifier so it
-/// can be used as a `#note(...)` argument name when auto-creating a property.
-/// Lowercases, replaces runs of invalid characters with `-`, and ensures a
-/// leading letter. Falls back to `"field"` for an otherwise-empty result.
+/// Turn a frontmatter key into a valid Typst identifier, for a new property's
+/// `#note(...)` argument name: lowercase, invalid runs replaced with `-`,
+/// starting with a letter; `"field"` if nothing is left.
 pub fn sanitize_ident(key: &str) -> String {
     let mut out = String::with_capacity(key.len());
     let mut prev_dash = false;

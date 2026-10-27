@@ -1,24 +1,15 @@
-//! Error-tolerant compilation for the on-screen reading surfaces.
+//! Error-tolerant compiling for the reading surfaces.
 //!
-//! Typst's compiler is all-or-nothing: `typst::compile` yields either a
-//! complete document or only diagnostics — never a partial document. For a
-//! PKM tool that is the wrong default on screen, where a single stray token
-//! (e.g. a literal `@2025-09-15` parsed as a cross-reference) would otherwise
-//! blank the entire reading view.
+//! Typst produces either a whole document or only errors, so one stray token
+//! (e.g. `@2025-09-15` read as a reference) would blank the reading view. On a
+//! failed compile this drops the first errored span in the main file, puts a
+//! visible marker in its place, and recompiles, until the document builds or
+//! the pass limit is reached. The caller still reports the original errors.
 //!
-//! The recovery loop here keeps the user reading their content: on a failed
-//! compile it drops the first errored span that lies in the main file,
-//! substitutes a visible marker so the omission is honest, and recompiles —
-//! repeating until the document builds or the pass budget is exhausted. The
-//! *original* diagnostics are still surfaced to the user by the caller; this
-//! module only salvages renderable output.
-//!
-//! There are two recovery styles ([`RecoveryStyle`]). The reading view and
-//! Journal Scroll swap each errored span for a visible warning marker.
-//! Exports stay all-or-nothing by default so an exported document is never
-//! silently incomplete; only when the user explicitly chooses to bypass
-//! errors does an export recover, and then it keeps the errored source as
-//! plain literal text so no content is lost.
+//! Two styles ([`RecoveryStyle`]): the reading view and Journal Scroll replace
+//! each errored span with a warning marker. Exports don't recover by default,
+//! so an export is never silently incomplete; when the user chooses to bypass
+//! errors, the errored source is kept as plain text so nothing is lost.
 
 use std::ops::Range;
 use std::path::Path;
@@ -29,10 +20,8 @@ use typst::World;
 
 use crate::typst_pipeline::world::NoteboxWorld;
 
-/// Upper bound on recompiles. Each pass removes one error; errors can cascade
-/// (a dropped span exposes or creates a neighbouring one), so a few passes are
-/// expected, but an unbounded loop is not — past this budget we give up and
-/// let the caller report the failure as before.
+/// Maximum recompiles. Each pass removes one error, and errors can cascade, so
+/// a few passes are normal; past this the caller reports the failure.
 const MAX_RECOVERY_PASSES: usize = 8;
 
 /// How an errored span is neutralised during recovery.
@@ -41,40 +30,34 @@ pub enum RecoveryStyle {
     /// Replace the span with [`MARKER`], a small warning badge. Used on screen,
     /// where the reader should see that something was dropped.
     Marker,
-    /// Replace the markup element holding the error with its own source text,
-    /// shown as plain text. Used by exports when the user chooses to bypass
-    /// errors: the content survives, only its styling or behaviour is lost.
+    /// Replace the element holding the error with its own source as plain text.
+    /// For exports that bypass errors: content is kept, only its styling or
+    /// behaviour is lost.
     LiteralText,
 }
 
-/// Recompile budget for [`RecoveryStyle::LiteralText`]. Higher than the
-/// on-screen budget because an export is a one-off the user asked for, and a
-/// note with several independent mistakes should still come out whole.
+/// Recompile limit for [`RecoveryStyle::LiteralText`], higher than on screen,
+/// since an export is a one-off and a note with several mistakes should still
+/// come out whole.
 const MAX_LITERAL_PASSES: usize = 32;
 
-/// Visible placeholder injected where an errored span is removed. Valid Typst
-/// markup that renders inline as a small red badge, so a reader (or someone
-/// proofing a doc before export) can see exactly where content was dropped.
-/// Glyph-only by design — no translatable text is injected into note source.
+/// Placeholder where an errored span was removed: valid markup rendering a
+/// small red badge, so readers see where content was dropped. Only a glyph, so
+/// no translatable text goes into the source.
 const MARKER: &str = "#box(fill: rgb(\"#fee2e2\"), outset: (y: 2pt), \
 inset: (x: 3pt), radius: 2pt)[#text(fill: rgb(\"#b91c1c\"), weight: 700)[\u{26a0}]]";
 
-/// Replace the first recoverable error with [`MARKER`] in the main file,
-/// returning the patched source. `None` when no error can be neutralised in
-/// the main file — recovery cannot make progress, so the caller should surface
-/// the failure unchanged.
+/// Replace the first recoverable error in the main file with [`MARKER`] and
+/// return the patched source, or `None` if none can be, in which case the
+/// caller reports the failure unchanged.
 ///
-/// Two cases are recoverable:
-/// - the error span lands directly in the main file (e.g. a stray
-///   `@2025-09-15` parsed as a cross-reference) — drop that span;
-/// - the error originates in a file pulled in by `#import` / `#include`. Typst
-///   can't be patched in another file, but it records the offending statement
-///   as a *trace span* in the main file ("error occurred while importing this
-///   module"); we drop that whole import/include statement so the host still
-///   renders, with a marker where the broken transclusion was.
+/// - An error in the main file (e.g. `@2025-09-15`): drop that span.
+/// - An error in a file brought in by `#import` / `#include`: that file can't
+///   be patched, but Typst records the statement as a trace span in the main
+///   file, so drop the whole statement and leave a marker.
 ///
-/// Spanless errors, and errors whose only location is a third file with no
-/// main-file trace, are skipped — there is nothing safe to neutralise here.
+/// Errors without a span, or only in a third file with no trace in the main
+/// file, are skipped.
 fn patch_first_recoverable(
     world: &NoteboxWorld,
     errors: &[SourceDiagnostic],
@@ -98,12 +81,10 @@ fn patch_first_recoverable(
     None
 }
 
-/// If `span` resolves into the main file, return the main source with the
-/// span neutralised according to `style`. When the span sits inside an `#import` /
-/// `#include` statement (the trace-span case), the whole statement is dropped
-/// rather than just the span, so a failed transclusion doesn't leave a
-/// dangling `#include <marker>` behind. `None` when the span is in another
-/// file or has no location.
+/// If `span` is in the main file, the main source with the span neutralized per
+/// `style`. A span inside an `#import` / `#include` drops the whole statement, so
+/// no `#include <marker>` is left. `None` for spans in other files or without a
+/// location.
 fn patch_main_for_span(
     world: &NoteboxWorld,
     main_id: FileId,
@@ -115,18 +96,17 @@ fn patch_main_for_span(
     }
     let source = world.source(main_id).ok()?;
     let direct = super::diagnostic::diag_span_range(span, &source)?;
-    // A trace span from a failed import points at the module-source *string*
-    // (e.g. `"/broken.typ"`). Expand to the whole `#import` / `#include`
-    // statement so the patch doesn't leave `#include <marker>` — itself a
-    // fresh error — behind.
+    // A failed import's trace span points at the module string
+    // (`"/broken.typ"`); widen to the whole statement, since `#include
+    // <marker>` would be a new error.
     let range = enclosing_import_range(&source, &direct).unwrap_or(direct);
     let text = source.text();
     let (range, replacement) = match style {
         RecoveryStyle::Marker => (range, MARKER.to_string()),
         RecoveryStyle::LiteralText => {
-            // Widen to the whole markup element (e.g. the full `#func(...)`
-            // call around a bad argument) so the replacement is valid on its
-            // own and the reader sees the source exactly as it was written.
+            // Widen to the whole markup element (e.g. the `#func(...)` call
+            // around a bad argument) so the replacement is valid and shows the
+            // source as written.
             let range = enclosing_markup_element(&source, &range).unwrap_or(range);
             let literal = typst_string_literal(&text[range.clone()]);
             (range, literal)
@@ -139,12 +119,10 @@ fn patch_main_for_span(
     Some(patched)
 }
 
-/// Range of the innermost element that sits directly in markup (text mode)
-/// and contains `target`, extended over a leading `#` when the element is an
-/// embedded code expression. Replacing this range with a string is always
-/// valid Typst, whereas replacing only the errored span inside code (a single
-/// argument, say) could leave the same error behind. `None` when no single
-/// markup element contains the whole target.
+/// The innermost element directly in markup that contains `target`, including a
+/// leading `#` for embedded code. Replacing it with a string is always valid,
+/// whereas replacing just a span inside code could leave the error. `None` if
+/// no single element contains it.
 fn enclosing_markup_element(source: &Source, target: &Range<usize>) -> Option<Range<usize>> {
     fn contains(node: &LinkedNode, target: &Range<usize>) -> bool {
         let r = node.range();
@@ -167,10 +145,8 @@ fn enclosing_markup_element(source: &Source, target: &Range<usize>) -> Option<Ra
     }
 }
 
-/// `text` as a Typst string placed in markup (`#"...";`), which renders as
-/// plain text with no markup interpretation. The trailing `;` ends the
-/// embedded expression, so a following `(`, `[` or `.` stays ordinary text
-/// instead of being read as a call or field access on the string.
+/// `text` as a Typst string in markup (`#"...";`), shown as plain text. The `;`
+/// ends the expression, so a following `(`, `[` or `.` stays text.
 fn typst_string_literal(text: &str) -> String {
     let mut out = String::with_capacity(text.len() + 4);
     out.push_str("#\"");
@@ -188,10 +164,8 @@ fn typst_string_literal(text: &str) -> String {
     out
 }
 
-/// Range of the outermost `#import` / `#include` statement whose source range
-/// contains `target`, if any. Range containment (rather than exact span match)
-/// is used because the trace span points at the inner module-source string,
-/// not the statement node.
+/// The outermost `#import` / `#include` statement containing `target`, if any.
+/// By containment, since the trace span is the inner string.
 fn enclosing_import_range(source: &Source, target: &Range<usize>) -> Option<Range<usize>> {
     fn search(node: &LinkedNode, target: &Range<usize>) -> Option<Range<usize>> {
         let r = node.range();
@@ -202,9 +176,8 @@ fn enclosing_import_range(source: &Source, target: &Range<usize>) -> Option<Rang
             node.kind(),
             SyntaxKind::ModuleImport | SyntaxKind::ModuleInclude
         ) {
-            // In markup the leading `#` is a sibling `Hash` token, not part of
-            // the import node's range. Extend the start over it so the patch
-            // doesn't leave a stray `#` (which would itself be a fresh error).
+            // In markup the `#` is a separate `Hash` token; include it, or a
+            // stray `#` would be a new error.
             let start = match node.prev_sibling() {
                 Some(prev) if prev.kind() == SyntaxKind::Hash => prev.range().start,
                 _ => r.start,
@@ -216,17 +189,13 @@ fn enclosing_import_range(source: &Source, target: &Range<usize>) -> Option<Rang
     search(&LinkedNode::new(source.root()), target)
 }
 
-/// Recompile the main document, recovering around localized errors.
+/// Recompile the main document around localized errors. Call after a failed
+/// compile, passing its errors as `first_errors`; the world's main file must
+/// still hold that source. Afterwards the world holds the patched source, so
+/// callers needing the original must restore it with `set_main`.
 ///
-/// Call this after an initial compile has already failed; pass the diagnostics
-/// from that failure as `first_errors`. The world's main file must still hold
-/// the source those diagnostics were produced against (the normal state right
-/// after a `compile`). On return the world's main source has been replaced
-/// with the patched variant — callers that need the original source in the
-/// world afterwards must restore it via `set_main`.
-///
-/// Returns `Some(doc)` once a (possibly degraded) document builds, or `None`
-/// if recovery could not make progress within the style's pass budget.
+/// `Some(doc)` once a (possibly degraded) document builds, `None` if recovery
+/// can't make progress within the style's limit.
 pub fn recover<D: typst::foundations::Output>(
     world: &NoteboxWorld,
     main_path: &Path,

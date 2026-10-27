@@ -1,15 +1,11 @@
-/* App modal base, property-mapping dialog, notebox-required overlay.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* App modal base, property mapping dialog, notebox-required overlay. Part of
+   layout.css, whose import order (see ../layout.css) keeps the cascade. */
 
 /* ── App modal (.app-modal) ──────────────────────────────────────────────
-   Generic centered dialog used by the in-app prompt component (see
-   stores/prompt.ts + components/PromptHost.tsx) and intended as the shared
-   base for any future modal in the app. New modals should reuse these
-   classes rather than inventing their own backdrop/box styles so dialogs
-   stay visually consistent.
-   The older .export-dialog__* rules are functionally equivalent and could
-   be migrated to share these selectors when that file is next touched. */
+   Generic centred dialog, used by the in-app prompt (stores/prompt.ts,
+   components/PromptHost.tsx). New dialogs should use these classes rather
+   than their own backdrop and box styles. The .export-dialog__* rules are
+   equivalent and could share them. */
 
 .app-modal__backdrop {
   animation: surface-in var(--dur-fast) var(--ease-out);
@@ -125,9 +121,9 @@
   color: var(--accent-danger);
 }
 
-/* Inline "this feature is experimental" notice — flag glyph + cautionary text,
-   non-interactive. The flag takes the warning amber; the text stays muted so it
-   draws the eye without alarming. */
+/* Inline "experimental" notice: a flag icon and text, not interactive. The
+   flag is warning amber and the text muted, so it stands out without
+   alarming. */
 .experimental-notice {
   display: flex;
   align-items: center;
@@ -181,10 +177,10 @@
   color: var(--fg-secondary);
 }
 
-/* ── Markdown-import property mapping dialog (PropertyMappingDialog) ───────
-   A wider .app-modal variant holding the YAML→property mapping grid. The
-   grid columns are shared by the head row and every data row so they stay
-   aligned; the body scrolls when there are many properties. */
+/* ── Markdown import property mapping dialog (PropertyMappingDialog) ───────
+   A wider .app-modal holding the YAML-to-property grid. The head row and
+   data rows share the grid columns, so they line up; the body scrolls with
+   many properties. */
 .property-map-dialog {
   width: 720px;
 }
@@ -200,13 +196,10 @@
   border: 1px solid var(--border-primary);
   border-radius: var(--modal-radius);
   overflow: hidden;
-  /* The grid must keep its natural (content) height so the scrolling
-     .app-modal__body overflows and shows a scrollbar. The body is a flex
-     column, and WebKitGTK (the Tauri webview) otherwise shrinks this flex
-     child to fit the body's max-height — its `overflow: hidden` then clips
-     the trailing rows with no scrollbar, leaving them unreachable. Blink
-     doesn't shrink it, so the bug is WebKit-only. flex-shrink: 0 keeps the
-     grid full-height on both engines. */
+  /* Keep the grid's content height so the scrolling .app-modal__body
+     overflows and shows a scrollbar. In WebKitGTK this flex child otherwise
+     shrinks to the body's max-height and its `overflow: hidden` cuts off the
+     last rows with no way to reach them. */
   flex-shrink: 0;
 }
 
@@ -215,9 +208,9 @@
   display: grid;
   grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.4fr) minmax(120px, 0.8fr);
   gap: var(--space-5);
-  /* Top-align so each row's "Maps to" dropdown lines up horizontally with
-     its "Type" control and YAML key — rows vary in height (the source cell
-     has a meta line, the target cell an optional status line). */
+  /* Top-aligned so each row's "Maps to" dropdown lines up with its "Type"
+     control and YAML key; rows differ in height (a meta line in the source
+     cell, an optional status line in the target). */
   align-items: start;
   padding: var(--space-4) var(--space-5);
 }
@@ -306,9 +299,8 @@
   min-width: 0;
 }
 
-/* Locked (non-editable) type label. Padding matches the dropdown trigger's
-   text inset (4px padding + 1px border) so a locked label's text baseline
-   aligns with the editable type dropdowns in adjacent rows. */
+/* Fixed type label. Padding matches the dropdown's text inset (4px padding +
+   1px border), so its text lines up with the type dropdowns in other rows. */
 .property-map__type-locked {
   display: block;
   padding: 5px 2px;
@@ -317,9 +309,9 @@
 }
 
 /* ── "Open a notebox to continue" overlay (NoteboxRequiredOverlay) ─────────
-   A blocking dialog built on .app-modal. The list reopens a known notebox;
-   the footer button opens or creates one. Shown whenever the app has no
-   active notebox, so it is intentionally non-dismissable. */
+   A blocking .app-modal: the list reopens a known notebox, the footer button
+   opens or creates one. Shown whenever no notebox is open, so it can't be
+   dismissed. */
 .notebox-required__open-btn {
   display: inline-flex;
   align-items: center;

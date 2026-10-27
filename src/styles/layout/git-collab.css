@@ -1,6 +1,5 @@
-/* Git collaboration panel and review UI.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Git collaboration panel and review. Part of layout.css, whose import order
+   (see ../layout.css) keeps the cascade. */
 
 /* ─────────────────────────── Git collaboration ─────────────────────────── */
 
@@ -12,9 +11,8 @@
   gap: 5px;
   background: transparent;
   border: none;
-  /* Neutral by default so it doesn't compete with the notebox switcher; the
-     icon + word take on the accent only when action is required (see
-     `--attention`). */
+  /* Neutral so it doesn't compete with the notebox switcher; accent only
+     when action is needed (see `--attention`). */
   color: var(--status-fg);
   font-size: var(--text-sm);
   font-weight: 500;
@@ -49,10 +47,10 @@
   flex-shrink: 0;
 }
 
-/* Panel body — the sidebar pane's one scrolling region, below the pinned
-   section header. Sizing, scrolling and the horizontal inset come from
-   `.left-sidebar__pane-body` (panel-header.css), which this element also
-   carries; only the block padding is its own. */
+/* Panel body: the pane's only scrolling area, below the pinned header. Size,
+   scrolling and side padding come from `.left-sidebar__pane-body`
+   (panel-header.css), which it also has; only the vertical padding is its
+   own. */
 .git-panel__body {
   display: flex;
   flex-direction: column;
@@ -105,9 +103,9 @@
   margin-top: var(--space-4);
 }
 
-/* Collapsible action section (Import/export changes · Sync changes). The header
-   doubles as the status row: title + chevron on the left, sync state on the
-   right. Reuses the status spans below for the title/state. */
+/* Collapsible action section (Import/export changes · Sync changes). The
+   header also shows status: title and chevron on the left, sync state on the
+   right, using the status spans below. */
 .git-panel__section-toggle {
   display: flex;
   align-items: center;
@@ -234,18 +232,16 @@
   font-weight: 600;
 }
 
-/* "N suggestions await feedback" — flags a since-sync note that also carries
-   open tracked changes, so the user knows there are inline decisions to make
-   beyond reverting the whole note. Accent (not danger) — it's a prompt, not a
+/* "N suggestions await feedback": a note changed since sync that also has
+   open tracked changes to decide. Accent, not danger: a prompt, not a
    problem. */
 .git-panel__badge--feedback {
   color: var(--accent);
   font-weight: 600;
 }
 
-/* Whole-file decision chips for a conflicted binary (Keep mine / Take theirs /
-   Keep both). Mirrors the annotations view-toggle aesthetic: muted by default,
-   accent when chosen. */
+/* Whole-file choices for a conflicted binary (Keep mine / Take theirs / Keep
+   both), styled like the annotations view toggle: muted, accent when chosen. */
 .git-panel__binary-choices {
   display: flex;
   gap: var(--space-2);
@@ -339,9 +335,8 @@
   gap: var(--space-2);
 }
 
-/* A label-row whose toggle sits at the far right (label + help on the left).
-   Used for the "Offline" and "Connect with SSH" switches so they read
-   "<option>  … <switch>" like the other toggles in the panel. */
+/* A label row with its switch at the far right (label and help on the left),
+   for "Offline" and "Connect with SSH", like the panel's other toggles. */
 .git-panel__toggle-row {
   margin-top: var(--space-3);
 }
@@ -393,9 +388,8 @@
   color: var(--fg-muted);
 }
 
-/* Unresolved tracked-changes block — same card, but its rows are actionable
-   (clicking opens the note to resolve), so it carries the attention accent and
-   its rows keep the interactive hover (no --readonly). */
+/* Unresolved tracked changes: the same card, but clicking a row opens the
+   note to resolve it, so it has the attention accent and keeps the hover. */
 .git-panel__unresolved {
   border-left-color: var(--accent-warn);
 }
@@ -411,9 +405,9 @@ button.git-panel__item {
   color: inherit;
 }
 
-/* The clickable "open this note" region of a changes-since-sync row, sitting to
-   the left of the row's Revert action so the two don't conflict. Borderless and
-   transparent — the parent .sidebar-item carries the hover background. */
+/* The clickable "open this note" area of a changed-since-sync row, left of
+   its Revert action. Borderless; the parent .sidebar-item provides the hover
+   background. */
 .git-panel__item-open {
   display: flex;
   align-items: center;

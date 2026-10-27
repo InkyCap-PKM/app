@@ -1,10 +1,10 @@
-/* Status bar controls: word count, spellcheck chip, cursor readout, file path.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Status bar controls: word count, spellcheck chip, cursor position, file
+   path. Part of layout.css, whose import order (see ../layout.css) keeps the
+   cascade. */
 
-/* Word/character count toggle and the distraction-free button: both are
-   borderless status-bar buttons that inherit the bar's foreground. The count
-   toggle shares one slot — its label swaps between words and characters. */
+/* Word/character count toggle and the distraction-free button: borderless
+   buttons in the bar's text colour. The count toggle's label switches
+   between words and characters. */
 .status-bar__count,
 .status-bar__df {
   display: inline-flex;
@@ -84,9 +84,8 @@
   padding: 0 var(--space-2);
 }
 
-/* Centered notebox-relative path of the active file. The two flex spacers
-   on either side of this span do the centering; the inner text is
-   allowed to ellipsize when the path doesn't fit. */
+/* The active file's notebox-relative path, centred by the flex spacers on
+   either side, truncated when it doesn't fit. */
 .status-bar__path {
   display: inline-flex;
   align-items: center;
@@ -124,9 +123,8 @@
   background: var(--bg-hover);
 }
 
-/* Inline rename input that swaps in for the path text when the user clicks
-   the rename icon. Kept visually unobtrusive — only a subtle bottom border
-   so it reads as in-place edit rather than a separate field. */
+/* Rename field that replaces the path text when the rename icon is clicked,
+   with only a faint bottom border so it reads as editing in place. */
 .status-bar__rename-input {
   flex: 1;
   min-width: 0;

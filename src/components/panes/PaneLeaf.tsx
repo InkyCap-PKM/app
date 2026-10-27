@@ -10,11 +10,10 @@ import TabStrip from "./TabStrip";
 import NewTabPage from "./NewTabPage";
 
 /**
- * One leaf pane: its tab strip over the content of its active tab. The
- * content is keyed by `${tabId}::${type}::${path}` so the editor rebuilds
- * when a tab navigates in place — and, crucially, two tabs sharing a path
- * (the same note open in two panes, or as a Journal Scroll anchor) get
- * distinct editor instances rather than being conflated.
+ * One leaf pane: its tab strip over its active tab's content. The content is
+ * keyed by `${tabId}::${type}::${path}`, so the editor rebuilds when a tab
+ * navigates in place, and two tabs on the same path (one note in two panes, or
+ * as a Journal Scroll anchor) get separate editors.
  */
 const PaneLeaf: Component<{ leaf: LeafPane }> = (props) => {
   const activeTab = (): Tab | undefined =>

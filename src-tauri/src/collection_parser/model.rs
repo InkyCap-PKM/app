@@ -1,9 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Style overrides for a collection. Each field is optional — `None` means
-/// "inherit from app defaults or Typst built-ins". These are injected as
-/// `#set` rules at compile time for notes in this collection.
+/// Style overrides for a collection, applied as `#set` rules when its notes
+/// compile. `None` inherits the app defaults or Typst's.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct CollectionStyle {
@@ -64,13 +63,10 @@ pub struct HeadingStyle {
 }
 
 impl CollectionStyle {
-    /// Build style rules for a collection's non-`None` fields. Returns an
-    /// empty string when no fields are set.
-    ///
-    /// Page geometry is emitted as a direct `#set page(...)` because
-    /// `set page` inside a show-rule wrapper is a no-op for document-level
-    /// layout. Text/par/heading settings go through
-    /// `#show: apply-collection-style.with(...)` (lib.typ).
+    /// Style rules for the fields that are set, or "" if none are. Page
+    /// geometry is a direct `#set page(...)`, since `set page` inside a show
+    /// rule has no effect on the document's layout; text, paragraph and heading
+    /// settings go through `#show: apply-collection-style.with(...)` (lib.typ).
     pub fn to_typst_show_call(&self) -> String {
         use crate::typst_pipeline::style_injection::{ensure_length_unit, sanitize_typst_string};
 
@@ -160,12 +156,9 @@ impl CollectionStyle {
     }
 }
 
-/// Format a numbering pattern for emission into a Typst `numbering:` argument.
-/// The literal value `none` is emitted as the bare `none` keyword (suppressing
-/// numbering), matching the "None" preset in the style editor; every other
-/// value is a Typst numbering pattern string and is quoted. A user who hand-
-/// types the word `none` as a custom pattern almost certainly means the
-/// keyword, so collapsing the two is the intuitive behaviour.
+/// A numbering pattern for a Typst `numbering:` argument. `none` becomes the
+/// `none` keyword (no numbering, the "None" preset); anything else is a quoted
+/// pattern.
 fn format_numbering(value: &str) -> String {
     use crate::typst_pipeline::style_injection::sanitize_typst_string;
     if value.trim() == "none" {
@@ -187,9 +180,7 @@ pub enum BookPageNumbering {
     /// Front matter in lowercase roman (i, ii, iii…); chapters restart at 1.
     #[default]
     RomanThenArabic,
-    /// No numbers until the chosen page, then arabic 1, 2, 3…
-    /// `start_page` is the absolute page of the document on which the first
-    /// arabic numeral ("1") is rendered.
+    /// No numbers before `start_page` (an absolute page number), then 1, 2, 3….
     ArabicFromPage { start_page: u32 },
 }
 
@@ -213,9 +204,8 @@ pub enum InjectChapterHeading {
 #[serde(rename_all = "snake_case")]
 #[derive(Default)]
 pub enum BookWikilinkMode {
-    /// Resolve wikilinks to in-document chapter labels when the target is
-    /// part of the merged book. Targets outside the book fall back to plain
-    /// text.
+    /// Link to chapter labels when the target is in the book; other targets
+    /// become plain text.
     #[default]
     Internal,
     /// Behave like single-note compilation: link to `<name>.typ`.
@@ -224,10 +214,8 @@ pub enum BookWikilinkMode {
     Plain,
 }
 
-/// Where the merged book's table of contents is placed relative to the
-/// chapters. The ToC is anchored by note **stem** (the book's chapter
-/// identity); if the anchored stem isn't part of the resolved export set at
-/// build time, placement falls back to `Beginning`.
+/// Where the book's table of contents goes, anchored by note stem. A stem not
+/// in the export falls back to `Beginning`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[derive(Default)]
@@ -242,36 +230,29 @@ pub enum TocPlacement {
     AfterChapter { stem: String },
 }
 
-/// How the merged book sources its bibliography. Typst 0.15 allows multiple
-/// `#bibliography()` per document (each scoped to a subset of citations via a
-/// `target` selector), which is what makes `PerChapter` and an uncapped
-/// `InPlace` possible.
+/// Where the book's bibliography comes from. Typst 0.15 allows several
+/// `#bibliography()` per document, each scoped with a `target` selector, which
+/// `PerChapter` and `InPlace` rely on.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[derive(Default)]
 pub enum BibliographyMode {
-    /// Strip every per-note `#bibliography(...)` and emit a single
-    /// consolidated bibliography at the back of the book from the
-    /// collection's bibliography file. The default.
+    /// Remove per-note `#bibliography(...)` calls and add one bibliography at
+    /// the back from the collection's bibliography file. The default.
     #[default]
     Unified,
-    /// Strip every per-note `#bibliography(...)` and emit one auto-generated
-    /// bibliography at the end of each chapter, scoped (via a Typst `target`
-    /// selector bounded by the chapter anchors) to just that chapter's
-    /// citations and numbered independently. Sourced from the collection's
-    /// bibliography file, same as `Unified`.
+    /// Remove per-note `#bibliography(...)` calls and add one at the end of
+    /// each chapter, covering only that chapter's citations and numbered
+    /// separately. From the collection's bibliography file.
     PerChapter,
-    /// Leave per-note `#bibliography(...)` declarations untouched and emit no
-    /// consolidated bibliography. The author controls placement — and, since
-    /// Typst 0.15, may place more than one (each scoped by proximity or an
-    /// explicit `target`). Covers categorized / custom reference layouts.
+    /// Keep each note's own `#bibliography(...)` and add none. The author
+    /// decides placement, possibly several per note, for custom layouts.
     InPlace,
 }
 
-/// Persistent "Export as book" configuration stored in the `.collection` file.
-/// Every field is optional; the export dialog supplies sensible defaults at
-/// use time, so a freshly created collection without a `book:` block can be
-/// exported without ceremony.
+/// Saved "Export as book" settings in the `.collection` file. All optional; the
+/// dialog supplies defaults, so a collection without `book:` can still be
+/// exported.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct BookExportConfig {
@@ -281,9 +262,8 @@ pub struct BookExportConfig {
     pub subtitle: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub author: Option<String>,
-    /// Multi-author byline + CRediT roster. Supersedes the single `author`
-    /// field above when non-empty; `author` is retained for backward
-    /// compatibility and the simple single-author case.
+    /// Byline and CRediT roster. When non-empty it takes over from `author`,
+    /// which remains for the simple single-author case.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub contributors: Vec<Contributor>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -306,19 +286,16 @@ pub struct BookExportConfig {
     /// `Beginning` when unset.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub toc_placement: Option<TocPlacement>,
-    /// How the bibliography is sourced — a single consolidated list
-    /// (`Unified`) or the authors' own per-note declarations (`InPlace`).
-    /// Defaults to `Unified` when unset.
+    /// Where the bibliography comes from (see [`BibliographyMode`]). `Unified`
+    /// when unset.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bibliography_mode: Option<BibliographyMode>,
-    /// When `Some(false)`, the CRediT contributions statement is omitted from
-    /// the book export even if contributors carry CRediT roles. The
-    /// multi-author byline still renders. Defaults to `true` when unset.
+    /// `Some(false)` leaves out the CRediT statement even when contributors
+    /// have roles; the byline still shows. `true` when unset.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_credit_statement: Option<bool>,
-    /// Where older files kept the "links to files" choice. Read only so
-    /// [`parse_collection_file`] can move it to [`CollectionExportConfig`];
-    /// never written back.
+    /// Where older files kept the "links to files" choice. Only read, so
+    /// [`parse_collection_file`] can move it to [`CollectionExportConfig`].
     #[serde(default, skip_serializing)]
     pub linked_files: Option<crate::models::export::LinkedFilesOptions>,
 }
@@ -365,11 +342,9 @@ pub struct CollectionExportConfig {
     pub table_delimiter: Option<crate::models::export::TableDelimiter>,
 }
 
-/// One contributor to a collection — drives the Book Metadata byline and
-/// CRediT statement.
-///
-/// The two role axes are orthogonal: a person can be a bibliographic
-/// `author` *and* hold CRediT roles like Conceptualization.
+/// One contributor, for the book byline and CRediT statement. Bibliographic
+/// role and CRediT roles are independent: someone can be an `author` and hold
+/// Conceptualization.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(default)]
 pub struct Contributor {
@@ -402,17 +377,14 @@ pub struct CollectionFile {
     pub bibliography_file: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub style: Option<CollectionStyle>,
-    /// Raw Typst injected verbatim at export, after the generated style rules
-    /// and after any template, so it overrides both. The escape hatch for
-    /// power-users who want styling the Style Overrides UI doesn't expose
-    /// (custom `#show` rules, running headers, etc.). InkyCap never parses
-    /// this back — it is written by the user and emitted as-is.
+    /// Raw Typst added at export after the generated style rules and any
+    /// template, so it overrides both: custom `#show` rules, running headers
+    /// and other styling Style Overrides doesn't offer. Written by the user and
+    /// emitted as is.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_typst: Option<String>,
-    /// Settings for the "Export as book" action — merged single-PDF output
-    /// drawn from the collection's notes. None means the user hasn't
-    /// configured book export for this collection (defaults are supplied at
-    /// dialog time).
+    /// "Export as book" settings; `None` until configured (the dialog supplies
+    /// defaults).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub book: Option<BookExportConfig>,
     /// The Export tab's saved choices. None until the user changes one.
@@ -436,11 +408,9 @@ pub struct ViewDef {
     pub name: String,
     #[serde(default)]
     pub filters: Option<FilterGroup>,
-    /// Per-column quick filters set from a column header. Keyed by property
-    /// name; each value is an independent `FilterGroup` that ANDs in on top of
-    /// `base.filters` and this view's `filters`. A separate scope (not merged
-    /// into `filters`) so header filters round-trip and clear independently of
-    /// the advanced FilterBuilder tree.
+    /// Quick filters from the column headers, keyed by property. Each is a
+    /// `FilterGroup` ANDed with `base.filters` and the view's `filters`. Kept
+    /// apart from `filters` so they save and clear on their own.
     #[serde(
         rename = "columnFilters",
         default,
@@ -472,17 +442,12 @@ fn default_sort_direction() -> String {
     "ASC".to_string()
 }
 
-/// A boolean group of filters. Each combinator holds a list of *members*,
-/// and a member is either a leaf expression string (e.g.
-/// `collection.contains("paper")`) or a nested `FilterGroup` (a YAML mapping
-/// with its own `and`/`or`/`not`). This recursion is what lets a collection
-/// express `(A or B) and C` — see `evaluate_filter_group`.
+/// A boolean group of filters. Each combinator lists members, each an
+/// expression string (e.g. `collection.contains("paper")`) or a nested group,
+/// so a collection can express `(A or B) and C` (see `evaluate_filter_group`).
 ///
-/// When more than one combinator is present they are AND-ed together:
-/// the group passes when its `and` members all pass, *and* at least one of
-/// its `or` members passes, *and* none of its `not` members pass. An absent
-/// or empty combinator is a pass-through, so the common single-combinator
-/// case behaves exactly as before.
+/// Combinators are ANDed: all `and` members pass, at least one `or` member
+/// passes, and no `not` member passes. A missing or empty combinator passes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FilterGroup {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -493,11 +458,9 @@ pub struct FilterGroup {
     pub not: Option<Vec<serde_yaml::Value>>,
 }
 
-/// Parse a `.collection` file from its YAML content.
-///
-/// Older files kept the "links to files" choice under `book:`. It is moved to
-/// `export:` here (unless `export:` already has one), so the next save writes
-/// it in its new place only.
+/// Parse a `.collection` file. An older file's "links to files" choice under
+/// `book:` moves to `export:` (unless already set there), so the next save
+/// writes it there.
 pub fn parse_collection_file(content: &str) -> Result<CollectionFile, serde_yaml::Error> {
     let mut base: CollectionFile = serde_yaml::from_str(content)?;
     if let Some(old) = base.book.as_mut().and_then(|b| b.linked_files.take()) {
@@ -512,10 +475,8 @@ pub fn serialize_collection_file(base: &CollectionFile) -> Result<String, serde_
     serde_yaml::to_string(base)
 }
 
-/// Wrap a list of leaf filter expressions in a nested `{ or: [...] }` group
-/// value, suitable for embedding as a member of a parent group's list.
-/// Built as a mapping directly (rather than `serde_yaml::to_value`) so it is
-/// infallible — no `unwrap` in a construction path.
+/// Leaf expressions wrapped in a nested `{ or: [...] }` group, built as a
+/// mapping directly so it can't fail.
 fn or_group_value(exprs: Vec<String>) -> serde_yaml::Value {
     let mut map = serde_yaml::Mapping::new();
     map.insert(
@@ -525,15 +486,12 @@ fn or_group_value(exprs: Vec<String>) -> serde_yaml::Value {
     serde_yaml::Value::Mapping(map)
 }
 
-/// Create a default CollectionFile for a named collection.
-///
-/// The default filter is `All[ file.name != this.file.name, Any[
-/// collection.contains("<name>") ] ]`: the outer AND keeps the collection
-/// file out of its own results and is where the user adds narrowing rules,
-/// while the inner OR group is where membership lives — notes tagged with
-/// `#note(collection: ("name"))` are auto-included, and the user can add
-/// alternatives there (a folder match, another tag) without forcing every
-/// rule to hold at once.
+/// The default collection file for `name`. Its filter is `All[ file.name !=
+/// this.file.name, Any[ collection.contains("<name>") ] ]`: the outer AND
+/// excludes the collection file itself and is where narrowing rules go; the
+/// inner OR holds membership, so notes with `#note(collection: ("name"))` are
+/// included and alternatives (a folder, another tag) can be added without all
+/// having to match.
 pub fn default_collection_file_for(name: &str) -> CollectionFile {
     let collection_filter = format!(r#"collection.contains("{}")"#, name);
     CollectionFile {
@@ -711,9 +669,8 @@ views:
             serde_yaml::Value::String("file.name != this.file.name".to_string())
         );
 
-        // The membership rule lives inside a nested `{ or: [...] }` group so
-        // the user can add alternatives (folder, tag) without forcing all to
-        // hold at once.
+        // Membership is a nested OR group, so alternatives don't all have to
+        // match.
         let nested = and[1].as_mapping().expect("second member is a group");
         let or_members = nested
             .get(serde_yaml::Value::String("or".to_string()))

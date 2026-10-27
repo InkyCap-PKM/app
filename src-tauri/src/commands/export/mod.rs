@@ -19,8 +19,7 @@ pub(crate) mod pdf;
 pub(crate) mod site;
 
 // ── Re-exports ──────────────────────────────────────────────────
-// Preserves the public API surface: all callers continue to use
-// `commands::export::function_name` unchanged.
+// Callers use `commands::export::function_name`.
 
 pub use assets::export_self_contained_typ;
 pub use companion::{CompanionReport, FileLinkMode, LinkedFilesOptions};
@@ -36,13 +35,12 @@ pub use pdf::{
 };
 pub use site::export_collection_static_site;
 
-/// Outcome of a collection export that writes one file per note into a
-/// folder (PDF files, Markdown files, static HTML site). `files` are the
-/// paths written; `skipped_notes` lists notes that failed and were left out,
-/// so the caller can show them and let the user open each one to fix it.
-/// `bypassed_count` is how many notes were exported with their errors kept as
-/// plain text, which only happens when the caller asked to bypass errors.
-/// `companion` reports the files copied into the folder beside the export.
+/// Result of a collection export that writes one file per note into a folder
+/// (PDF, Markdown, static HTML site). `files` are the paths written;
+/// `skipped_notes` are notes that failed and were left out, so the user can
+/// open and fix each one. `bypassed_count` is how many notes were exported with
+/// their errors shown as plain text (only when the caller asked to bypass
+/// errors). `companion` lists the files copied beside the export.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BatchExportResult {
@@ -76,10 +74,8 @@ impl SkippedNote {
     }
 }
 
-/// Number of collaboration review-markup constructs (`#suggestion`,
-/// `#annotation`) in a note. The export dialog calls this when opening so it
-/// only shows its "Review markup" control for notes that actually carry
-/// tracked changes.
+/// Number of review constructs (`#suggestion`, `#annotation`) in a note, so the
+/// export dialog shows its "Review markup" control only when there are some.
 #[tauri::command]
 pub async fn count_note_review_markup(
     path: String,
@@ -105,9 +101,8 @@ mod tests {
     use super::pdf::{check_pdf_standard_requirements, ensure_document_date_for_standard};
     use crate::typst_pipeline::compiler::PdfStandardPreset;
 
-    /// Notes import the inkycap-notebox library via the canonical
-    /// `/.inkycap/notebox.typ` path; `inline_package` must replace that line
-    /// with the inlined package source.
+    /// Notes import the inkycap-notebox library from `/.inkycap/notebox.typ`;
+    /// `inline_package` must replace that line with the package source.
     #[test]
     fn inline_package_replaces_canonical_import() {
         let source = "#import \"/.inkycap/notebox.typ\": *\n\n= Hello\n";
@@ -159,8 +154,7 @@ mod tests {
     #[test]
     fn check_pdf_ua1_ignores_heading_levels_inside_a_code_fence() {
         // Issue #21: the `=== Deep` below is a code sample, not a section, so
-        // it can't be a real level jump — and the author has no way to "fix" a
-        // warning about it.
+        // it must not be reported as a heading level jump.
         let source =
             "= Top\n\n```typ\n=== Deep\n```\n\n== Sub\n#image(\"a.png\", alt: \"a thing\")\n";
         check_pdf_standard_requirements(source, PdfStandardPreset::PdfUa1)
@@ -419,9 +413,8 @@ mod tests {
 
     #[test]
     fn resolve_template_bare_name_defaults_to_local_namespace() {
-        // After dropping .inkycap/templates/, bare names resolve to
-        // `@local/<name>:0.1.0` so users can refer to their own packages
-        // from a creation rule without typing the full spec.
+        // Bare names resolve to `@local/<name>:0.1.0`, so a creation rule can
+        // name the user's own package without the full spec.
         assert_eq!(resolve_template_path("ieee"), "@local/ieee:0.1.0");
     }
 

@@ -1,6 +1,5 @@
-/* Tab-strip pane menu (PanelTopOpen dropdown).
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Tab strip pane menu (PanelTopOpen dropdown). Part of layout.css, whose
+   import order (see ../layout.css) keeps the cascade. */
 
 /* ─── Tab-strip pane menu (PanelTopOpen dropdown) ─────────────────────── */
 .tab-bar__menu {
@@ -12,9 +11,9 @@
   margin: 0 var(--space-2);
 }
 
-/* Matches the top-bar icon buttons (e.g. the right panel's File Actions,
-   .right-panel__tab): padding-sized around an 18px icon rather than a fixed
-   box, so the hover highlight is the same dimensions as its neighbours. */
+/* Sized like the other top bar icon buttons (e.g. the right panel's File
+   Actions, .right-panel__tab): padding around an 18px icon, so the hover
+   highlight matches its neighbours. */
 .tab-bar__menu-btn {
   background: none;
   border: 1px solid transparent;

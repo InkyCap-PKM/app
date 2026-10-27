@@ -1,22 +1,19 @@
 // InkyCap version manager.
 //
-// Versioning scheme:  YY.MM.RELEASE
-//   YY       — two-digit year of the release (the "major")
-//   MM       — month of the release (the "minor"), 1–12
-//   RELEASE  — release counter for that month AND the channel selector:
-//              ODD  = development / beta work
-//              EVEN = user-facing / stable distribution
+// Versions are YY.MM.RELEASE:
+//   YY       two-digit year
+//   MM       month, 1–12
+//   RELEASE  release number within the month, which also gives the channel:
+//              odd  = development / beta
+//              even = stable
 //
-// The channel parity lives in the LAST component so that major.minor stay a
-// clean calendar stamp. This also keeps every component within the Windows
-// MSI ProductVersion limits (major ≤ 255, minor ≤ 255, build ≤ 65535) — a
-// YYYYMM-style major (e.g. 202606) overflows MSI and the WiX bundler refuses
-// it, which is why the scheme is YY.MM rather than YYYYMM.
+// The channel is in the last part so the first two stay a calendar date. YY
+// (not YYYY) keeps every part within Windows MSI's version limits (major and
+// minor ≤ 255, build ≤ 65535), which the WiX bundler enforces.
 //
-// Stored as plain semver (e.g. 26.6.1) and kept in lockstep across
-// package.json, src-tauri/Cargo.toml, and src-tauri/tauri.conf.json. The app
-// reads it at runtime via the `app_version` command and shows it in
-// Settings → Overview.
+// Stored as plain semver (e.g. 26.6.1) in package.json, src-tauri/Cargo.toml
+// and src-tauri/tauri.conf.json, kept the same in all three. The app reads it
+// with the `app_version` command and shows it in Settings → Overview.
 //
 // Usage:
 //   node scripts/version.mjs show
@@ -95,9 +92,8 @@ function writeAll(next) {
   tauri.version = v;
   writeFileSync(TAURI, JSON.stringify(tauri, null, 2) + "\n");
 
-  // Cargo.toml: only the [package] version is at line-start (`^version`);
-  // dependency versions live inside `name = { version = … }`, so a single
-  // first-match, multiline replace is safe.
+  // Only the [package] version starts a line (dependency versions are inside
+  // `name = { version = … }`), so replacing the first line-start match is safe.
   const cargo = readFileSync(CARGO, "utf8").replace(/^version\s*=\s*"[^"]*"/m, `version = "${v}"`);
   writeFileSync(CARGO, cargo);
 }

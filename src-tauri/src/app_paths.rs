@@ -1,49 +1,40 @@
-//! Resolves on-disk locations for InkyCap's runtime files using the
-//! `dirs` crate, which maps to the correct native directory on
-//! Linux (XDG), macOS, and Windows. Every persisted-state caller
-//! routes through here — no scattered `dirs::*()` calls elsewhere.
+//! Where InkyCap keeps its files, using the `dirs` crate for each platform's
+//! folders (XDG on Linux, macOS, Windows). Everything InkyCap saves finds its
+//! folder here.
 //!
-//! The two exceptions are `commands::system_color` (reads KDE's
-//! `kdeglobals`) and `typst_pipeline::zotero` (reads Zotero's DB).
-//! Those use `dirs::*` directly because they're locating files owned
-//! by other applications, not InkyCap.
+//! The exceptions are `commands::system_color` (reads KDE's `kdeglobals`) and
+//! `typst_pipeline::zotero` (reads Zotero's database), which use `dirs::*`
+//! directly to find other applications' files.
 
 use std::path::{Path, PathBuf};
 
-/// Per-platform config dir. Holds files the user authored or that
-/// represent their preferences (config.json, settings.json,
-/// creation_rules.json, bookmarks.json). Survives app uninstall on
-/// most platforms; included in backup tools by default.
+/// Config folder: files the user wrote or that hold preferences (config.json,
+/// settings.json, creation_rules.json, bookmarks.json).
 pub fn config_dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("inkycap")
 }
 
-/// Per-platform data dir. Holds non-config user data that isn't
-/// regenerable from notebox content — currently the recovery snapshot
-/// store.
+/// Data folder: user data that can't be rebuilt from notes (the recovery
+/// snapshots).
 pub fn data_dir() -> PathBuf {
     dirs::data_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("inkycap")
 }
 
-/// Per-platform cache dir. Holds regenerable indexes — the metadata
-/// SQLite, the persisted search index. Anything in here can be
-/// deleted without data loss; the app rebuilds from notebox content
-/// on next open.
+/// Cache folder: indexes that can be rebuilt (the metadata database, the search
+/// index). Anything here can be deleted; the app rebuilds it on the next open.
 pub fn cache_dir() -> PathBuf {
     dirs::cache_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("inkycap")
 }
 
-/// Best-effort migration of regenerable indexes that used to live
-/// under `data_dir()` to their new home under `cache_dir()`. Called
-/// once at app startup. Cross-filesystem rename failures fall back
-/// to "leave the old file behind; cache rebuilds fresh" — losing it
-/// costs at most one cold rebuild, never any user data.
+/// Move cache files that were in `data_dir()` to `cache_dir()`, at startup. If
+/// a move fails (e.g. across file systems), the old file is left and the cache
+/// is rebuilt; nothing but time is lost.
 pub fn migrate_legacy_cache_paths() {
     let old_root = dirs::data_dir()
         .map(|d| d.join("inkycap"))
@@ -52,16 +43,12 @@ pub fn migrate_legacy_cache_paths() {
     migrate_legacy_cache_paths_at(&old_root, &new_root);
 }
 
-/// Implementation of [`migrate_legacy_cache_paths`] with injectable
-/// roots, so tests can drive the migration over tempdirs without
-/// having to override `dirs::*` globally.
+/// [`migrate_legacy_cache_paths`] with the folders passed in, for tests.
 pub fn migrate_legacy_cache_paths_at(old_root: &Path, new_root: &Path) {
     if !old_root.exists() {
         return;
     }
-    // If the old and new roots collapse to the same directory (e.g.
-    // macOS where data_dir and cache_dir are distinct, but a future
-    // platform might not be), skip — nothing to move.
+    // Nothing to move if both are the same folder.
     if old_root == new_root {
         return;
     }
@@ -198,9 +185,8 @@ mod tests {
 
         let target = new.join("metadata-cache.sqlite");
         std::fs::write(&target, b"already-here").unwrap();
-        // An old copy also exists — migration should not clobber the
-        // destination, and should leave the old file in place (no-op
-        // when destination exists).
+        // A copy also exists at the destination: it must not be overwritten,
+        // and the old file stays.
         let old_copy = old.join("metadata-cache.sqlite");
         std::fs::write(&old_copy, b"stale").unwrap();
 

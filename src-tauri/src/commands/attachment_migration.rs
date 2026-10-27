@@ -1,21 +1,15 @@
-//! Phase C of the portable-paths plan: migrate the notebox's attachment
-//! folder. When the user changes the per-notebox
-//! `files.attachment_folder` from old → new, three things must happen
-//! atomically:
+//! Rename the notebox's attachment folder. When `files.attachment_folder`
+//! changes from old to new:
 //!
-//! 1. Move every file under `<notebox>/<old>/` to `<notebox>/<new>/`.
-//! 2. Across every `.typ` note in the notebox, rewrite path-bearing
-//!    calls whose string argument starts with `/<old>/` to `/<new>/`.
-//!    Limited to `image`/`read`/`bibliography` per the
-//!    shared rewriter contract.
-//! 3. Persist the updated setting.
+//! 1. move every file under `<notebox>/<old>/` to `<notebox>/<new>/`;
+//! 2. rewrite path calls in every note whose string argument starts with
+//!    `/<old>/` to `/<new>/` (see `path_rebase::replace_absolute_prefix`);
+//! 3. save the setting.
 //!
-//! The preview command is read-only and is used by the settings UI to
-//! show "<n> files will move, <m> notes will update" before the user
-//! confirms. The apply command performs all three steps; partial
-//! failures are reported but not rolled back (rolling back a half-
-//! complete fs move would be more dangerous than leaving the user a
-//! known-bad state with an explicit error to investigate).
+//! The preview command is read-only and lets Settings show "<n> files will
+//! move, <m> notes will update" first. Partial failures are reported, not
+//! rolled back; undoing a half-finished move would be riskier than reporting
+//! the error.
 
 use std::path::{Path, PathBuf};
 
@@ -29,9 +23,7 @@ use crate::typst_pipeline::path_rebase::{count_absolute_prefix_matches, replace_
 
 #[derive(Debug, Clone, Serialize)]
 pub struct MigrationPreview {
-    /// Current attachment-folder name (informational; the UI may
-    /// already know this but echoing it back guards against races
-    /// between the user typing and the backend reading state).
+    /// The current folder name, echoed back so the UI and backend agree.
     pub current_folder: String,
     /// Number of regular files currently under `<notebox>/<old>/`.
     pub files_to_move: usize,
@@ -52,16 +44,13 @@ pub struct MigrationPreview {
 pub struct MigrationResult {
     pub files_moved: usize,
     pub notes_updated: usize,
-    /// Per-note write errors that occurred during the rewrite step.
-    /// The fs move is performed first and atomically (single rename);
-    /// errors here are surfaced loudly so the user can inspect, but
-    /// they do not roll back the move.
+    /// Per-note write errors from the rewrite. The move is done first; these
+    /// are reported but don't undo it.
     pub errors: Vec<String>,
 }
 
-/// Dry-run the attachment-folder rename: report whether the target exists, how
-/// many files it already holds, and any name conflicts — so the frontend can
-/// warn before committing. Performs no filesystem changes.
+/// Preview the rename: whether the target exists, how many files it holds, and
+/// any name conflicts. Changes nothing.
 #[tauri::command]
 pub async fn preview_attachment_folder_migration(
     new_folder: String,
@@ -126,10 +115,9 @@ pub async fn preview_attachment_folder_migration(
     })
 }
 
-/// Move every attachment into `new_folder` (one atomic directory rename) and
-/// rewrite the `#image`/`#read`/etc. paths in referencing notes to match.
-/// The fs move happens first; per-note rewrite errors are reported but do not
-/// roll it back. Returns the move result and any rewrite errors.
+/// Move the attachments into `new_folder` (one directory rename) and update the
+/// `#image`, `#read`, … paths in notes. Rewrite errors are reported but don't
+/// undo the move.
 #[tauri::command]
 pub async fn migrate_attachment_folder(
     new_folder: String,
@@ -164,9 +152,8 @@ pub async fn migrate_attachment_folder(
     let new_abs = root.join(&new_folder);
     let mut errors: Vec<String> = Vec::new();
 
-    // Step 1: move files from old → new. When the target is empty or
-    // doesn't exist, a single atomic rename suffices. When the target
-    // already has files, merge by moving individual files across.
+    // Step 1: move the files. A single rename when the target is empty or
+    // missing; otherwise merge file by file.
     let files_moved = if old_abs.is_dir() {
         let target_nonempty = new_abs.is_dir()
             && new_abs
@@ -197,10 +184,8 @@ pub async fn migrate_attachment_folder(
             count
         }
     } else {
-        // No old folder to move (the user may be establishing a new
-        // attachment folder with no prior attachments). Continue with
-        // the source rewrite so any hand-authored `/<old>/...` refs
-        // are still updated.
+        // No old folder (e.g. setting up an attachment folder for the first
+        // time); still rewrite any `/<old>/...` references.
         0
     };
 
@@ -212,13 +197,9 @@ pub async fn migrate_attachment_folder(
         .await
         .unwrap_or_default();
 
-    // `list_files` returns canonical absolute paths (it walks via the
-    // storage's canonical root). The `session.notebox_root` may NOT be
-    // canonical on platforms where the user's path contains symlinks
-    // — stripping against it silently fails and the migration writes
-    // nothing back. Use the storage's canonical root for the strip,
-    // and feed the notebox-relative form into read/write so the storage
-    // sandbox can validate consistently with how other commands use it.
+    // `list_files` returns canonical paths. `session.notebox_root` may not be
+    // canonical (symlinks), so strip `storage.canonical_root()` and read and
+    // write notebox-relative paths.
     let strip_root = storage.canonical_root();
     let probe = format!("/{}/", current_folder);
 
@@ -238,9 +219,8 @@ pub async fn migrate_attachment_folder(
                 continue;
             }
         };
-        // Cheap byte-level pre-filter: skip the AST parse entirely
-        // when the substring can't be present. Important for large
-        // noteboxes — the parse is the dominant cost per note.
+        // Skip the parse when the text can't contain the prefix; parsing is the
+        // main cost per note.
         if !content.contains(&probe) {
             continue;
         }
@@ -256,12 +236,9 @@ pub async fn migrate_attachment_folder(
         notes_updated += 1;
     }
 
-    // Step 3: persist the setting last, so a mid-flight failure leaves
-    // the setting pointing at the old folder name (which is now empty
-    // because we moved it) — the user can re-run the migration after
-    // diagnosing. If we updated the setting first and step 2 failed,
-    // every subsequent compile would see broken absolute references
-    // until the rewrite was retried.
+    // Step 3: save the setting last. If the rewrite failed partway, the setting
+    // still names the old (now empty) folder and the migration can be run
+    // again; saving first would leave every reference broken until then.
     {
         let mut s = session.notebox_settings.write().await;
         s.files.attachment_folder = new_folder.clone();
@@ -277,11 +254,8 @@ pub async fn migrate_attachment_folder(
     })
 }
 
-/// Validate a candidate folder segment: must be non-empty, must not
-/// contain path separators, must not be `..` or `.`. Mirrors the
-/// constraint that attachment folders live as a single directory
-/// directly under the notebox root — keeps the migration's
-/// `/<segment>/` rewrite path-bearing-call invariant honest.
+/// Check a folder name: non-empty, no separators, not `.` or `..`, since the
+/// attachment folder is a single folder at the notebox root.
 fn validate_folder_segment(s: &str) -> Result<String, InkyCapError> {
     let trimmed = s.trim();
     if trimmed.is_empty() {
@@ -328,10 +302,8 @@ fn count_name_conflicts(src: &Path, dst: &Path) -> usize {
         .count()
 }
 
-/// Merge source directory into an existing target directory by moving
-/// files individually. Conflicting filenames in the target are
-/// suffixed with `_1`, `_2`, etc. to avoid data loss. After all files
-/// are moved, the (now-empty) source directory tree is removed.
+/// Merge `src` into an existing `dst` by moving files one by one; name clashes
+/// get `_1`, `_2`, … suffixes. The emptied source tree is then removed.
 async fn merge_directories(src: &Path, dst: &Path, errors: &mut Vec<String>) -> usize {
     let entries: Vec<_> = walkdir::WalkDir::new(src)
         .into_iter()
@@ -424,10 +396,9 @@ async fn count_notes_referencing_segment(
     let strip_root = storage.canonical_root();
     let mut count = 0usize;
     for note_abs in notes {
-        // `list_files` returns canonical absolute paths; strip against
-        // the storage's canonical root (not `storage.root()`, which may
-        // be uncanonicalized). Falls back to the absolute path so
-        // `read_file` re-validates either form.
+        // Strip the storage's canonical root (`storage.root()` may not be
+        // canonical); fall back to the absolute path, which `read_file`
+        // validates too.
         let rel = note_abs
             .strip_prefix(strip_root)
             .map(|p| p.to_path_buf())

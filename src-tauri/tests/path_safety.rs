@@ -1,29 +1,19 @@
-//! Static-analysis guard that fails CI when paths reach the frontend in an
-//! OS-native shape. The motivating bug (and a long tail of likely future
-//! ones) was Windows-only:
+//! Fails CI if a path reaches the frontend in an OS-native form. On Windows:
 //!
-//!   - `std::fs::canonicalize` prepends a `\\?\` UNC verbatim prefix on
-//!     Windows. Frontend equality checks like `tab.path === node.path` and
-//!     `tab.path.startsWith(root + "/")` then silently fail because no
-//!     other path source carries the prefix.
-//!   - `Path::display()` preserves OS-native separators. The frontend's
-//!     string operations (`split("/")`, `startsWith(... + "/")`, etc.)
-//!     assume forward slashes.
+//!   - `std::fs::canonicalize` adds a `\\?\` prefix, so frontend comparisons
+//!     like `tab.path === node.path` fail against paths without it.
+//!   - `Path::display()` keeps `\` separators, while the frontend's string
+//!     handling (`split("/")`, `startsWith(... + "/")`) assumes `/`.
 //!
-//! Outbound paths therefore flow through
-//! [`crate::storage::to_frontend_string`], which strips the verbatim prefix
-//! and normalizes to forward slashes — a single canonical shape that's the
-//! same on every OS.
+//! Paths sent to the frontend go through
+//! [`crate::storage::to_frontend_string`], which removes the prefix and uses
+//! forward slashes on every OS.
 //!
-//! This test enforces that invariant by grepping the source tree for
-//! `path.display().to_string()`. Legitimate exceptions (error messages
-//! that never cross the IPC boundary, subprocess argv paths, etc.) can opt
-//! out by appending `// path-stringification-ok: <one-line reason>` to the
-//! offending line. The reason is required so the next reader understands
-//! why this particular site was waved through.
+//! This test searches the source for `path.display().to_string()`. A legitimate
+//! use (an error message, a subprocess argument) opts out with `//
+//! path-stringification-ok: <one-line reason>` on the line.
 //!
-//! Same shape as [`utf8_safety.rs`] — see that file for the broader
-//! "grep-based forbidden patterns" rationale.
+//! Works like [`utf8_safety.rs`].
 
 use std::path::Path;
 
@@ -84,21 +74,16 @@ fn no_raw_path_display_to_string_in_source() {
             Err(_) => continue,
         };
 
-        // Skip lines that live inside a `#[cfg(test)]` block. Tests use
-        // synthetic forward-slash paths and don't cross any IPC boundary,
-        // so blanket-allowing them keeps the rule focused on production code.
-        // The detector is intentionally line-level rather than syntactic:
-        // we toggle on `#[cfg(test)]` and off when we leave the matching
-        // braces. A `#[test]` attribute follows the same pattern.
+        // Skip lines inside `#[cfg(test)]` blocks: tests use made-up
+        // forward-slash paths and never cross IPC. The check is line-based: on
+        // at `#[cfg(test)]` (or `#[test]`), off when its braces close.
         let mut in_test_block = false;
         let mut test_brace_depth: i32 = 0;
 
         for (line_no, raw_line) in content.lines().enumerate() {
             let trimmed = raw_line.trim_start();
 
-            // Enter test scope when we see the attribute on its own line.
-            // (We never see it in the middle of an expression because rustfmt
-            // would split it out.)
+            // The attribute is always on its own line (rustfmt puts it there).
             if !in_test_block
                 && (trimmed.starts_with("#[cfg(test)]") || trimmed.starts_with("#[test]"))
             {
@@ -107,10 +92,8 @@ fn no_raw_path_display_to_string_in_source() {
             }
 
             if in_test_block {
-                // Track braces *outside* string literals naively — string
-                // literals containing `{` or `}` aren't common in test
-                // setups, and a false positive here just over-extends the
-                // exclusion, never under-extends.
+                // Braces in string literals are counted too; at worst that
+                // extends the skipped region, never shortens it.
                 for c in raw_line.chars() {
                     match c {
                         '{' => test_brace_depth += 1,
@@ -128,10 +111,9 @@ fn no_raw_path_display_to_string_in_source() {
                 continue;
             }
 
-            // Strip the trailing `// …` comment from the search target so a
-            // doc comment that *mentions* `.display().to_string()` doesn't
-            // count as a violation. The allowlist marker sits inside the
-            // comment, so we test it against the raw line.
+            // Drop a trailing `// …` comment before searching, so a comment
+            // mentioning `.display().to_string()` doesn't count. The opt-out
+            // marker is in the comment, so it's checked on the raw line.
             let scan_target = match raw_line.find("//") {
                 Some(idx) => &raw_line[..idx],
                 None => raw_line,

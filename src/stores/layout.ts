@@ -1,7 +1,5 @@
-// Layout store: panel widths and collapsed state.
-// Persists to localStorage so panel sizing survives reloads. Settings
-// persistence is intentionally lightweight here — these are pure UI
-// preferences that don't need to round-trip to the Rust backend.
+// Layout store: panel widths and collapsed state, saved in localStorage (UI
+// preferences that don't need the backend).
 
 import { createSignal } from "solid-js";
 
@@ -14,11 +12,10 @@ export type RightPanelTab =
   | "references"
   | "scroll-context"
   | "annotations"
-  // A runtime-contributed panel id (plugin / external tool). The `(string & {})`
-  // keeps autocomplete on the built-in literals above while allowing any id.
-  // Contributed ids are deliberately excluded from BUILT_IN_RIGHT_PANEL_TABS, so
-  // they reset to the default tab on reload rather than persisting (the
-  // contribution re-registers at runtime; a stale id would point at nothing).
+  // A panel id contributed at runtime (plugin, external tool); `(string & {})`
+  // keeps autocomplete for the built-in names. These aren't in
+  // BUILT_IN_RIGHT_PANEL_TABS, so they aren't restored on reload (the
+  // contribution registers again; a stale id would show nothing).
   | (string & {});
 
 const BUILT_IN_RIGHT_PANEL_TABS: readonly RightPanelTab[] = [
@@ -30,11 +27,9 @@ const BUILT_IN_RIGHT_PANEL_TABS: readonly RightPanelTab[] = [
   "annotations",
 ];
 
-/// The right panel's tab set for a Collection View. Distinct from
-/// `RightPanelTab` (which is file-note scoped) because a collection tab and a
-/// file tab can't be active at the same time, and keeping the two enums apart
-/// means switching between a note and a collection never strands the panel on
-/// an inapplicable tab.
+/// Right panel tabs for a Collection View. Separate from `RightPanelTab` (for
+/// notes), so switching between a note and a collection never leaves the panel
+/// on a tab that doesn't apply.
 export type CollectionPanelTab = "export" | "appearance" | "book" | "collection";
 
 const COLLECTION_PANEL_TABS: readonly CollectionPanelTab[] = [
@@ -44,9 +39,8 @@ const COLLECTION_PANEL_TABS: readonly CollectionPanelTab[] = [
   "collection",
 ];
 
-/// Which metric the status-bar count readout shows. The two share one slot
-/// at the right edge and toggle on click (see StatusBar); persisted so the
-/// user's preference survives reloads.
+/// Which count the status bar shows. Both share one slot and toggle on click
+/// (see StatusBar); saved across reloads.
 export type StatusCountMode = "words" | "chars";
 
 interface LayoutState {
@@ -78,10 +72,9 @@ function load(): LayoutState {
     if (!raw) return { ...DEFAULTS };
     const parsed = JSON.parse(raw);
     const merged = { ...DEFAULTS, ...parsed };
-    // "scroll-context" and "annotations" are contextual tabs — they exist only
-    // while their condition holds (a scroll session / the active note having
-    // annotations or collab membership). Never restore them on startup, or the
-    // pane shows before the editor is mounted with no owning context.
+    // "scroll-context" and "annotations" exist only in context (a scroll
+    // session; a note with annotations or collaboration). Never restore them at
+    // startup, or the pane would show with nothing behind it.
     if (
       !BUILT_IN_RIGHT_PANEL_TABS.includes(merged.rightPanelTab) ||
       merged.rightPanelTab === "scroll-context" ||
@@ -122,10 +115,9 @@ const [rightPanelTab, setRightPanelTabInternal] = createSignal<RightPanelTab>(
 const [collectionPanelTab, setCollectionPanelTabInternal] =
   createSignal<CollectionPanelTab>(initial.collectionPanelTab);
 // Distraction-free mode hides the vertical toolbar, both sidebars, the tab
-// strip and the status bar (the bar leaves only its floating exit button),
-// keeping just the editor toolbar + content. Deliberately NOT persisted — it's
-// session-only, so every launch starts in regular mode regardless of how the
-// last session ended.
+// strip and the status bar (leaving its floating exit button), keeping the
+// editor toolbar and content. Not saved: every launch starts in the regular
+// layout.
 const [distractionFree, setDistractionFreeInternal] = createSignal(false);
 const [statusCountMode, setStatusCountModeInternal] =
   createSignal<StatusCountMode>(initial.statusCountMode);

@@ -3,12 +3,10 @@ import { EditorState } from "@codemirror/state";
 import { typst } from "codemirror-lang-typst";
 import { isLeadingLocaleDirective, computePreambleImportRanges } from "./note-header";
 
-// A note authored in French (German, …) carries a `#set text(lang: …, region: …)`
-// directive for correct typesetting. The visual editor treats that directive as
-// leading preamble machinery — hidden and locked alongside the `#import` line —
-// so a French note reads identically to an English one (no stray "document
-// setup" chip, no raw source). These pin the line/string-level helpers behind
-// that behaviour.
+// A note written in French (German, …) has a `#set text(lang: …, region: …)` line
+// for correct typesetting. The visual editor hides and locks it with the
+// `#import` line, so the note looks like any other (no "document setup" chip, no
+// raw source). These test the helpers behind that.
 describe("isLeadingLocaleDirective", () => {
   it("matches a pure lang+region directive", () => {
     expect(isLeadingLocaleDirective('#set text(lang: "fr", region: "CA")')).toBe(true);
@@ -70,12 +68,11 @@ describe("computePreambleImportRanges", () => {
   });
 
   it("covers the SetRule keyword position so the body builder skips its pill", () => {
-    // The visual builder guards the standalone `#set`/`#show` pill against the
-    // leading locale directive by testing whether the SetRule node's start
-    // (`node.from`) falls inside a preamble range. The `#` is a separate token,
-    // so that node starts at `set` — one byte past the `#`. This pins that the
-    // range spans the keyword, not just the `#`; otherwise the directive would
-    // resurface as a `set text: lang, region` pill in a French note.
+    // The visual builder keeps the `#set`/`#show` pill off the language line by
+    // checking whether the SetRule node's start (`node.from`) is inside a
+    // preamble range. The `#` is a separate token, so the node starts at `set`,
+    // one byte after it; the range must cover the keyword, or the line would
+    // show as a `set text: lang, region` pill.
     const doc =
       '#import "/.inkycap/notebox.typ": *\n' +
       '#set text(lang: "fr", region: "CA")\n' +

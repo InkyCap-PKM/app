@@ -100,28 +100,22 @@ function isAppEditable(name: string): boolean {
   return isNoteFile(name) || isCollectionFile(name);
 }
 
-/// Files InkyCap opens in a tab: notes and collections in their editors,
-/// images, PDFs, audio and video in a read-only attachment view. Everything
-/// else (`.bib`, data files, …) is shown in the tree so users can see and
-/// link to it, but opens in the system's default application and is
-/// visually de-emphasized.
+/// Files InkyCap opens in a tab: notes, collections, images, PDFs, audio and
+/// video. Others (`.bib`, data files, …) are listed but dimmed, and open in the
+/// default application.
 function opensInApp(name: string): boolean {
   return isAppEditable(name) || attachmentViewKind(name) !== null;
 }
 
-/// Strip InkyCap's internal directories but keep everything else: every
-/// folder — including empty ones the user just created — and every file,
-/// regardless of extension. Typst can reference an asset from anywhere in
-/// the notebox, so hiding non-`.typ` files risks hiding a compile
-/// dependency; they are de-emphasized in the UI instead.
-/// Stable DOM id for a file-tree row, used by the tree container's
-/// `aria-activedescendant` (keyboard navigation). Paths can contain spaces and
-/// slashes, so encode them into an id-safe token.
+/// Stable DOM id for a file-tree row, for `aria-activedescendant`. Paths can
+/// contain spaces and slashes, so they are encoded.
 function treeItemId(path: string): string {
   return `tree-item-${encodeURIComponent(path)}`;
 }
 
-
+/// Remove InkyCap's internal folders and keep everything else, including empty
+/// folders and every file type. Typst can use a file from anywhere in the
+/// notebox, so non-`.typ` files are dimmed rather than hidden.
 function visibleFileTree(nodes: FileTreeNode[]): FileTreeNode[] {
   return nodes
     .filter((n) => !HIDDEN_NAMES.has(n.name))
@@ -134,9 +128,8 @@ function visibleFileTree(nodes: FileTreeNode[]): FileTreeNode[] {
 
 type ListSortMode = "name-asc" | "name-desc" | "count-desc" | "count-asc";
 
-// `labelKey` (resolved at the render site). The file-tree modes share the
-// `sort.*` vocabulary with the links panel; the tag/property list uses its own
-// alphabetical/quantity wording. See en.json.
+// Labels are resolved where rendered. The file-tree modes share `sort.*` with
+// the links panel; the tag list has its own wording. See en.json.
 const FILE_SORT_OPTIONS: { value: FileSortMode; labelKey: string }[] = [
   { value: "name-asc", labelKey: "sort.name.asc" },
   { value: "name-desc", labelKey: "sort.name.desc" },
@@ -146,9 +139,8 @@ const FILE_SORT_OPTIONS: { value: FileSortMode; labelKey: string }[] = [
   { value: "created-asc", labelKey: "sort.created.asc" },
 ];
 
-// The file tree adds zid (Zettelkasten id) ordering on top of the shared
-// options. Collections reuse FILE_SORT_OPTIONS without it — a `.collection`
-// file has no zid, so offering the mode there would be a dead choice.
+// The file tree adds zid ordering. Collections use FILE_SORT_OPTIONS, since a
+// `.collection` file has no zid.
 const FILE_TREE_SORT_OPTIONS: { value: FileSortMode; labelKey: string }[] = [
   ...FILE_SORT_OPTIONS,
   { value: "zid-asc", labelKey: "sort.zid.asc" },
@@ -162,10 +154,8 @@ const LIST_SORT_OPTIONS: { value: ListSortMode; labelKey: string }[] = [
   { value: "count-asc", labelKey: "sort.quantity.asc" },
 ];
 
-/// Sort one level of a file tree. The `grouping` parameter controls
-/// whether directories cluster before files ("before"), after files
-/// ("after"), or interleave with them under the chosen sort ("inline").
-/// Recurses into children so the entire subtree honors both settings.
+/// Sort a file tree, recursively. `grouping` puts folders before files, after
+/// them, or mixed in ("inline").
 function sortFileTree(
   nodes: FileTreeNode[],
   mode: FileSortMode,
@@ -221,13 +211,10 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   // user widens the sidebar to reveal them — see createOverflowWatcher).
   const modeOverflow = createOverflowWatcher();
 
-  // File tree: sort mode + per-folder expansion state hoisted from the
-  // TreeNode component so the Expand All / Collapse All button can flip
-  // every folder in one click. Default to all-collapsed (empty set).
-  // File-tree sort is a user-global preference (persisted across launches),
-  // so it lives in `settings.appearance.file_tree_sort` rather than a
-  // per-mount signal. The getter/setter shape is kept identical to a
-  // createSignal so the dropdown's existing callsites need no change.
+  // File-tree sort and folder expansion live here so Expand all / Collapse all
+  // can change every folder at once; folders start collapsed. The sort is a
+  // saved user setting (`settings.appearance.file_tree_sort`), with a
+  // signal-like getter and setter.
   const fileSortMode = (): FileSortMode => settings.appearance.file_tree_sort;
   const setFileSortMode = (value: FileSortMode) =>
     updateSetting("appearance", "file_tree_sort", value);
@@ -235,22 +222,17 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   const [expandedDirs, setExpandedDirs] = createSignal<Set<string>>(new Set());
   const [showNewMenu, setShowNewMenu] = createSignal(false);
 
-  // File tree drag-and-drop: path of the directory (or "" for notebox
-  // root) currently hovered as a move target, so the destination folder
-  // can highlight. `draggingPath` is the row being dragged, so it can dim
-  // in place.
+  // Drag and drop: the folder (or "" for the root) hovered as the move target,
+  // for highlighting; `draggingPath` is the row being dragged, which is dimmed.
   const [dragOverDir, setDragOverDir] = createSignal<string | null>(null);
   /// Folder to highlight as a drop target: the one an in-tree move is over,
   /// or the one files dragged in from outside the app are over.
   const dropHighlightDir = () => dragOverDir() ?? externalDropFolder();
   const [draggingPath, setDraggingPath] = createSignal<string | null>(null);
 
-  // Drag ghost: a real DOM chip that follows the cursor. We don't use the
-  // native `setDragImage` — WebKitGTK rasterizes it at CSS (1×) resolution and
-  // the compositor upscales it by the device-pixel-ratio, so on a HiDPI screen
-  // it's both blurry and oversized. A live element renders at native
-  // resolution (crisp) and is fully styleable; the source `dragstart`
-  // suppresses the native image and hands us the label + start point.
+  // Drag ghost: a DOM chip that follows the cursor. WebKitGTK renders
+  // `setDragImage` at 1× and upscales it, so on HiDPI screens it is blurry and
+  // oversized.
   let dragGhostEl: HTMLDivElement | null = null;
   const onGhostDragOver = (e: DragEvent) => {
     if (dragGhostEl) {
@@ -275,14 +257,12 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     dragGhostEl = null;
   };
 
-  // Tear down all drag state (dim, target highlight, auto-scroll, ghost) when
-  // a drag ends. Listen for BOTH `drop` and `dragend`, in the capture phase:
-  //  - On a successful move, `moveItems` refreshes the tree and unmounts the
-  //    source row, so its `dragend` may never fire — but `drop` fires first.
-  //  - `dragend` covers cancels (Escape, release outside any target), where
-  //    there is no `drop`.
-  //  - Capture phase, because rows call stopPropagation in their own drag
-  //    handlers, which would hide a bubble-phase document listener.
+  // Clear all drag state when a drag ends. Listen for both `drop` and
+  // `dragend`, in the capture phase:
+  //   - a successful move unmounts the source row, so its `dragend` may not
+  //     fire, but `drop` does;
+  //   - `dragend` covers cancels, which have no `drop`;
+  //   - capture, because rows stop propagation in their own drag handlers.
   const endDrag = () => {
     setDraggingPath(null);
     setDragOverDir(null);
@@ -297,17 +277,15 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     removeDragGhost();
   });
 
-  // Collections: sort mode + inline search filter. Sort reuses the File
-  // Tree options (name / modified / created) per product spec — the
-  // Tags/Properties "by quantity" options don't apply to collections.
+  // Collections: sort and search filter. Sort uses the file-tree options; "by
+  // quantity" doesn't apply.
   const [collectionSortMode, setCollectionSortMode] = createSignal<FileSortMode>("name-asc");
   const [showCollectionSortMenu, setShowCollectionSortMenu] = createSignal(false);
   const [showCollectionSearch, setShowCollectionSearch] = createSignal(false);
   const [collectionFilter, setCollectionFilter] = createSignal("");
 
-  // Refs for panel-menu trigger buttons, used by anchorPanelMenu to place
-  // each dropdown at fixed viewport coords (escapes left-sidebar's
-  // overflow:hidden and flips off-screen positions).
+  // Menu buttons, so anchorPanelMenu can place each dropdown in viewport
+  // coordinates (outside the sidebar's overflow: hidden).
   let fileSortBtnRef: HTMLButtonElement | undefined;
   let tagSortBtnRef: HTMLButtonElement | undefined;
   let propSortBtnRef: HTMLButtonElement | undefined;
@@ -360,9 +338,8 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     return sortFileTree(filtered, fileSortMode(), noteboxSettings.files.folder_grouping);
   });
 
-  /// Collections, filtered by the inline search box and ordered by the
-  /// chosen File-Tree-style sort mode. Date modes fall back gracefully
-  /// when a `.collection` file reports a zero (unknown) timestamp.
+  /// Collections filtered by the search box and sorted. A zero (unknown)
+  /// timestamp is handled in date modes.
   const sortedFilteredCollections = createMemo(() => {
     const list = collections() ?? [];
     const q = collectionFilter().trim().toLowerCase();
@@ -413,18 +390,13 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   }
 
   // ── File-tree keyboard navigation (ARIA tree pattern) ──────────────
-  // The tree root is a single Tab stop (role="tree"); arrow keys move a
-  // keyboard cursor (`focusedTreePath`) through the visible rows via
-  // `aria-activedescendant`, instead of every row being its own Tab stop.
+  // The tree is one Tab stop (role="tree"); arrow keys move `focusedTreePath`
+  // through visible rows via `aria-activedescendant`.
   const [focusedTreePath, setFocusedTreePath] = createSignal<string | null>(null);
 
-  /// Visible rows in display order (depth-first, honouring expanded dirs),
-  /// each carrying its parent path (so Left-arrow can climb to the parent)
-  /// and its depth (for indent + windowed render). This flat list is the
-  /// single source of truth for both keyboard navigation and the virtualized
-  /// render — a recursive component tree on a multi-thousand-note notebox
-  /// would mount thousands of live rows; the windowed render below mounts
-  /// only the visible slice.
+  /// Visible rows in display order, each with its parent (for Left to climb)
+  /// and depth (for indent). Used for both keyboard navigation and the windowed
+  /// render, which mounts only the visible rows.
   type FlatRow = { node: FileTreeNode; parentPath: string | null; depth: number };
   const flatRows = createMemo<FlatRow[]>(() => {
     const out: FlatRow[] = [];
@@ -440,13 +412,10 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     return out;
   });
 
-  // --- File-tree virtualization (fixed-height windowing) ---
-  // Rows are uniform-height `.sidebar-item`s, so a flat windowed list keeps
-  // the DOM bounded regardless of notebox size. The scroll container is the
-  // pane's `.left-sidebar__pane-body` (the Files header sits above it, pinned),
-  // so the window is derived from how far the tree has scrolled past that
-  // container's top edge — measured by rects, which needs no CSS change and
-  // doesn't disturb the other sidebar panes that use the same wrapper.
+  // --- File-tree windowing ---
+  // Rows have a fixed height, so only the visible slice is rendered. The scroll
+  // container is the pane's `.left-sidebar__pane-body`; the window comes from
+  // how far the tree has scrolled past its top, measured with rects.
   const TREE_OVERSCAN = 8; // rows rendered beyond the viewport on each side
   const [rowHeight, setRowHeight] = createSignal(28); // measured from a live row
   const [treeScrolledPast, setTreeScrolledPast] = createSignal(0); // px of tree above the viewport top
@@ -473,16 +442,11 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   };
 
   // --- Drag auto-scroll ---
-  // WebKitGTK (Linux) doesn't auto-scroll an overflow container when a drag
-  // nears its edge, so drive it manually: while a tree-move drag hovers within
-  // `DRAG_EDGE` px of the scroller's top/bottom, step the scroll each frame.
-  // The dragover listener is attached in the CAPTURE phase on the scroller so
-  // it still fires when a row's own dragover calls stopPropagation.
-  //
-  // WKWebView (macOS) and WebView2 (Windows) auto-scroll natively, so the
-  // manual loop is gated to Linux — running both would double the edge speed.
-  // (The windowing still tracks native scrolling fine: its own `scroll`
-  // listener recomputes the visible slice regardless of what drives the scroll.)
+  // WebKitGTK doesn't auto-scroll a container while dragging near its edge, so
+  // step the scroll each frame while a drag is within `DRAG_EDGE` px of the top
+  // or bottom. The dragover listener uses the capture phase because rows stop
+  // propagation. macOS and Windows scroll natively, so this is Linux only; the
+  // windowing follows either kind of scroll.
   const MANUAL_DRAG_AUTOSCROLL = isLinux();
   const DRAG_EDGE = 40; // px from an edge that triggers auto-scroll
   const DRAG_SCROLL_SPEED = 14; // px per frame at the very edge
@@ -528,15 +492,11 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     }
   };
 
-  // Attached as the tree-root `ref`. Wires scroll/resize tracking to the
-  // shared content scroller and takes the first row-height measurement.
-  // Re-runs on every filetree-mode mount, so it tears down any prior wiring
-  // first; the component-level onCleanup covers final unmount.
+  // The tree root's `ref`: sets up scroll and resize tracking and measures the
+  // row height. Runs on every mount, tearing down earlier wiring first.
   //
-  // Solid fires `ref` before the element is connected to the document, so
-  // `closest()` can't see the scroll container yet — resolve it (and attach
-  // listeners) after mount via rAF, otherwise the window stays frozen at the
-  // first screenful and the tree never scrolls.
+  // `ref` runs before the element is attached, so `closest()` can't find the
+  // scroll container yet; do it in the next frame, or the window never moves.
   const initTreeViewport = (el: HTMLDivElement) => {
     detachTreeScroll?.();
     treeRootEl = el;
@@ -602,9 +562,8 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     else if (rowBottom > viewBottom) treeScrollEl.scrollTop = rowBottom - treeScrollEl.clientHeight;
   }
 
-  /// Dir paths in the tree that are ancestors of `path` (for reveal: a
-  /// collapsed ancestor isn't mounted, so expansion can't be driven from the
-  /// row component — it's computed here against the full tree instead).
+  /// Folders that contain `path`. A collapsed ancestor isn't mounted, so
+  /// revealing works from the full tree.
   function ancestorDirsOf(path: string): string[] {
     const acc: string[] = [];
     const walk = (nodes: FileTreeNode[]) => {
@@ -694,8 +653,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     setExpandedDirs(new Set<string>());
   }
 
-  /// True when there is at least one directory in the tree and every
-  /// directory is currently expanded. Used to flip the toolbar button
+  /// True when the tree has folders and all are expanded, to switch the button
   /// between "Expand all" and "Collapse all".
   const allDirsExpanded = createMemo(() => {
     const all = collectDirPaths(filteredFileTree());
@@ -739,9 +697,8 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     },
   );
 
-  // System property keys (`title`, `tags`, …) are load-bearing built-ins
-  // that can't be renamed — the sidebar hides the rename action for them
-  // (the backend also rejects it). The set is static, so fetch it once.
+  // System properties (`title`, `tags`, …) can't be renamed, so the rename
+  // action is hidden for them. The set doesn't change.
   const [systemPropertyKeys] = createResource(async () => {
     try {
       return new Set(await ipc.getSystemPropertyKeys());
@@ -779,11 +736,8 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   // "Show in File Tree" reveal support
   const [revealPath, setRevealPath] = createSignal<string | null>(null);
 
-  // The row the tree draws as selected after a reveal. Normally the selected
-  // row is the active tab's note, but a revealed attachment has no tab, so
-  // without this the tree would scroll to it and mark nothing. The reveal
-  // holds the selection until the active tab changes or the user clicks
-  // another row; then the active tab's row takes over again.
+  // The row shown as selected after a reveal. A revealed attachment has no tab,
+  // so it is held here until the active tab changes or another row is clicked.
   const [revealedPath, setRevealedPath] = createSignal<string | null>(null);
   createEffect(on(() => getActiveTab()?.path, () => setRevealedPath(null), { defer: true }));
   const selectedTreePath = () => revealedPath() ?? getActiveTab()?.path ?? null;
@@ -800,10 +754,9 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   document.addEventListener(REVEAL_IN_FILE_TREE_EVENT, onRevealInTree);
   onCleanup(() => document.removeEventListener(REVEAL_IN_FILE_TREE_EVENT, onRevealInTree));
 
-  // Reveal a path: expand its (possibly collapsed, thus unmounted) ancestor
-  // folders, then scroll its row into view by index. Driven here rather than
-  // from the row component because in the windowed list an off-screen target
-  // — and any collapsed ancestor — has no mounted component to react.
+  // Reveal a path: expand its ancestors, then scroll its row into view by
+  // index. Done here because an off-screen or collapsed row has no mounted
+  // component.
   createEffect(() => {
     const rp = revealPath();
     if (!rp) return;
@@ -816,10 +769,9 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
         return changed ? next : prev;
       });
     }
-    // After expansion has flowed into `flatRows`, locate and scroll to the
-    // row. When reveal also switched the sidebar into filetree mode, the
-    // tree-root (and thus `treeScrollEl`) may not be wired yet this frame —
-    // retry a few frames until the scroller is ready.
+    // Once the rows include it, scroll to it. If the reveal also switched to
+    // the file tree, the scroller may not be ready yet, so retry for a few
+    // frames.
     const scrollWhenReady = (tries: number) => {
       if (!treeScrollEl && tries < 6) {
         requestAnimationFrame(() => scrollWhenReady(tries + 1));
@@ -846,9 +798,8 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     );
   }
 
-  // Approximate width of the property menu and its type submenu, used to
-  // decide which side the submenu opens on. Keeping the menus themselves
-  // on screen is handled for every menu by lib/menu-placement.ts.
+  // Approximate width of the property menu and its submenu, to choose which
+  // side the submenu opens on.
   const MENU_W = 180;
 
   function handleTagContext(e: MouseEvent, tag: string) {
@@ -980,9 +931,8 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     }
   }
 
-  /// Open a collection from the Collections list. Ctrl/Cmd-click (and a
-  /// middle click, which arrives as the same call) opens it in its own tab
-  /// instead of replacing what the current tab is showing.
+  /// Open a collection from the list. Ctrl/Cmd-click or middle click opens a
+  /// new tab.
   function openCollection(col: CollectionInfo, e?: MouseEvent) {
     const forceNewTab = !!(e && (e.ctrlKey || e.metaKey));
     openTab(
@@ -1011,12 +961,9 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     const forceNewTab = !!(e && (e.ctrlKey || e.metaKey));
     const isCollection = node.name.toLowerCase().endsWith(".collection");
 
-    // When the active tab is a Journal Scroll, a plain click on a note in
-    // the file tree re-anchors the scroll on that note. Both halves must
-    // happen together: the tab is repointed (so its title follows the
-    // clicked note) AND the scroll's anchor is moved (so the feed
-    // re-centres). Doing only one leaves the tab title and the feed
-    // disagreeing. Ctrl/Cmd-click still opens the note in its own tab.
+    // In a Journal Scroll tab, clicking a note re-anchors the scroll on it:
+    // both the tab's path (for its title) and the scroll's anchor change.
+    // Ctrl/Cmd-click opens the note in its own tab.
     if (!forceNewTab && !isCollection && isNoteFile(node.name)) {
       const active = getActiveTab();
       if (active && isScrollEnabled(active.id)) {
@@ -1053,10 +1000,8 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
       openFileInDefaultApp(node.path).catch((err) => toastError(t("editor.toast.openFailed"), err));
       return;
     }
-    // If the note is currently serving as a Journal Scroll's anchor, the
-    // tab holding that scroll shares this note's path — a plain openTab
-    // would match it and re-focus the scroll instead of opening the note.
-    // `allowDuplicate` forces a distinct, regular editor tab in that case.
+    // If the note anchors a Journal Scroll, that tab has the same path and
+    // `openTab` would focus it; `allowDuplicate` opens a separate editor tab.
     const hasScrollTabForPath = tabs.some(
       (t) => pathEquals(t.path, node.path) && isScrollEnabled(t.id),
     );
@@ -1104,9 +1049,8 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     setRefreshTick((t) => t + 1);
   }
 
-  /// Handle a click on a file-tree row: folders toggle expansion, files
-  /// open. A Ctrl/Cmd-click on a file opens it in a new tab — `openFile`
-  /// reads the modifier off the event and sets `forceNewTab`.
+  /// Clicking a row toggles a folder or opens a file; Ctrl/Cmd-click opens a
+  /// new tab.
   function handleNodeClick(node: FileTreeNode, e: MouseEvent) {
     // Keep the keyboard cursor in step with clicks, so arrowing after a click
     // continues from the row that was clicked.
@@ -1119,25 +1063,20 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     }
   }
 
-  /// The items a drag starting on `node` should carry — just the row
-  /// itself. (`moveItems` and the drop payload stay array-shaped so a
-  /// future multi-item drag could slot in without reworking them.)
+  /// What a drag from `node` carries: just that row, in an array so multi-item
+  /// drags could be added.
   function dragItemsFor(
     node: FileTreeNode,
   ): { path: string; is_dir: boolean }[] {
     return [{ path: node.path, is_dir: node.is_dir }];
   }
 
-  /// MIME type carrying a file-tree node during an intra-sidebar move
-  /// drag. Distinct from `application/x-inkycap-notebox-path` (which the
-  /// editor consumes to embed a file) so a tree move never registers as
-  /// an embed and vice versa.
+  /// Drag type for moves within the tree, distinct from
+  /// `application/x-inkycap-notebox-path` (embedding in the editor).
   const TREE_MOVE_MIME = "application/x-inkycap-tree-move";
 
-  /// Context-menu entry point for a single node: open the folder picker,
-  /// then move the node into the chosen folder. The picker is notebox-
-  /// scoped and hides the node's own subtree (for folders) and current
-  /// parent, so every returned destination is a valid, non-trivial move.
+  /// Move a node through the folder picker, which hides the node's own subtree
+  /// and current parent, so every choice is a real move.
   async function moveNodeViaDialog(node: FileTreeNode) {
     setFileContextMenu(null);
     const root = noteboxInfo()?.path ?? "";
@@ -1153,12 +1092,10 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     moveItems([{ path: node.path, is_dir: node.is_dir }], destDir);
   }
 
-  /// Move one or more dragged files or folders into `destDir`
-  /// (an absolute path, or the notebox root). Each item is checked for a
-  /// no-op move and folder-into-self; the backend rebases relative asset
-  /// paths and reindexes, and the file watcher refreshes the tree —
-  /// `refresh()` is belt-and-braces so the move shows immediately even if
-  /// the watcher event is debounced.
+  /// Move dragged files or folders into `destDir` (absolute, or the notebox
+  /// root). No-op moves and moves into self are skipped. The backend rebases
+  /// asset paths and reindexes; `refresh()` shows the result straight away even
+  /// if the watcher event is delayed.
   async function moveItems(
     items: { path: string; is_dir: boolean }[],
     destDir: string,
@@ -1271,15 +1208,10 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   }
 
   /**
-   * Create a new note via the built-in `new-note` creation rule.
-   *
-   * `targetFolder`, when provided, is the absolute path of the folder
-   * that should host the new note (used by the file-tree context menu
-   * "New File" entry). It's converted to a notebox-root-relative path
-   * and passed to the rule as an override. When omitted, the rule's own
-   * folder logic (and the user's "New note location" preference) apply
-   * — that's the path used by the file tree's New Note icon button and
-   * the global Ctrl+N hotkey.
+   * Create a note with the `new-note` creation rule. `targetFolder`, when
+   * given, is the absolute path of the folder to create it in (the file tree's
+   * "New File"); otherwise the rule's folder and the "New note location"
+   * setting apply (the New Note button, Ctrl+N).
    */
   async function createNewNote(targetFolder?: string) {
     setFileContextMenu(null);
@@ -1350,9 +1282,8 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     }
   }
 
-  /// Delete one or more files/folders, after a single confirmation that
-  /// names the item (or counts them). The array signature is kept so a
-  /// drop or future multi-item gesture can delete several at once.
+  /// Delete files or folders after one confirmation that names the item or
+  /// counts them.
   async function deleteItems(items: { path: string; is_dir: boolean }[]) {
     setFileContextMenu(null);
     if (items.length === 0) return;
@@ -1781,10 +1712,8 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
             </div>
             <div class="left-sidebar__pane-body">
               <Show
-                // Only show the loading hint on the very first load. Solid keeps
-                // the resolved tree available during a refetch (e.g. after a move),
-                // so gating on "have we any data yet" keeps the tree on screen and
-                // avoids a jarring flash to the loading state after each drop.
+                // Show the loading hint only on first load; Solid keeps the tree
+                // during a refetch, so it doesn't flash after each move.
                 when={fileTree() !== undefined}
                 fallback={<p class="sidebar-hint">{t("common.loading")}</p>}
               >
@@ -2230,10 +2159,9 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
               onClick={() => {
                 const col = menu().collection;
                 setContextMenu(null);
-                // `collection:` resolves the collection's members from its own
-                // filters, so the search stays in step with the collection as
-                // notes join or leave it. The name is quoted because collection
-                // names may contain spaces.
+                // `collection:` uses the collection's own filters, so the
+                // search follows its membership. Quoted, since names can
+                // contain spaces.
                 openSearchFor(`collection:"${col.name}" `);
               }}
             >
@@ -2317,10 +2245,9 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
               onMouseLeave={() =>
                 setPropMenu({ ...menu(), typeSubmenuOpen: false })
               }
-              /* The keyboard reaches this row by focus rather than hover
-                 (lib/menu-nav.ts), so focus opens and closes the submenu the
-                 same way the pointer does. Focus moving *into* the submenu
-                 stays inside this element, so it keeps it open. */
+              /* The keyboard reaches this row by focus (lib/menu-nav.ts), so
+                 focus opens and closes the submenu as hover does. Focus
+                 inside the submenu keeps it open. */
               onFocusIn={() => setPropMenu({ ...menu(), typeSubmenuOpen: true })}
               onFocusOut={(e) => {
                 if (!e.currentTarget.contains(e.relatedTarget as Node)) {
@@ -2418,10 +2345,9 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                   class="context-menu__item"
                   onClick={() => {
                     setFileContextMenu(null);
-                    // `path:` is a substring match against each note's full
-                    // path; the notebox-relative folder path keeps the query
-                    // readable and the trailing slash scopes it to this
-                    // folder's contents (not a sibling with the same prefix).
+                    // `path:` matches a substring of each note's path; the
+                    // trailing slash limits it to this folder, not a sibling
+                    // with the same prefix.
                     const root = noteboxInfo()?.path ?? "";
                     const rel = node.path.startsWith(root + "/")
                       ? node.path.slice(root.length + 1)
@@ -2512,17 +2438,12 @@ const TreeNode: Component<{
   onRenameCancel: () => void;
   activePath: string | null;
   noteboxRoot: string;
-  /// Hoisted expansion state so the Expand All / Collapse All toolbar
-  /// button can flip every folder at once. Each TreeNode reads its own
-  /// directory's expanded flag from this set and toggles via the
-  /// `onToggleDir` callback.
+  /// Expanded folders, held by the parent for Expand all / Collapse all.
   expandedDirs: () => Set<string>;
   onToggleDir: (path: string) => void;
-  /// Drag-to-move plumbing. `treeMoveMime` is the dataTransfer type that
-  /// carries the dragged node; `dragItems` resolves a row to the items a
-  /// drag should carry; `dragOverDir` / `setDragOverDir` track which row
-  /// is the current drop target so it can highlight; and `onMoveItems`
-  /// performs the move once a drop lands.
+  /// Drag-to-move: `treeMoveMime` is the drag type, `dragItems` gives what a
+  /// row carries, `dragOverDir` / `setDragOverDir` track the highlighted
+  /// target, and `onMoveItems` performs the move.
   treeMoveMime: string;
   dragItems: (node: FileTreeNode) => { path: string; is_dir: boolean }[];
   dragOverDir: () => string | null;
@@ -2554,9 +2475,7 @@ const TreeNode: Component<{
     return slash >= 0 ? props.node.path.slice(0, slash) : props.noteboxRoot;
   };
   const isDropTarget = () => props.dragOverDir() === props.node.path;
-  // Reveal (auto-expand ancestors + scroll into view) is driven from the
-  // parent against the flat list, since a collapsed/off-screen target has no
-  // mounted row to react here.
+  // Revealing is handled by the parent (see `ancestorDirsOf`).
 
   return (
     <div>
@@ -2600,12 +2519,10 @@ const TreeNode: Component<{
               } else {
                 e.dataTransfer!.effectAllowed = "move";
               }
-              // Suppress WebKitGTK's native drag image (a blurry, oversized
-              // snapshot of the row) and drive a crisp DOM chip that follows
-              // the cursor instead — see `startDragGhost`. The suppressor must
-              // be a 1×1 transparent element that is ATTACHED to the document:
-              // a detached element aborts the drag in WebKitGTK. It's removed
-              // on the next tick, once the browser has taken the image.
+              // Suppress WebKitGTK's blurry native drag image; `startDragGhost`
+              // draws a chip instead. The blank image must be attached to the
+              // document (a detached one aborts the drag in WebKitGTK); it is
+              // removed on the next tick.
               const blank = document.createElement("canvas");
               blank.width = blank.height = 1;
               blank.style.cssText = "position:fixed;top:-10px;left:-10px;opacity:0";
@@ -2618,15 +2535,12 @@ const TreeNode: Component<{
             }}
             onDragOver={(e) => {
               if (!e.dataTransfer?.types.includes(props.treeMoveMime)) return;
-              // Claim this drag: preventDefault enables the drop, and
-              // stopPropagation keeps the root drop zone from also
-              // registering as the target.
+              // Accept the drop here, not also in the root drop zone.
               e.preventDefault();
               e.stopPropagation();
               e.dataTransfer.dropEffect = "move";
-              // Highlight the folder the item will actually land in — the
-              // folder itself for a directory row, the containing folder for
-              // a file row — so the indicator shows the real destination.
+              // Highlight the actual destination: the folder itself, or a
+              // file's containing folder.
               props.setDragOverDir(dropDest());
             }}
             onDragLeave={(e) => {
@@ -2672,10 +2586,8 @@ const TreeNode: Component<{
             </span>
             <span
               class="sidebar-item__label"
-              // The hover title shows the full name, including the extension
-              // when extensions are hidden. A narrow sidebar cuts long names
-              // off, and the title is the only way to read them without
-              // widening it.
+              // The tooltip shows the full name, extension included, for names
+              // cut off in a narrow sidebar.
               title={props.node.name}
             >{
               props.node.is_dir || settings.files.show_file_extensions

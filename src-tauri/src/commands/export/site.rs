@@ -13,9 +13,9 @@ use super::helpers::{
     escape_html_content, localize_html_assets, prepare_bibliography, rewrite_wikilinks_to_links,
 };
 
-/// Export a collection as a static HTML site. Each note is compiled to HTML
-/// via Typst's native HTML backend, wikilinks within the collection are
-/// rewritten to relative `<a href>` links, and a shared CSS file is generated.
+/// Export a collection as a static HTML site: each note compiled with Typst's
+/// HTML backend, wikilinks within the collection turned into relative links,
+/// and a shared CSS file.
 #[tauri::command]
 pub async fn export_collection_static_site(
     collection_path: String,
@@ -115,10 +115,9 @@ pub async fn export_collection_static_site(
         compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
 
         // A note that won't compile is skipped and reported rather than
-        // aborting the whole site. The on-screen salvage (warning markers) is
-        // never used for an exported page; only when the user chose to bypass
-        // errors is a failed note kept, with its errored markup as plain text
-        // (see typst_pipeline/recovery.rs).
+        // stopping the site. Only when the user chose to bypass errors is it
+        // kept, with the failing markup as plain text (see
+        // typst_pipeline/recovery.rs).
         let style = if bypass {
             RecoveryStyle::LiteralText
         } else {
@@ -191,9 +190,8 @@ pub async fn export_collection_static_site(
         }
     }
 
-    // Writing an index + stylesheet around zero pages is never useful. The
-    // skipped list still comes back as a normal result so the user can open
-    // each note or choose to bypass the errors.
+    // No pages: don't write an index and stylesheet. The skipped list still
+    // comes back normally, so the user can open each note or bypass the errors.
     if exported.is_empty() {
         return Ok(super::BatchExportResult {
             files: exported,

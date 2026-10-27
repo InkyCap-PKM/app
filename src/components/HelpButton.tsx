@@ -2,19 +2,13 @@ import { Component, JSX, Show, createSignal, createEffect, onCleanup } from "sol
 import { Portal } from "solid-js/web";
 import { CircleHelp } from "lucide-solid";
 
-// A small circled "?" trigger that toggles a dismissible help popover next to
-// it. Reusable anywhere an inline explanation would otherwise clutter the UI:
-// the page stays terse, and the detail is one click away.
+// A small circled "?" that toggles a help popover beside it, so explanations
+// are one click away without cluttering the UI.
 //
-// Follows the project's floating-surface conventions: the popover renders
-// through a `Portal` (so it is never clipped by a scrolling/`overflow` panel),
-// is positioned from the trigger's bounding rect — clamped into the viewport
-// and flipped above when it would overflow the bottom — and dismisses on a
-// click outside or on Escape. Styling uses the `--popup-*` tokens (see
-// CLAUDE.md "UI surfaces"); add no bespoke popup colours here.
-//
-// Mirrors the open/position/outside-click machinery in DatePicker so the two
-// floating surfaces behave identically.
+// The popover renders through a `Portal` (so scrolling or `overflow` panels
+// can't clip it), is placed from the button's position (kept in the window, and
+// above when there's no room below), and closes on an outside click or Escape.
+// Uses the `--popup-*` tokens. Works like DatePicker's popup.
 
 export interface HelpButtonProps {
   /** Accessible name for the trigger and the popover (e.g. "What gets packaged?"). */
@@ -32,10 +26,9 @@ const HelpButton: Component<HelpButtonProps> = (props) => {
   const [open, setOpen] = createSignal(false);
   const [pos, setPos] = createSignal<{ left: number; top: number }>({ left: 0, top: 0 });
 
-  // Place the popover below the trigger, clamping its left edge into the
-  // viewport and flipping above when it would overflow the bottom. Height is
-  // unknown until rendered, so we measure the popover when present and fall
-  // back to an estimate for the first frame.
+  // Place the popover below the button, keeping its left edge in the window and
+  // moving it above when it would pass the bottom. Its height is only known
+  // once rendered, so the first frame uses an estimate.
   function place() {
     if (!triggerRef) return;
     const r = triggerRef.getBoundingClientRect();
@@ -60,9 +53,9 @@ const HelpButton: Component<HelpButtonProps> = (props) => {
     setOpen(true);
   }
 
-  // Close on outside click, close on Escape, and reposition on scroll/resize
-  // while open. Capture-phase pointerdown so a click anywhere outside closes
-  // before it activates another control.
+  // Close on outside click or Escape, and reposition on scroll or resize while
+  // open. Pointerdown in the capture phase, so an outside click closes it
+  // before activating another control.
   createEffect(() => {
     if (!open()) return;
     const onDown = (e: PointerEvent) => {

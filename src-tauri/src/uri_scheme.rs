@@ -8,20 +8,16 @@
 //! inkycap://search?notebox=Professional&query=hydrology
 //! ```
 //!
-//! Anything on the machine can send one of these, so every part of the link is
-//! treated as hostile. [`parse`] accepts only the two verbs below with their
-//! required parameters, and rejects any `file` value that could point outside
-//! the notebox (absolute paths, drive letters, `..` segments) or at anything
-//! other than a note or a collection. A collection is named by its path inside
-//! the notebox's collections folder (`.inkycap/collections/`), the one place
-//! collections live, so `file=Reading%20list.collection` finds
-//! `.inkycap/collections/Reading list.collection`. A rejected link yields `None`: it is
-//! ignored without telling the user, since a malformed link is not theirs to
-//! fix. Finding the notebox and the file on disk is the job of
-//! [`crate::deep_link`], which works only from what this module returns.
+//! Anything on the machine can send one, so every part is treated as hostile. [`parse`]
+//! accepts only these two verbs with their required parameters, and rejects any `file`
+//! that could leave the notebox (absolute paths, drive letters, `..`) or name something
+//! other than a note or collection. A collection is named by its path in
+//! `.inkycap/collections/` (`file=Reading%20list.collection`). A rejected link gives
+//! `None` and is ignored silently. [`crate::deep_link`] finds the notebox and file from
+//! what this returns.
 //!
-//! The link builder on the frontend is `src/lib/inkycap-url.ts`; the tests
-//! at the bottom of both files use the same example links.
+//! The frontend builder is `src/lib/inkycap-url.ts`; both files' tests use the same
+//! links.
 
 use tauri::Url;
 
@@ -74,10 +70,9 @@ pub enum Target {
     Zid(String),
 }
 
-/// A notebox-relative path from a link, split into segments that are known
-/// to be plain names: no empty, `.` or `..` segments, no separators, no drive
-/// prefix. Joining them onto the notebox root cannot leave it except through a
-/// symlink, which [`crate::deep_link`] checks after resolving.
+/// A notebox-relative path from a link, in segments known to be plain names (no
+/// empty, `.` or `..` segments, separators or drive prefix). Joined to the root
+/// it can only escape through a symlink, which [`crate::deep_link`] checks.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RelativePath {
     segments: Vec<String>,
@@ -89,12 +84,11 @@ impl RelativePath {
         &self.segments
     }
 
-    /// The files this path may name, relative to the notebox root, in the
-    /// order to try them: the note as written, or for a `.collection` name the
-    /// collection in the collections folder, then the path with `.typ` added
-    /// (so `file=Testpad` finds `Testpad.typ`). Nothing else is ever opened by
-    /// a link: another kind of file would be handed to another program and
-    /// could run something.
+    /// The files this path may name, relative to the root, in the order to try:
+    /// the note as written, or for a `.collection` name the collection in the
+    /// collections folder, then the path plus `.typ` (`file=Testpad` →
+    /// `Testpad.typ`). Nothing else is opened, since another kind of file would
+    /// go to another program and could run something.
     pub fn candidates(&self) -> Vec<RelativePath> {
         let mut out = Vec::new();
         let name = self.segments.last().map(String::as_str).unwrap_or_default();
@@ -213,9 +207,9 @@ impl Params {
     }
 }
 
-/// Check a `file` value and split it into segments. The value must be a
-/// relative, `/`-separated path inside the notebox; which files it may then
-/// open is decided by [`RelativePath::candidates`].
+/// Check a `file` value (a relative `/`-separated path in the notebox) and
+/// split it into segments. Which files it may open is decided by
+/// [`RelativePath::candidates`].
 fn parse_relative_path(file: &str) -> Option<RelativePath> {
     if file.len() > MAX_FILE_LEN || file.chars().any(char::is_control) {
         return None;

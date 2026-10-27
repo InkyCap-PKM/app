@@ -26,12 +26,11 @@ const SplitView: Component<{ node: SplitNode }> = (props) => (
 );
 
 /**
- * Renders one node of the pane tree. A given `PaneView` instance has a fixed
- * kind for its lifetime: a leaf that becomes a split is replaced wholesale in
- * its parent's child slot (or at the root), so the enclosing `For` / keyed
- * `Show` mounts a fresh `PaneView`. That bounds remounts to structural
- * changes (split / collapse / move), which the editor state cache absorbs;
- * resizing only mutates `sizes` and never remounts.
+ * Renders one node of the pane tree. A `PaneView` keeps its kind for its
+ * lifetime: a leaf that becomes a split is replaced in its parent's slot (or at
+ * the root), so a new `PaneView` mounts. Remounts happen only on structural
+ * changes (split, collapse, move), which the editor state cache absorbs;
+ * resizing only changes `sizes`.
  */
 const PaneView: Component<{ node: PaneNode }> = (props) => (
   <Show

@@ -1,12 +1,11 @@
-//! Compile-validates the `#annotation` primitive in the `inkycap-notebox`
-//! Typst package (`lib.typ`).
+//! Checks that the `#annotation` function in the `inkycap-notebox` package
+//! (`lib.typ`) compiles.
 //!
-//! `#annotation` renders a styled block and emits a queryable label
-//! (`<inkycap-annotation>`). A syntax error in the `#let` would only surface
-//! when a note that uses it is compiled, so this test runs a real note carrying
-//! both a bare `#annotation[…]` and an `#annotation(…)[…]` with `by:`/`on:`
-//! attribution and inline markup through the actual Typst compiler. Needs no
-//! external tooling, so it always runs.
+//! `#annotation` draws a styled block and emits a queryable label
+//! (`<inkycap-annotation>`). An error in its `#let` would only show when a note
+//! using it compiles, so this compiles a note with a bare `#annotation[…]` and
+//! an `#annotation(…)[…]` with `by:`/`on:` and inline markup. Needs no external
+//! tools, so it always runs.
 
 use inkycap_lib::storage::path::canonicalize_root;
 use inkycap_lib::typst_pipeline::compiler::{PdfStandardPreset, TypstCompiler};
@@ -41,10 +40,9 @@ fn annotation_primitives_compile_to_pdf() {
 
 #[test]
 fn annotation_host_round_trips_through_query() {
-    // Confirms the note is well-formed end to end: it compiles and the
-    // metadata query succeeds (the `#note` title is recovered). The annotation
-    // label is emitted by the same proven `[#metadata(..) <label>]` pattern as
-    // `#tag` / `#task`; this guards the surrounding document staying valid.
+    // The note compiles and the metadata query works (the `#note` title is
+    // found). The label uses the same `[#metadata(..) <label>]` pattern as
+    // `#tag` / `#task`; this checks the document around it stays valid.
     let dir = tempfile::tempdir().expect("tempdir");
     let notebox_root = canonicalize_root(dir.path()).expect("canonicalize tempdir");
     inkycap_lib::notebox_package::scaffold(&notebox_root);

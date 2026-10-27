@@ -79,9 +79,8 @@ export interface DocsNoteboxLocation {
 }
 
 /**
- * Resolve (seeding on first use) the bundled "InkyCap Documentation" system
- * notebox. Returns its root path plus the landing note to open first, so the
- * caller can boot the window straight onto the manual's home page.
+ * Resolve the bundled "InkyCap Documentation" notebox, creating it on first
+ * use. Returns its root and the note to open first.
  */
 export async function openDocumentationNotebox(): Promise<DocsNoteboxLocation> {
   return invoke<DocsNoteboxLocation>("open_documentation_notebox");
@@ -94,17 +93,15 @@ export interface OpenNoteboxWindow {
 }
 
 /**
- * List every notebox currently open across all windows. A notebox is exclusive
- * to one window, so the UI uses this to disable / focus already-open noteboxes.
+ * Every notebox open in any window. A notebox can be open in only one window.
  */
 export async function listOpenNoteboxes(): Promise<OpenNoteboxWindow[]> {
   return invoke<OpenNoteboxWindow[]>("list_open_noteboxes");
 }
 
 /**
- * Validate a folder the user wants to add to their notebox list. Rejects (with
- * a descriptive error) a folder already in the list, or one nested inside /
- * containing another notebox. Resolves when the folder is a valid choice.
+ * Check a folder the user wants to add to their notebox list. Rejects one
+ * already listed, or one inside or containing another notebox.
  */
 export async function validateNoteboxLocation(path: string): Promise<void> {
   return invoke<void>("validate_notebox_location", { path });
@@ -136,9 +133,11 @@ export async function removeNoteboxFromRegistry(path: string): Promise<void> {
   return invoke<void>("remove_notebox_from_registry", { path });
 }
 
-/** True when `path` is an empty directory or doesn't exist yet — i.e. a valid,
- *  non-destructive destination for "Clone from remote". An existing notebox
- *  always contains `.inkycap/`, so this also returns false for one. */
+/**
+ * True when `path` is an empty directory or doesn't exist, so it is a safe
+ * target for "Clone from remote". An existing notebox has `.inkycap/`, so it
+ * returns false.
+ */
 export async function dirIsEmpty(path: string): Promise<boolean> {
   return invoke<boolean>("dir_is_empty", { path });
 }
@@ -159,9 +158,7 @@ export interface NoteboxSeedResult {
   warnings: string[];
 }
 
-/** True when the folder already holds an InkyCap notebox (it has an
- *  `.inkycap` folder). The "Add notebox" flows offer the seed-from-existing
- *  prompt only when this is false. */
+/** True when the folder already holds a notebox (it has `.inkycap/`). */
 export async function noteboxIsExisting(path: string): Promise<boolean> {
   return invoke<boolean>("notebox_is_existing", { path });
 }
@@ -234,10 +231,8 @@ export async function writeFileContent(
   path: string,
   content: string,
 ): Promise<void> {
-  // Block writes after the health monitor has reported the notebox gone —
-  // the IPC would fail anyway (target path doesn't resolve), but throwing
-  // here surfaces a meaningful error before the round-trip and prevents
-  // auto-save loops from hammering the backend.
+  // Refuse writes once the health monitor reports the notebox gone, so
+  // auto-save doesn't keep retrying.
   assertNoteboxWritable();
   return invoke<void>("write_file_content", { path, content });
 }
@@ -250,9 +245,7 @@ export async function updateProperty(
   return invoke<void>("update_property", { path, key, value });
 }
 
-/** Set (or clear, with `null`) a note's document-level recurrence rule
- *  (`#note(recurrence: …)`). Written as a Typst dict via the round-trip-safe
- *  rewriter, separate from the generic property path. */
+/** Set or clear (`null`) a note's recurrence rule in `#note(recurrence: …)`. */
 export async function setNoteRecurrence(
   path: string,
   recurrence: Recurrence | null,
@@ -390,16 +383,14 @@ export async function getAllPropertyKeys(): Promise<string[]> {
   return invoke<string[]>("get_all_property_keys");
 }
 
-/// Distinct values currently used for `key` across the notebox. List values
-/// are exploded into individual entries. Used by the list-value picker so
-/// users can choose from values they've already committed to elsewhere.
+/// Distinct values used for `key` across the notebox, with list values split
+/// into entries. Used by the list-value picker.
 export async function getPropertyValues(key: string): Promise<string[]> {
   return invoke<string[]>("get_property_values", { key });
 }
 
-/// Reorder named arguments inside the file's `#note(...)` call so they
-/// match `order`. Keys present in the file but missing from `order` are
-/// appended in their original relative position.
+/// Reorder the named arguments of the file's `#note(...)` call to match
+/// `order`. Keys not in `order` keep their relative position at the end.
 export async function reorderProperties(
   path: string,
   order: string[],
@@ -530,8 +521,6 @@ export async function getNotePreview(
   });
 }
 
-/** One stretch of note text: its Typst source (for copying) and plain prose
- *  for display, shortened with an ellipsis when long. */
 /** Plain prose for display. `marks` are the `[start, end)` stretches to
  *  highlight (links to the target note), in UTF-16 code units. */
 export interface DisplayText {
@@ -539,6 +528,8 @@ export interface DisplayText {
   marks: [number, number][];
 }
 
+/** One stretch of note text: its Typst source (for copying) and plain prose
+ *  for display, shortened with an ellipsis when long. */
 export interface PassageText extends DisplayText {
   source: string;
 }
@@ -629,11 +620,8 @@ export interface PotentialLink {
   zid?: string | null;
 }
 
-/// Find notes that mention the current note's name in plain text but
-/// don't yet wikilink to it. Mirrors the backend `get_potential_links`
-/// command — see `commands::files::get_potential_links` for the matching
-/// rules (phrase match on stem, excludes current note + resolved
-/// backlinks + lines whose only match is inside a wikilink call).
+/// Notes that mention this note's name in plain text without linking to it. See
+/// `commands::files::get_potential_links` for the matching rules.
 export async function getPotentialLinks(path: string): Promise<PotentialLink[]> {
   return invoke<PotentialLink[]>("get_potential_links", { path });
 }
@@ -659,9 +647,10 @@ export interface NoteIdentifiers {
   zid: string | null;
 }
 
-/** Title and zid of every note that has at least one. Read from the in-memory
- *  index, so cheap to call whenever a picker opens. Empty until the notebox's
- *  index has finished building. */
+/**
+ * Title and zid of every note that has one, from the in-memory index. Empty
+ * until the index is built.
+ */
 export async function getNoteIdentifiers(): Promise<NoteIdentifiers[]> {
   return invoke<NoteIdentifiers[]>("get_note_identifiers");
 }
@@ -696,10 +685,11 @@ export async function readPluginManifests(): Promise<PluginManifestFile[]> {
   return invoke<PluginManifestFile[]>("read_plugin_manifests");
 }
 
-/** Run a registered external tool (the external-tool bridge). Resolves the
- *  executable server-side by `toolId`; `inputText` is piped to its stdin and
- *  `selection`/`filePath` feed the argument placeholders. Returns the tool's
- *  stdout plus its configured output disposition. */
+/**
+ * Run a registered external tool. The executable is resolved by the backend
+ * from `toolId`; `inputText` goes to its stdin and `selection` / `filePath`
+ * fill the argument placeholders. Returns its output and how to use it.
+ */
 export async function runExternalTool(
   toolId: string,
   inputText: string,
@@ -723,13 +713,14 @@ export async function updateNoteboxSettings(settings: NoteboxSettings): Promise<
 }
 
 // ───────────────────────── Previous-tab session ─────────────────────────
-// Backing store for the "Open previous tabs" startup behaviour. The record is
-// per-machine and kept outside the notebox, so it never travels with it.
+// For the "Open previous tabs" startup option. Stored per machine, outside the
+// notebox.
 
-/** Tabs this machine last had open in the current notebox, and whether to
- *  hold them back instead of reopening them. A reopen is marked in progress
- *  until cleared with `setTabRestorePending`. Notes that have since been
- *  deleted are already filtered out by the backend. */
+/**
+ * Tabs this machine last had open in this notebox, and whether to hold them
+ * back instead of reopening them. A reopen stays marked in progress until
+ * cleared with `setTabRestorePending`. Deleted notes are already left out.
+ */
 export async function startTabRestore(): Promise<TabRestore> {
   return invoke<TabRestore>("start_tab_restore");
 }
@@ -754,14 +745,13 @@ export async function generateZid(): Promise<string> {
 }
 
 // ─────────────────────────── Git collaboration ─────────────────────────────
-// Phase 4 review surface. Setup writes the notebox's `NoteboxGitConfig`;
-// fetch/consolidate/push drive the one-review-surface loop. All git work runs
-// on a blocking task in the backend.
+// All git work runs on a blocking task in the backend.
 
-/** Turn the open notebox into a collaborative git repo (init-or-adopt, write
- *  `.gitignore`, set `origin`, save the optional sign-in username + password and
- *  commit identity) and persist its remote/branch (per-machine, in local.json).
- *  Re-running adopts the existing repo. */
+/**
+ * Make the open notebox a collaborative git repo: initialize or adopt it, write
+ * `.gitignore`, set `origin`, save the optional sign-in and commit identity, and
+ * store the remote and branch (per machine, in local.json). Safe to re-run.
+ */
 export async function gitSetupCollaboration(args: {
   remote: string;
   branch?: string;
@@ -780,9 +770,10 @@ export async function gitSetupCollaboration(args: {
   });
 }
 
-/** Reconnect collaboration for a notebox that is already a git repo with an
- *  `origin` remote but lost (or never wrote) its collaboration config. Reads the
- *  remote + branch from the repo and persists them — no user input. */
+/**
+ * Restore collaboration for a git repo with an `origin` remote but no
+ * collaboration config, using the repo's remote and branch.
+ */
 export async function gitReconnectCollaboration(): Promise<GitSetupResult> {
   return invoke<GitSetupResult>("git_reconnect_collaboration");
 }
@@ -793,38 +784,44 @@ export async function gitStatus(): Promise<GitStatusSummary | null> {
   return invoke<GitStatusSummary | null>("git_status");
 }
 
-/** The files an export/sync would carry to collaborators — the working tree
- *  changed since the last share. Empty when nothing is pending or the notebox
- *  is not a repo. */
+/**
+ * Files changed since the last share, i.e. what a sync would send. Empty when
+ * nothing is pending or the notebox isn't a repo.
+ */
 export async function gitChangesToShare(): Promise<GitDigestEntry[]> {
   return invoke<GitDigestEntry[]>("git_changes_to_share");
 }
 
-/** The notebox's notes that still have unresolved `#suggestion(...)` tracked
- *  changes awaiting an accept/reject decision. Empty when nothing is
- *  outstanding or the notebox is not collaborative. */
+/**
+ * Notes with unresolved `#suggestion(...)` changes. Empty when there are none
+ * or the notebox isn't collaborative.
+ */
 export async function gitUnresolvedChanges(): Promise<GitUnresolvedEntry[]> {
   return invoke<GitUnresolvedEntry[]>("git_unresolved_changes");
 }
 
-/** The notes the most recent sync changed, relative to the recorded pre-sync
- *  baseline, each flagged whether the merge took theirs. Drives the merge-first
- *  "Changes since last sync" review list + indicator. Empty when nothing has
- *  been synced yet or the last sync changed nothing locally. */
+/**
+ * Notes the last sync changed, compared with the pre-sync baseline, each
+ * flagged if the merge took the other side. Empty before the first sync or when
+ * it changed nothing.
+ */
 export async function gitChangesSinceSync(): Promise<GitSinceSyncEntry[]> {
   return invoke<GitSinceSyncEntry[]>("git_changes_since_sync");
 }
 
-/** One note's hunk-level diff against its pre-sync baseline — the per-note
- *  review surface. Compares the baseline blob with the live working text, so a
- *  reverted hunk drops from the next diff. */
+/**
+ * One note's diff against its pre-sync baseline, using the current text, so
+ * reverted hunks drop out.
+ */
 export async function gitNoteSyncDiff(path: string): Promise<GitSyncNoteDiff> {
   return invoke<GitSyncNoteDiff>("git_note_sync_diff", { path });
 }
 
-/** Revert a single hunk of a note to its pre-sync baseline, identified by its
- *  current-side line range (from `gitNoteSyncDiff`). Throws (BadRequest) when
- *  the range no longer matches a hunk — the caller should refetch the diff. */
+/**
+ * Revert one hunk of a note to its pre-sync baseline, by its current line range
+ * (from `gitNoteSyncDiff`). Throws BadRequest if the range no longer matches a
+ * hunk; refetch the diff.
+ */
 export async function gitRevertSyncHunk(
   path: string,
   currentStart: number,
@@ -845,16 +842,18 @@ export async function gitSavedUsername(remote: string): Promise<string | null> {
   return invoke<string | null>("git_saved_username", { remote });
 }
 
-/** Stop collaborating: drop the notebox's git config. With `deleteHistory`,
- *  also remove the `.git` directory (the version history) to reclaim disk space
- *  — irreversible. Stored credentials are left intact either way. */
+/**
+ * Stop collaborating: remove the notebox's git config. With `deleteHistory`,
+ * also delete `.git` (irreversible). Stored credentials are kept.
+ */
 export async function gitDisableCollaboration(deleteHistory: boolean): Promise<void> {
   return invoke<void>("git_disable_collaboration", { deleteHistory });
 }
 
-/** Clone a collaborative notebox from a git remote into `dest` (a collaborator
- *  joining in-app). Saves the optional sign-in username + password first.
- *  Returns the cloned notebox path; the caller registers + opens it. */
+/**
+ * Clone a collaborative notebox into `dest`, saving the optional sign-in first.
+ * Returns the notebox path; the caller registers and opens it.
+ */
 export async function gitCloneNotebox(args: {
   remote: string;
   branch?: string;
@@ -871,8 +870,10 @@ export async function gitCloneNotebox(args: {
   });
 }
 
-/** Sync the notebox: pull + merge incoming changes, then push. On a conflict
- *  the result is `paused` — resolve the staged conflict notes, then finalize. */
+/**
+ * Sync the notebox: pull and merge incoming changes, then push. Overlapping
+ * edits take the incoming side; they are listed in `conflicted` for review.
+ */
 export async function gitSync(): Promise<GitSyncOutcome> {
   assertNoteboxWritable();
   return invoke<GitSyncOutcome>("git_sync");
@@ -919,13 +920,14 @@ export async function gitDefaultCommitIdentity(): Promise<GitIdentity | null> {
   return invoke<GitIdentity | null>("git_default_commit_identity");
 }
 
-// ── Phase 7: offline package handoff (server-less collaboration) ──
-// Export the open notebox's whole git history to a single file; the recipient
-// imports it as a new notebox or reconciles it into one they already have.
+// ── Offline package handoff (collaboration without a server) ──
+// Export the notebox's git history to one file; the recipient imports it as a
+// new notebox or merges it into theirs.
 
-/** Set up the open notebox for server-less collaboration (no remote) — version
- *  history + package export/import without a hosted git server. Counterpart to
- *  `gitSetupCollaboration`; persists a git config with an empty remote. */
+/**
+ * Set up the open notebox for collaboration without a remote (history plus
+ * package export/import). Stores a git config with an empty remote.
+ */
 export async function gitSetupPackageHandoff(args: {
   branch?: string;
   identityName?: string;
@@ -951,9 +953,11 @@ export async function gitExportPackage(
   });
 }
 
-/** Import a received package into the open notebox, reconciling its history
- *  with ours through the same merge as Sync (no push). On a conflict the result
- *  is `paused` — resolve the staged notes, then finalize with `push = false`. */
+/**
+ * Import a received package into the open notebox, merging its history as Sync
+ * does (without pushing). Overlapping edits take the incoming side and are
+ * listed in `conflicted`.
+ */
 export async function gitImportPackage(
   archive: string,
   password?: string,
@@ -985,9 +989,11 @@ export async function gitGetBundlePackages(): Promise<boolean> {
   return invoke<boolean>("git_get_bundle_packages");
 }
 
-/** Set whether the open notebox bundles its Typst packages when sharing.
- *  Enabling vendors current packages immediately; returns what was bundled and
- *  any specs that couldn't be located. */
+/**
+ * Set whether the notebox bundles its Typst packages when sharing. Enabling
+ * bundles the current packages right away and returns what was bundled and what
+ * couldn't be found.
+ */
 export async function gitSetBundlePackages(
   enabled: boolean,
 ): Promise<GitBundlePackagesResult> {
@@ -995,10 +1001,8 @@ export async function gitSetBundlePackages(
 }
 
 /**
- * Query the operating system's accent color, returning `#rrggbb` when a
- * reliable source is available and `null` otherwise. The frontend treats
- * `null` as "Match OS not available on this platform" — typically a Linux
- * desktop other than GNOME 47+ or KDE.
+ * The OS accent colour as `#rrggbb`, or `null` when there's no reliable source
+ * (most Linux desktops other than GNOME 47+ and KDE).
  */
 export async function getOsAccentColor(): Promise<string | null> {
   return invoke<string | null>("get_os_accent_color");
@@ -1091,11 +1095,10 @@ export async function deleteFolder(path: string): Promise<void> {
 }
 
 /**
- * Where a file brought into the notebox should go. `targetFolder` is a folder
- * the user explicitly chose (by dropping onto it in the file tree); every file
- * goes there. Otherwise notes follow the "New note location" setting, for
- * which `currentNote` supplies the "Current folder", and other files go to the
- * attachments folder. Mirrors the Rust `IncomingPlacement`.
+ * Where an incoming file goes. `targetFolder` is a folder the user dropped
+ * onto; every file goes there. Otherwise notes follow the "New note location"
+ * setting (`currentNote` supplies its "Current folder") and other files go to
+ * the attachments folder. Mirrors the Rust `IncomingPlacement`.
  */
 export interface IncomingPlacement {
   targetFolder?: string;
@@ -1116,11 +1119,9 @@ export async function copyBytesIntoNotebox(
 }
 
 /**
- * Copy a file identified by absolute filesystem path into the notebox,
- * placed per `placement` (see {@link IncomingPlacement}). Returns the saved
- * notebox-relative path. Used by drag-drop / paste handlers
- * when the browser gives us a `file://` URL instead of an in-memory
- * File (the usual case on Linux/GNOME when dragging from Nautilus).
+ * Copy a file, by absolute path, into the notebox per `placement` (see {@link
+ * IncomingPlacement}). Returns the notebox-relative path. For drops and pastes
+ * that give a `file://` URL instead of a File (common on Linux).
  */
 export async function copyPathIntoNotebox(
   sourcePath: string,
@@ -1133,21 +1134,18 @@ export async function copyPathIntoNotebox(
 }
 
 /**
- * Open a native file-picker and copy the selected files into the notebox's
- * configured attachments folder. Returns the notebox-root-relative saved
- * paths (empty array if the user cancelled).
+ * Pick files with the native dialog and copy them into the attachments folder.
+ * Returns their notebox-relative paths (empty if cancelled).
  */
 export async function pickAndUploadToAttachments(): Promise<string[]> {
   return invoke<string[]>("pick_and_upload_to_attachments");
 }
 
 /**
- * Open a native `.csl` picker and bring the chosen citation style into the
- * notebox, returning the notebox-root-absolute path (`/styles/foo.csl`) to
- * store in the notebox's `custom_csl_path`, or `null` if the user cancelled.
- * The style is copied into the notebox (unless already inside it) so it travels
- * with the notebox and is readable by the sandboxed Typst compiler — a CSL
- * referenced by an outside-the-notebox OS path cannot be read and breaks export.
+ * Pick a `.csl` file and copy it into the notebox (unless already inside),
+ * returning its notebox-root path (`/styles/foo.csl`) for `custom_csl_path`, or
+ * `null` if cancelled. The Typst compiler can only read files inside the
+ * notebox.
  */
 export async function importCslStyle(
   title: string,
@@ -1164,20 +1162,18 @@ export interface PickedImportFile {
 }
 
 /**
- * Open a native multi-file picker and return the chosen files' paths plus a
- * markdown flag — WITHOUT copying anything. Each path is authorized for a
- * follow-up {@link copyPathIntoNotebox} (keep) or {@link importMarkdownFile}
- * (convert) call. Empty array if the user cancelled. Backs "Copy into notebox",
- * which asks per-operation whether to convert markdown to Typst.
+ * Pick files with the native dialog and return their paths and a Markdown flag,
+ * without copying anything. Each path is authorized for a following {@link
+ * copyPathIntoNotebox} or {@link importMarkdownFile} call. Empty if cancelled.
  */
 export async function pickFilesForImport(): Promise<PickedImportFile[]> {
   return invoke<PickedImportFile[]>("pick_files_for_import");
 }
 
 /**
- * Convert a markdown file (by absolute path) into a `.typ` note at the notebox
- * root, returning the new note's notebox-relative path. The path must have been
- * authorized by a recent OS drag-drop or {@link pickFilesForImport}.
+ * Convert a Markdown file, by absolute path, into a `.typ` note at the notebox
+ * root and return its notebox-relative path. The path must come from a recent
+ * OS drop or {@link pickFilesForImport}.
  */
 export async function importMarkdownFile(
   sourcePath: string,
@@ -1190,9 +1186,10 @@ export async function importMarkdownFile(
 }
 
 /**
- * Convert markdown bytes (base64 UTF-8) into a `.typ` note placed per
- * `placement` (see {@link IncomingPlacement}), returning its notebox-relative path. The bytes-only sibling of
- * {@link importMarkdownFile} for the Windows HTML5 drag-drop path.
+ * Convert Markdown bytes (base64 UTF-8) into a `.typ` note placed per
+   `placement`, returning its
+ * notebox-relative path. Used for drops on Windows, which give bytes rather
+   than a path.
  */
 export async function importMarkdownText(
   filename: string,
@@ -1223,9 +1220,8 @@ export interface AttachmentMigrationResult {
 }
 
 /**
- * Phase C of the portable-paths plan: preview the impact of renaming
- * the attachment folder. Read-only — counts files in the old folder
- * and notes whose source references `/<old>/...`.
+ * Preview renaming the attachment folder: counts its files and the notes that
+ * reference `/<old>/...`. Read-only.
  */
 export async function previewAttachmentFolderMigration(
   newFolder: string,
@@ -1237,10 +1233,8 @@ export async function previewAttachmentFolderMigration(
 }
 
 /**
- * Phase C of the portable-paths plan: rename the attachment folder.
- * Moves the on-disk folder, rewrites every path-bearing call across
- * the notebox whose argument starts with `/<old>/`, and persists the
- * updated setting. Confirm before calling — this is destructive.
+ * Rename the attachment folder: move it, rewrite every path argument starting
+ * with `/<old>/`, and save the setting. Destructive; confirm first.
  */
 export async function migrateAttachmentFolder(
   newFolder: string,
@@ -1257,34 +1251,27 @@ export interface IndexStats {
 }
 
 /**
- * User-initiated "Rebuild cache": discard this notebox's persisted caches and
- * rebuild every index (links, tags/properties, search, Mycelial corpus) from
- * disk. Re-parses the whole notebox, so it can take seconds-to-minutes on a
- * large one — drive a busy state off the returned promise. The backend emits
- * the same refresh events as a notebox open, so other panels update on
- * completion.
+ * "Rebuild cache": discard this notebox's caches and rebuild every index from
+ * disk. Can take minutes on a large notebox, so show a busy state until it
+ * resolves. Emits the same refresh events as opening a notebox.
  */
 export async function rebuildNoteboxIndexes(): Promise<IndexStats> {
   return invoke<IndexStats>("rebuild_notebox_indexes");
 }
 
 /**
- * Read file paths from the system clipboard via wl-paste / xclip.
- * Returns an empty array if the clipboard has no file entries or
- * neither tool is installed. Used by the paste handler when the
- * webview's JS clipboardData has been blocked by cross-origin
- * security (the WebKitGTK case on Linux).
+ * File paths on the system clipboard, read with wl-paste or xclip. Empty if
+ * there are none or neither tool is installed. For WebKitGTK on Linux, where
+ * clipboardData is blocked.
  */
 export async function readClipboardFilePaths(): Promise<string[]> {
   return invoke<string[]>("read_clipboard_file_paths");
 }
 
 /**
- * Read the native clipboard (file references or raw image bytes), copy
- * the content into the notebox (placed per `placement`, see
- * {@link IncomingPlacement}), and return the notebox-relative paths to
- * insert. Used by the paste handler when the webview's clipboardData yields
- * nothing — the WebKitGTK case on Linux.
+ * Copy the native clipboard's files or image into the notebox (placed per
+ * `placement`) and return the paths to insert. For WebKitGTK on Linux, where
+ * clipboardData is empty.
  */
 export async function pasteClipboardIntoNotebox(
   placement?: IncomingPlacement,
@@ -1295,21 +1282,18 @@ export async function pasteClipboardIntoNotebox(
 }
 
 /**
- * Read a notebox media file's bytes as an ArrayBuffer. Backs `#video`/`#audio`
- * playback via a `blob:` URL — WebKitGTK doesn't reliably stream media through
- * the asset protocol, so we load the bytes and wrap them in a blob instead.
- * `path` is a notebox-root-absolute path (e.g. `/Assets/clip.mp4`).
+ * A media file's bytes, for `#video` / `#audio` playback through a `blob:` URL
+ * (WebKitGTK doesn't reliably stream media through the asset protocol). `path`
+ * is notebox-root-absolute.
  */
 export async function readMediaBytes(path: string): Promise<ArrayBuffer> {
   return invoke<ArrayBuffer>("read_media_bytes", { target: path });
 }
 
 /**
- * Read an embedded image's bytes as an ArrayBuffer. Backs the visual editor's
- * `#image` widgets via a `blob:` URL — the asset protocol fails for images on
- * Windows (the canonicalized `\\?\` path is denied by the scope glob), so the
- * blob path renders reliably on every OS. `path` accepts the same forms as
- * {@link resolveEmbedPath} (notebox-root-absolute, relative, or bare filename).
+ * An embedded image's bytes, for the `#image` widgets through a `blob:` URL
+ * (the asset protocol fails for images on Windows). `path` takes the same forms
+ * as {@link resolveEmbedPath}.
  */
 export async function readEmbedBytes(path: string): Promise<ArrayBuffer> {
   return invoke<ArrayBuffer>("read_embed_bytes", { target: path });
@@ -1328,10 +1312,11 @@ export interface ExportDialogOptions {
   filters?: { name: string; extensions: string[] }[];
 }
 
-/** Ask where to save an export. Resolves with the chosen path, or null if the
- *  user cancelled. Export commands only write where the user chose through
- *  this or {@link pickExportFolder}, so use these rather than the dialog
- *  plugin for every export destination. */
+/**
+ * Ask where to save an export; null if cancelled. Export commands only write
+ * where the user chose through this or {@link pickExportFolder}, so use these
+ * for every export destination.
+ */
 export async function pickExportFile(options: ExportDialogOptions): Promise<string | null> {
   return invoke<string | null>("pick_export_file", { options });
 }
@@ -1342,46 +1327,45 @@ export async function pickExportFolder(options: ExportDialogOptions): Promise<st
   return invoke<string | null>("pick_export_folder", { options });
 }
 
-/** Open a file with the system's default application. Without `confirmed`,
- *  program files and files outside the notebox are refused with the
- *  `open-program-file` / `open-outside-notebox` error codes so the caller can
- *  ask the user first. Use `openFileInDefaultApp` (lib/open-link.ts), which
- *  does that asking, rather than calling this directly. */
+/**
+ * Open a file in the default application. Without `confirmed`, program files
+ * and files outside the notebox are refused (`open-program-file` /
+ * `open-outside-notebox`) so the caller can ask first. Use
+ * `openFileInDefaultApp` (lib/open-link.ts), which does the asking.
+ */
 export async function openFileExternally(path: string, confirmed = false): Promise<void> {
   return invoke<void>("open_file_externally", { path, confirmed });
 }
 
 /**
- * Open an external URL (http(s), mailto, or a custom app scheme such as
- * zotero:// / obsidian://) in the OS default handler. Dangerous and
- * `file:` schemes are refused by the backend.
+ * Open a URL (http(s), mailto, or an app scheme such as `zotero://`) in the OS
+ * default handler. The backend refuses `file:` and dangerous schemes.
  */
 export async function openUrlExternally(url: string): Promise<void> {
   return invoke<void>("open_url_externally", { url });
 }
 
 /**
- * Follow an `inkycap://` link clicked inside InkyCap, as if another app had
- * sent it: the backend checks it and sends the right window an
- * `app:deep-link` event. Fails with `bad-request` for a malformed link.
+ * Follow an `inkycap://` link clicked in InkyCap as if another app had sent it:
+ * the backend checks it and sends the right window an `app:deep-link` event.
+ * Fails with `bad-request` for a malformed link.
  */
 export async function openInkycapUrl(url: string): Promise<void> {
   return invoke<void>("open_inkycap_url", { url });
 }
 
 /**
- * Called once by the main window at startup, before it restores a notebox:
- * returns the `inkycap://` link InkyCap was started with, if any. Links that
- * arrive later come as `app:deep-link` events. Other windows get `null`.
+ * Called once by the main window at startup, before restoring a notebox: the
+ * `inkycap://` link InkyCap was started with, if any. Later links arrive as
+ * `app:deep-link` events. Other windows get `null`.
  */
 export async function deepLinkReady(): Promise<DeepLinkDelivery | null> {
   return invoke<DeepLinkDelivery | null>("deep_link_ready");
 }
 
 /**
- * Read a bundled third-party licence notices file (Settings → Sources). `kind`
- * is validated against a fixed allowlist on the backend, so it can never be an
- * arbitrary path.
+ * Read a bundled third-party licence notices file (Settings → Sources). The
+ * backend only accepts the listed `kind`s.
  */
 export async function readThirdPartyNotices(kind: "rust" | "js"): Promise<string> {
   return invoke<string>("read_third_party_notices", { kind });
@@ -1408,15 +1392,14 @@ export interface LatestRelease {
   downloadUrl: string;
 }
 
-/** Ask the backend for the latest release. The backend reads InkyCap's release
- *  feed (a static JSON file), falling back to the forge's releases API, so the
- *  frontend never needs to know where releases are hosted — `releasesUrl` and
- *  `downloadUrl` come back with the answer.
+/**
+ * The latest release, from InkyCap's release feed or, failing that, the forge's
+ * releases API. `releasesUrl` and `downloadUrl` come back with the answer.
  *
- *  With `includeBeta`, pre-releases are considered; otherwise stable only.
- *  `feedUrl` is the advanced `settings.updates.feed_url` override, or null for
- *  the default feed. The caller compares `version` against `appVersion()`.
- *  Throws on network failure. */
+ * `includeBeta` includes pre-releases. `feedUrl` is the
+ * `settings.updates.feed_url` override, or null for the default. The caller
+ * compares `version` with `appVersion()`. Throws on network failure.
+ */
 export async function checkLatestRelease(
   includeBeta: boolean,
   feedUrl: string | null = null,
@@ -1424,12 +1407,12 @@ export async function checkLatestRelease(
   return invoke<LatestRelease>("check_latest_release", { includeBeta, feedUrl });
 }
 
-/** Whether this copy can upgrade itself: `available` (installed by one of
- *  InkyCap's own installers), `flatpak` (updates are installed by hand),
- *  `managed` (updated by the software centre it came from, such as Flathub,
- *  so no update controls are shown), or `unsupported` (repackaged or
- *  self-built copies). The Download button is offered in every case except
- *  `managed`. */
+/**
+ * Whether this copy can update itself: `available` (installed by InkyCap's own
+ * installers), `flatpak` (updated by hand), `managed` (updated by its software
+ * centre, e.g. Flathub; no update controls shown), or `unsupported` (repackaged
+ * or self-built). Download is offered in every case but `managed`.
+ */
 export type UpgradeSupport = "available" | "flatpak" | "managed" | "unsupported";
 
 export async function upgradeSupport(): Promise<UpgradeSupport> {
@@ -1442,10 +1425,11 @@ export interface UpgradeProgress {
   total: number | null;
 }
 
-/** Download the newest release for this system and verify its signature,
- *  reporting progress to `onProgress`. Installs nothing. Resolves to the
- *  version downloaded. `feedUrl` is the same advanced override as
- *  `checkLatestRelease`'s. */
+/**
+ * Download the newest release for this system and verify its signature,
+ * reporting to `onProgress`. Installs nothing. Resolves to the version
+ * downloaded. `feedUrl` as in `checkLatestRelease`.
+ */
 export async function upgradeDownload(
   includeBeta: boolean,
   feedUrl: string | null,
@@ -1456,10 +1440,11 @@ export async function upgradeDownload(
   return invoke<string>("upgrade_download", { includeBeta, feedUrl, onProgress: channel });
 }
 
-/** Install the update `upgradeDownload` fetched. On Linux this shows the
- *  system's administrator password prompt; cancelling it rejects with the
- *  `cancelled` error code. On Windows the installer closes and reopens the
- *  app, so this does not resolve there. */
+/**
+ * Install the update `upgradeDownload` fetched. On Linux this shows the
+ * administrator password prompt; cancelling rejects with `cancelled`. On
+ * Windows the installer restarts the app, so this doesn't resolve.
+ */
 export async function upgradeInstall(): Promise<void> {
   return invoke<void>("upgrade_install");
 }
@@ -1499,28 +1484,18 @@ export async function reorderCreationRules(
 }
 
 /**
- * Execute a creation rule.
+ * Run a creation rule.
  *
- * Pass `titleOverride` when the rule's filename_pattern is empty — the
- * backend uses it as the filename in that case. When the pattern is
- * non-empty, the override is ignored. Calling without a `titleOverride`
- * for a blank-pattern rule produces a BadRequest("filename-required")
- * error so the UI can prompt the user and retry.
- *
- * Pass `targetFolderOverride` (a notebox-root-relative path; empty string
- * means notebox root) to redirect the rule into a specific folder,
- * regardless of its own `target_folder` or the user's "New note location"
- * preference. This is what the file tree context menu uses to create a
- * note in the right-clicked folder via the New Note rule.
- *
- * Pass `scaffoldOverride` (a bare scaffold name or scaffolds-dir-relative
- * path, `.typ` optional) to start the note from that scaffold instead of the
- * rule's own; the Ctrl+Shift+\ scaffold picker uses this to begin a
- * brand-new note "just from a scaffold" when no note is open.
- *
- * Pass `currentNote` (the path of the note the user is working in) so the
- * "Current folder" option of "New note location" can create the note beside
- * it.
+ * - `titleOverride`: the filename when the rule's `filename_pattern` is empty
+ *   (ignored otherwise). Without it, a blank-pattern rule fails with
+ *   BadRequest("filename-required") so the UI can ask and retry.
+ * - `targetFolderOverride`: a notebox-relative folder (empty for the root) that
+ *   overrides the rule's folder and the "New note location" setting. Used by
+ *   the file tree's New Note.
+ * - `scaffoldOverride`: a scaffold name or scaffolds-relative path (`.typ`
+ *   optional) to use instead of the rule's own.
+ * - `currentNote`: the note being worked in, for the "Current folder" location
+ *   option.
  */
 export async function executeCreationRule(
   ruleId: string,
@@ -1556,19 +1531,16 @@ export async function listScaffoldEntries(): Promise<TemplateEntry[]> {
 }
 
 /**
- * Delete a user-created scaffold (moved to the OS trash, recoverable). The
- * backend refuses to delete the system scaffolds; the panel hides their delete
- * button so this only fires for user scaffolds.
+ * Move a user scaffold to the OS trash. The backend refuses system scaffolds.
  */
 export async function deleteScaffold(scaffoldName: string): Promise<void> {
   return invoke<void>("delete_scaffold", { scaffoldName });
 }
 
 /**
- * Create a new scaffold file, returning its absolute path. When `content` is
- * omitted the backend seeds the file with the starter template (see
- * {@link getScaffoldStarter}); when supplied, it's written verbatim. Passing
- * the edited content here keeps create+write atomic in a single command.
+ * Create a scaffold file and return its absolute path. Without `content` it
+ * gets the starter template (see {@link getScaffoldStarter}); with it,
+ * `content` is written as is.
  */
 export async function createScaffold(
   name: string,
@@ -1623,11 +1595,12 @@ export async function listInstalledPackages(): Promise<InstalledPackageEntry[]> 
   return invoke<InstalledPackageEntry[]>("list_installed_packages");
 }
 
-/** The apply show-rule (`#show: <fn>.with(…)`) read from an installed template
- *  package's starter scaffold, to drop into a collection's Custom Typst. When
- *  `collectionPath` is given, the rule's `bibliography("…")` is pointed at the
- *  collection's auto-generated hidden bib. Returns null when the spec isn't an
- *  installed template or has no such rule. */
+/**
+ * The `#show: <fn>.with(…)` rule from an installed template package's starter
+ * scaffold, for a collection's Custom Typst. With `collectionPath`, its
+ * `bibliography("…")` points at the collection's generated bibliography. Null
+ * when there is no such template or rule.
+ */
 export async function getTemplateStarter(
   spec: string,
   collectionPath?: string,
@@ -1828,9 +1801,8 @@ export async function exportNotePdf(
 /// on the Rust side (kebab-case serde).
 export type PdfStandardPreset = "standard" | "pdf-a4" | "pdf-ua1" | "pdf-a2a-ua1";
 
-/// How an export should treat the collaboration review layer (inline
-/// `#suggestion` tracked changes plus `#annotation` notes). Mirrors
-/// `ReviewMarkupMode::from_opt` on the Rust side.
+/// How an export treats review markup (`#suggestion` changes and `#annotation`
+/// notes). Mirrors `ReviewMarkupMode::from_opt` in Rust.
 export type ReviewMarkupMode = "accept" | "reject" | "keep";
 
 /// What an export copied into the folder beside it (see `LinkedFilesOptions`).
@@ -1892,9 +1864,8 @@ export async function exportNoteHtml(
   });
 }
 
-/// Count of collaboration review-markup constructs in a note (suggestions +
-/// annotations). Drives whether the export dialog shows its "Review markup"
-/// control.
+/// Number of suggestions and annotations in a note. The export dialog shows its
+/// "Review markup" option only when there are some.
 export async function countNoteReviewMarkup(path: string): Promise<number> {
   return invoke<number>("count_note_review_markup", { path });
 }
@@ -1921,12 +1892,9 @@ export async function exportCollectionNotePdf(
   });
 }
 
-/// Result of a collection export that writes one file per note into a folder
-/// (PDF files, Markdown files, static HTML site). `files` are the paths
-/// written; `skippedNotes` lists notes that failed and were left out, so the
-/// caller can show them and let the user open each one. `bypassedCount` is
-/// how many notes were exported with their errors kept as plain text (only
-/// when the caller asked to bypass errors).
+/// Result of a collection export that writes one file per note. `files` are the
+/// paths written; `skippedNotes` failed and were left out; `bypassedCount` were
+/// exported with errors kept as plain text (only when asked to bypass errors).
 export interface BatchExportResult {
   files: string[];
   skippedNotes: SkippedNote[];
@@ -1941,10 +1909,10 @@ export interface SkippedNote {
   reason: string;
 }
 
-/// Export each note of a collection view as its own PDF. `onlyFiles` limits
-/// the run to those note paths (to retry the notes a previous run skipped).
-/// `bypassErrors` keeps errored markup as plain text instead of skipping the
-/// note; the backend ignores it for archival and accessible PDF formats.
+/// Export each note of a collection view as its own PDF. `onlyFiles` limits the
+/// run to those notes (to retry skipped ones). `bypassErrors` keeps errored
+/// markup as plain text instead of skipping the note; it is ignored for
+/// archival and accessible PDF formats.
 export async function exportCollectionBatchPdf(
   collectionPath: string,
   viewName: string,
@@ -1982,9 +1950,8 @@ export type BookPageNumbering =
 export type InjectChapterHeading = "always" | "fallback" | "never";
 export type BookWikilinkMode = "internal" | "external" | "plain";
 
-/// Per-export overrides accepted by `export_collection_book_pdf`. Any field
-/// left undefined falls back to the collection's stored `book:` block, then
-/// to defaults. Field names match the Rust struct (camelCase via serde).
+/// Per-export overrides for `export_collection_book_pdf`. Undefined fields fall
+/// back to the collection's `book:` block, then to defaults.
 export interface BookExportOverrides {
   title?: string | null;
   subtitle?: string | null;
@@ -2013,12 +1980,10 @@ export interface BookExportOverrides {
 }
 
 /// Outcome of a book export. `outputPath` is set when the PDF was written.
-/// Otherwise `failingNotes` (note stems) lists the notes that failed to
-/// compile — the caller can re-export passing them as `excludeNotes` to omit
-/// them — and `message` is the human-readable diagnostic. A failure no
-/// exclusion could fix is thrown as an error instead of returned here.
-/// `bypassed` is true when the book was written with errored markup kept as
-/// plain text.
+/// Otherwise `failingNotes` (note stems) lists the notes that failed, which can
+/// be passed back as `excludeNotes`, and `message` is the diagnostic. A failure
+/// that excluding notes can't fix is thrown instead. `bypassed` is true when
+/// errored markup was kept as plain text.
 export interface BookExportResult {
   outputPath: string | null;
   failingNotes: string[];
@@ -2105,9 +2070,8 @@ export async function repairTypFiles(paths: string[]): Promise<TypRepairSummary>
   return invoke<TypRepairSummary>("repair_typ_files", { paths });
 }
 
-/// True when the note at `path` is a `.typ` file in the open notebox (outside
-/// `.inkycap/`, not the read-only documentation notebox) that lacks the
-/// InkyCap import line. False for any file the check doesn't apply to.
+/// True when `path` is a `.typ` note in the open notebox (outside `.inkycap/`,
+/// not the documentation notebox) without the InkyCap import line.
 export async function noteMissingNoteboxImport(path: string): Promise<boolean> {
   return invoke<boolean>("note_missing_notebox_import", { path });
 }
@@ -2118,9 +2082,8 @@ export async function addNoteboxImport(path: string): Promise<boolean> {
   return invoke<boolean>("add_notebox_import", { path });
 }
 
-/// The Markdown fixes the user accepted for one file — a subset of that file's
-/// audited `fixes` (rejected changes are omitted). Mirrors the Rust
-/// `FileMdEdits`.
+/// The Markdown fixes the user accepted for one file (rejected ones omitted).
+/// Mirrors the Rust `FileMdEdits`.
 export interface FileMdEdits {
   path: string;
   fixes: MdFix[];
@@ -2133,19 +2096,16 @@ export async function repairMarkdownFiles(edits: FileMdEdits[]): Promise<TypRepa
 }
 
 /// Write the audit results to a note at the notebox root and return its
-/// absolute path, so the user can open it and work through the findings while
-/// editing files in other tabs.
+/// absolute path.
 export async function saveAuditReport(): Promise<string> {
   return invoke<string>("save_audit_report");
 }
 
 // ── Notebox name audit ──
 //
-// Mirrors the Rust structs in `src-tauri/src/commands/name_audit.rs`. Reports
-// names that break when the notebox is copied to Windows or macOS, plus note
-// names that make a wikilink ambiguous. Report-only: there is no repair
-// command, because which of two colliding notes keeps its name is a judgement
-// about their contents.
+// Mirrors `src-tauri/src/commands/name_audit.rs`. Reports names that break on
+// Windows or macOS and note names that make wikilinks ambiguous. Report only:
+// which of two colliding notes keeps its name is the user's call.
 
 /// Sibling entries in one folder whose names differ only in case.
 export interface NameCollision {
@@ -2266,9 +2226,8 @@ export async function exportViaPandoc(
 
 /**
  * Compile a `.typ` note to per-page SVG. `path` may be notebox-relative or
- * absolute; the backend canonicalizes against the open notebox root and
- * rejects anything that escapes the sandbox. The result includes any
- * diagnostics — warnings may be present even on success.
+ * absolute; paths outside the notebox are rejected. Warnings can be present on
+ * success.
  */
 export async function compileTypstSvg(path: string): Promise<TypstCompileResult> {
   return invoke<TypstCompileResult>("compile_typst_svg", { path });
@@ -2282,9 +2241,11 @@ export async function compileTypstHtml(path: string): Promise<TypstHtmlResult> {
  *  note was short enough to show as it is. */
 export type ExcerptHtmlResult = TypstHtmlResult & { truncated: boolean };
 
-/** Compile only the passages of the note at `path` around its links to the
- *  note at `linkedWith` (or its opening passage when it has none), each with
- *  a paragraph either side. Used by the Journal Scroll's Neighbourhood. */
+/**
+ * Compile only the passages of `path` around its links to `linkedWith` (or its
+ * opening passage if there are none), with a paragraph either side. Used by the
+ * Journal Scroll.
+ */
 export async function compileTypstHtmlExcerpt(
   path: string,
   linkedWith: string,
@@ -2302,9 +2263,10 @@ export async function getFileCitations(path: string): Promise<FileCitation[]> {
   return invoke<FileCitation[]>("get_file_citations", { path });
 }
 
-/** Render the references cited in `path` as static, pre-formatted Typst markup
- *  (in the notebox's citation style) for placing on the clipboard. Returns an
- *  empty string when the file cites nothing. */
+/**
+ * The references cited in `path`, as pre-formatted Typst markup in the
+ * notebox's citation style, for the clipboard. Empty when it cites nothing.
+ */
 export async function copyFileBibliography(path: string): Promise<string> {
   return invoke<string>("copy_file_bibliography", { path });
 }
@@ -2365,9 +2327,10 @@ export async function pasteMarkdownAsTypst(): Promise<string | null> {
   return invoke<string | null>("paste_markdown_as_typst");
 }
 
-/** Read the clipboard's HTML (or, failing that, its plain text) and return it
- *  as Typst markup ready to insert at the cursor. `null` when the clipboard
- *  has nothing to paste. */
+/**
+ * The clipboard's HTML (or plain text) as Typst markup to insert. `null` when
+ * the clipboard is empty.
+ */
 export async function pasteHtmlAsTypst(): Promise<string | null> {
   return invoke<string | null>("paste_html_as_typst");
 }
@@ -2383,9 +2346,8 @@ export interface ImportResult {
 
 export type MarkdownDialect = "standard" | "obsidian";
 
-/// One distinct YAML frontmatter key found across the source notebox, with
-/// the import dialog's suggested InkyCap mapping. Field names mirror the
-/// Rust `FrontmatterKeyInfo` (snake_case) so no remapping is needed.
+/// A YAML frontmatter key found in the source notebox, with the suggested
+/// InkyCap mapping. Field names match the Rust `FrontmatterKeyInfo`.
 export interface FrontmatterKeyInfo {
   source_key: string;
   sample_value: string;
@@ -2398,9 +2360,8 @@ export interface FrontmatterKeyInfo {
   will_create: boolean;
 }
 
-/// One row of the user's confirmed YAML→property mapping sent back to the
-/// importer. `target_key: null` excludes the property; `create` marks a new
-/// property whose `target_type` should be registered.
+/// One row of the confirmed YAML-to-property mapping. `target_key: null` drops
+/// the property; `create` registers a new property of `target_type`.
 export interface PropertyMapping {
   source_key: string;
   target_key: string | null;
@@ -2408,9 +2369,8 @@ export interface PropertyMapping {
   create: boolean;
 }
 
-/// Scan every markdown file's YAML frontmatter in the source archive (or
-/// directory) and report the distinct keys with suggested mappings. Drives
-/// the property-mapping dialog shown before the import runs.
+/// The distinct YAML frontmatter keys in the source archive or folder, with
+/// suggested mappings, for the property-mapping dialog.
 export async function scanMarkdownFrontmatter(
   sourcePath: string,
 ): Promise<FrontmatterKeyInfo[]> {
@@ -2431,10 +2391,8 @@ export async function importMarkdownNotebox(
   });
 }
 
-/// Probe a source notebox and return the dialect the importer would use
-/// by default ("obsidian" if an `.obsidian/` folder is present in the
-/// source, otherwise "standard"). Used by the import dialog to
-/// preselect its dialect toggle.
+/// The dialect the importer would use by default: "obsidian" if the source has
+/// an `.obsidian/` folder, otherwise "standard".
 export async function detectMarkdownDialect(
   sourcePath: string,
 ): Promise<MarkdownDialect> {
@@ -2547,9 +2505,10 @@ export async function getCollectionAgenda(
 
 // Backup
 
-/** Persisted "last run" info for the backup feature. Mirrors the
- *  Rust `BackupState`. All fields optional/zero when no backup has
- *  ever run. */
+/**
+ * Last-run info for backups. Mirrors the Rust `BackupState`; fields are empty
+ * or zero before the first backup.
+ */
 export interface BackupState {
   /** Unix-epoch seconds of the last successful backup, or 0 if never. */
   last_success_unix: number;
@@ -2575,10 +2534,10 @@ export async function backupNow(): Promise<BackupReport | null> {
   return invoke<BackupReport | null>("backup_now");
 }
 
-/** Cooperatively cancel a backup that's currently in flight. Returns
- *  immediately; the actual abort happens at the next cancel-poll
- *  inside the archive writer (between file entries or 64KiB chunks).
- *  Safe to call when no backup is running. */
+/**
+ * Ask a running backup to stop. Returns at once; the archive writer stops at
+ * its next check. Safe when no backup is running.
+ */
 export async function cancelBackup(): Promise<void> {
   return invoke<void>("cancel_backup");
 }
@@ -2599,9 +2558,10 @@ export async function clearBackupPassword(): Promise<void> {
   return invoke<void>("clear_backup_password");
 }
 
-/** True when a password is currently in the OS keychain. Used by the
- *  settings UI to show whether encryption is fully wired up — we never
- *  fetch the secret itself for display. */
+/**
+ * True when a backup password is in the OS keychain. The secret itself is never
+ * read for display.
+ */
 export async function hasBackupPassword(): Promise<boolean> {
   return invoke<boolean>("has_backup_password");
 }
@@ -2622,9 +2582,10 @@ export interface BackupContentEntry {
   encrypted: boolean;
 }
 
-/** Conflict resolution when a restored file would land on top of an
- *  existing one. `skip` is the safe default — the existing file is
- *  preserved and the restored copy is dropped. */
+/**
+ * What to do when a restored file would overwrite an existing one. `skip` (the
+ * default) keeps the existing file.
+ */
 export type RestoreConflictPolicy = "skip" | "overwrite" | "rename";
 
 /** Per-file result of a restore operation. `outcome` is one of
@@ -2640,20 +2601,19 @@ export async function listBackupArchives(): Promise<BackupEntry[]> {
   return invoke<BackupEntry[]>("list_backup_archives");
 }
 
-/** Open one archive and return its entry list. Encrypted entries
- *  are surfaced with `encrypted: true`; the password is not needed
- *  just to list. */
+/**
+ * List an archive's entries. Encrypted entries are flagged; no password is
+ * needed to list.
+ */
 export async function listBackupContents(archivePath: string): Promise<BackupContentEntry[]> {
   return invoke<BackupContentEntry[]>("list_backup_contents", { archivePath });
 }
 
-/** Pull selected entries out of an archive into `targetRoot`.
- *
- *  Pass `passwordOverride` when the user typed a password specifically
- *  for this restore (e.g. the archive predates the current keychain
- *  password and needs the older one). Leave it undefined to fall back
- *  to whatever the OS keychain holds — the historical behaviour and
- *  what most restores want. */
+/**
+ * Restore selected entries from an archive into `targetRoot`.
+ * `passwordOverride` is a password typed for this restore (e.g. for an archive
+ * made with an older password); otherwise the keychain password is used.
+ */
 export async function restoreBackupFiles(
   archivePath: string,
   targetRoot: string,

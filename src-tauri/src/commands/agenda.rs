@@ -1,20 +1,13 @@
 // ---------------------------------------------------------------------------
-// Agenda — aggregates "things to do" across a notebox.
+// Agenda: the things to do across a notebox, from two sources:
+//   1. A note's own `#note(...)` properties `task` and `due`: the note is one item.
+//   2. Inline `#task(...)` / `#due(...)` calls, as `AgendaMarker`s through the
+//      `<inkycap-agenda>` label.
 //
-// Two sources feed an agenda item:
-//   1. Document-level — a note's own `#note(...)` properties: `task`,
-//      `due`. The note itself becomes one item.
-//   2. Inline — `#task(...)` / `#due(...)` calls in a note body, surfaced
-//      as `AgendaMarker`s via the `<inkycap-agenda>` label.
-//
-// `get_agenda_items` runs over the whole notebox (the sidebar Agenda pane);
-// `get_collection_agenda` runs over a single collection view's member notes
-// (the Collection Agenda view). Both share `agenda_items_for_notes` so the
-// two surfaces produce identically-shaped results.
-//
-// Sorting and grouping are deliberately left to the frontend — the default
-// presentation is a flat list sorted by date, but the pane offers opt-in
-// grouping and filtering that operate on the same flat payload.
+// `get_agenda_items` covers the notebox (the Agenda pane);
+// `get_collection_agenda` one collection view's notes. Both use
+// `agenda_items_for_notes`, so the results match. Sorting, grouping and
+// filtering are done in the frontend.
 // ---------------------------------------------------------------------------
 
 use chrono::{Duration, Local, NaiveDate};
@@ -38,10 +31,9 @@ pub struct AgendaItem {
     pub id: String,
     /// `"note"` (document-level), `"task"` or `"date"` (inline marker).
     pub source: String,
-    /// Whether this item represents a task (has a checkbox / done state) or
-    /// a pure dated reminder. `source == "date"` is always `false`;
-    /// `source == "task"` is always `true`; `source == "note"` is `true`
-    /// when the host note has `task: true`.
+    /// Whether the item is a task (with a checkbox) rather than a dated
+    /// reminder: always `false` for `source == "date"`, always `true` for
+    /// `"task"`, and for `"note"` when the note has a `task` property.
     pub is_task: bool,
     /// Notebox path of the note this item lives in.
     pub note_path: String,
@@ -64,9 +56,8 @@ pub struct AgendaItem {
     /// True when this row is one occurrence of a recurring reminder. The Agenda
     /// de-emphasizes later occurrences and shows a repeat affordance.
     pub recurring: bool,
-    /// For a recurring series: `0` for the current/next occurrence (shown at
-    /// full emphasis), `1, 2, …` for subsequent upcoming ones (muted). `None`
-    /// for non-recurring items.
+    /// For a recurring series: `0` for the current or next occurrence (full
+    /// emphasis), `1, 2, …` for later ones (muted). `None` otherwise.
     pub occurrence_index: Option<u32>,
     /// The repeat rule, attached to every occurrence row so the frontend can
     /// render a human summary ("Every 2 weeks"). `None` for non-recurring items.
@@ -81,13 +72,12 @@ fn prop_str(note: &NoteMetadata, key: &str) -> Option<String> {
         .map(|s| s.to_string())
 }
 
-/// The note's `task` property as a tri-state:
-///   * `None`         — no `task` property; the note is not a task.
-///   * `Some(false)`  — task is open / to do (checkbox unchecked).
-///   * `Some(true)`   — task is done (checkbox checked).
-///
-/// Tolerant of the quoted string form (`task: "true"` / `"false"`) that
-/// legacy Markdown-imported notes carry.
+/// The note's `task` property:
+///   * `None`: no `task` property; not a task.
+///   * `Some(false)`: to do (unchecked).
+///   * `Some(true)`: done (checked).
+/// Accepts the quoted strings (`"true"` / `"false"`) older Markdown imports
+/// wrote.
 fn note_task_state(note: &NoteMetadata) -> Option<bool> {
     match note.properties.get("task") {
         Some(PropertyValue::Bool(b)) => Some(*b),
@@ -104,16 +94,13 @@ fn note_task_state(note: &NoteMetadata) -> Option<bool> {
     }
 }
 
-/// How far ahead the Agenda materializes recurring occurrences. A reminder is
-/// a glanceable list, not a full calendar, so an unbounded rule is expanded
-/// only across roughly a year.
+/// How far ahead recurring occurrences are listed; an Agenda isn't a full
+/// calendar, so about a year.
 const RECUR_HORIZON_DAYS: i64 = 366;
 
-/// Safety cap on occurrence rows emitted per recurring series. The real bound
-/// is the rule's `until`/`count` or [`RECUR_HORIZON_DAYS`]; this only guards
-/// against a pathological daily-unbounded rule producing an unbounded list. The
-/// Agenda collapses recurring series to a single row by default (the user can
-/// expand them), so the full series is emitted here and filtered frontend-side.
+/// Limit on occurrences per series, against a daily unbounded rule; the real
+/// bound is `until` / `count` or [`RECUR_HORIZON_DAYS`]. The full series is
+/// sent and the frontend collapses it to one row unless expanded.
 const MAX_OCCURRENCES_PER_SERIES: usize = 366;
 
 fn parse_iso_date(s: &str) -> Option<NaiveDate> {
@@ -137,12 +124,10 @@ struct DatedRow<'a> {
     zid: Option<String>,
 }
 
-/// Append a dated row to `items`, expanding a recurrence rule into upcoming
-/// occurrences when present. Recurrence is virtual: each occurrence is computed
-/// against `today`, the note source is never touched. When a rule yields no
-/// upcoming occurrence (series ended, or anchor beyond the horizon) the row
-/// falls back to a single plain item at its anchor date, so an authored item
-/// never silently disappears from the Agenda.
+/// Add a dated row, expanding a recurrence into upcoming occurrences computed
+/// from `today` (the source is never changed). If the rule has no upcoming
+/// occurrence (ended, or beyond the horizon), add one plain item at its date,
+/// so an item never disappears.
 fn push_dated_item(
     items: &mut Vec<AgendaItem>,
     row: DatedRow<'_>,
@@ -193,9 +178,9 @@ fn push_dated_item(
     });
 }
 
-/// The shared aggregation core: turn a set of notes into a flat list of
-/// agenda items, expanding recurring reminders against `today`. Pure — no
-/// locking, no I/O — so both commands can reuse it (and tests pin `today`).
+/// Turn notes into a flat list of agenda items, expanding recurrences from
+/// `today`. No locking or I/O, so both commands share it and tests can fix
+/// `today`.
 fn agenda_items_for_notes(notes: &[&NoteMetadata], today: NaiveDate) -> Vec<AgendaItem> {
     let mut items = Vec::new();
 
@@ -213,11 +198,9 @@ fn agenda_items_for_notes(notes: &[&NoteMetadata], today: NaiveDate) -> Vec<Agen
             .filter(|s| s.len() >= 10)
             .map(|s| s[..10].to_string());
 
-        // 1. Document-level item: the note is itself a task or carries a
-        //    `due` date. The generic `date` property is *not* a qualifier —
-        //    many notes use it as a creation/authoring date and would
-        //    otherwise flood the agenda. A `task` property's value is the
-        //    canonical done-state (true = done, false = to do).
+        // 1. The note itself is an item if it is a task or has a `due` date.
+        //    `date` alone doesn't count, since many notes use it for when they
+        //    were written. `task`'s value is the done state (true = done).
         let task_state = note_task_state(note);
         let is_task = task_state.is_some();
         let note_date = prop_str(note, "due");
@@ -310,10 +293,8 @@ pub async fn get_agenda_items(
     Ok(agenda_items_for_notes(&notes, local_today()))
 }
 
-/// Agenda items dated today (in the user's local time zone), done or not.
-/// Feeds the "Today" section of the new tab page. Filtering here keeps the
-/// reply small: recurring reminders expand up to a year ahead, and none of
-/// those later occurrences need to cross to the frontend.
+/// Agenda items dated today (local time), done or not, for the new tab page's
+/// "Today". Filtered here, since recurring reminders expand a year ahead.
 #[tauri::command]
 pub async fn get_today_agenda_items(
     state: State<'_, AppState>,
@@ -335,11 +316,9 @@ fn items_dated(items: Vec<AgendaItem>, day: NaiveDate) -> Vec<AgendaItem> {
         .collect()
 }
 
-/// Collection-scoped agenda — feeds the Collection "Agenda" view. Membership
-/// is resolved exactly the way the table view resolves it (the collection's
-/// global filter plus the view's own filter), so a note appears here because
-/// it matches the collection's filter — no explicit `#note(collection:)`
-/// property is required.
+/// Agenda for a collection view. Membership is resolved as in the table (the
+/// collection's filter plus the view's), so a note appears by matching, without
+/// a `#note(collection:)` property.
 #[tauri::command]
 pub async fn get_collection_agenda(
     collection_path: String,
@@ -404,9 +383,7 @@ mod tests {
 
     #[test]
     fn document_level_task_true_is_done() {
-        // `task: true` is the canonical "done" signal — the checkbox in
-        // the property panel reads as filled, which the user expects to
-        // mean "completed".
+        // `task: true` means done (the checkbox is filled).
         let n = note(
             "/notebox/a.typ",
             &[
@@ -462,9 +439,8 @@ mod tests {
 
     #[test]
     fn quoted_task_strings_are_treated_as_task() {
-        // Legacy MD-import path wrote `task: "true"` / `"false"` instead of
-        // real booleans; the aggregator must still surface those notes and
-        // honour the quoted value as the done state.
+        // Older Markdown imports wrote `task: "true"` / `"false"`; those still
+        // count.
         let done_n = note(
             "/notebox/quoted-done.typ",
             &[("task", PropertyValue::String("true".into()))],
@@ -493,9 +469,7 @@ mod tests {
 
     #[test]
     fn note_with_only_date_property_is_skipped() {
-        // A `date` property alone — typically the note's authoring date —
-        // does NOT make a note an agenda item. Only `due` or `task`
-        // qualifies.
+        // A `date` alone doesn't make an agenda item; only `due` or `task`.
         let n = note(
             "/notebox/dated.typ",
             &[("date", PropertyValue::String("2026-04-01".into()))],

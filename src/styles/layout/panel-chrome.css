@@ -1,13 +1,10 @@
-/* Right-panel divider and collapsed-panel floating toggle.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Right panel divider and the floating toggle when collapsed. Part of
+   layout.css, whose import order (see ../layout.css) keeps the cascade. */
 
-/* The tab bar's own border-bottom is clipped 40px short of the right edge
-   (see .right-panel__tabs clip-path, which keeps overflowing tab icons out
-   of the collapse-toggle's zone). Draw the divider on the un-clipped panel
-   container instead so it reaches the window edge — matching the left
-   sidebar's mode-bar border. The 38px height mirrors .right-panel__tabs
-   min-height so the line lands exactly where the tab bar ends. */
+/* The tab bar's border is clipped 40px short of the right edge (see
+   .right-panel__tabs clip-path), so the divider is drawn on the panel
+   itself, reaching the window edge like the left sidebar's mode bar border.
+   38px matches .right-panel__tabs min-height. */
 .right-panel::after {
   content: "";
   position: absolute;
@@ -48,11 +45,9 @@
   background: var(--bg-hover);
 }
 
-/* When the right panel is collapsed, the floating toggle drops onto the
-   editor's own tab strip at the top-right — exactly where the pane menu sits.
-   Reserve its width (matching its right offset) so the toggle lands in an
-   empty gap instead of stacking over the pane menu and showing through to it.
-   Making the toggle opaque instead would just hide the pane menu. */
+/* With the right panel collapsed, the floating toggle sits on the editor's
+   tab strip at the top right, where the pane menu is. Reserve its width so
+   the toggle lands in empty space rather than over the pane menu. */
 .app-shell--right-collapsed .main-content__tabs {
   padding-right: 40px;
 }
@@ -74,19 +69,18 @@
   background: var(--status-bg);
   color: var(--status-fg);
   font-size: var(--text-base);
-  /* The right padding clears the width of the editor's vertical scrollbar plus
-     a small gap, so the controls at the right end never touch it (it runs
-     right up beside them in distraction-free mode). */
+  /* The right padding clears the editor's scrollbar plus a small gap, so the
+     controls never touch it (in distraction-free mode it runs right beside
+     them). */
   padding: var(--space-1) calc(var(--scrollbar-size) + var(--space-3))
     var(--space-1) var(--toolbar-btn-inset);
   display: flex;
   align-items: center;
   gap: var(--space-6);
   height: 22px;
-  /* No top border here. The bar is the same colour as the sidebars either
-     side of it, so across those spans there is no boundary to draw; the only
-     real edge is where the writing surface meets the bar, and that one is
-     drawn by .main-content::before, which spans just the column. */
+  /* No top border: the bar matches the sidebars on either side, so the only
+     edge is where the writing surface meets it, drawn by
+     .main-content::before. */
 }
 
 .status-bar__btn {

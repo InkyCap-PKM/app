@@ -2,22 +2,18 @@ import { createSignal } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 
 /**
- * Pane-layout state for the editor area.
+ * Pane layout for the editor area.
  *
- * The editor area is a recursive tree of panes. A `SplitNode` lays its
- * children out in a row (vertical dividers, side-by-side) or column
- * (horizontal dividers, stacked); a `LeafPane` is a tab group that shows
- * one of its tabs at a time. Exactly one leaf is *focused* — that's where
- * newly-opened tabs land, where keyboard tab-switching applies, and whose
- * active tab drives the right panel.
+ * The editor area is a tree of panes. A `SplitNode` lays out its children in a
+ * row (side by side) or column (stacked); a `LeafPane` is a tab group showing
+ * one tab at a time. One leaf is focused: new tabs open there, tab-switching
+ * keys act on it, and its active tab drives the right panel.
  *
- * This module owns layout only: it stores tab *ids*, never `Tab` objects.
- * The flat registry of `Tab` objects and the open/close orchestration live
- * in `stores/tabs.ts`, which drives these operations. Keeping the two apart
- * avoids an import cycle and keeps each file to one responsibility.
+ * This module holds only layout and stores tab ids; the `Tab` objects and
+ * opening and closing live in `stores/tabs.ts`, which calls in here.
  *
- * Layout is session-only — it is never serialized to disk, and a notebox
- * switch resets the tree to a single empty leaf (`resetToSingleEmptyLeaf`).
+ * The layout isn't saved; switching notebox resets it to one empty leaf
+ * (`resetToSingleEmptyLeaf`).
  */
 
 export type SplitDirection = "row" | "column";
@@ -56,10 +52,11 @@ function makeLeaf(tabId?: string): LeafPane {
   };
 }
 
-/** Deep-clone a subtree into plain objects. Used whenever a node is moved
- *  to a new position in the tree, so we never re-parent a live store proxy
- *  (which Solid's `produce` would reject). Ids are preserved, so focus and
- *  tab lookups stay stable across the move. */
+/**
+ * Deep-copy a subtree into plain objects, for moving a node within the tree
+ * (Solid's `produce` rejects re-parenting a store proxy). Ids are kept, so
+ * focus and tab lookups still work.
+ */
 function clone(n: PaneNode): PaneNode {
   return n.kind === "leaf"
     ? { kind: "leaf", id: n.id, tabIds: [...n.tabIds], activeTabId: n.activeTabId }
@@ -172,9 +169,10 @@ export function leafById(leafId: string): LeafPane | undefined {
   return locateLeaf(panes.root, leafId)?.leaf;
 }
 
-/** The active tab id of the focused leaf — the app's single "active tab".
- *  A plain accessor: reactive wherever it's called (it reads the focus
- *  signal and the pane store), without a module-scope memo. */
+/**
+ * The focused leaf's active tab id, the app's "active tab". Reactive wherever
+ * it's called.
+ */
 export function focusedActiveTabId(): string | null {
   return focusedLeaf().activeTabId;
 }
@@ -226,11 +224,9 @@ export function addTabToFocusedLeaf(tabId: string, activate = true): void {
 }
 
 /**
- * Remove a tab id from whatever leaf holds it. Re-points that leaf's active
- * tab to a neighbour. If the leaf empties and it isn't the only pane, the
- * pane is removed and the tree collapses. Returns whether the entire
- * workspace is now tab-less, so the caller (`closeTab`) can honour the
- * "always at least one tab" invariant by spawning an empty tab.
+ * Remove a tab id from its leaf, making a neighbour active. An emptied leaf is
+ * removed unless it's the only pane. Returns whether no tabs remain anywhere,
+ * so `closeTab` can open an empty tab.
  */
 export function removeTab(tabId: string): { workspaceEmptied: boolean } {
   let workspaceEmptied = false;
@@ -286,9 +282,8 @@ function removeLeafFromTree(s: { root: PaneNode }, leafId: string): void {
 }
 
 /**
- * Split a leaf in two along `direction`, placing `newTabId` in the new
- * sibling and focusing it. The new pane takes half the original's slot.
- * Returns the new leaf's id.
+ * Split a leaf along `direction`, putting `newTabId` in the new half and
+ * focusing it. Returns the new leaf's id.
  */
 export function splitLeaf(
   leafId: string,
@@ -334,10 +329,9 @@ export function moveTabWithinLeaf(leafId: string, from: number, to: number): voi
 }
 
 /**
- * Move a tab to another leaf (cross-pane drag). Removes it from its current
- * leaf, inserts it into `targetLeafId` at `index` (default: end), makes it
- * active there, focuses the target, and collapses the source pane if it
- * empties. A move within the same leaf reorders instead.
+ * Move a tab to another leaf (drag between panes): insert it at `index`
+ * (default: end), make it active, focus the target, and remove the source pane
+ * if it empties. Within one leaf this reorders.
  */
 export function moveTab(tabId: string, targetLeafId: string, index?: number): void {
   setPanes(
@@ -379,9 +373,11 @@ function moveTabWithinLeafDraft(leaf: LeafPane, from: number, to: number): void 
   leaf.tabIds.splice(to, 0, m);
 }
 
-/** Adjust the two adjacent children straddling divider `dividerIndex` in a
- *  split (the resizer's drag handler). `delta` is a fraction of the split's
- *  extent, clamped so neither child shrinks below `min`. */
+/**
+ * Resize the two children on either side of divider `dividerIndex` (the
+ * resizer's drag). `delta` is a fraction of the split's size; neither child
+ * goes below `min`.
+ */
 export function resizeSplit(
   splitId: string,
   dividerIndex: number,

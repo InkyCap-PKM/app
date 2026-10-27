@@ -1,6 +1,6 @@
-/* Left-sidebar file tree: rows, drag-to-move, root drop zone, keyboard cursor.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Left-sidebar file tree: rows, drag to move, root drop zone, keyboard
+   cursor. Part of layout.css, whose import order (see ../layout.css) keeps
+   the cascade. */
 
 /* Sidebar items */
 .sidebar-item {
@@ -28,10 +28,10 @@
   background: var(--bg-hover);
 }
 
-/* Non-`.typ` files (attachments, data files, bibliographies) are shown in
-   the tree so users can see and link to them, but de-emphasized: InkyCap
-   doesn't edit them and they open in the OS default app. Only the label
-   and icon are muted, so the active-row background still reads. */
+/* Non-`.typ` files (attachments, data, bibliographies) are shown so users
+   can see and link them, but muted, since InkyCap doesn't edit them (they
+   open in the default app). Only label and icon are muted, so the active row
+   background still shows. */
 .sidebar-item--non-note .sidebar-item__label,
 .sidebar-item--non-note .sidebar-item__icon {
   color: var(--fg-dim);
@@ -50,10 +50,10 @@
   opacity: 0.45;
 }
 
-/* Cursor-following drag-ghost chip for a file-tree move. It's a live DOM
-   element (not a native setDragImage snapshot, which WebKitGTK rasterizes
-   blurry/oversized on HiDPI), positioned via a JS-set transform at top:0;
-   left:0. `pointer-events: none` keeps it from intercepting drop targets. */
+/* Drag image that follows the cursor when moving in the file tree. A real
+   element rather than setDragImage, which WebKitGTK draws blurry and
+   oversized on HiDPI; positioned by a transform from top:0, left:0.
+   `pointer-events: none` keeps it from blocking drop targets. */
 .tree-drag-ghost {
   position: fixed;
   top: 0;
@@ -75,18 +75,16 @@
   pointer-events: none;
 }
 
-/* File tree root drop zone — wraps the tree so a drop released in the
-   empty space below the last row moves the item to the notebox root. The
-   padding guarantees that droppable empty space always exists, even
-   when the tree is taller than the panel and scrolled to the bottom. */
+/* Root drop zone around the tree: dropping in the empty space below the last
+   row moves the item to the notebox root. The padding keeps that space even
+   when the tree is scrolled to the bottom. */
 .left-sidebar__tree-root {
   padding-bottom: var(--space-9);
 }
 
-/* The tree root is the single focusable element (ARIA tree); the keyboard
-   cursor is shown on the active row, not as an outline around the whole tree,
-   so suppress the container outline and mark the row instead. The cursor only
-   shows while the tree holds focus. */
+/* The tree root is the one focusable element (ARIA tree), so the keyboard
+   cursor marks the active row rather than outlining the whole tree, and only
+   while the tree has focus. */
 .left-sidebar__tree-root:focus,
 .left-sidebar__tree-root:focus-visible {
   outline: none;
@@ -96,9 +94,9 @@ html[data-input-modality="keyboard"] .left-sidebar__tree-root:focus-within .side
   box-shadow: inset 0 0 0 2px var(--accent);
 }
 
-/* Generic list-panel keyboard cursor (attachListNav). The container is the
-   single focusable; the active row is marked with `.is-kbd-active` and shown
-   only while the list holds focus, mirroring the file tree's cursor. */
+/* Keyboard cursor for list panels (attachListNav): the container is
+   focusable, and the active row gets `.is-kbd-active`, shown only while the
+   list has focus, as in the file tree. */
 [data-list-nav]:focus,
 [data-list-nav]:focus-visible {
   outline: none;
@@ -119,13 +117,10 @@ svg.lucide {
   height: 1.15em;
 }
 
-/* Toolbar and sub-toolbar icon buttons render at --icon-sm (18px at
-   base scale, retuned by applyUiScale so Ctrl+/Ctrl- scales them with
-   the rest of the UI). This overrides the em-scaled svg.lucide default
-   above, which would otherwise pin every icon to ~1.15× the parent
-   button's font-size. The split-btn halves are intentionally excluded:
-   they form a compound control where the caret stays subordinate to
-   the main glyph. */
+/* Toolbar icons use --icon-sm (18px at normal scale, adjusted by
+   applyUiScale so Ctrl+/Ctrl- scales them), overriding the em-based
+   svg.lucide size above. Split-button halves are excluded, so the caret
+   stays smaller than the main icon. */
 .vertical-toolbar__btn > svg.lucide,
 .left-sidebar__mode-btn > svg.lucide,
 .right-panel__tab > svg.lucide,
@@ -173,9 +168,8 @@ svg.lucide {
   padding: var(--space-4);
 }
 
-/* In dark themes `--fg-dim` is a saturated teal that reads like coloured
-   content; the more neutral, lighter `--fg-muted` makes hints clearly
-   secondary text rather than something to act on. */
+/* In dark themes `--fg-dim` is a strong teal that looks like content; the
+   more neutral `--fg-muted` keeps hints secondary. */
 [data-theme="dark"] .sidebar-hint {
   color: var(--fg-muted);
 }

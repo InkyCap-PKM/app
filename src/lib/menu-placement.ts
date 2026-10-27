@@ -1,28 +1,26 @@
-// Keeps every pop-up menu fully on screen.
+// Keeps every pop-up menu on screen.
 //
-// Menus opened at the pointer are placed with `position: fixed` and an inline
-// `left` / `top` at the click. Near the bottom or right edge of the window that
-// pushes part of the menu out of view. Each caller used to guess its menu's
-// size to pull it back in, and the guesses went stale as menus grew items.
-// This module watches for menus appearing (or being moved) and measures the
-// real size instead, so callers only say where the menu was asked for.
+// Menus opened at the pointer use `position: fixed` with inline `left` / `top`
+// at the click, which near the bottom or right edge pushes them partly out of
+// view. This watches for menus appearing or moving and measures their real
+// size, so callers only give the requested point.
 //
-// A menu that would run past the bottom opens upwards from the requested point;
-// past the right edge, it opens to the left. If there is not room that way
-// either, it is pushed against the far edge, keeping a small margin.
+// A menu that would pass the bottom opens upward from the point; past the right
+// edge, it opens to the left. If that doesn't fit either, it is placed against
+// the far edge with a small margin.
 //
-// Only fixed-position menus with an inline pixel `left` / `top` are touched.
-// Menus anchored inside another element (dropdowns, submenus) lay themselves
-// out relative to that element and are left alone.
+// Only fixed-position menus with inline pixel `left` / `top` are handled. Menus
+// placed inside another element (dropdowns, submenus) are left alone.
 
 import { MENU_SELECTOR } from "./menu-nav";
 
 /** Gap kept between a menu and the window edge. */
 const VIEWPORT_MARGIN = 8;
 
-/** The position this module last wrote to each menu. A style change that
- *  leaves these values in place is our own write echoing back; any other value
- *  is a new position requested by the menu's owner. */
+/**
+ * The position last written to each menu. A style change keeping these values
+ * is our own write; anything else is a new position from the menu's owner.
+ */
 const placed = new WeakMap<HTMLElement, { left: string; top: string }>();
 
 let observer: MutationObserver | null = null;
@@ -82,9 +80,11 @@ export function placeMenu(menu: HTMLElement): void {
   placed.set(menu, { left: menu.style.left, top: menu.style.top });
 }
 
-/** Where a menu of `size` asked for at `start` should begin along an axis of
- *  length `limit`: at `start` if it fits, ending at `start` if that fits
- *  instead, otherwise as close to the far edge as the margin allows. */
+/**
+ * Where a menu of `size` requested at `start` should begin on an axis of length
+ * `limit`: at `start` if it fits, ending at `start` if that fits, otherwise as
+ * near the far edge as the margin allows.
+ */
 export function fit(start: number, size: number, limit: number): number {
   const max = limit - VIEWPORT_MARGIN;
   if (start + size <= max) return Math.max(VIEWPORT_MARGIN, start);

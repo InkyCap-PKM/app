@@ -1,19 +1,12 @@
-// Tauri-level drag-drop listener.
+// Native file drops from outside the webview (the file manager). Files dropped
+// on a file-tree folder are copied there; files dropped on the editor are
+// copied in and linked at the drop point.
 //
-// Handles native file drops from outside the webview (file manager).
-// Files dropped on a folder in the file tree are copied into that folder;
-// files dropped on the editor are copied in and linked at the drop point.
-// On Linux/webkit2gtk, DOM drag events for external drags have their
-// dataTransfer blocked by cross-origin security, so we use Tauri's
-// own drag/drop event which bypasses the webview's security model.
-//
-// On Windows, `dragDropEnabled` is forced to `false` via
-// `tauri.windows.conf.json`, because Tauri's native IDropTarget
-// otherwise swallows *all* drag events before they reach WebView2 —
-// breaking internal HTML5 DnD (file tree row moves, tab reordering).
-// As a side effect, this listener does not fire on Windows; external
-// file drops from Explorer into the editor will need a separate
-// HTML5 dataTransfer-based path before they work there.
+// On Linux (webkit2gtk) the DOM hides external drag data, so Tauri's own drop
+// event is used. On Windows `dragDropEnabled` is false
+// (`tauri.windows.conf.json`), because Tauri's native drop target would swallow
+// every drag before WebView2 (breaking tree moves and tab reordering); there
+// drops come through `initHtml5DragDrop` below.
 
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { activeEditorView } from "../stores/editor";
@@ -34,11 +27,9 @@ interface DropCoords {
   y: number;
 }
 
-/// Resolve the drop position inside the active editor, in CodeMirror
-/// document offsets, given an optional client-coord hint. Returns
-/// `null` when there is no active editor; callers should bail in that
-/// case. When the lookup fails (no coord hint, or coords don't map to
-/// a position), the cursor's current selection is used as the fallback.
+/// The drop position in the active editor, as a document offset, from an
+/// optional client-coordinate hint. `null` with no active editor. Falls back to
+/// the current selection when the coordinates don't map to a position.
 function resolveDropTarget(coordsHint: DropCoords | null) {
   const handle = activeEditorView();
   if (!handle) return null;
@@ -46,12 +37,9 @@ function resolveDropTarget(coordsHint: DropCoords | null) {
 
   let dropPos: number | null = null;
 
-  // The DOM dragover (tracked by the CM6 plugin) gives client CSS coords
-  // that map directly onto the editor. `posAtCoords(coords, false)` uses
-  // non-precise mode so a drop into inter-line space, padding, or past the
-  // end of a short line still resolves to the *nearest* text position
-  // instead of null (precise mode returns null off-glyph, which is why
-  // drops used to collapse to the top of the document).
+  // The DOM dragover position (tracked by the CM6 plugin) maps directly onto
+  // the editor. Non-precise `posAtCoords` resolves drops between lines, in
+  // padding or past a short line to the nearest position instead of null.
   const domPos = getLastDragPos();
   if (domPos) {
     try {
@@ -59,12 +47,10 @@ function resolveDropTarget(coordsHint: DropCoords | null) {
     } catch { /* fall through */ }
   }
 
-  // Fallback: caller-provided coords. For Tauri-native drops on Linux/GTK
-  // these arrive in logical (CSS) pixels — identical to DOM client coords
-  // — so they are used as-is. Do NOT divide by devicePixelRatio: on a
-  // HiDPI display that halves the point and pushes the drop into the
-  // top-left corner. For the HTML5 path on Windows, the DropEvent's
-  // clientX/clientY are also CSS coords.
+  // Fallback to the caller's coordinates. Tauri's drops on Linux give CSS
+  // pixels like DOM coordinates, so use them as they are; dividing by
+  // devicePixelRatio would put HiDPI drops in the top-left. The Windows HTML5
+  // path also gives CSS coordinates.
   if (dropPos === null && coordsHint) {
     try {
       dropPos = view.posAtCoords({ x: coordsHint.x, y: coordsHint.y }, false);
@@ -96,11 +82,9 @@ async function handleTauriDrop(
 }
 
 async function handleHtml5Drop(event: DragEvent): Promise<void> {
-  // CodeMirror's per-editor `dragDropHandler` (typst-decorations/drag-drop.ts)
-  // already processes file drops that land inside the editor and calls
-  // preventDefault on the event. Skip those here so we don't double-insert
-  // when the drop happens on the editor surface — this window-level handler
-  // exists only to catch drops that landed on sidebar / non-editor surfaces.
+  // CodeMirror's `dragDropHandler` (typst-decorations/drag-drop.ts) handles
+  // drops inside the editor and calls preventDefault; this window-level handler
+  // is for drops elsewhere (the sidebar).
   if (event.defaultPrevented) return;
   const dropped = event.dataTransfer?.files;
   if (!dropped || dropped.length === 0) return;
@@ -122,8 +106,8 @@ async function handleHtml5Drop(event: DragEvent): Promise<void> {
 }
 
 /// Bring files dropped on the editor into the notebox (notes per "New note
-/// location", other files to the attachments folder) and insert markup for
-/// each one at the drop position.
+/// location", other files to the attachments folder) and insert markup for each
+/// at the drop point.
 async function dropIntoEditor(
   target: NonNullable<ReturnType<typeof resolveDropTarget>>,
   files: IncomingFile[],
@@ -141,9 +125,8 @@ let tauriUnlisten: (() => void) | null = null;
 let html5DropHandler: ((e: DragEvent) => void) | null = null;
 let html5DragOverHandler: ((e: DragEvent) => void) | null = null;
 
-/// Attach the Tauri-native drag-drop listener. Used on Linux and macOS
-/// where the webview can't see external drag dataTransfer (Linux) or
-/// where we want the native path's filesystem access (macOS).
+/// Attach Tauri's native drop listener, on Linux (where the webview can't see
+/// external drag data) and macOS (for the native path's file access).
 export async function initTauriDragDrop(): Promise<void> {
   if (initialized) return;
   initialized = true;
@@ -164,13 +147,10 @@ export async function initTauriDragDrop(): Promise<void> {
   }
 }
 
-/// Attach an HTML5 drop listener at the window level. Used on Windows,
-/// where `dragDropEnabled` is forced off in `tauri.windows.conf.json`
-/// (so HTML5 DnD works inside the webview — file tree row moves, tab
-/// reordering, etc.) and the Tauri-native drop event therefore does
-/// not fire. WebView2 exposes external file drops via `dataTransfer.
-/// files` as `File` objects (no path — Chromium security), so the
-/// bytes are read via FileReader and shipped to Rust as base64.
+/// Attach an HTML5 drop listener on the window, for Windows, where the native
+/// event doesn't fire (see above). WebView2 gives external files as `File`
+/// objects without paths, so their bytes are read with FileReader and sent to
+/// Rust as base64.
 export function initHtml5DragDrop(): void {
   if (initialized) return;
   initialized = true;

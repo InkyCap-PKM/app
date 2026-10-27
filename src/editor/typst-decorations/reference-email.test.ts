@@ -3,12 +3,10 @@ import { EditorState } from "@codemirror/state";
 import { typst } from "codemirror-lang-typst";
 import { buildDecorations } from "./visual-plugin";
 
-// Typst lexes the `@inkycap.org` in `athena@inkycap.org` as a reference, and
-// the language package's syntax highlighting colours it like one. The visual
-// layer marks that span as plain text so an address reads like the prose around
-// it — and it must do so with the caret on the span too, which is exactly when
-// the writer is looking at it. (A resolved or standalone `@key` keeps the usual
-// cursor-adjacent reveal.)
+// Typst reads the `@inkycap.org` in `athena@inkycap.org` as a reference, and
+// syntax highlighting colours it as one. The visual layer marks it as plain
+// text so an address reads like the text around it, including with the caret on
+// it. (A resolved or standalone `@key` still reveals near the cursor.)
 
 /** Decorations over the `@…` span of `doc` with the caret at `caret`: the class
  *  of each mark, or `"widget"` for a replacing widget. */

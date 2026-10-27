@@ -1,20 +1,16 @@
-/* References panel and shared citation row.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* References panel and the shared citation row. Part of layout.css, whose
+   import order (see ../layout.css) keeps the cascade. */
 
 /* ── References Panel ── */
 
 .references-panel {
-  /* No top padding here for the same reason as .outline-panel: the pane's
-     first section header is a band row and has to start on the same line as
-     the editor's toolbar. Extra padding here would push the References header
-     below the matching header rows in the other columns. */
+  /* No top padding, as in .outline-panel: the first section header must
+     start on the same line as the editor toolbar and the other columns'
+     headers. */
   padding: 0;
 }
 
-/* ─── Citation row — shared by the References sidebar and the Journal
-   Scroll's Scroll Context pane so a cited work looks and behaves the same
-   in both. Markup: CitationRow.tsx. ─── */
+/* ─── Citation row, shared by the References sidebar and the Journal Scroll's Scroll Context pane so a cited work looks the same in both. Markup: CitationRow.tsx. ─── */
 .citation-row {
   padding: 6px 10px;
   border-bottom: 1px solid var(--border-faint);
@@ -36,9 +32,8 @@
   margin-bottom: var(--space-1);
 }
 
-/* Left group: optional Zotero link + the citation key. `min-width: 0` lets
-   it shrink below its content width so a long, space-free key wraps within
-   the panel rather than overflowing it. */
+/* Left group: optional Zotero link and the citation key. `min-width: 0` lets
+   a long key without spaces wrap instead of overflowing. */
 .citation-row__key-left {
   display: flex;
   /* Align to the top so the Zotero link tracks the first line of a
@@ -97,10 +92,10 @@
   color: var(--fg-dim);
 }
 
-/* Citation highlight — applied to a citation's occurrences in the Journal
-   Scroll when its Scroll Context card is clicked. `outline` (not `border`)
-   so the citation text doesn't reflow. Cleared once the occurrence has been
-   seen and scrolled out of view (see ScrollContextPanel). */
+/* Highlight on a citation's occurrences in the Journal Scroll when its
+   Scroll Context card is clicked. `outline` (not `border`) so the text
+   doesn't move. Cleared once the occurrence has been seen and scrolled away
+   (see ScrollContextPanel). */
 .citation-highlight {
   border-radius: var(--radius-sm);
   outline: 1px dotted var(--accent-danger);
@@ -109,9 +104,8 @@
      citation text reads normally. */
   box-shadow: 0 0 6px 2px
     color-mix(in srgb, var(--accent-danger) 55%, transparent);
-  /* Honored by `scrollIntoView` when a citation is scrolled into view:
-     keeps clearance above/below so the outline and glow aren't clipped at
-     the viewport edge (lands the highlight a row down from the edge). */
+  /* Used by `scrollIntoView`: leaves room above and below so the outline and
+     glow aren't cut off at the edge. */
   scroll-margin: 2rem;
   animation: citation-highlight-in 0.25s ease-out;
 }
@@ -123,12 +117,10 @@
   }
 }
 
-/* "Browse references" toggle sits in a `.right-panel__section-header` and
-   shares its heading typography (sm / 600 / muted), but unlike the static
-   section labels it expands/collapses the browse list — so it carries a
-   resting outline and a disclosure chevron to read unmistakably as a button.
-   The negative left margin pulls the chevron back to the header's content
-   edge so the row still aligns with the other section labels. */
+/* The "Browse references" toggle in a `.right-panel__section-header` uses
+   the heading text style, but it expands and collapses a list, so it has an
+   outline and a chevron to look like a button. The negative left margin
+   keeps it aligned with the other section labels. */
 .references-panel__toggle {
   display: inline-flex;
   align-items: center;
@@ -254,10 +246,9 @@
   cursor: help;
 }
 
-/* Sort control: an app-drawn button + `.context-menu`, not a native
-   <select>. A native select hands its popup to the OS, which on
-   WebKitGTK ignores the InkyCap theme. This matches the left sidebar's
-   File/Tag/Property sort menus (see `anchorPanelMenu`). */
+/* Sort control: an app-drawn button and `.context-menu`, not a native
+   <select>, whose popup WebKitGTK draws without the InkyCap theme. Same as
+   the left sidebar's sort menus (see `anchorPanelMenu`). */
 .references-panel__sort-wrap {
   position: relative;
   min-width: 0;

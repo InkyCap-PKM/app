@@ -1,8 +1,7 @@
-// Two clippy lints are allowed crate-wide because they flag inherent domain
-// shape, not fixable problems: Tauri commands legitimately take many arguments
-// (path + options + `State` + `WebviewWindow` + …), and the index/parse layers
-// carry genuinely complex tuple/map types whose meaning is clearer inline than
-// behind an alias. Everything else is clippy-clean and enforced in CI.
+// Allowed crate-wide: Tauri commands take many arguments (path, options,
+// `State`, `WebviewWindow`, …), and the index and parse layers have complex
+// types clearer inline than behind aliases. Everything else is clippy-clean and
+// checked in CI.
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::type_complexity)]
 
@@ -48,40 +47,27 @@ pub mod uri_scheme;
 pub mod watcher;
 pub mod window_state;
 
-/// Hand the window's title bar back to the desktop.
+/// Give the window's title bar back to the desktop on Wayland, where Tauri's
+/// window layer (`tao`) gets in the way twice:
 ///
-/// Two things stand in the way on Wayland, both in Tauri's window layer
-/// (the `tao` crate):
+/// 1. It adds its own header bar with fixed buttons that ignore the user's
+///    button layout. Removing it before the window is first shown makes GTK
+///    draw its normal compact title bar, which follows the system theme and
+///    settings.
+/// 2. It attaches mouse handlers that swallow every press, release and motion,
+///    so GTK's frame handling (drag to move, double-click to maximize, menu,
+///    edge resizing) never runs. Neither Tauri nor InkyCap uses those events,
+///    so they are blocked.
 ///
-/// 1. It installs a header bar of its own, with a hard-coded
-///    minimize/maximize/close set that ignores the user's button-layout
-///    preference and takes the height of a toolbar. Removing it before the
-///    window is first shown makes GTK draw its own compact title bar
-///    instead: the same one every other GTK app gets, which follows the
-///    system theme, the dark-mode preference and the button layout.
-/// 2. It attaches mouse handlers to the window that swallow every press,
-///    release and pointer movement. GTK only runs its own frame handling
-///    (drag to move, double-click to maximize, right-click menu, resize
-///    from the edges) when nothing else has claimed the event first, so
-///    with those handlers in place the bar draws but does nothing. They
-///    exist only to report raw mouse events, which neither Tauri nor
-///    InkyCap listens to, so they are blocked. GTK's frame handling then
-///    works as it does in any GTK app.
+/// On X11 the window manager handles the frame, so there's nothing to do.
 ///
-/// On X11 there is nothing to do: the window manager draws the frame and
-/// handles it.
+/// A `tao` workaround: once a `tao` release stops doing both, delete this
+/// function, `block_window_press_handlers` and their two call sites. The log
+/// line "No window-level ... handler found to block" shows when that has
+/// happened.
 ///
-/// This is a workaround for `tao` alone. Once a `tao` release no longer
-/// installs a header bar on Wayland and no longer claims mouse events on
-/// the window, delete this function, `block_window_press_handlers`, and
-/// their two call sites. The log lines they write show when that day has
-/// come: "No window-level ... handler found to block" means there was
-/// nothing left to undo.
-///
-/// Safe to call more than once per window: the second call finds no header
-/// bar and stops. The main window gets it from the setup hook, before it is
-/// first shown; windows the frontend opens later get it when their page
-/// starts loading.
+/// Safe to call more than once. The main window gets it from the setup hook
+/// before it is shown; later windows when their page starts loading.
 #[cfg(target_os = "linux")]
 fn use_desktop_title_bar(window: &tauri::Window) {
     use gtk::prelude::*;
@@ -102,9 +88,8 @@ fn use_desktop_title_bar(window: &tauri::Window) {
     gtk::glib::idle_add_local_once(move || block_window_press_handlers(&gtk_window));
 }
 
-/// Block every handler attached to the window's button press, button
-/// release and pointer motion signals, so that GTK's own frame handling
-/// runs. See [`use_desktop_title_bar`] for why.
+/// Block every handler on the window's button press, release and motion
+/// signals, so GTK's frame handling runs. See [`use_desktop_title_bar`].
 #[cfg(target_os = "linux")]
 fn block_window_press_handlers(gtk_window: &gtk::ApplicationWindow) {
     use gtk::glib::gobject_ffi as gobject;
@@ -115,9 +100,9 @@ fn block_window_press_handlers(gtk_window: &gtk::ApplicationWindow) {
         c"button-release-event",
         c"motion-notify-event",
     ] {
-        // SAFETY: plain GObject signal bookkeeping on a live window. The
-        // signal names are static and belong to GtkWidget; the mask selects
-        // by signal id only, so no closure or data pointers are read.
+        // SAFETY: plain GObject signal bookkeeping on a live window. The signal
+        // names are static GtkWidget signals and the mask matches by signal id
+        // only, so no closure or data pointers are read.
         let blocked = unsafe {
             let signal_id =
                 gobject::g_signal_lookup(name.as_ptr(), gtk::ffi::gtk_widget_get_type());
@@ -147,14 +132,11 @@ fn block_window_press_handlers(gtk_window: &gtk::ApplicationWindow) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // `--version` / `-V`: print the compiled-in version and exit before any GUI
-    // or logger init. This is the same version Settings → Overview shows (kept
-    // in lockstep with tauri.conf.json by scripts/version.mjs) and is baked in
-    // at COMPILE time — so release tooling can read it headlessly to confirm a
-    // build actually recompiled with the bumped version, catching a stale
-    // incremental binary whose package metadata says one thing while the
-    // binary reports another. See scripts/build-linux-docker.sh,
-    // scripts/build-flatpak.sh, and .forgejo/workflows/release.yml.
+    // `--version` / `-V`: print the built-in version and exit before any GUI or
+    // logging starts. It is the version Settings → Overview shows, fixed at
+    // compile time, so release tooling can check a build really picked up a
+    // version bump (see scripts/build-linux-docker.sh, scripts/build-flatpak.sh
+    // and .forgejo/workflows/release.yml).
     if std::env::args()
         .skip(1)
         .any(|a| a == "--version" || a == "-V")
@@ -169,14 +151,10 @@ pub fn run() {
 
     let context = tauri::generate_context!();
 
-    // Apply the Linux-only "disable DMABUF renderer" workaround before the
-    // webview starts. `WEBKIT_DISABLE_DMABUF_RENDERER` is read once when
-    // WebKitGTK initializes, so it must be set here — before `tauri::Builder`
-    // spins up the webview process — and only takes effect after a restart
-    // when the user toggles it. We're still single-threaded at this point,
-    // which keeps `set_var` sound. macOS/WebView2 don't read these vars, but
-    // gating on `target_os` keeps the intent explicit and means a settings.json
-    // synced from a Linux machine is inert elsewhere. See issue #22.
+    // Linux "disable DMABUF renderer" setting. WebKitGTK reads
+    // `WEBKIT_DISABLE_DMABUF_RENDERER` once at startup, so it is set here
+    // before the webview starts (changes need a restart). Still single-threaded
+    // here, so `set_var` is sound. See issue #22.
     #[cfg(target_os = "linux")]
     if settings::load_settings().behaviour.disable_dmabuf_renderer {
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
@@ -188,9 +166,9 @@ pub fn run() {
 
     use tauri::Manager;
 
-    // Single-instance must be the first plugin: when InkyCap is already
-    // running, it hands this launch's arguments (such as an inkycap:// link)
-    // to the running copy and exits before anything else starts.
+    // Single-instance must be the first plugin: if InkyCap is already running,
+    // it passes this launch's arguments (such as an inkycap:// link) to that
+    // copy and exits.
     let builder = tauri::Builder::default();
     let builder = if single_instance_supported() {
         builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
@@ -226,26 +204,23 @@ pub fn run() {
             ));
             let ready = window_state::attach(&window);
 
-            // Show first so that Linux/GTK actually honors the
-            // following set_size (unmapped set_size is overridden by
-            // tao's initial gtk_window.resize from tauri.conf.json).
+            // Show first, or GTK ignores the following set_size (tao's initial
+            // resize from tauri.conf.json overrides it while unmapped).
             let _ = window.show();
             let _ = window.set_focus();
             window_state::apply(&window, saved.as_ref());
 
-            // Let a moment pass so the Resized events triggered by
-            // apply() drain without writing bogus values into the
-            // cache, then start honoring user resizes.
+            // Wait briefly so the Resized events from apply() pass without
+            // being saved, then start recording user resizes.
             let ready_for_thread = ready.clone();
             std::thread::spawn(move || {
                 std::thread::sleep(std::time::Duration::from_millis(400));
                 ready_for_thread.store(true, Ordering::Release);
             });
 
-            // Backup scheduler. Polls the configured interval and runs
-            // a backup of the currently-open notebox when due. Cheap
-            // when idle (sleeps until either the next due time or a
-            // settings-change wake) so safe to always-on.
+            // Backup scheduler: backs up the open notebox when due. Sleeps
+            // until the next due time or a settings change, so it is cheap to
+            // always run.
             backup::schedule::spawn(handle.clone());
 
             deep_link::setup(&handle);
@@ -515,14 +490,11 @@ pub fn run() {
         .build(context)
         .expect("error while building tauri application")
         .run(|handle, event| {
-            // Authoritative drag-drop allowlist source for SEC-1. The
-            // frontend also subscribes to the JS-level drag-drop event in
-            // `tauri-drag-drop.ts` for positioning, but only this run-loop
-            // listener is trusted to admit paths into
-            // `AppState.drop_allowlist`. Empirically (Tauri 2.10 +
-            // webkit2gtk on Linux) drag-drop is dispatched through
-            // `RunEvent::WindowEvent::DragDrop`, not the webview variant —
-            // confirmed by terminal traces during testing.
+            // The trusted source for the drop allowlist. The frontend also
+            // listens to drag-drop in `tauri-drag-drop.ts` for positioning, but
+            // only this listener may add paths to `AppState.drop_allowlist`. On
+            // Linux (Tauri 2.10, webkit2gtk) drops arrive as
+            // `RunEvent::WindowEvent::DragDrop`, not the webview event.
             if let tauri::RunEvent::WindowEvent {
                 event: tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }),
                 ..
@@ -532,9 +504,8 @@ pub fn run() {
                 state.register_drop_paths(paths.iter().cloned());
             }
 
-            // When a window is destroyed, drop its per-window notebox session so
-            // its file watcher, health monitor, and in-memory indexes are freed.
-            // Keyed by window label — each window owns exactly one session.
+            // When a window closes, drop its notebox session so its watcher,
+            // health monitor and indexes are freed.
             if let tauri::RunEvent::WindowEvent {
                 label,
                 event: tauri::WindowEvent::Destroyed,
@@ -553,10 +524,9 @@ pub fn run() {
         });
 }
 
-/// Whether the single-instance plugin can run here. On Linux it claims a name
-/// on the D-Bus session bus and cannot start without one (as under a bare SSH
-/// session or in some containers); InkyCap then runs as separate copies, and
-/// links from other apps open a new copy instead of reaching the running one.
+/// Whether the single-instance plugin can run. On Linux it needs the D-Bus
+/// session bus (missing over plain SSH or in some containers); without it
+/// InkyCap runs separate copies and links from other apps open a new one.
 fn single_instance_supported() -> bool {
     #[cfg(target_os = "linux")]
     {

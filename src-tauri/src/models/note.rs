@@ -57,10 +57,9 @@ impl PropertyValue {
 
     pub fn contains(&self, needle: &str) -> bool {
         match self {
-            // Case-insensitive substring, matching every other text filter in
-            // InkyCap (search, the property filters). List membership below
-            // stays an exact element match — it's an identity test, not a text
-            // search.
+            // Case-insensitive substring, like every other text filter (search,
+            // property filters). List membership below is an exact match: it
+            // tests identity, not text.
             PropertyValue::String(s) => s.to_lowercase().contains(&needle.to_lowercase()),
             PropertyValue::List(items) => items.iter().any(|item| {
                 if let PropertyValue::String(s) = item {
@@ -74,9 +73,9 @@ impl PropertyValue {
     }
 }
 
-/// One inline agenda construct found in a note body — a `#task(...)` or
-/// `#due(...)` call, surfaced via the `<inkycap-agenda>` label. Aggregated
-/// by the Agenda pane alongside document-level `#note(...)` properties.
+/// An agenda item in a note body (a `#task(...)` or `#due(...)` call, found by
+/// the `<inkycap-agenda>` label), listed by the Agenda pane with the
+/// `#note(...)` properties.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AgendaMarker {
     /// `"task"` (a `#task` checkbox) or `"date"` (a `#due` reminder).
@@ -90,9 +89,9 @@ pub struct AgendaMarker {
     /// Tags attached directly to a `#task` call (note tags are unioned in
     /// later by the aggregator).
     pub tags: Vec<String>,
-    /// Repeat rule for a `#due(...)` reminder, when it recurs. Always `None`
-    /// for `kind == "task"` (recurrence is reminder-only). The Agenda expands
-    /// this into upcoming occurrences; the note source is never rewritten.
+    /// Repeat rule of a recurring `#due(...)` reminder. Always `None` for tasks
+    /// (only reminders recur). The Agenda expands it into upcoming occurrences;
+    /// the source is never changed.
     #[serde(default)]
     pub recurrence: Option<Recurrence>,
 }
@@ -111,24 +110,22 @@ pub struct NoteMetadata {
     /// Inline `#task` / `#due` markers found in the note body.
     #[serde(default)]
     pub agenda_markers: Vec<AgendaMarker>,
-    /// Document-level repeat rule from `#note(due: …, recurrence: (…))`. Applies
-    /// to the note's own `due` date when the note is a dated reminder (not a
-    /// task). Kept out of the generic `properties` map (it's structured, like
-    /// `agenda_markers`) so the property panel and collection tables don't have
-    /// to render a raw dict.
+    /// Repeat rule from `#note(due: …, recurrence: (…))`, for the note's own
+    /// `due` date when it's a reminder (not a task). Kept out of `properties`
+    /// (it's structured, like `agenda_markers`) so the property panel and
+    /// collection tables don't show a raw dictionary.
     #[serde(default)]
     pub recurrence: Option<Recurrence>,
-    /// Count of unresolved `#suggestion(...)` tracked changes in the body — the
-    /// notebox-wide "still awaiting accept/reject" signal. See
+    /// Number of unresolved `#suggestion(...)` tracked changes in the body. See
     /// [`crate::typst_pipeline::query::QueryResult::suggestions`].
     #[serde(default)]
     pub unresolved_suggestions: usize,
 }
 
 impl NoteMetadata {
-    /// The note's `#note(title:)` property, when present and non-empty.
-    /// Tolerates the list-shaped `title: ("...",)` that Markdown-imported
-    /// notes sometimes carry (picks the first non-empty string).
+    /// The `#note(title:)` property, if present and not empty. Also accepts
+    /// `title: ("...",)`, which some imported Markdown notes have (the first
+    /// non-empty string).
     pub fn title(&self) -> Option<String> {
         self.properties.get("title").and_then(|v| match v {
             PropertyValue::String(s) if !s.is_empty() => Some(s.clone()),
@@ -139,9 +136,8 @@ impl NoteMetadata {
         })
     }
 
-    /// The note's display title — its [`title`](Self::title), falling back
-    /// to the file stem. Shared by every surface that lists notes (Agenda,
-    /// Reviews).
+    /// The note's title for lists: [`title`](Self::title), or else the file
+    /// stem (Agenda, Reviews).
     pub fn display_title(&self) -> String {
         self.title().unwrap_or_else(|| {
             self.path
@@ -151,12 +147,10 @@ impl NoteMetadata {
         })
     }
 
-    /// The note's Zettelkasten id (`#note(zid:)`), when present and non-empty.
-    /// A `zid` is user-definable and therefore may be alphanumeric, not just
-    /// digits — it's returned verbatim as a string so callers sort it
-    /// lexically. A numeric `zid:` literal is formatted without a fractional
-    /// part. Shared by every surface that lists or sorts notes by id (Agenda,
-    /// Links pane, file tree).
+    /// The note's Zettelkasten id (`#note(zid:)`), if present and not empty. It
+    /// can contain letters, so it's returned as a string; a number is formatted
+    /// without a fractional part. Used wherever notes are listed or sorted by
+    /// id (Agenda, Links pane, file tree).
     pub fn zid(&self) -> Option<String> {
         match self.properties.get("zid") {
             Some(PropertyValue::String(s)) if !s.is_empty() => Some(s.clone()),

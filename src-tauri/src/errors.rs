@@ -41,65 +41,50 @@ pub enum InkyCapError {
     #[error("{0}")]
     BadRequest(String),
 
-    /// A creation rule could not resolve a filename on its own — its pattern is
-    /// blank, or reduced to nothing once expanded (e.g. `{{zid}}` with
-    /// Zettelkasten off, or content-only `{{title}}`/`{{slug}}` tokens that
-    /// have no meaning in a filename). Not a failure to report: the frontend
-    /// matches this code, prompts the user for a name, and retries with a
-    /// `title_override`. Distinct from `BadRequest` so that branch keys off a
-    /// stable code rather than a magic message string.
+    /// A creation rule has no file name: its pattern is blank or expands to
+    /// nothing (e.g. `{{zid}}` with Zettelkasten off). The frontend matches
+    /// this code, asks for a name and retries with `title_override`. Its own
+    /// code, so it isn't matched by message text.
     #[error("A filename is required")]
     FilenameRequired,
 
-    /// The requested notebox is already open in another window. Carries that
-    /// window's label (in `detail`) so the frontend can focus it instead of
-    /// opening a duplicate — a notebox is exclusive to one window. Not a
-    /// user-facing failure: the frontend matches the code and focuses the
-    /// window without a toast.
+    /// The notebox is open in another window, whose label is in `detail`. The
+    /// frontend focuses that window, with no error shown.
     #[error("Notebox is already open in another window")]
     NoteboxAlreadyOpen(String),
 
-    /// A note with the requested filename already exists elsewhere in the
-    /// notebox. Filenames are notebox-globally unique (wikilinks resolve by
-    /// stem), so creation can't silently make a second one. Carries the
-    /// existing note's path (in `detail`) so the frontend can offer to open it
-    /// or let the user pick a different name. Not a failure to report: the UI
-    /// matches this code and prompts, the same way `FilenameRequired` does.
+    /// A note with this name exists elsewhere in the notebox (names are unique,
+    /// since wikilinks resolve by stem). Its path is in `detail`; the frontend
+    /// offers to open it or choose another name.
     #[error("A note with that name already exists elsewhere in the notebox")]
     NoteNameConflict(String),
 
-    /// A long-running operation was cancelled cooperatively. Distinct
-    /// from `BadRequest` so the UI can suppress an "error" toast on
-    /// the success path (the user asked for the cancel, it isn't a
-    /// failure to report).
+    /// The user cancelled a long-running operation. Separate from `BadRequest`
+    /// so no error is shown.
     #[error("Cancelled")]
     Cancelled,
 
-    /// A structural mutation (create / rename / move / delete / attach) was
-    /// attempted in the bundled documentation notebox, which is read-only on
-    /// disk. Content edits don't error — they're silently kept for the session
-    /// but never persisted — but file-structure changes are refused outright so
-    /// the shipped manual stays intact.
+    /// A structural change (create, rename, move, delete, attach) in the
+    /// bundled documentation notebox, which is read-only. Content edits don't
+    /// error (they are kept for the session, not saved), but structural changes
+    /// are refused so the manual stays intact.
     #[error("The documentation notebox is read-only; changes are not saved")]
     DocumentationReadOnly,
 
-    /// A read that needs the notebox indexes was made while they are still
-    /// being built after open, and nothing cached could stand in for the
-    /// answer. Not a failure to report: the frontend leaves the surface empty
-    /// and asks again when `notebox:index-ready` fires.
+    /// A read needing the indexes while they are still being built, with
+    /// nothing cached to answer it. The frontend leaves the view empty and
+    /// retries on `notebox:index-ready`.
     #[error("The notebox is still being indexed")]
     IndexNotReady,
 
-    /// The in-app Upgrade can't be used for this copy or this release: the
-    /// install type can't update itself (Flatpak, NixOS, a self-built copy),
-    /// or the release has no installer for this system. The frontend points
-    /// the user at the Download button instead.
+    /// The in-app upgrade can't be used: this install type can't update itself
+    /// (Flatpak, NixOS, self-built), or the release has no installer for this
+    /// system. The frontend points to Download instead.
     #[error("Automatic upgrade isn't available: {0}")]
     UpgradeUnavailable(String),
 
-    /// A downloaded update failed its signature check and was not installed.
-    /// Kept apart from other failures so the message can say plainly that
-    /// nothing was changed and why.
+    /// A downloaded update failed its signature check and wasn't installed.
+    /// Separate, so the message can say nothing was changed and why.
     #[error("The update couldn't be verified, so it wasn't installed: {0}")]
     UpgradeNotVerified(String),
 
@@ -112,32 +97,28 @@ pub enum InkyCapError {
     #[error("Couldn't read the clipboard: {0}")]
     Clipboard(String),
 
-    /// A file asked to be opened with its default application would run as a
-    /// program. Carries the path (in `detail`). Not a failure to report: the
-    /// frontend asks the user and retries with confirmation.
+    /// A file to open in its default application would run as a program. Path
+    /// in `detail`; the frontend asks and retries with confirmation.
     #[error("This file is a program: {0}")]
     OpenProgramFile(String),
 
-    /// A file asked to be opened with its default application lies outside the
-    /// open notebox. Carries the path (in `detail`). Not a failure to report:
-    /// the frontend asks the user and retries with confirmation.
+    /// A file to open in its default application is outside the notebox. Path
+    /// in `detail`; the frontend asks and retries with confirmation.
     #[error("This file is outside the notebox: {0}")]
     OpenOutsideNotebox(String),
 
-    /// A file is too large to hand to the webview, which holds the whole file
-    /// in memory several times over while loading it. Carries the file's size
-    /// for display (in `detail`).
+    /// A file too large for the webview, which keeps several copies in memory
+    /// while loading. Its size is in `detail`.
     #[error("This file is too large to show inside InkyCap ({0})")]
     FileTooLargeToShow(String),
 }
 
 impl InkyCapError {
-    /// Stable, never-localized machine code for this error variant. The frontend
-    /// looks up `errors.<code>` in the active locale to render a translated
-    /// message, and matches on the code for control flow (e.g. treating
-    /// `"cancelled"` as a non-error). Codes are part of the IPC contract — rename
-    /// them only in lockstep with `src/lib/errors.ts` and the `errors.*` keys in
-    /// the locale files.
+    /// Fixed, untranslated code for the variant. The frontend shows
+    /// `errors.<code>` from the locale and branches on the code (e.g.
+    /// `"cancelled"` isn't an error). Codes are part of the IPC contract: rename
+    /// them only together with `src/lib/errors.ts` and the `errors.*` locale
+    /// keys.
     pub fn code(&self) -> &'static str {
         match self {
             InkyCapError::Io(_) => "io",
@@ -169,10 +150,9 @@ impl InkyCapError {
         }
     }
 
-    /// The single interpolated value carried by this error — a path, an external
-    /// tool's (untranslatable) message, or a free-form sentence — surfaced to the
-    /// frontend as the `{detail}` placeholder of the translated template. `None`
-    /// for variants whose message is fully static (`NoteboxNotOpen`, `Cancelled`).
+    /// The variable part of the error (a path, an external tool's message, a
+    /// sentence), filling the `{detail}` placeholder. `None` for fixed messages
+    /// (`NoteboxNotOpen`, `Cancelled`).
     pub fn detail(&self) -> Option<String> {
         match self {
             InkyCapError::Io(e) => Some(e.to_string()),
@@ -217,11 +197,9 @@ impl From<git2::Error> for InkyCapError {
     }
 }
 
-/// Errors cross the IPC boundary as a structured envelope rather than a bare
-/// string so the frontend can localize them: `code` selects the `errors.<code>`
-/// translation, `detail` fills its `{detail}` placeholder, and `message` is the
-/// composed English fallback used when no translation key exists (new variants,
-/// or free-form `BadRequest` text). See `src/lib/errors.ts` for the consumer.
+/// Errors are sent as `{ code, message, detail }` so the frontend can translate
+/// them: `code` picks `errors.<code>`, `detail` fills `{detail}`, and `message`
+/// is the English fallback when there is no key. See `src/lib/errors.ts`.
 impl serde::Serialize for InkyCapError {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
@@ -242,9 +220,8 @@ pub type Result<T> = std::result::Result<T, InkyCapError>;
 mod tests {
     use super::*;
 
-    /// The IPC envelope is a contract with `src/lib/errors.ts`: every error
-    /// crosses the boundary as `{ code, message, detail }`. The frontend keys
-    /// `errors.<code>` off `code`, fills `{detail}`, and falls back to `message`.
+    /// Every error is sent as `{ code, message, detail }`, as `src/lib/errors.ts`
+    /// expects.
     #[test]
     fn serializes_as_code_message_detail_envelope() {
         let err = InkyCapError::FileNotFound("/notes/missing.typ".into());
@@ -267,9 +244,8 @@ mod tests {
         assert!(value["detail"].is_null());
     }
 
-    /// `message` (Display) and the `errors.<code>` template must stay in lockstep
-    /// so the English fallback reads identically to the translated string — guard
-    /// against the two drifting when a variant's `#[error("…")]` text changes.
+    /// `message` and the `errors.<code>` template must read the same, so they
+    /// don't drift when an `#[error("…")]` changes.
     #[test]
     fn message_matches_code_and_detail() {
         let err = InkyCapError::Git("merge conflict".into());

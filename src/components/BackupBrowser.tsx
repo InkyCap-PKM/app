@@ -1,15 +1,9 @@
-// Browse-and-restore dialog for existing backup archives.
-//
-// Triggered from the BackupSettingsSection's "Browse and restore…"
-// button. Lists archives in the configured destination folder, lets
-// the user pick one, shows its contents with a filter and multi-
-// select, and restores selected entries back to either the original
-// notebox path or a user-picked alternate folder.
-//
-// Modal pattern matches ExportDialog: a fixed-position backdrop with
-// a centred dialog, Escape-to-close, click-backdrop-to-close. The
-// password (for encrypted archives) is read from the OS keychain by
-// the backend — this component never touches the secret.
+// Dialog for browsing and restoring backups, opened from Backup settings'
+// "Browse and restore…". Lists the archives in the backup folder, shows a
+// chosen archive's contents with a filter and multi-select, and restores the
+// selection to the notebox or another folder. Same modal pattern as
+// ExportDialog (backdrop, Escape or backdrop click closes). The backend reads
+// any password from the keychain; this component never sees it.
 
 import { errorText } from "../lib/errors";
 import { Component, For, Show, createMemo, createResource, createSignal, onCleanup, onMount } from "solid-js";
@@ -40,16 +34,11 @@ const BackupBrowser: Component<Props> = (props) => {
   );
 
   const [selectedArchive, setSelectedArchive] = createSignal<BackupEntry | null>(null);
-  // External archive: a .zip the user picked via the file dialog
-  // that lives outside the configured destination folder. Rendered
-  // alongside the regular list with a distinct visual treatment so
-  // the user can tell "this is the file I just picked" from "this is
-  // one of my scheduled backups".
+  // An archive the user picked from outside the backup folder, listed with the
+  // others but styled differently.
   const [externalArchive, setExternalArchive] = createSignal<BackupEntry | null>(null);
 
-  // Contents of the currently-selected archive. Tied to
-  // selectedArchive() so picking a different one in the list
-  // automatically refetches.
+  // The selected archive's contents, refetched when the selection changes.
   const [contents] = createResource(
     () => selectedArchive(),
     async (archive) => {
@@ -61,17 +50,13 @@ const BackupBrowser: Component<Props> = (props) => {
   const [filter, setFilter] = createSignal("");
   const [selected, setSelected] = createSignal<Set<string>>(new Set<string>());
   const [conflict, setConflict] = createSignal<RestoreConflictPolicy>("skip");
-  // null means "restore to the active notebox root"; a string is the
-  // user-picked alternate folder. We default to original because
-  // that's what 90% of restores want.
+  // null restores to the active notebox root; a string is another folder. The
+  // notebox is the default.
   const [altTarget, setAltTarget] = createSignal<string | null>(null);
   const [restoring, setRestoring] = createSignal(false);
-  // Per-restore password override. Each archive carries the password it
-  // was made with — the keychain only knows the most recent. When this
-  // field is non-empty, it overrides the keychain value for this one
-  // restore. Cleared on session reset and when the user switches to a
-  // different archive (no risk of leaking the previous archive's
-  // password into a different restore).
+  // Password for this restore only, overriding the keychain (which only holds
+  // the latest), for archives made with an older password. Cleared on reset and
+  // when another archive is chosen.
   const [pwOverride, setPwOverride] = createSignal("");
 
   // Reset transient state when the dialog closes/reopens so each
@@ -86,12 +71,9 @@ const BackupBrowser: Component<Props> = (props) => {
     setPwOverride("");
   }
 
-  // Let the user pick a .zip outside the configured destination
-  // folder — e.g. a backup they moved to a different drive or
-  // received from elsewhere. We synthesize a minimal BackupEntry
-  // from the picked path: name from the basename, size/mtime are
-  // best-effort 0 (the contents call doesn't need them, and the
-  // UI's date/size cells just collapse to empty when zero).
+  // Pick a .zip outside the backup folder (moved elsewhere, or received). A
+  // minimal BackupEntry is made from the path; size and time are 0, which the
+  // list shows as empty.
   async function pickExternalArchive() {
     const picked = await open({
       multiple: false,
@@ -132,9 +114,7 @@ const BackupBrowser: Component<Props> = (props) => {
     }
   }
 
-  // Filtered, file-only entries for the contents list. Directory
-  // entries are excluded — restoring an empty folder isn't a
-  // meaningful recovery action and would clutter the list.
+  // Files only; restoring an empty folder isn't useful.
   const filteredContents = createMemo<BackupContentEntry[]>(() => {
     const all = contents() ?? [];
     const q = filter().toLowerCase();
@@ -181,9 +161,8 @@ const BackupBrowser: Component<Props> = (props) => {
       directory: true,
       multiple: false,
       title: t("backup.browse.pickTargetTitle"),
-      // This picker exists to restore SOMEWHERE OTHER than the notebox (the
-      // "Original notebox location" radio already covers in-place restore), so
-      // default to home rather than the notebox root.
+      // This picker is for restoring somewhere other than the notebox (the
+      // other option does that), so start in the home folder.
       defaultPath: await homeDirDefault(),
     });
     if (typeof picked === "string") {
@@ -191,9 +170,8 @@ const BackupBrowser: Component<Props> = (props) => {
     }
   }
 
-  // Effective restore root: alternate folder if the user picked one,
-  // otherwise the active notebox root. We expose the disabled state
-  // for the "Original" radio when there's no notebox open.
+  // Where to restore: the chosen folder, or the active notebox root (the
+  // "Original" option is disabled without one).
   function effectiveTarget(): string | null {
     if (altTarget()) return altTarget();
     const info = noteboxInfo();
@@ -247,17 +225,14 @@ const BackupBrowser: Component<Props> = (props) => {
   let lastVisible = false;
   function onVisibleChange() {
     if (props.visible && !lastVisible) {
-      // Just opened. The archives resource auto-fetches because
-      // its source signal flips to true; we additionally reset the
-      // transient session state here.
+      // Just opened: the archives load by themselves; reset the session state
+      // here.
       resetSession();
       void refetchArchives();
     }
     lastVisible = props.visible;
   }
-  // Solid's reactivity tracks `props.visible` if read inside an
-  // effect. We piggyback on render — createMemo provides this
-  // tracking without an explicit createEffect.
+  // A memo, so reading `props.visible` is tracked without a separate effect.
   createMemo(onVisibleChange);
 
   return (

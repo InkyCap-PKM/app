@@ -1,6 +1,5 @@
-// Behaviour tab: startup behaviour + target, tab preferences (switching and
-// the new tab page's optional lists), and the Journal Scroll sort/anchor-scope
-// settings.
+// Behaviour tab: startup behaviour and target, tab preferences (switching, the
+// new tab page's lists), and the Journal Scroll sort and anchor scope.
 import { createResource, createEffect, onMount, Show } from "solid-js";
 import * as ipc from "../../lib/ipc";
 import { settings, updateSetting, noteboxSettings, updateNoteboxSetting } from "../../stores/settings";
@@ -46,10 +45,9 @@ export function BehaviourSettingsSection() {
 
   onMount(() => void loadUpgradeSupport());
 
-  // A native <select> silently displays its first option when the bound
-  // value matches nothing — leaving `target` empty/stale even though a rule
-  // appears chosen. Once rules have loaded, coerce `target` to a real rule
-  // id so the persisted setting always agrees with what's shown.
+  // A native <select> shows its first option when the value matches none, so a
+  // rule would look chosen while `target` stays empty. Once rules load, set
+  // `target` to a real rule id so the saved setting matches what's shown.
   createEffect(() => {
     if (settings.startup.behavior !== "creation-rule") return;
     const opts = ruleOptions();

@@ -1,13 +1,14 @@
-//! Declarative-plugin discovery for the Tier-1 manifest system.
+//! Finding declarative plugins.
 //!
-//! A declarative plugin is a single JSON manifest that contributes *data* — not
-//! code — to InkyCap's registries: extra `/`-palette commands/snippets and
-//! saved query-view sidebar panes. The host (frontend) owns the schema and the
-//! registration; this command's only job is to surface the raw manifest files
-//! so the frontend can validate and apply them.
+//! A declarative plugin is one JSON manifest adding data, not code, to
+//! InkyCap's registries: extra `/` palette commands or snippets, and saved
+//! query views as sidebar panes. The frontend defines the format and registers
+//! them; this command only returns the manifest files for it to check and
+//! apply.
 //!
-//! Manifests are read from two locations (user-global first, then per-notebox,
-//! so a notebox can ship its own):
+//! Manifests are read from two places (the user's first, then the notebox's, so
+//! a notebox can include its own):
+//!
 //!   * `$CONFIG_DIR/inkycap/plugins/*.json`
 //!   * `<notebox>/.inkycap/plugins/*.json`
 //!
@@ -27,9 +28,9 @@ pub struct PluginManifestFile {
     pub contents: String,
 }
 
-/// Read every `*.json` directly inside `dir` (non-recursive) into `out`. Missing
-/// directories and unreadable files are skipped quietly — a plugins folder is
-/// optional, and one bad file shouldn't sink the rest.
+/// Read every `*.json` directly in `dir` (not subfolders) into `out`. A missing
+/// folder or unreadable file is skipped; the folder is optional, and one bad
+/// file shouldn't stop the rest.
 fn read_manifest_dir(dir: &Path, out: &mut Vec<PluginManifestFile>) {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,

@@ -1,6 +1,5 @@
-/* Vertical toolbar and panel toggle buttons.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Vertical toolbar and panel toggle buttons. Part of layout.css, whose
+   import order (see ../layout.css) keeps the cascade. */
 
 /* ─── Vertical Toolbar (persistent left edge) ─── */
 
@@ -11,25 +10,18 @@
   flex-direction: column;
   align-items: center;
   width: var(--toolbar-width);
-  /* A grid item whose overflow is visible refuses to shrink below its own
-     content height. The toolbar is the tallest fixed-content column in the
-     shell, so without this it sets a floor on the whole `1fr` row: shrink the
-     window past that floor and the grid grows taller than the viewport,
-     pushing the sidebar's and editor's bottom edges off-screen. Their panes
-     still believe they have room, so nothing scrolls — content simply
-     disappears under the window edge. Capping the toolbar here lets the row
-     track the viewport; the button column below scrolls instead. */
+  /* A grid item with visible overflow won't shrink below its content height,
+     and the toolbar is the tallest fixed column, so without this a small
+     window pushes the sidebar's and editor's bottoms off-screen. Capped
+     here, the row follows the window and the button column scrolls instead. */
   min-height: 0;
   overflow: hidden;
 }
 
-/* Header band holding the sidebar toggle. Height + bottom border mirror
-   `.left-sidebar__mode-bar` so the toggle lands on the mode-bar row and the
-   horizontal divider runs unbroken across both columns. The action group
-   below begins at the sidebar's content level, letting the first action
-   button (Search) line up with the search input field that opens in the
-   panel to its right. The toolbar/sidebar vertical rule lives on `__body`
-   below, not on the toolbar itself, so it never crosses this band. */
+/* Header band holding the sidebar toggle. Height and bottom border match
+   `.left-sidebar__mode-bar`, so the divider runs unbroken across both
+   columns and the first action (Search) lines up with the sidebar's search
+   field. The vertical rule is on `__body`, so it doesn't cross this band. */
 .vertical-toolbar__header {
   display: flex;
   align-items: center;
@@ -43,9 +35,8 @@
   flex-shrink: 0;
 }
 
-/* Everything below the header. Carries the vertical rule separating the
-   toolbar from the sidebar, so the rule starts at the header's lower edge
-   rather than running the full height through the header band. */
+/* Everything below the header. Carries the vertical rule between toolbar and
+   sidebar, starting below the header. */
 .vertical-toolbar__body {
   display: flex;
   flex-direction: column;
@@ -135,16 +126,14 @@
   background: var(--bg-hover);
 }
 
-/* Width of the overlaid scroll arrows. Doubles as the width of the end gutters
-   inside the track, so the first and last tab can always scroll to a resting
-   place clear of an arrow instead of sitting underneath it. */
+/* Width of the overlaid scroll arrows, and of the end gutters inside the
+   track, so the first and last tab can scroll clear of an arrow. */
 .main-content__tabs {
   --tab-arrow-width: 28px;
 }
 
-/* Holds the scrolling tab track and the two arrows overlaid on its ends. Takes
-   all the row's free width, which is what keeps the new-tab button and pane
-   menu pinned to the right edge regardless of how many tabs are open. */
+/* The scrolling tab track with the two arrows over its ends. Takes the row's
+   free width, keeping the new-tab button and pane menu at the right edge. */
 .tab-bar__track {
   position: relative;
   display: flex;
@@ -158,16 +147,15 @@
   overflow: hidden;
   flex: 1 1 auto;
   min-width: 0;
-  /* `gap` replaces the per-tab horizontal margin (see .tab), keeping the same
-     4px between tabs; the matching outer inset the margins used to give is
-     restored as padding, which — unlike a trailing margin — stays measurable. */
+  /* 4px between tabs, with matching padding at the ends (padding, unlike a
+     trailing margin, is measurable). */
   gap: var(--space-2);
   padding-inline: var(--space-1);
 }
 
-/* Scroll stop at each end of an overflowing track, sized to match the arrow
-   that covers it. Rendered only while the strip overflows, so a short tab row
-   still starts flush at the left. */
+/* Scroll stop at each end of an overflowing track, as wide as the arrow
+   covering it. Only shown while the strip overflows, so a short tab row
+   starts flush left. */
 .tab-bar__gutter {
   flex: 0 0 var(--tab-arrow-width);
 }
@@ -199,9 +187,9 @@
   color: var(--fg-primary);
 }
 
-/* End of the strip reached. The arrow keeps its box and still swallows the
-   click, so an over-eager repeat press does nothing instead of landing on
-   whatever would otherwise have moved into that spot. */
+/* End of the strip reached. The arrow keeps its box and swallows the click,
+   so an extra press does nothing rather than hitting what moved into its
+   place. */
 .tab-bar__scroll:disabled {
   opacity: var(--disabled-opacity);
   cursor: default;
@@ -212,10 +200,9 @@
   visibility: hidden;
 }
 
-/* The edge and cast shadow are what sell the illusion that the tabs run on
-   underneath — without them the arrow reads as a button sitting in a gap.
-   They are sideways "lips" cast onto neighbouring content, not floating
-   surfaces with an edge to define, so they stay off the --popup-* shadow. */
+/* The edge and shadow show that tabs continue underneath. They are side
+   shadows cast onto neighbouring content, not floating surfaces, so they
+   don't use the --popup-* shadow. */
 .tab-bar__scroll--left {
   left: 0;
   border-right: 1px solid var(--border-primary);
@@ -236,14 +223,10 @@
   box-shadow: -6px 0 8px -2px rgba(0, 0, 0, 0.5); /* token-exempt: edge lip, not a floating surface */
 }
 
-/* A disabled arrow sits at its own end of the strip, where nothing is
-   hidden beneath it — the gutter guarantees the outermost tab rests clear
-   of the arrow. Keeping the edge line and cast shadow there would signal
-   "tabs run on underneath" where none do, inviting presses on an inert
-   control. So a disabled arrow flattens into the bar (its body already
-   matches the strip background) and keeps only the faint glyph; the one
-   arrow still carrying a shadowed edge is the one with tabs behind it.
-   Placed after the per-theme shadow rules above so it overrides them. */
+/* A disabled arrow sits at its end of the strip with no tabs beneath it, so
+   it drops the edge line and shadow (which would suggest hidden tabs) and
+   keeps only a faint glyph. After the per-theme shadow rules so it overrides
+   them. */
 .tab-bar__scroll--left:disabled,
 .tab-bar__scroll--right:disabled {
   border-color: transparent;

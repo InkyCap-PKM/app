@@ -1,15 +1,13 @@
 /**
- * Dropdown — the app-wide replacement for the native HTML `<select>`.
+ * Dropdown: used in place of the native `<select>` throughout the app.
  *
- * Native `<select>` popups are drawn by the OS (a native GTK widget under
- * WebKitGTK) and cannot be themed with CSS — they ignore the app's colours
- * entirely. This component renders the popup as ordinary HTML using the
- * shared `--popup-*` tokens, so every dropdown in InkyCap looks the same
- * and follows the active theme.
+ * A native `<select>` popup is drawn by the OS (a GTK widget under WebKitGTK)
+ * and ignores the app's CSS. This draws it as HTML with the `--popup-*` tokens,
+ * so every dropdown follows the theme.
  *
- * The popup reuses the established `.context-menu` surface and is placed
- * with `anchorPanelMenu`, the same helper the sidebar sort menus use, so
- * it escapes parent `overflow: hidden` regions.
+ * The popup uses the `.context-menu` surface and is placed with
+ * `anchorPanelMenu` (as the sidebar sort menus are), so it escapes `overflow:
+ * hidden` parents.
  */
 
 import { For, Show, createSignal } from "solid-js";
@@ -55,9 +53,9 @@ export function Dropdown<T>(props: DropdownProps<T>) {
     if (props.disabled) return;
     setActiveIdx(selectedIndex());
     setOpen(true);
-    // The keys below live on the trigger, so it has to hold focus for the
-    // keyboard to carry on after a mouse click. Clicking a button focuses it
-    // on some platforms and not others (macOS does not), so do it explicitly.
+    // The keys below are on the trigger, so it must have focus for the keyboard
+    // to work after a click. Some platforms (macOS) don't focus a clicked
+    // button, so focus it here.
     triggerRef?.focus();
   }
   function closeMenu() {
@@ -83,9 +81,8 @@ export function Dropdown<T>(props: DropdownProps<T>) {
     }
   }
 
-  // Dismissal (outside mouse-down, Escape, viewport resize) is handled by the
-  // shared `clickOutside` directive on the menu element below — the same one
-  // the panel sort menus use, so all anchored toggle menus dismiss identically.
+  // Closing (outside mouse-down, Escape, window resize) is handled by the
+  // `clickOutside` directive on the menu below, as in the panel sort menus.
 
   function onKeyDown(e: KeyboardEvent) {
     if (props.disabled) return;

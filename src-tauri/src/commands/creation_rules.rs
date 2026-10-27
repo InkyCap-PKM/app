@@ -31,10 +31,8 @@ pub async fn list_creation_rules(
     Ok(creation_rules::load_rules(root))
 }
 
-/// Look up the built-in default for a rule id. Returns the seeded default
-/// for built-in rules (used by the "Restore defaults" button in the rule
-/// editor) and `None` for user-created rules — those have no canonical
-/// default to restore to.
+/// The built-in default for a rule id ("Restore defaults"), or `None` for user
+/// rules.
 #[tauri::command]
 pub async fn get_default_creation_rule(
     rule_id: String,
@@ -42,11 +40,8 @@ pub async fn get_default_creation_rule(
     Ok(creation_rules::default_rule_for_id(&rule_id))
 }
 
-/// Save a creation rule (create or update).
-///
-/// The new-note rule backs the file tree's New Note button and Ctrl+N, so
-/// it can never be persisted in a disabled state — any attempt is forced
-/// back to enabled before the write.
+/// Save a creation rule. The new-note rule (New Note button, Ctrl+N) is always
+/// saved enabled.
 #[tauri::command]
 pub async fn save_creation_rule(
     rule: CreationRule,
@@ -100,10 +95,8 @@ pub async fn delete_creation_rule(
     Ok(())
 }
 
-/// Reorder creation rules and persist the new order. `ordered_ids` is the
-/// full list of rule ids in the desired order (the settings list sends every
-/// rule after a move-up/move-down). See [`creation_rules::reorder_rules`] for
-/// the defensive handling of ids that are missing or no longer exist.
+/// Save a new order for the rules. `ordered_ids` lists every rule id; see
+/// [`creation_rules::reorder_rules`] for missing or unknown ids.
 #[tauri::command]
 pub async fn reorder_creation_rules(
     ordered_ids: Vec<String>,
@@ -120,34 +113,20 @@ pub async fn reorder_creation_rules(
     Ok(())
 }
 
-/// Execute a creation rule: create the file and return its path + cursor offset.
-/// If the file already exists (e.g. daily note), returns existing path.
+/// Run a creation rule: create the file and return its path and caret offset. An
+/// existing file (e.g. today's daily note) is returned as is.
 ///
-/// `title_override` is the user-entered filename the frontend supplies
-/// after prompting: proactively when the rule's `filename_pattern` is
-/// blank, or on retry after this command returned
-/// [`InkyCapError::FilenameRequired`] (a non-empty pattern that expanded
-/// to nothing). It's used as the whole filename only when the pattern
-/// itself yields no name; an expandable pattern wins.
-///
-/// `target_folder_override` is supplied by callers that need to redirect
-/// the rule into a specific folder regardless of its own `target_folder`
-/// or the user's "New note location" preference (e.g. the file tree
-/// context menu's "New File" entry, which targets the right-clicked
-/// folder). The override is a path relative to the notebox root; an empty
-/// string is treated as "notebox root". When `None`, the rule's own
-/// folder logic (and fallback) applies unchanged.
-///
-/// `scaffold_override` lets a caller start a note from a specific scaffold
-/// instead of the rule's own `scaffold_path`; this is how the Ctrl+Shift+\
-/// scaffold picker begins a brand-new note "just from a scaffold" when no
-/// note is open (an empty tab). It's a bare scaffold name or a path relative
-/// to the scaffolds dir; the `.typ` suffix is optional. When `None`, the
-/// rule's own scaffold applies unchanged.
-///
-/// `current_note` is the path of the note the user is working in. When "New
-/// note location" is set to "Current folder", a rule without its own folder
-/// creates the note next to it (at the notebox root when `None`).
+/// - `title_override`: the file name the user entered, sent when the rule's
+///   `filename_pattern` is blank or after [`InkyCapError::FilenameRequired`].
+///   Used only when the pattern yields no name.
+/// - `target_folder_override`: a notebox-relative folder (empty for the root)
+///   that overrides the rule's folder and "New note location", e.g. the file
+///   tree's "New File".
+/// - `scaffold_override`: a scaffold name or scaffolds-relative path (`.typ`
+///   optional) used instead of the rule's own, e.g. the scaffold picker with no
+///   note open.
+/// - `current_note`: the note being worked in; with "New note location" set to
+///   "Current folder", a rule without its own folder creates the note beside it.
 #[tauri::command]
 pub async fn execute_creation_rule(
     rule_id: String,
@@ -169,15 +148,11 @@ pub async fn execute_creation_rule(
         .find(|r| r.id == rule_id)
         .ok_or_else(|| InkyCapError::InvalidPath(format!("Rule not found: {}", rule_id)))?;
 
-    // Read ZID settings (user-global) for {{zid}} expansion and
-    // auto-property, plus this notebox's "New note location" preference —
-    // that's the fallback when the rule itself has no target folder set
-    // (e.g. the built-in New Note).
+    // ZID settings for `{{zid}}`, and this notebox's "New note location", the
+    // fallback when the rule has no folder.
     let (zid_enabled, zid_pattern, locale, locale_typesetting) = {
         let settings = state.settings.read().await;
-        // A note authored under a non-English UI locale gets a document-language
-        // directive when the user has opted in — derived once here so the
-        // settings lock isn't reacquired mid-assembly.
+        // The language directive for non-English UI languages, when enabled.
         let locale_typesetting = if settings.appearance.use_locale_typesetting {
             crate::notebox_package::locale_typesetting_directive(&settings.appearance.ui_locale)
         } else {
@@ -194,10 +169,8 @@ pub async fn execute_creation_rule(
         crate::commands::file_placement::default_note_folder(&session, current_note.as_deref())
             .await;
 
-    // The override wins over both the rule's own target_folder and the
-    // user-pref fallback. We model this by cloning the rule and rewriting
-    // its target_folder — `execute_rule` then sees the override as the
-    // rule's authoritative target.
+    // The override wins over the rule's folder and the fallback: apply it to a
+    // copy of the rule.
     let effective_rule;
     let rule_for_exec: &CreationRule = match target_folder_override.as_deref() {
         Some(folder) => {
@@ -220,12 +193,8 @@ pub async fn execute_creation_rule(
     )?;
     let mut content = String::new();
 
-    // Pick the scaffold to expand: an explicit override (the scaffold picker's
-    // "new note from this scaffold" path) wins over the rule's own scaffold.
-    // The override is a bare name or scaffolds-dir-relative path; normalize the
-    // `.typ` suffix the same way `prepare_scaffold_insert` does. A `None`/empty
-    // override falls back to the rule's `scaffold_path`, so existing callers are
-    // unchanged.
+    // The scaffold: an explicit override wins over the rule's own. Normalize
+    // `.typ` as `prepare_scaffold_insert` does.
     let scaffold_rel = match scaffold_override.as_deref() {
         Some(name) if !name.is_empty() => Some(if name.ends_with(".typ") {
             name.to_string()
@@ -264,10 +233,9 @@ pub async fn execute_creation_rule(
             cursor_offset: None,
         });
     }
-    // A note with this name in a *different* folder is a real conflict:
-    // filenames are notebox-globally unique (wikilinks resolve by stem). Signal
-    // it with the existing path so the frontend can ask whether to open it or
-    // pick a different name, rather than silently duplicating or hijacking.
+    // A note with this name in another folder is a conflict, since names are
+    // unique across the notebox. Return its path so the frontend can offer to
+    // open it or rename.
     let file_name = file_path
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
@@ -292,11 +260,9 @@ pub async fn execute_creation_rule(
         content = format!("{prefix}{content}");
     }
 
-    // Inject the document-language directive (`#set text(lang/region)`) right
-    // after the notebox import, so prose in the UI language is typeset with the
-    // correct hyphenation, punctuation spacing, and smart quotes. `None` for an
-    // English locale or when the user disabled locale typesetting. It sits in
-    // the leading import machinery, which the visual editor hides.
+    // Add the language directive after the notebox import, for correct
+    // hyphenation, spacing and quotes. The visual editor hides it with the
+    // imports.
     if let Some(directive) = &locale_typesetting {
         if let Some(pos) = content.find('\n') {
             let insert_pos = pos + 1;
@@ -338,12 +304,8 @@ pub async fn execute_creation_rule(
         }
     }
 
-    // Drop the caret on a fresh line at the very end of the note so the user
-    // can start typing immediately below the scaffold's content. Normalize to
-    // exactly one trailing newline so the caret sits on the first blank line
-    // below the content rather than several lines down. The offset crosses the
-    // IPC boundary into CodeMirror, which counts UTF-16 code units — so report
-    // the UTF-16 length, not the UTF-8 byte length.
+    // Put the caret on a new line at the end, with exactly one trailing
+    // newline. The offset is in UTF-16 units, as CodeMirror counts.
     let trimmed_len = content.trim_end_matches('\n').len();
     content.truncate(trimmed_len);
     content.push('\n');
@@ -396,16 +358,12 @@ pub struct TemplateEntry {
     /// "scaffold" | "template-file" | "template-package".
     pub kind: String,
     /// True for the two system scaffolds (`new-note.typ`, `daily-note.typ`),
-    /// which the UI must not offer to delete and the backend refuses to
-    /// delete. Always false for non-scaffold entries.
+    /// which can't be deleted.
     pub builtin: bool,
 }
 
-/// List scaffold entries with full path info for the Templates panel.
-///
-/// Distinct from [`list_scaffolds`], which only returns names — that one
-/// stays for the creation-rule editor's dropdown. This one gives the panel
-/// what it needs to open the file in a tab.
+/// Scaffold entries with full paths, for the Templates panel.
+/// [`list_scaffolds`] returns only names, for the rule editor.
 #[tauri::command]
 pub async fn list_scaffold_entries(
     state: State<'_, AppState>,
@@ -445,31 +403,23 @@ pub async fn list_scaffold_entries(
 pub struct ScaffoldInsertResult {
     /// New full source for the editor to replace its document with.
     pub new_source: String,
-    /// New cursor offset within `new_source` (where the inserted body ends),
-    /// in **UTF-16 code units** — the coordinate space CodeMirror uses for
-    /// document offsets, not UTF-8 byte length.
+    /// Caret offset in `new_source` (where the inserted body ends), in UTF-16
+    /// units.
     pub new_cursor_offset: usize,
 }
 
-/// Prepare a Ctrl+\\ "Insert Scaffold" operation.
+/// Prepare an "Insert Scaffold" (Ctrl+\\):
 ///
-/// Order of operations (matches the plan):
+/// 1. Expand the scaffold's `{{var}}` placeholders, at insert time.
+/// 2. If it starts with `#note(...)`, merge those arguments into the note's
+///    `#note(...)`: existing values win, new keys are appended.
+///    `note_rewriter::update_note_property` keeps everything else byte for
+///    byte.
+/// 3. Append the rest of the scaffold to the end of the note, with the caret on
+///    a new line below it.
 ///
-/// 1. Read & expand the scaffold's `{{var}}` placeholders (fresh `{{zid}}`,
-///    `{{date}}` etc. at insert time, not at note-creation time).
-/// 2. If the expanded scaffold begins with a `#note(...)` call, peel it off
-///    and merge its kwargs into the target note's existing `#note(...)`.
-///    Merge rule: **existing values win on conflict; new keys appended.**
-///    Reuses `note_rewriter::update_note_property`, which preserves
-///    whitespace and untouched fields byte-for-byte (the same invariant the
-///    property panel relies on).
-/// 3. Append the remaining (post-`#note`, post-imports) scaffold body to
-///    the end of the note. The caret then lands on a fresh line below it,
-///    so the caller's cursor and selection play no part in the insert.
-///
-/// The frontend replaces the editor's whole document with `new_source` and
-/// moves the cursor to `new_cursor_offset`. Whole-doc replace is a single
-/// CodeMirror transaction, so undo collapses the whole insert into one step.
+/// The frontend replaces the whole document with `new_source` in one
+/// transaction (one undo step) and moves the caret to `new_cursor_offset`.
 #[tauri::command]
 pub async fn prepare_scaffold_insert(
     state: State<'_, AppState>,
@@ -517,27 +467,17 @@ pub async fn prepare_scaffold_insert(
     Ok(assemble_scaffold_insert(&current_source, &expanded.content))
 }
 
-/// Pure core of [`prepare_scaffold_insert`]: merge the scaffold's `#note(...)`
-/// properties into the target note and append the scaffold's body to the end
-/// of the document. Split out so it's unit-testable without app state.
+/// Core of [`prepare_scaffold_insert`], testable without app state:
 ///
-/// Behaviour:
-/// - **Properties**: scaffold keys not already present in the target's
-///   `#note(...)` are appended; existing keys are left untouched (existing
-///   wins). Never replaces the target's body.
-/// - **Body**: the scaffold's content after its `#note(...)`/imports is
-///   appended at the end of the document, separated by one blank line. For a
-///   note that's empty below its `#note(...)`, this reads as "fill it in"; for
-///   one with content, it reads as "append" — matching the user's mental model
-///   and, crucially, never overwriting existing prose.
-/// - **Cursor**: lands on a fresh line at the very end of the inserted content
-///   so the user can start typing immediately.
+/// - **Properties**: scaffold keys missing from the note's `#note(...)` are
+///   appended; existing keys are kept.
+/// - **Body**: the scaffold's content after its `#note(...)` and imports is
+///   appended after one blank line, never replacing existing text.
+/// - **Caret**: on a new line after the inserted content.
 fn assemble_scaffold_insert(current_source: &str, expanded_content: &str) -> ScaffoldInsertResult {
     let (scaffold_note_args, body_start) = split_scaffold_note_and_body(expanded_content);
 
-    // Merge step: append scaffold keys not already present. Existing keys win.
-    // Each call may shift downstream bytes, but we always operate on the result
-    // of the previous call, so sequential application stays correct.
+    // Each call works on the previous result, so offsets stay correct.
     let existing_keys: std::collections::HashSet<String> =
         note_rewriter::extract_note_properties(current_source)
             .into_iter()
@@ -564,10 +504,8 @@ fn assemble_scaffold_insert(current_source: &str, expanded_content: &str) -> Sca
         };
     }
 
-    // Append at the end of the document, separated by one blank line, and put
-    // the caret on a fresh line *after* the inserted content so the user can
-    // start typing immediately below it. new_source ends with a newline, so
-    // its end is the start of that fresh empty line.
+    // `new_source` ends with a newline, so its end is the start of the new
+    // empty line.
     let base = working.trim_end_matches('\n');
     let new_source = format!("{base}\n\n{body}\n");
     let new_cursor_offset = utf16_len(&new_source);
@@ -578,33 +516,21 @@ fn assemble_scaffold_insert(current_source: &str, expanded_content: &str) -> Sca
     }
 }
 
-/// Length of `s` in UTF-16 code units.
-///
-/// Cursor offsets cross the IPC boundary into CodeMirror, whose document
-/// offsets are UTF-16 code units (JavaScript string offsets) — not UTF-8
-/// bytes. Returning a byte length lands the caret past the end of the
-/// document the moment the note contains any multi-byte character (smart
-/// quotes, accented Latin, em-dashes, CJK …); CodeMirror then rejects the
-/// out-of-range selection. Counting UTF-16 code units keeps the offset in the
-/// editor's coordinate space.
+/// Length of `s` in UTF-16 units, the unit of CodeMirror's offsets. A byte
+/// length would overshoot as soon as the note has a multi-byte character, and
+/// CodeMirror would reject the selection.
 fn utf16_len(s: &str) -> usize {
     s.encode_utf16().count()
 }
 
-/// Split an expanded scaffold into (note-call kwargs, body-start-offset).
-///
-/// - If there's a `#note(...)` call near the top, returns its named-arg pairs
-///   and the offset *after* the call (skipping imports and the call itself).
-/// - If there's no `#note(...)`, returns ([], offset after the leading import
-///   lines).
+/// Split an expanded scaffold into its `#note(...)` arguments and the offset
+/// where its body starts (after the imports and the call). Without a
+/// `#note(...)`, no arguments and the offset after the imports.
 fn split_scaffold_note_and_body(content: &str) -> (Vec<(String, String)>, usize) {
     let args = note_rewriter::extract_note_properties(content);
     let span = note_rewriter::note_call_span(content);
 
-    // Skip leading `#import` lines regardless of #note presence — when the
-    // scaffold author wrote imports at the top, they should be effective
-    // for the new note's content, not re-imported into the target note.
-    // (The target already has the canonical notebox import.)
+    // Skip leading imports either way; the note already has the notebox import.
     let body_start = if let Some(ref s) = span {
         s.end
     } else {
@@ -627,9 +553,8 @@ fn skip_leading_imports(content: &str) -> usize {
     pos.min(content.len())
 }
 
-/// Sanitize a user-supplied filename: keep alphanumerics, dash, underscore,
-/// dot, and space; collapse whitespace; reject anything that would escape the
-/// target directory.
+/// Clean a user-supplied file name: keep letters, digits, dash, underscore, dot
+/// and space, collapse whitespace, and reject anything that leaves the folder.
 fn sanitize_template_name(name: &str) -> Result<String, InkyCapError> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
@@ -645,16 +570,10 @@ fn sanitize_template_name(name: &str) -> Result<String, InkyCapError> {
     Ok(trimmed.to_string())
 }
 
-/// Starter content for a new scaffold — demonstrates the `{{var}}` substitution
-/// surface and the `#note(...)` properties pattern. Shared by `create_scaffold`
-/// (the default when no content is supplied) and `get_scaffold_starter` (which
-/// prefills the in-Settings scaffold editor), so the two never drift.
-///
-/// Leads with the canonical inkycap-notebox import so a brand-new scaffold
-/// matches the built-in `new-note`/`daily-note` scaffolds and shows authors the
-/// preamble their notes carry. Note creation injects this line anyway when a
-/// scaffold omits it (see `create_note_from_rule`), so its presence here is for
-/// consistency and discoverability, not correctness.
+/// Starter content for a new scaffold, showing `{{var}}` placeholders and
+/// `#note(...)` properties. Used by `create_scaffold` and
+/// `get_scaffold_starter`. Starts with the notebox import, like the built-in
+/// scaffolds (note creation adds it anyway if missing).
 const STARTER_SCAFFOLD: &str = "#import \"/.inkycap/notebox.typ\": *\n\n\
     // Scaffold: see https://typst.app/docs for Typst syntax.\n\
     // Variables: {{title}} {{slug}} {{date}} {{date:YYYY-MM-DD}}\n\
@@ -665,13 +584,10 @@ const STARTER_SCAFFOLD: &str = "#import \"/.inkycap/notebox.typ\": *\n\n\
     )\n\n\
     = {{title}}\n";
 
-/// Create a new scaffold file. Returns the absolute path.
-///
-/// When `content` is `None` the file is seeded with [`STARTER_SCAFFOLD`]; when
-/// `Some`, the caller's content is written verbatim. Keeping create+write in a
-/// single command makes the in-Settings editor's save atomic — a separate
-/// create-then-write pair could leave a starter-only file behind on a failed
-/// second call.
+/// Create a scaffold file and return its absolute path. With `content` `None`
+/// it gets [`STARTER_SCAFFOLD`]; otherwise `content` is written as is. Creating
+/// and writing in one command means a failed save can't leave a starter-only
+/// file.
 #[tauri::command]
 pub async fn create_scaffold(
     state: State<'_, AppState>,
@@ -687,11 +603,9 @@ pub async fn create_scaffold(
     write_new_scaffold(storage.as_ref(), root, &name, content.as_deref()).await
 }
 
-/// Core of [`create_scaffold`], decoupled from the Tauri/session layer so it can
-/// be unit-tested against a real storage backend. Validates the name, ensures
-/// the scaffold directory, refuses to clobber an existing file, and writes the
-/// supplied content (or [`STARTER_SCAFFOLD`] when `None`). Returns the new
-/// file's frontend path string.
+/// Core of [`create_scaffold`], testable with a real storage backend: validate
+/// the name, create the folder, refuse to overwrite, write the content (or
+/// [`STARTER_SCAFFOLD`]) and return the path.
 async fn write_new_scaffold(
     storage: &dyn NoteboxStorage,
     root: &std::path::Path,
@@ -723,26 +637,21 @@ async fn write_new_scaffold(
     Ok(to_frontend_string(&file_path))
 }
 
-/// Return the starter scaffold content used to prefill a brand-new scaffold in
-/// the in-Settings editor. Read-only; mirrors the default `create_scaffold`
-/// writes so the editor doesn't duplicate the template string.
+/// The starter content for the Settings scaffold editor.
 #[tauri::command]
 pub async fn get_scaffold_starter() -> Result<String, InkyCapError> {
     Ok(STARTER_SCAFFOLD.to_string())
 }
 
-/// True when `filename` (a basename, e.g. `"new-note.typ"`) is one of the two
-/// system scaffolds seeded for the built-in creation rules. System scaffolds
-/// self-heal via `notebox_health` re-seeding, so deleting them is both
-/// pointless and confusing — they are protected from deletion.
+/// True when `filename` (e.g. `"new-note.typ"`) is a system scaffold. They are
+/// re-created by `notebox_health`, so they can't be deleted.
 fn is_builtin_scaffold(filename: &str) -> bool {
     filename == crate::notebox_package::NEW_NOTE_SCAFFOLD_FILE
         || filename == crate::notebox_package::DAILY_NOTE_SCAFFOLD_FILE
 }
 
-/// Normalize a user-supplied scaffold name to its `.typ` filename and refuse the
-/// two system scaffolds. Pure, so the protection rule is unit-testable without a
-/// storage backend. Mirrors the name handling in [`write_new_scaffold`].
+/// Normalize a scaffold name to its `.typ` file name, refusing the system
+/// scaffolds. As in [`write_new_scaffold`].
 fn scaffold_delete_filename(name: &str) -> Result<String, InkyCapError> {
     let safe = sanitize_template_name(name)?;
     let filename = if safe.ends_with(".typ") {
@@ -758,15 +667,10 @@ fn scaffold_delete_filename(name: &str) -> Result<String, InkyCapError> {
     Ok(filename)
 }
 
-/// Delete a user-created scaffold, moving it to the OS trash so the user can
-/// recover it (consistent with note deletion via [`crate::commands::file_ops`]).
-///
-/// The two system scaffolds (`new-note.typ`, `daily-note.typ`) are refused —
-/// defense-in-depth behind the UI, which already hides their delete button.
-/// Mirrors the built-in *creation-rule* guard in [`delete_creation_rule`].
-///
-/// `scaffold_name` may be supplied with or without the `.typ` suffix (the panel
-/// passes the bare stem); it is normalized the same way as `create_scaffold`.
+/// Move a user scaffold to the OS trash, as notes are deleted (see
+/// [`crate::commands::file_ops`]). The system scaffolds are refused, as the UI
+/// also hides their delete button (like [`delete_creation_rule`] for built-in
+/// rules). `scaffold_name` may omit `.typ`.
 #[tauri::command]
 pub async fn delete_scaffold(
     state: State<'_, AppState>,
@@ -902,10 +806,8 @@ mod scaffold_insert_tests {
         assert!(scaffold_delete_filename("../secrets").is_err());
     }
 
-    /// Regression: a note full of multi-byte content used to return a byte
-    /// offset that overshot the editor's UTF-16 document length, so CodeMirror
-    /// rejected the selection and the whole insert aborted ("insert failed").
-    /// The cursor offset must stay within the UTF-16 length of `new_source`.
+    /// A note with multi-byte content must get a caret offset within the UTF-16
+    /// length of `new_source`.
     #[test]
     fn cursor_offset_is_utf16_for_multibyte_content() {
         // Smart quotes, accented Latin, an em-dash, and CJK — each is multiple

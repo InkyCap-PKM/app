@@ -18,13 +18,10 @@ use super::md_to_typst::{
     MathImportMode,
 };
 
-/// Rewrite relative path arguments in `image`/`read`/`bibliography`
-/// calls to notebox-root-absolute paths anchored at the note's location.
-/// Markdown commonly emits `![](images/foo.png)` which `markdown_to_typst`
-/// turns into `#image("images/foo.png")`. Left alone, that path is fragile
-/// (breaks on note move, breaks under merged export). Rebasing at import
-/// time produces stable `#image("/notes/images/foo.png")`-style calls.
-/// Per CLAUDE.md's portable-paths principle.
+/// Make relative paths in `image` / `read` / `bibliography` calls
+/// notebox-root-absolute, anchored at the note's location, so
+/// `#image("images/foo.png")` from Markdown becomes
+/// `#image("/notes/images/foo.png")` and survives moves and book export.
 fn rebase_for_note(typst_content: &str, relative_note_path: &Path) -> String {
     let note_dir = relative_note_path.parent().unwrap_or_else(|| Path::new(""));
     rebase_relative_paths(typst_content, note_dir)
@@ -36,17 +33,14 @@ pub struct ImportResult {
     pub notes_converted: u32,
     pub files_copied: u32,
     pub errors: Vec<String>,
-    /// Count of LaTeX equations preserved as code blocks because the `mitex`
-    /// package wasn't installed in the target notebox. The frontend turns a
-    /// non-zero value into an informational notice.
+    /// Number of LaTeX equations kept as code because `mitex` isn't installed;
+    /// the frontend shows a notice when non-zero.
     pub math_as_code: u32,
 }
 
-/// Probe the target notebox for a user-installed `mitex` package and pick the
-/// math-import strategy accordingly. Packages resolve from
-/// `<notebox>/.inkycap/packages/<namespace>/<name>/<version>/`; mitex lives
-/// under the `preview` namespace. If several versions are present the highest
-/// is used. Absent → preserve LaTeX as code blocks (no fidelity loss).
+/// Choose how to import math: with `mitex` installed in the notebox
+/// (`<notebox>/.inkycap/packages/preview/mitex/<version>/`, highest version),
+/// use it; otherwise keep the LaTeX as code.
 pub fn detect_math_mode(notebox_root: &Path) -> MathImportMode {
     let dir = notebox_root
         .join(".inkycap")
@@ -79,20 +73,15 @@ fn compare_semver(a: &str, b: &str) -> std::cmp::Ordering {
     parse(a).cmp(&parse(b)).then_with(|| a.cmp(b))
 }
 
-/// Import a markdown notebox from a directory into the target notebox location.
-/// Converts .md files to .typ, copies other files as-is, and scaffolds the
-/// inkycap-notebox package.
+/// Import a Markdown notebox from a folder: convert `.md` files to `.typ`, copy
+/// other files, and set up the notebox package.
 ///
-/// Every image a note references — both Obsidian embeds `![[name.png]]` and
-/// standard markdown images `![](path.png)` — is funnelled into the user's
-/// configured `attachment_folder`, matching drag/drop/paste behaviour (see
-/// CLAUDE.md). A first pre-pass scans every markdown file for those
-/// references; the main pass then routes the matching source files into
-/// `attachment_folder` (instead of preserving their original relative paths)
-/// so the emitted `#image("/<attachment_folder>/name.png")` calls land on the
-/// actual file. External/absolute image URLs are left untouched. Files
-/// referenced but absent from the source produce broken paths — surfaced to
-/// the user instead of silently rewritten — so they can be hand-fixed.
+/// Every image a note references (`![[name.png]]` or `![](path.png)`) goes into
+/// the configured `attachment_folder`, as with drag and drop. A first pass
+/// collects those references; the main pass then copies the matching files
+/// there, so the emitted `#image("/<attachment_folder>/name.png")` calls
+/// resolve. External and absolute URLs are left alone. References to missing
+/// files keep their (broken) paths for the user to fix.
 pub fn import_from_directory(
     source: &Path,
     target: &Path,
@@ -100,9 +89,8 @@ pub fn import_from_directory(
     frontmatter_mapping: Option<FrontmatterMapping>,
     attachment_folder: String,
 ) -> ImportResult {
-    // Embed-referenced files (and pasted/dropped images) route into the
-    // target notebox's configured attachment folder, supplied by the caller
-    // from notebox settings (Settings ▸ Files & Links).
+    // The target notebox's attachment folder (Settings ▸ Files & Links), from
+    // the caller.
     let options = MarkdownToTypstOptions {
         attachment_folder: attachment_folder.clone(),
         dialect,
@@ -120,10 +108,8 @@ pub fn import_from_directory(
     // Scaffold the inkycap-notebox package in the target.
     notebox_package::scaffold(target);
 
-    // Pre-pass: scan every .md file for `![[filename]]` embed references.
-    // The resulting set drives file-routing in the main pass: anything
-    // referenced this way goes into `attachment_folder`, anything else
-    // keeps its original relative path.
+    // First pass: collect embedded file names. Those go into
+    // `attachment_folder`; other files keep their relative paths.
     let embed_targets = scan_directory_embed_targets(source);
 
     for entry in WalkDir::new(source).into_iter().filter_map(|e| e.ok()) {
@@ -183,25 +169,18 @@ pub fn import_from_directory(
     result
 }
 
-/// Import a single markdown file's text into the open notebox as one `.typ`
-/// note placed in `note_folder` (notebox-relative; empty for the notebox
-/// root). This is the single-file analogue of
-/// [`import_from_directory`]: it runs the exact same markdown→Typst conversion
-/// (frontmatter → `#note(...)`, wikilinks, image rebasing, math handling)
-/// rather than copying the `.md` in verbatim. Used by the file tree's "Copy
-/// into notebox" action so a selected `.md` becomes a real note.
+/// Import one Markdown file into the open notebox as a `.typ` note in
+/// `note_folder` (notebox-relative; empty for the root), with the same
+/// conversion as [`import_from_directory`]. Used by "Copy into notebox".
 ///
-/// The note name is derived from `file_stem` and made collision-free within
-/// `note_folder` (`<stem>.typ`, `<stem> 1.typ`, …). The caller must make sure
-/// `note_folder` stays inside the notebox. When `sibling_dir` is
-/// `Some`, any image/embed the note references that exists alongside the source
-/// file is routed into the attachment folder, matching the directory importer;
-/// the bytes-only case (no source directory) passes `None`, leaving referenced
-/// images as rewritten paths the user can fix.
+/// The note is named from `file_stem`, made unique in `note_folder`
+/// (`<stem>.typ`, `<stem> 1.typ`, …). The caller keeps `note_folder` inside the
+/// notebox. With `sibling_dir`, referenced files next to the source go into the
+/// attachment folder; with `None` (bytes only) the paths are left for the user
+/// to fix.
 ///
-/// Returns the notebox-relative path of the created note (forward-slash) and
-/// the import stats. Errors only on a failed write of the note itself; asset
-/// copy problems are surfaced via `ImportResult::errors`.
+/// Returns the note's notebox-relative path and the stats. Fails only if the
+/// note can't be written; asset problems go in `ImportResult::errors`.
 pub fn import_single_markdown(
     text: &str,
     file_stem: &str,
@@ -256,9 +235,8 @@ pub fn import_single_markdown(
     }
     let relative = PathBuf::from(&rel);
 
-    // Route referenced sibling images into the attachment folder so the
-    // emitted `#image("/<attachment_folder>/name")` paths resolve. Best-effort
-    // by basename, as the single-file case has no notebox tree to walk.
+    // Copy referenced files from beside the source into the attachment folder,
+    // matched by name.
     if let Some(src_dir) = sibling_dir {
         let mut targets: HashSet<String> = HashSet::new();
         for name in extract_embed_filenames(text) {
@@ -293,11 +271,9 @@ pub fn import_single_markdown(
     Ok((rel, result))
 }
 
-/// Walk every `.md` file under `source` and collect the filenames referenced
-/// by either Obsidian embed syntax `![[…]]` or standard markdown images
-/// `![](path)`. Every referenced image is routed into the attachment folder,
-/// so filenames are intentionally bare — the same name in different folders
-/// collapses to one entry (matching Obsidian's notebox-wide-by-name lookup).
+/// File names referenced by `![[…]]` embeds or `![](path)` images in every
+/// `.md` under `source`. All go to one attachment folder, so names are bare and
+/// the same name in two folders is one entry (as Obsidian looks up by name).
 fn scan_directory_embed_targets(source: &Path) -> HashSet<String> {
     let mut targets = HashSet::new();
     for entry in WalkDir::new(source).into_iter().filter_map(|e| e.ok()) {
@@ -320,10 +296,8 @@ fn scan_directory_embed_targets(source: &Path) -> HashSet<String> {
     targets
 }
 
-/// Copy an asset file into `<target>/<attachment_folder>/<filename>`,
-/// creating the attachment directory as needed. Used for files
-/// referenced by `![[name]]` embed syntax so the emitted Typst
-/// `#image("/<attachment_folder>/<name>")` paths resolve.
+/// Copy an asset into `<target>/<attachment_folder>/<filename>`, creating the
+/// folder if needed.
 fn copy_asset_to_attachment_folder(
     source_path: &Path,
     filename: &str,
@@ -357,13 +331,8 @@ fn copy_asset_to_attachment_folder(
     }
 }
 
-/// Import a markdown notebox from a zip archive into the target notebox location.
-///
-/// Mirrors [`import_from_directory`]'s pre-scan-then-route strategy for
-/// `![[name]]` image embeds: a first pass collects embed-referenced
-/// filenames from every `.md` entry in the archive, then the main pass
-/// routes those files into the configured `attachment_folder` instead
-/// of preserving their original paths.
+/// Import a Markdown notebox from a zip archive, routing embedded files into
+/// `attachment_folder` the same way as [`import_from_directory`].
 pub fn import_from_zip(
     zip_path: &Path,
     target: &Path,
@@ -410,10 +379,8 @@ pub fn import_from_zip(
     // Detect if the zip has a single root directory wrapping everything.
     let root_prefix = detect_zip_root_prefix(&mut archive);
 
-    // Pre-pass over the archive: collect every filename referenced by
-    // `![[…]]` embed syntax across all .md entries. Reading entries
-    // here advances each entry's read state, so the main pass below
-    // re-opens by index to start fresh.
+    // First pass over the archive. Reading an entry consumes it, so the main
+    // pass reopens entries by index.
     let embed_targets = scan_zip_embed_targets(&mut archive, archive_size);
     let mut budget = ExtractBudget::for_archive_size(archive_size);
 
@@ -496,10 +463,8 @@ pub fn import_from_zip(
     result
 }
 
-/// Pre-pass over a zip archive: collect filenames referenced by
-/// `![[…]]` embed syntax across every `.md` entry. Each call to
-/// `archive.by_index(i)` returns a fresh read handle on the entry,
-/// so this is independent of the main pass below.
+/// File names referenced by `![[…]]` embeds in the archive's `.md` entries.
+/// `by_index` gives a fresh handle each time.
 fn scan_zip_embed_targets(
     archive: &mut ZipArchive<fs::File>,
     archive_size: u64,
@@ -539,9 +504,8 @@ fn scan_zip_embed_targets(
     targets
 }
 
-/// Bytes variant of [`copy_asset_to_attachment_folder`] for the zip
-/// import path. Writes a file already read into memory into
-/// `<target_root>/<attachment_folder>/<filename>`.
+/// [`copy_asset_to_attachment_folder`] for bytes already in memory (zip
+/// import).
 fn copy_asset_bytes_to_attachment_folder(
     content: &[u8],
     filename: &str,
@@ -682,14 +646,9 @@ fn copy_asset_bytes(content: &[u8], relative: &Path, target: &Path, result: &mut
     }
 }
 
-/// Auto-detect the markdown dialect of a source notebox.
-///
-/// Heuristic: presence of an `.obsidian/` directory anywhere in the
-/// source means the notebox was authored in Obsidian. Otherwise default
-/// to Standard markdown — the safe choice for arbitrary `.md` sources
-/// (literal `#` survives, no Obsidian-only preprocessing applied).
-///
-/// Works for both directory sources and zip archives.
+/// The Markdown dialect of a source notebox, folder or zip: Obsidian if it has
+/// an `.obsidian/` folder anywhere, otherwise Standard, which is safe for any
+/// `.md` source.
 pub fn detect_dialect_for_directory(source: &Path) -> MarkdownDialect {
     if source.join(".obsidian").is_dir() {
         return MarkdownDialect::Obsidian;
@@ -727,10 +686,8 @@ pub fn detect_dialect_for_zip(zip_path: &Path) -> MarkdownDialect {
     MarkdownDialect::Standard
 }
 
-/// Import a markdown notebox from a `.tar.gz` archive. Extracts the tarball
-/// to a temp directory and then runs [`import_from_directory`] on that
-/// extraction — mirrors the user-visible behavior of the zip path while
-/// reusing the directory walker. The temp dir is cleaned up on drop.
+/// Import a Markdown notebox from a `.tar.gz`: extract it to a temporary folder
+/// (removed on drop) and run [`import_from_directory`].
 pub fn import_from_tarball(
     tar_path: &Path,
     target: &Path,
@@ -770,10 +727,8 @@ pub fn import_from_tarball(
         return result;
     }
 
-    // Tarballs sometimes wrap everything in a single top-level dir
-    // (a la GitHub release archives). If the extracted root has exactly
-    // one child directory, use that as the source — same convention as
-    // detect_zip_root_prefix.
+    // Use the single top-level folder if the archive wraps everything in one,
+    // as zip import does.
     let source_root = collapse_single_root(tmp.path());
 
     let inner = import_from_directory(
@@ -790,9 +745,7 @@ pub fn import_from_tarball(
     result
 }
 
-/// If `dir` contains exactly one entry which is itself a directory, return
-/// that inner directory; otherwise return `dir`. Mirrors the wrapper-folder
-/// stripping that the zip importer does inline.
+/// The only entry of `dir` if it is a folder, otherwise `dir`.
 fn collapse_single_root(dir: &Path) -> PathBuf {
     let entries: Vec<_> = match fs::read_dir(dir) {
         Ok(r) => r.filter_map(|e| e.ok()).collect(),
@@ -863,11 +816,10 @@ fn detect_zip_root_prefix(archive: &mut ZipArchive<fs::File>) -> Option<PathBuf>
 // Frontmatter scan (drives the import property-mapping dialog)
 // ---------------------------------------------------------------------------
 
-/// One distinct YAML frontmatter key discovered across the source notebox,
-/// with everything the import dialog needs to render a mapping row: how
-/// often it appears, a sample value, the type we inferred, and the InkyCap
-/// property it would default to (system alias, an existing notebox property,
-/// or a new property to auto-create).
+/// A YAML frontmatter key found in the source notebox, with what the mapping
+/// dialog shows: how often it appears, a sample value, the inferred type, and
+/// the suggested InkyCap property (a system alias, an existing property, or a
+/// new one).
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct FrontmatterKeyInfo {
     /// The key as authored in the source (first-seen casing).
@@ -899,9 +851,8 @@ struct KeyAccumulator {
     types: Vec<PropertyType>,
 }
 
-/// Scan all markdown frontmatter in `source` and aggregate the distinct
-/// keys, computing a suggested InkyCap mapping for each against the open
-/// notebox's existing property keys and declared types.
+/// The distinct frontmatter keys in `source`, each with a suggested mapping
+/// against the open notebox's properties and types.
 pub fn scan_frontmatter(
     source: &Path,
     archive: SourceKind,
@@ -976,9 +927,8 @@ fn aggregate_frontmatter(
         .collect()
 }
 
-/// Resolve a single inferred type from all the per-value types seen for a
-/// key. A list anywhere wins (the field is multi-valued); otherwise a
-/// unanimous type holds, and mixed scalars fall back to text.
+/// One type from all the values seen for a key: a list anywhere wins; otherwise
+/// a type all agree on; mixed scalars become text.
 fn reduce_types(types: &[PropertyType]) -> PropertyType {
     if types.is_empty() {
         return PropertyType::Text;
@@ -994,9 +944,8 @@ fn reduce_types(types: &[PropertyType]) -> PropertyType {
     }
 }
 
-/// Compute the default InkyCap mapping for a source key: a system alias if
-/// one exists, else an existing notebox property matched case-insensitively,
-/// else a new property named after the (sanitized) source key.
+/// The default mapping for a key: a system alias, else an existing property
+/// (ignoring case), else a new property named after the key.
 fn suggest_mapping(
     key_lower: &str,
     display_key: &str,
@@ -1014,9 +963,8 @@ fn suggest_mapping(
             false,
         );
     }
-    // 2) Exact (case-insensitive) match to an existing property — checking
-    //    both the note index (keys actually used) and the type registry
-    //    (declared-but-not-yet-used user properties, which the index misses).
+    // 2) An existing property, ignoring case, from the note index or the type
+    // registry (declared but unused properties are only there).
     if let Some(existing) = existing_keys
         .iter()
         .chain(types.keys())
@@ -1192,11 +1140,9 @@ mod tests {
         let source = TempDir::new().unwrap();
         let target = TempDir::new().unwrap();
 
-        // A standard markdown image `![alt](images/pic.png)` should funnel into
-        // the configured attachment folder (like drag/drop/paste — CLAUDE.md):
-        //   1. Emit `#image("/<attachment_folder>/pic.png")`.
-        //   2. Route the file into `<target>/<attachment_folder>/`, not its
-        //      original `notes/images/` location.
+        // A standard image `![alt](images/pic.png)` goes to the attachment
+        // folder: it is emitted as `#image("/<attachment_folder>/pic.png")` and
+        // the file copied to `<target>/<attachment_folder>/`.
         fs::create_dir_all(source.path().join("notes/images")).unwrap();
         fs::write(
             source.path().join("notes/foo.md"),
@@ -1260,15 +1206,10 @@ mod tests {
 
     #[test]
     fn import_routes_embed_referenced_image_to_attachment_folder() {
-        // An Obsidian-style `![[Pasted image.png]]` embed in a note
-        // should:
-        //   1. Emit `#image("/<attachment_folder>/Pasted image.png")`.
-        //   2. Route the source file (wherever it lives in the source
-        //      notebox) into `<target>/<attachment_folder>/`, NOT preserve
-        //      its original relative path.
-        // The default attachment folder is "Assets" (FileSettings::
-        // default), which is what load_settings() returns absent a
-        // saved user setting.
+        // An Obsidian embed `![[Pasted image.png]]` is emitted as
+        // `#image("/<attachment_folder>/Pasted image.png")` and the file copied
+        // to `<target>/<attachment_folder>/` from wherever it is. The default
+        // folder is "Assets".
         let source = TempDir::new().unwrap();
         let target = TempDir::new().unwrap();
 

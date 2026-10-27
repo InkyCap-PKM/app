@@ -37,58 +37,43 @@ import { awaitAllPendingWrites } from "./editor-writes";
 import { ensureGitListeners, resetGitOnOpen } from "./git";
 
 const [noteboxInfo, setNoteboxInfo] = createSignal<NoteboxInfo | null>(null);
-/** Bumped once per notebox switch, *after* the new notebox's per-notebox stores
- *  (settings, etc.) have loaded — so it's the safe key for remounting UI that
- *  seeds editable state from those stores at mount (e.g. the collaboration
- *  panel's setup/manage forms). Distinct from `noteboxInfo().path`, which
- *  changes *before* settings load and would remount such UI against stale data.
- *  Reactive UI that reads stores directly doesn't need this — it updates on its
- *  own. */
+/**
+ * Bumped once per notebox switch after the new notebox's stores have loaded, as
+ * a key for remounting UI that copies those stores into editable state at mount
+ * (e.g. the collaboration forms). `noteboxInfo().path` changes before settings
+ * load, so it would remount too early.
+ */
 const [noteboxUiKey, setNoteboxUiKey] = createSignal(0);
 const [noteboxRegistry, setNoteboxRegistry] = createSignal<NoteboxRegistryEntry[]>([]);
 const [isLoading, setIsLoading] = createSignal(false);
 /**
- * Set when the backend's per-notebox health monitor detects that the notebox
- * directory no longer exists on disk (deleted via OS file manager,
- * unmounted drive, etc.). Holds the path the notebox used to live at so the
- * banner can show it. Cleared automatically the next time a notebox opens
- * successfully.
- *
- * UI consumers: render a persistent warning (no save-elsewhere/save-as
- * recovery is implemented yet) and disable in-notebox writes — see
- * `assertNoteboxWritable()`.
+ * The old path of a notebox whose folder has disappeared (deleted, unmounted
+ * drive), as reported by the health monitor, for the warning banner. Cleared on
+ * the next successful open. While set, in-notebox writes are refused (see
+ * `assertNoteboxWritable()`).
  */
 const [noteboxLost, setNoteboxLost] = createSignal<string | null>(null);
 /**
- * False until the initial notebox-open attempt at app launch has run to a
- * conclusion (opened the saved notebox, or determined there isn't one). The
- * `NoteboxRequiredOverlay` keys on this so it only takes over *after* startup
- * has had its chance — without it the overlay would flash during the first
- * tick before `initNotebox()` resolves. InkyCap holds the invariant that the
- * app is never usable without an active notebox, so once this is true the
- * overlay is shown whenever `noteboxInfo()` is null.
+ * False until the launch-time notebox open has finished (opened, or found
+ * none). `NoteboxRequiredOverlay` waits for this so it doesn't flash before
+ * `initNotebox()` resolves. After that, the overlay shows whenever
+ * `noteboxInfo()` is null, since the app is never usable without a notebox.
  */
 const [initAttempted, setInitAttempted] = createSignal(false);
 /**
- * `indexReady` is false during the brief window between notebox open and the
- * background index build completing. UI features that depend on the property
- * index, link index, or full-text search (search pane, tag pane, backlinks,
- * properties view) should show a loading indicator while this is false.
+ * False from notebox open until the background index build finishes. Search,
+ * tags, backlinks and properties should show a loading state meanwhile.
  */
 const [indexReady, setIndexReady] = createSignal(false);
 /**
- * Bumped whenever the set of files in the notebox changes on disk
- * (creates/deletes surfaced by the Rust file watcher). Consumers that render
- * from `getFileTree()` should key their resource on this signal so they
- * refetch instead of serving a stale snapshot. The flat filelist used by
- * quick-open is rebuilt in-place alongside the bump.
+ * Bumped when files are created or deleted on disk. Resources built from
+ * `getFileTree()` should key on it. The quick-open list is rebuilt alongside.
  */
 const [fileTreeVersion, setFileTreeVersion] = createSignal(0);
 
 /**
- * Bumped whenever a note's properties are modified (via the Properties panel
- * or inline cell editing). Collection views key their resource on this so
- * they refetch after membership changes even if mounted on a different tab.
+ * Bumped when a note's properties change (Properties panel or table cell
+ * edits), so collection views refetch even in other tabs.
  */
 const [propertyVersion, setPropertyVersion] = createSignal(0);
 
@@ -114,9 +99,8 @@ let bookmarksChangedUnlisten: (() => void) | null = null;
 let noteSavedUnlisten: (() => void) | null = null;
 let indexUpdatedUnlisten: UnlistenFn | null = null;
 
-// Debounce file-system-event-driven tree refetches. Bulk operations
-// (copying a folder of notes into the notebox) can fire dozens of
-// FileCreated events in a few ms; we want one tree refresh, not thirty.
+// Debounce tree refreshes; copying a folder of notes fires many create events
+// at once.
 let treeRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 function scheduleTreeRefresh() {
   if (treeRefreshTimer !== null) clearTimeout(treeRefreshTimer);
@@ -132,12 +116,9 @@ function scheduleTreeRefresh() {
   }, 150);
 }
 
-// Debounce collection-view refreshes driven by index updates. The backend
-// emits `notebox:index-updated` *after* it has reindexed a created /
-// changed / deleted note, so bumping `propertyVersion` here makes open
-// collection views refetch against a property index that already reflects
-// the change (no race). Debounced so importing or bulk-creating dozens of
-// notes triggers one refetch, not dozens.
+// Debounce collection refreshes from `notebox:index-updated`, which arrives
+// after the reindex, so the refetch sees current data. One refetch for a bulk
+// import.
 let collectionRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 function scheduleCollectionRefresh() {
   if (collectionRefreshTimer !== null) clearTimeout(collectionRefreshTimer);
@@ -191,38 +172,30 @@ async function ensureIndexEventListeners() {
       thisWindowOnly(),
     );
   }
-  // File system watcher events → refresh the sidebar tree and the
-  // quick-open file list. Subscribed once per process; the Rust
-  // watcher is torn down and re-created when the notebox path changes,
-  // but the event channel is notebox-scoped by path so stale events
-  // can't bleed across notebox switches.
+  // Watcher events refresh the tree and quick-open list. Subscribed once;
+  // events are scoped by notebox path, so they don't leak across switches.
   if (fileCreatedUnlisten === null) {
     fileCreatedUnlisten = await onFileCreated(() => scheduleTreeRefresh());
   }
   if (fileDeletedUnlisten === null) {
     fileDeletedUnlisten = await onFileDeleted(() => scheduleTreeRefresh());
   }
-  // External renames (mv / file-manager rename) — follow the file in
-  // any open tab so it doesn't become a phantom that errors on save.
-  // The tree refresh is already handled by the watcher emitting the
-  // corresponding delete+create pair alongside this event.
+  // External renames: open tabs follow the file. The tree refresh comes from
+  // the accompanying delete and create.
   if (fileRenamedUnlisten === null) {
     fileRenamedUnlisten = await onFileRenamed((payload) => {
       renameTabPath(payload.from, payload.to);
     });
   }
-  // The backend rebases bookmark paths when a bookmarked file/folder is
-  // renamed or moved. Re-query the Bookmarks pane off the same DOM event
-  // other panels use, so it drops the stale path immediately.
+  // The backend rebases bookmarks on rename or move; refresh the Bookmarks
+  // pane.
   if (bookmarksChangedUnlisten === null) {
     bookmarksChangedUnlisten = await onBookmarksChanged(() => {
       document.dispatchEvent(new CustomEvent("inkycap:bookmarks-changed"));
     });
   }
-  // Refresh aliases when a note is saved (inline edits to
-  // #note(aliases: ...)). `refreshAliases` debounces internally so
-  // bursts of saves collapse to one IPC call. The same hook also
-  // catches property-panel edits via `bumpPropertyVersion`.
+  // Refresh aliases when a note is saved (`refreshAliases` debounces).
+  // Property-panel edits arrive through `bumpPropertyVersion`.
   if (noteSavedUnlisten === null) {
     const handler = () => {
       refreshAliases().catch(console.error);
@@ -230,11 +203,8 @@ async function ensureIndexEventListeners() {
     document.addEventListener("inkycap:note-saved", handler);
     noteSavedUnlisten = () => document.removeEventListener("inkycap:note-saved", handler);
   }
-  // The backend reindexes a created/changed/deleted note and then emits
-  // `notebox:index-updated`. Refresh open collection views off this so a
-  // note that newly matches (or stops matching) a collection's filter —
-  // including notes brought in by a collaboration import — appears without
-  // needing a notebox reopen.
+  // Refresh collection views after the backend reindexes a note, so notes that
+  // start or stop matching (including imported ones) update without reopening.
   if (indexUpdatedUnlisten === null) {
     indexUpdatedUnlisten = await listen(
       "notebox:index-updated",
@@ -253,11 +223,12 @@ export async function loadNoteboxRegistry(): Promise<void> {
   }
 }
 
-/** Open the contents the user's startup-behaviour preference asks for —
- *  the last-active file, a creation-rule trigger, a specific page, or a
- *  specific collection. Reads `behavior` from the user-global settings
- *  and the target / last-active pointer from the *current notebox's*
- *  settings, so each notebox restores its own state on switch. */
+/**
+ * Open what the startup setting asks for: the last-active file, a creation
+ * rule, a page or a collection. `behavior` is a user setting; the target and
+ * last-active file come from the current notebox, so each notebox restores its
+ * own.
+ */
 async function applyStartupBehavior(): Promise<void> {
   const { behavior } = settings.startup;
   const { target, last_active_file } = noteboxSettings.startup;
@@ -319,105 +290,76 @@ async function applyStartupBehavior(): Promise<void> {
 }
 
 /**
- * Switch the current window to `path`, tearing down the previous notebox's
- * tabs and reloading its settings/index.
+ * Switch this window to the notebox at `path`, closing the previous notebox's
+ * tabs and reloading settings and index.
  *
- * Returns the opened `NoteboxInfo` on success, or `null` when the notebox is
- * already open in *another* window — in that case this window is left
- * untouched and the other window is focused instead. Callers that follow up
- * with a window-local action (e.g. opening the collaboration panel) must
- * treat `null` as "this window did not switch" and not act on it.
+ * Returns the `NoteboxInfo`, or `null` when the notebox is open in another
+ * window, which is focused instead and this one is left alone. Callers must
+ * treat `null` as "no switch".
  */
 export async function openNotebox(path: string) {
-  // One notebox per window: if it's already open in ANOTHER window, focus that
-  // window and leave this one untouched (don't tear down its tabs to open a
-  // duplicate). The backend's open_notebox guard is the race-safe backstop.
+  // A notebox can be open in only one window; the backend's `open_notebox`
+  // check is the race-safe backstop.
   if (await focusNoteboxWindow(path, true)) return null;
 
   setIsLoading(true);
   setIndexReady(false);
 
-  // Tear down any tabs from the previous notebox before we switch the
-  // backend's active notebox. Closing each tab unmounts its TypstEditor,
-  // which fires a flush of any pending save. We then await every
-  // in-flight write so it lands in the OLD notebox — `write_file_content`
-  // routes through whatever notebox is currently active, so a write that
-  // overlaps the switch would otherwise land in the new one.
+  // Close the old notebox's tabs before switching, which saves pending edits,
+  // and wait for every write so it lands in the old notebox (writes go to
+  // whichever notebox is active).
   const switchingNoteboxes = noteboxInfo() !== null && !pathEquals(noteboxInfo()?.path, path);
   if (switchingNoteboxes) {
-    // Record the outgoing notebox's tabs before they are torn down, then pause
-    // recording so the emptied workspace isn't written over either notebox's
-    // record. Recording resumes once the new notebox is open.
+    // Save the outgoing notebox's tabs, then pause recording until the new
+    // notebox is open.
     await recordTabSession();
     suspendTabSessionRecording();
     closeAllTabs();
     await awaitAllPendingWrites();
   }
 
-  // A fresh successful open clears any previous "notebox missing" state.
-  // (If the new notebox is also missing the health monitor will set it
-  // again within one tick.)
+  // A successful open clears the missing-notebox state.
   setNoteboxLost(null);
-  // Discard any in-flight alias refresh from a previous notebox and
-  // clear the cached list so stale entries can't surface while the
-  // new notebox's index is still building.
+  // Discard any alias refresh from the previous notebox.
   bumpAliasGeneration();
   try {
     await ensureIndexEventListeners();
     await ensureGitListeners();
     const info = await ipc.openNotebox(path);
     setNoteboxInfo(info);
-    // The sidebar's createResource will fetch the file tree when noteboxInfo
-    // changes. We kick off the flat file list build in parallel rather than
-    // blocking the UI — quick-open will be ready shortly after the sidebar.
+    // Build the quick-open list in the background; the sidebar fetches the tree
+    // itself.
     ipc.getFileTree().then((tree) => {
       buildFileList(tree);
     }).catch(console.error);
     // Load per-notebox property type registry so PropertyEditor sees
     // the right types from the first render onward.
     reloadPropertyTypes().catch(console.error);
-    // Load this notebox's settings (folder paths, citation source,
-    // journal-scroll prefs, etc.). Awaited so subsequent components
-    // render against the new notebox's settings, not the previous one.
+    // Load this notebox's settings before components render against them.
     await loadNoteboxSettings();
-    // Creation rules are per-notebox (list_creation_rules is notebox-scoped),
-    // so reload them for the notebox we just opened. Without this the toolbar
-    // and command palette keep showing the *previous* notebox's rules — and on
-    // a fresh install, where the startup load ran before any notebox existed,
-    // the store stays empty: the Daily Note button never appears and "New Note"
-    // can't find its (empty-pattern) rule to raise the filename prompt. Awaited
-    // so toolbarRules()/triggerCreationRule see this notebox's rules from the
-    // first render and first click.
+    // Creation rules are per notebox, so reload them; otherwise the toolbar and
+    // palette keep the previous notebox's rules (or none on a fresh install,
+    // hiding Daily Note and breaking New Note). Awaited so the first render and
+    // click see them.
     await loadCreationRules();
-    // The new notebox's settings are now in their stores: bump the UI key so
-    // mount-snapshot components (the collaboration panel's forms) remount and
-    // re-seed from *this* notebox rather than keeping the previous one's values.
+    // Remount components that copied settings at mount (the collaboration
+    // forms).
     setNoteboxUiKey((v) => v + 1);
-    // Reset the git collaboration review state for the new notebox and, if it
-    // is collaborative, re-query its status. (The backend also emits
-    // `notebox:git-status` on open, which keeps the summary fresh.)
+    // Reset the git state and, if collaborative, fetch its status. The backend
+    // also emits `notebox:git-status` on open.
     resetGitOnOpen().catch(console.error);
     // Pre-warm Tinymist LSP so completions/hover are ready by the
     // time the user opens a file (~425ms cold start).
     startLsp(path).catch(console.error);
     // Refresh the notebox registry since open_notebox upserts the entry
     loadNoteboxRegistry().catch(console.error);
-    // Apply the user's startup preference (last file, creation rule,
-    // specific page, etc.) so the new notebox opens into a useful tab
-    // instead of empty. Runs on every successful open — including the
-    // initial app launch and subsequent switches.
+    // Open what the startup setting asks for, on launch and on every switch.
     await applyStartupBehavior();
-    // The workspace has settled into this notebox, so tab changes from here on
-    // are the user's and belong in its record. Deliberately not in a `finally`:
-    // if the open failed there is no settled notebox, and recording must stay
-    // paused rather than write an empty tab list against whichever notebox the
-    // backend still holds.
+    // Tab changes from here on are the user's, so resume recording. Not in a
+    // `finally`: after a failed open there's no notebox to record against.
     resumeTabSessionRecording();
-    // Invariant: a notebox is always presented with at least one tab.
-    // "default" startup, or any of the other modes silently failing
-    // (missing target, etc.), can leave us with no tabs — in that case
-    // surface a fresh empty tab so the user sees the tabula-rasa hints
-    // instead of a blank workspace.
+    // A notebox always has at least one tab; if startup left none, add an empty
+    // one.
     if (tabs.length === 0) {
       createEmptyTab();
     }
@@ -428,10 +370,8 @@ export async function openNotebox(path: string) {
 }
 
 export async function pickAndOpenNotebox(): Promise<NoteboxInfo | null> {
-  // Default to the user's home directory regardless of OS — the previous
-  // "default to the current notebox path" felt confusing because adding
-  // a notebox is conceptually a fresh task, not navigation from the
-  // currently-open one. `homeDir()` works cross-platform via Tauri.
+  // Start the folder dialog in the home folder: adding a notebox is a new task,
+  // not navigation from the current one.
   let defaultPath: string | undefined;
   try {
     defaultPath = await homeDir();
@@ -453,9 +393,10 @@ export async function pickAndOpenNotebox(): Promise<NoteboxInfo | null> {
   return openNotebox(selected);
 }
 
-/** Open the notebox this window starts with: `preferredPath` when given (the
- *  notebox of the `inkycap://` link InkyCap was started with), otherwise the
- *  one open when InkyCap last closed. */
+/**
+ * Open this window's first notebox: `preferredPath` (from an `inkycap://` link
+ * at startup), otherwise the one open when InkyCap last closed.
+ */
 export async function initNotebox(preferredPath?: string): Promise<void> {
   await loadNoteboxRegistry();
   const savedPath = preferredPath ?? (await ipc.getSavedNoteboxPath());
@@ -466,19 +407,14 @@ export async function initNotebox(preferredPath?: string): Promise<void> {
       console.warn("Saved notebox failed to open:", e);
     }
   }
-  // If nothing opened (fresh install, or the saved notebox is gone), we don't
-  // pop a bare OS folder picker any more — the `NoteboxRequiredOverlay` takes
-  // over once `initAttempted` flips. It walks the user into a valid notebox
-  // (open/create a folder, or pick one of their existing noteboxes), so the
-  // app is never left running without one.
+  // If nothing opened, `NoteboxRequiredOverlay` takes over and helps the user
+  // open or create one.
   setInitAttempted(true);
 }
 
 /**
- * Show the notebox picker (`NoteboxRequiredOverlay`) WITHOUT restoring the
- * saved notebox. Used by a freshly-opened "new window" so the user chooses
- * which notebox that window shows, rather than it auto-loading the same
- * notebox as the main window.
+ * Show the notebox picker without restoring the saved notebox, so a new window
+ * lets the user choose.
  */
 export async function showNoteboxPicker(): Promise<void> {
   await loadNoteboxRegistry();
@@ -486,16 +422,13 @@ export async function showNoteboxPicker(): Promise<void> {
 }
 
 /**
- * Unload the active notebox without opening another, returning the app to the
- * "no notebox" state that `NoteboxRequiredOverlay` covers. Used when the active
- * notebox is removed from the registry: editing a notebox the user just removed
- * (and might delete from disk next) must not stay possible. Flushes any pending
- * writes first so in-flight edits still land on disk while the folder exists.
+ * Unload the active notebox without opening another, leaving
+ * `NoteboxRequiredOverlay` showing. Used when it is removed from the list, so
+ * it can't still be edited. Pending writes are flushed first.
  */
 export async function closeActiveNotebox(): Promise<void> {
-  // Record the tabs as they stand, then stop: the notebox is being unloaded,
-  // not left for later, so the emptied workspace must not be recorded as "no
-  // tabs open". Recording resumes when a notebox is opened again.
+  // Save the tabs, then stop recording, so the empty workspace isn't saved as
+  // "no tabs".
   await recordTabSession();
   suspendTabSessionRecording();
   closeAllTabs();
@@ -512,11 +445,10 @@ export async function refreshNoteboxInfo() {
 }
 
 /**
- * Throw a clear error if the active notebox has been reported missing.
- * Call this at the top of any IPC wrapper that writes inside the notebox
- * (notes, collections, attachments) — global config writes (settings,
- * creation rules, bookmarks) live in `$CONFIG_DIR/inkycap/` and are not
- * gated, so they keep working even when the notebox is gone.
+ * Throw if the active notebox has been reported missing. Call at the top of
+ * every IPC wrapper that writes inside the notebox (notes, collections,
+ * attachments). App-wide config (settings, bookmarks) lives in
+ * `$CONFIG_DIR/inkycap/` and keeps working.
  */
 export function assertNoteboxWritable(): void {
   const missing = noteboxLost();

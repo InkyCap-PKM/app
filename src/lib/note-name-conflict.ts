@@ -1,11 +1,8 @@
-// Shared UX for "a note with this name already exists" on note creation.
-//
-// Filenames are notebox-globally unique (wikilinks resolve by stem), so the
-// backend refuses to create a note whose name collides with one in a different
-// folder, returning the `note-name-conflict` error code with the existing
-// note's path in `detail` (see src-tauri/src/errors.rs). Rather than silently
-// open the other note or duplicate it, every creation entry point routes the
-// conflict through here to ask the user what they meant.
+// Handles "a note with this name already exists" when creating a note. Names
+// are unique across the notebox (wikilinks resolve by name), so the backend
+// refuses a name used in another folder, with the `note-name-conflict` code and
+// the existing note's path in `detail` (see src-tauri/src/errors.rs). Every
+// creation path asks the user here what they meant.
 
 import { promptChoice, promptText } from "../stores/prompt";
 import { settings } from "../stores/settings";
@@ -25,19 +22,15 @@ function noteName(path: string): string {
 }
 
 /**
- * Ask the user how to resolve a note-name collision: open the existing note,
- * append a ZID to keep both, or pick a different name for the new one
- * (cancelling any dialog aborts).
+ * Ask how to resolve a name conflict: open the existing note, append a ZID to
+ * keep both, or choose another name (cancelling any dialog aborts).
  *
- * `existingPath` is the path of the note that already owns the name;
- * `attemptedName` is the name the user tried to use, pre-filled into the rename
- * field (defaults to the existing note's name when the caller didn't supply
- * one — e.g. a rule-generated filename).
+ * `existingPath` is the note that has the name; `attemptedName` is the name
+ * tried, filled into the rename field (the existing note's name if not given,
+ * e.g. for a rule-generated name).
  *
- * The "append ZID" path resolves as a `rename` with a generated name, so
- * callers need no extra branch: they already retry creation with `res.name`,
- * and their retry loop re-prompts in the (vanishingly unlikely) event that the
- * ZID-suffixed name collides too.
+ * Appending a ZID resolves as a `rename` with the new name, so callers just
+ * retry with `res.name`, and their retry loop asks again if that collides too.
  */
 export async function resolveNoteNameConflict(
   existingPath: string,
@@ -48,9 +41,7 @@ export async function resolveNoteNameConflict(
   // the rename field pre-fills with.
   const base = attemptedName?.replace(/\.typ$/i, "") || name;
 
-  // Only offer the ZID shortcut when the notebox is actually configured for
-  // Zettelkasten IDs; with the feature off (or no pattern) there is nothing
-  // meaningful to append.
+  // Offer the ZID option only if Zettelkasten IDs are set up for the notebox.
   const canAppendZid =
     settings.files.zettelkasten_enabled && settings.files.zid_pattern.trim() !== "";
 

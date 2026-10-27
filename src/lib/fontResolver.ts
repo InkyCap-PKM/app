@@ -49,10 +49,9 @@ function choiceFor(role: FontRole, fonts: FontSettings): FontChoice {
 }
 
 /**
- * Synchronous text-font resolution for callers that don't need OS
- * defaults (the Text row never offers "system"). Returns the family
- * name to use, or `undefined` for "typst-default" so callers can omit
- * the override entirely.
+ * Text font resolution without OS defaults (the Text row never offers
+ * "system"). The family name, or `undefined` for "typst-default", so callers
+ * can leave out the override.
  */
 export function resolveTextFontSync(fonts: FontSettings): string | undefined {
   const choice = fonts.text;
@@ -70,9 +69,8 @@ export function resolveTextFontSync(fonts: FontSettings): string | undefined {
 }
 
 /**
- * Resolve one role to a concrete family name. Returns `null` only for
- * text role with mode "typst-default" (caller should treat that as "use
- * Typst's built-in" — typically just omit the CSS variable).
+ * Resolve one role to a family name. `null` only for the text role set to
+ * "typst-default" (use Typst's own, usually by leaving out the CSS variable).
  */
 export function resolveRole(
   role: FontRole,

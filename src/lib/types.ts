@@ -13,15 +13,18 @@ export interface NoteMetadata {
   properties: Record<string, PropertyValue>;
   links: string[];
   tags: string[];
-  /** Document-level repeat rule from `#note(recurrence: …)`, kept out of
-   *  `properties` (it's structured, not a scalar). `null` when the note's date
-   *  doesn't recur. Mirrors the Rust `NoteMetadata.recurrence`. */
+  /**
+   * Repeat rule from `#note(recurrence: …)`, kept out of `properties` because
+   * it is structured. `null` when the date doesn't recur. Mirrors the Rust
+   * `NoteMetadata.recurrence`.
+   */
   recurrence?: Recurrence | null;
 }
 
-/** A repeat rule for a dated reminder. Mirrors the Rust `Recurrence`, which in
- *  turn mirrors the queryable Typst `recurrence: (…)` dict. Reminder-only:
- *  recurrence attaches to dates, never to checkbox tasks. */
+/**
+ * A repeat rule for a dated reminder (not for checkbox tasks). Mirrors the Rust
+ * `Recurrence` and the Typst `recurrence: (…)` dict.
+ */
 export interface Recurrence {
   /** How often it repeats. */
   freq: "day" | "week" | "month" | "year";
@@ -82,10 +85,11 @@ export interface CollectionData {
   columns: string[];
   rows: CollectionRow[];
   views: ViewInfo[];
-  /** Distinct scalar values present per column across the view's member set
-   *  (before per-column header filters narrow it). Powers the multi-select
-   *  checklist in a list/commalist column's header filter. Columns with too
-   *  many distinct values, or none, are omitted. */
+  /**
+   * Distinct values per column across the view's notes, before header filters
+   * apply. Used for the checklist in a list column's header filter. Columns
+   * with none, or too many, are left out.
+   */
   columnValues: Record<string, string[]>;
 }
 
@@ -131,10 +135,9 @@ export interface SortRule {
   direction: "ASC" | "DESC";
 }
 
-/// A member of a filter group's list: either a leaf expression string
-/// (e.g. `collection.contains("paper")`) or a nested group. This recursion
-/// is what lets a collection express `(A or B) and C`. Mirrors the backend
-/// `FilterGroup` whose members are untyped YAML values.
+/// A member of a filter group: an expression string (e.g.
+/// `collection.contains("paper")`) or a nested group, which allows `(A or B)
+/// and C`. Mirrors the backend `FilterGroup`.
 export type FilterNode = string | FilterGroup;
 
 export interface FilterGroup {
@@ -147,9 +150,10 @@ export interface ViewDef {
   type: string;
   name: string;
   filters?: FilterGroup | null;
-  /** Per-column quick filters set from a column header, keyed by property name.
-   *  A scope separate from `filters` (the advanced FilterBuilder) so the two
-   *  clear independently. */
+  /**
+   * Per-column quick filters from the column headers, keyed by property. Kept
+   * apart from `filters` (the FilterBuilder) so each clears on its own.
+   */
   columnFilters?: Record<string, FilterGroup> | null;
   order?: string[] | null;
   sort?: SortRule[] | null;
@@ -162,9 +166,8 @@ export interface NoteboxIndex {
   property_keys: [string, number][];
 }
 
-// Global property type registry. `Auto` means "infer from the value"
-// (the legacy behavior); all other variants force a specific editor
-// and a coerced on-disk shape.
+// Property type registry. `Auto` infers the type from the value; the others set
+// a specific editor and stored shape.
 export type PropertyType =
   | "auto"
   | "checkbox"
@@ -215,9 +218,10 @@ export interface CollectionFile {
   bibliography_style?: string | null;
   bibliography_file?: string | null;
   style?: CollectionStyle | null;
-  /** Raw Typst injected verbatim at export, after the generated style rules and
-   *  any template, so it overrides both. The power-user escape hatch for
-   *  styling the Style Overrides UI doesn't expose. */
+  /**
+   * Raw Typst added at export after the generated style rules and any template,
+   * so it overrides both. For styling the Style Overrides UI doesn't offer.
+   */
   custom_typst?: string | null;
   book?: BookExportConfig | null;
   /** The Export tab's saved choices. Absent until the user changes one. */
@@ -228,9 +232,10 @@ export interface CollectionFile {
   views: ViewDef[];
 }
 
-/** One selectable role for the contributors editor: a stored value (CRediT
- *  URL, or CSL bibliographic-role token) and a human label. Mirrors the Rust
- *  `CatalogEntry`. */
+/**
+ * A role for the contributors editor: the stored value (a CRediT URL or CSL
+ * role) and a label. Mirrors the Rust `CatalogEntry`.
+ */
 export interface CatalogEntry {
   value: string;
   label: string;
@@ -248,25 +253,22 @@ export interface Contributor {
   credit_roles: string[];
 }
 
-/// Where the merged book's table of contents sits relative to the chapters.
-/// Mirrors the Rust `TocPlacement` (internally tagged on `kind`). `stem` is
-/// the chapter note's file stem; an anchor whose stem isn't in the export set
-/// falls back to `beginning` at build time.
+/// Where a book's table of contents goes. Mirrors the Rust `TocPlacement`.
+/// `stem` is a chapter note's file stem; one not in the export falls back to
+/// `beginning`.
 export type TocPlacement =
   | { kind: "beginning" }
   | { kind: "end" }
   | { kind: "after_chapter"; stem: string };
 
-/// How the merged book sources its bibliography. `unified` consolidates one
-/// list at the back (stripping per-note declarations); `per_chapter` emits one
-/// auto-generated, chapter-scoped list at the end of each chapter; `in_place`
-/// keeps each note's own `#bibliography(...)` (Typst 0.15 allows several).
-/// Mirrors the Rust `BibliographyMode`.
+/// Where a book's bibliography goes: `unified` (one list at the back, per-note
+/// declarations removed), `per_chapter` (a list at the end of each chapter) or
+/// `in_place` (each note's own `#bibliography(...)`). Mirrors the Rust
+/// `BibliographyMode`.
 export type BibliographyMode = "unified" | "per_chapter" | "in_place";
 
-/// Persistent "Export as book" configuration. Mirrors the Rust
-/// `BookExportConfig`. All fields optional; defaults are supplied when
-/// missing (see `BookExportOverrides` in `ipc.ts`).
+/// Saved "Export as book" settings. Mirrors the Rust `BookExportConfig`;
+/// missing fields take defaults (see `BookExportOverrides` in `ipc.ts`).
 export interface BookExportConfig {
   title?: string | null;
   subtitle?: string | null;
@@ -296,9 +298,11 @@ export interface BookExportConfig {
  *  `CollectionExportFormat`. */
 export type CollectionExportFormat = "pdf_files" | "book" | "site" | "markdown" | "table";
 
-/** The saved choices of a collection's Export tab, shared by every format
- *  that uses them. Mirrors the Rust `CollectionExportConfig`; unset fields
- *  take the format's default (see `resolveExportChoices`). */
+/**
+ * Saved choices of a collection's Export tab, shared across formats. Mirrors
+ * the Rust `CollectionExportConfig`; unset fields take the format's default
+ * (see `resolveExportChoices`).
+ */
 export interface CollectionExportConfig {
   format?: CollectionExportFormat | null;
   pdf_standard?: PdfStandardPreset | null;
@@ -311,9 +315,10 @@ export interface CollectionExportConfig {
  *  Mirrors `FileLinkMode` in src-tauri/src/models/export.rs. */
 export type FileLinkMode = "as-written" | "file-name" | "copies";
 
-/** How an export treats the files a note uses: its links to files, and
- *  whether its images are copied into the folder beside the export too.
- *  Mirrors `LinkedFilesOptions` (snake_case, as stored in a collection). */
+/**
+ * How an export handles the files a note uses: its links to files, and whether
+ * images are copied beside the export. Mirrors `LinkedFilesOptions`.
+ */
 export interface LinkedFilesOptions {
   links: FileLinkMode;
   copy_images: boolean;
@@ -377,11 +382,10 @@ export interface AppearanceSettings {
    */
   bg_palette_dark: BgPalette;
   /**
-   * When true, the colours that carry meaning (errors, warnings, success,
-   * added and removed text, Mycelial View kinds, and source-mode strings and
-   * numbers) switch to a set chosen to stay distinct for colourblind users.
-   * Works with either background palette and leaves the accent colour and
-   * note content alone.
+   * Switch the colours that carry meaning (errors, warnings, diff colours,
+   * Mycelial View kinds, source-mode strings and numbers) to a set that stays
+   * distinct for colourblind users. The accent colour and note content are
+   * unaffected.
    */
   colourblind_friendly: boolean;
   /**
@@ -394,40 +398,32 @@ export interface AppearanceSettings {
   accent_source: AccentSource;
   accent_color: string;
   zoom_target: ZoomTarget;
-  /**
-   * The user's chosen sort for the file tree. Persisted so a re-open of
-   * the app (or a different notebox) preserves the ordering they picked.
-   */
+  /** The file tree's sort order. */
   file_tree_sort: FileSortMode;
   /**
-   * Moment-style format pattern for displaying dates in the UI (Agenda due
-   * dates, backup timestamps, last-backup indicator, etc.). Does not affect
-   * how dates are stored — only their presentation. Tokens match the
-   * Zettelkasten ID pattern: YYYY, YY, MMMM, MMM, MM, M, DD, D, HH, mm,
-   * ss, dddd, ddd. Any non-token characters are kept verbatim.
+   * Format pattern for dates shown in the UI. Display only; stored dates are
+   * unaffected. Tokens: YYYY, YY, MMMM, MMM, MM, M, DD, D, HH, mm, ss, dddd,
+   * ddd (as in the Zettelkasten ID pattern); other characters are kept as is.
    */
   date_format: string;
   /**
-   * BCP-47 code for the user-interface language (e.g. "en", "fr"). Selects
-   * which locale dictionary the frontend loads; "en" is the default and the
-   * fallback for any code without a shipped translation. UI chrome only — it
-   * does not affect note content.
+   * BCP-47 code for the interface language (e.g. "en", "fr"). "en" is the
+   * default and the fallback for codes without a translation. Doesn't affect
+   * note content.
    */
   ui_locale: string;
   /**
-   * When true, a note created under a non-English UI locale gets a
-   * `#set text(lang: …, region: …)` directive injected after its `#import`
-   * line (derived from `ui_locale`) for correct hyphenation, punctuation
-   * spacing, and smart quotes. The one place the UI locale touches note
-   * content; no effect when `ui_locale` is "en". Default true.
+   * When true, notes created under a non-English UI language get a `#set
+   * text(lang: …, region: …)` line after the import, for correct hyphenation,
+   * spacing and quotes. No effect when `ui_locale` is "en". Default true.
    */
   use_locale_typesetting: boolean;
 }
 
-/** Typst-facing document defaults — text size and page size. User-global
- *  because typography is tuned to the device the user is writing on; a
- *  notebox or collection can override locally with Typst markup or a
- *  collection style. */
+/**
+ * Document defaults for Typst (text and page size). Per user, because
+ * typography is tuned to the device; a notebox or collection can override them.
+ */
 export interface DocumentDefaults {
   text_size: number | null;
   page_size: string | null;
@@ -444,18 +440,20 @@ export interface FileSettings {
   show_file_extensions: boolean;
 }
 
-/** User-global citation defaults. The notebox-specific source choice,
- *  bibliography file path, and CSL override live in
- *  `NoteboxCitationSettings`. */
+/**
+ * Per-user citation defaults. The notebox's source, bibliography file and CSL
+ * override are in `NoteboxCitationSettings`.
+ */
 export interface CitationSettings {
   citation_style: string | null;
   zotero_database_path: string | null;
 }
 
-/** User-global startup behaviour. The notebox-specific target and
- *  last-active file pointer live in `NoteboxStartupSettings`; the tabs
- *  `"previous-tabs"` restores are recorded per-machine outside the notebox
- *  (see `NoteboxTabSession`). */
+/**
+ * Per-user startup behaviour. The notebox's target and last-active file are in
+ * `NoteboxStartupSettings`; the tabs for `"previous-tabs"` are stored per
+ * machine outside the notebox (see `NoteboxTabSession`).
+ */
 export interface StartupSettings {
   behavior:
     | "default"
@@ -466,9 +464,10 @@ export interface StartupSettings {
     | "specific-collection";
 }
 
-/** One tab remembered from a previous session, as the backend stores it.
- *  Snake-case because it crosses IPC as-is; `stores/tab-session.ts` maps it
- *  to and from the frontend `Tab`. */
+/**
+ * One tab remembered from a previous session, as the backend stores it.
+ * `stores/tab-session.ts` converts it to and from `Tab`.
+ */
 export interface SessionTab {
   /** Tab type: "file", "collection", "mycelial", or "attachment". */
   kind: string;
@@ -482,7 +481,6 @@ export interface SessionTab {
   active: boolean;
 }
 
-/** The tabs one notebox was last left with on this machine. */
 /** Why recorded tabs were held back at startup instead of reopened: the
  *  last reopen never finished, or InkyCap was started with `--no-restore`. */
 export type TabRestoreHeldBack = "interrupted" | "no-restore";
@@ -494,6 +492,7 @@ export interface TabRestore {
   held_back: TabRestoreHeldBack | null;
 }
 
+/** The tabs one notebox was last left with on this machine. */
 export interface NoteboxTabSession {
   tabs: SessionTab[];
 }
@@ -504,14 +503,16 @@ export interface ExportSettings {
   auto_add_notebox_import: boolean;
 }
 
-/** Notebox backup settings. Controls scheduling, destination, retention,
- *  and encryption of zip snapshots of the currently-open notebox. The
- *  password itself is stored in the OS keychain, not in this struct;
- *  `password_protected` is the persisted "feature on" toggle. */
+/**
+ * Backup settings for the open notebox: schedule, destination, retention and
+ * encryption. The password is kept in the OS keychain; `password_protected`
+ * turns encryption on.
+ */
 export interface BackupSettings {
-  /** Master on/off for the backup feature. When false, the scheduler is
-   *  dormant and the manual "Back up now" command refuses to run — an
-   *  explicit user opt-out, distinct from "no destination configured". */
+  /**
+   * Turns backups on or off. When off, the scheduler is idle and "Back up now"
+   * refuses to run.
+   */
   enabled: boolean;
   /** Destination folder. `null` disables the feature. */
   path: string | null;
@@ -527,17 +528,18 @@ export interface BackupSettings {
   /** True when a password is set in the OS keychain — the actual secret
    *  is fetched at archive-write time, not stored here. */
   password_protected: boolean;
-  /** Filename template with `{notebox}`, `{YYYY}`, `{MM}`, `{DD}`, `{HH}`,
-   *  `{mm}`, `{ss}` tokens. Substituted values are sanitized against
-   *  Windows-reserved characters and reserved names before the final
-   *  path is assembled. */
+  /**
+   * Filename template with `{notebox}`, `{YYYY}`, `{MM}`, `{DD}`, `{HH}`,
+   * `{mm}`, `{ss}`. Substituted values are made safe for Windows file names.
+   */
   filename_pattern: string;
 }
 
 export interface BehaviourSettings {
-  /** When a file is opened in a new tab (Ctrl/Cmd+click or a right-click
-   *  "open in new tab" action), switch the content focus to that tab
-   *  immediately. When false, the tab opens in the background. */
+  /**
+   * Switch to a tab opened with Ctrl/Cmd+click or "Open in new tab". When
+   * false, it opens in the background.
+   */
   switch_to_new_tab: boolean;
 
   /** Show the most recently modified notes on the new tab page. */
@@ -550,11 +552,11 @@ export interface BehaviourSettings {
    *  scrolls past this many instead). Settings offers 3, 6 or 12. */
   new_tab_list_length: number;
 
-  /** Linux-only WebKitGTK workaround. When true, InkyCap disables the DMABUF
-   *  GPU compositing path at startup to fix stray/duplicated UI artifacts on
-   *  some GPU + driver + compositor combinations. Read once before the webview
-   *  starts, so a change requires a restart. Ignored on macOS/Windows. See
-   *  issue #22. */
+  /**
+   * Linux only: disable WebKitGTK's DMABUF renderer, which causes stray or
+   * duplicated UI on some GPU and driver combinations (issue #22). Read at
+   * startup, so changes need a restart.
+   */
   disable_dmabuf_renderer: boolean;
 }
 
@@ -566,20 +568,20 @@ export interface UpdateSettings {
   /** Also surface development (beta) releases — the odd-numbered release
    *  channel. Default false: only user-facing (even) releases are offered. */
   include_beta: boolean;
-  /** Advanced: replace the release feed the update check asks. `null` means
-   *  InkyCap's own feed. Intended for forks and self-builders, so it has no
-   *  Settings UI — set it in `settings.json`. Must be `https`. */
+  /**
+   * Advanced: a different release feed for the update check, or `null` for
+   * InkyCap's own. For forks; set in `settings.json` only. Must be `https`.
+   */
   feed_url: string | null;
 }
 
-/** User overrides for global UI keyboard shortcuts. The default keybinding of
- *  every command lives in the command registry (`src/lib/commands.ts`); this
- *  map records only the deltas. Keys are command ids (e.g. `"file:quick-open"`);
- *  a string value rebinds the command, `null` means the user explicitly unbound
- *  it (default action kept, no active hotkey), and an absent key means the
- *  command uses its registry default. Combos are stored in the platform-neutral
- *  canonical form produced by `formatKeyCombo` (Cmd folded into "Ctrl"), so one
- *  override works across every OS. Resolution lives in `src/lib/shortcuts.ts`. */
+/**
+ * User overrides of keyboard shortcuts; defaults live in the command registry
+ * (`src/lib/commands.ts`). Keys are command ids (e.g. `"file:quick-open"`). A
+ * string rebinds the command, `null` unbinds it, and a missing key keeps the
+ * default. Combos are stored in the platform-neutral form from `formatKeyCombo`
+ * (Cmd stored as "Ctrl"). See `src/lib/shortcuts.ts`.
+ */
 export interface ShortcutSettings {
   overrides: Record<string, string | null>;
 }
@@ -627,11 +629,11 @@ export interface UserSettings {
   shortcuts: ShortcutSettings;
 }
 
-/** A user-registered external program the external-tool bridge can pipe text
- *  through. InkyCap ships no concrete tools — the user points at an executable
- *  they trust (same model as the Pandoc/Zotero paths). The executable is
- *  spawned from Rust and resolved by `id`, never by a frontend-supplied path.
- *  See `documentation/developer/extending/external-tools.md`. */
+/**
+ * An external program registered by the user for piping text through. Started
+ * from Rust and looked up by `id`, never by a path from the frontend. See
+ * `documentation/developer/extending/external-tools.md`.
+ */
 export interface ExternalTool {
   /** Stable identifier used to invoke the tool (the UI generates it). */
   id: string;
@@ -639,24 +641,28 @@ export interface ExternalTool {
   name: string;
   /** Absolute path to the executable. */
   command: string;
-  /** Arguments (passed as a vector, never a shell string). May contain the
-   *  placeholders `$INKYCAP_NOTEBOX_ROOT`, `$INKYCAP_FILE`,
-   *  `$INKYCAP_SELECTION`. */
+  /**
+   * Arguments, passed as a list (never through a shell). May contain
+   * `$INKYCAP_NOTEBOX_ROOT`, `$INKYCAP_FILE` and `$INKYCAP_SELECTION`.
+   */
   args: string[];
   /** What is written to the tool's stdin. */
   input: "selection" | "note" | "none";
-  /** What InkyCap does with the tool's stdout: insert at the cursor, replace
-   *  the selection, show it transiently (`notify`), or show it in a persistent
-   *  right-panel pane (`panel`). */
+  /**
+   * What to do with the tool's output: insert at the cursor, replace the
+   * selection, show a notification, or show it in a right-panel pane.
+   */
   output: "insert" | "replace" | "notify" | "panel";
-  /** Where the tool is offered: the global command palette (`palette`, the
-   *  default — never disturbs the editor selection, so `selection`-input tools
-   *  work), the editor `/` menu (`slash`, best for insert-at-cursor tools), or
-   *  `both`. */
+  /**
+   * Where the tool is offered: the command palette (`palette`, the default,
+   * which keeps the editor selection), the `/` menu (`slash`) or `both`.
+   */
   show_in: "palette" | "slash" | "both";
-  /** When true (the default), the note/selection is reduced to plain prose
-   *  (markup, `#import`, `#note(...)`, math, and code stripped) before being
-   *  sent to the tool's stdin. Turn off for tools that need raw Typst source. */
+  /**
+   * When true (the default), send the tool plain prose, with markup, imports,
+   * `#note(...)`, math and code removed. Turn off for tools that need Typst
+   * source.
+   */
   strip_markup: boolean;
   /** Optional icon for the tool's output-pane tab, as a `"lucide:<name>"`
    *  string (the icon-picker format). Empty means the default terminal glyph. */
@@ -688,14 +694,9 @@ export interface NoteboxFileSettings {
   attachment_folder: string;
   excluded_files_regex: string[];
   /**
-   * How this notebox's file tree groups folders relative to files when sorting:
-   * - "before" — all folders first, then files (both sorted by the chosen mode).
-   * - "after"  — all files first, then folders.
-   * - "inline" — folders and files are interleaved together under the chosen sort.
-   *
-   * Per-notebox so each notebox can present its own folder layout the way that
-   * suits it (a flat journal vs. a deeply-nested research notebox want
-   * different defaults).
+   * How the file tree places folders when sorting: "before" files, "after" files,
+   * or "inline" with them. Per notebox, since different noteboxes suit different
+   * layouts.
    */
   folder_grouping: FolderGrouping;
 }
@@ -726,10 +727,11 @@ export interface NoteboxCitationSettings {
   custom_csl_path: string | null;
 }
 
-/** Git collaboration config for a notebox. `null` ⇒ the notebox is not
- *  collaborative. Mirrors `src-tauri/src/notebox_settings.rs::NoteboxGitConfig`.
- *  Carries only the notebox-shared facts (remote + branch); commit author
- *  identity is per-user and stored separately (keyed by remote), never here. */
+/**
+ * Git collaboration config; `null` when the notebox isn't collaborative. Mirrors
+ * `NoteboxGitConfig` in `notebox_settings.rs`. Holds only shared facts (remote
+ * and branch); commit identity is per user and stored elsewhere.
+ */
 export interface NoteboxGitConfig {
   /** Remote URL — SSH (`git@host:owner/repo.git`) or HTTPS. */
   remote: string;
@@ -742,19 +744,19 @@ export interface NoteboxSettings {
   startup: NoteboxStartupSettings;
   journal_scroll: JournalScrollSettings;
   citations: NoteboxCitationSettings;
-  /** Git collaboration config; `null` when the notebox is not collaborative.
-   *  Carried here so a settings save never drops a configured remote. The
-   *  Phase 4 setup UI writes it via `gitSetupCollaboration`. */
+  /**
+   * Git collaboration config, or `null`. Kept here so saving settings never
+   * drops a configured remote. Written by `gitSetupCollaboration`.
+   */
   git: NoteboxGitConfig | null;
 }
 
 // ============================================================================
-// Git collaboration (Phase 4 review surface).
+// Git collaboration.
 //
 // Mirrors the serde shapes in `src-tauri/src/commands/git.rs` and
-// `src-tauri/src/git/backend.rs`. `GitReviewItem`/`GitReviewSession` are
-// camelCase (rename_all); `GitCommitInfo` keeps the backend's snake_case field
-// names, matching how other backend structs cross the IPC boundary here.
+// `src-tauri/src/git/backend.rs`. `GitReviewItem` / `GitReviewSession` are
+// camelCase; `GitCommitInfo` keeps the backend's snake_case names.
 // ============================================================================
 
 /** A short, content-free summary of a collaborative notebox's git state. */
@@ -769,14 +771,16 @@ export interface GitStatusSummary {
   ahead: number;
   /** Commits behind upstream (incoming); `0` with no upstream yet. */
   behind: number;
-  /** Commits present locally but not yet on the remote — what "Publish" sends.
-   *  Counts all local commits before the first push (unlike `ahead`), so the
-   *  initial publish is surfaced. */
+  /**
+   * Local commits not yet on the remote (what "Publish" sends). Unlike `ahead`,
+   * counts every commit before the first push.
+   */
   unpushed: number;
-  /** Whether there's local work collaborators haven't received — the
-   *  qualitative "Changes to share" signal shown instead of a commit count.
-   *  Server mode: dirty or unpushed. Package mode: dirty or HEAD moved past the
-   *  last export (commit counts never reset with no remote). */
+  /**
+   * Whether there's local work collaborators haven't received ("Changes to
+   * share"). With a server: uncommitted or unpushed changes. Package mode:
+   * uncommitted changes, or HEAD moved since the last export.
+   */
   unshared: boolean;
 }
 
@@ -800,9 +804,10 @@ export interface GitDigestEntry {
   oldPath?: string | null;
 }
 
-/** One note still carrying unresolved `#suggestion(...)` tracked changes —
- *  the notebox-wide "changes to resolve" list. Mirrors
- *  `src-tauri/src/commands/git.rs::UnresolvedEntry`. */
+/**
+ * A note with unresolved `#suggestion(...)` changes. Mirrors `UnresolvedEntry`
+ * in `commands/git.rs`.
+ */
 export interface GitUnresolvedEntry {
   /** Absolute path (frontend string form) — used to open / dedupe the note. */
   path: string;
@@ -827,10 +832,11 @@ export interface GitSyncOutcome {
   rejected: boolean;
   /** What collaborators changed since the merge base — the "what landed" digest. */
   digest: GitDigestEntry[];
-  /** Notebox-relative paths (frontend form) where the merge took *theirs* over an
-   *  overlapping local edit. The merge-first model never pauses, so these are
-   *  surfaced for after-the-fact review (revert from the Changes pane). Empty for
-   *  a clean merge / fast-forward. */
+  /**
+   * Notebox-relative paths where the merge took the other side over a local edit.
+   * Sync never pauses, so these are listed for review afterwards (they can be
+   * reverted from the Changes pane). Empty for a clean merge.
+   */
   conflicted: string[];
   /** The incoming tip commit's author/message, for the digest banner. */
   incoming: GitCommitInfo | null;
@@ -851,9 +857,11 @@ export interface GitSinceSyncEntry {
   conflicted: boolean;
 }
 
-/** One changed region of a note relative to the pre-sync baseline. Identity and
- *  scroll target are the current-side line range `[currentStart, currentEnd)`
- *  (0-based, end-exclusive). Mirrors `git/sync_review.rs::SyncHunk`. */
+/**
+ * One changed region of a note compared with the pre-sync baseline, identified
+ * by its current line range `[currentStart, currentEnd)` (0-based). Mirrors
+ * `SyncHunk` in `git/sync_review.rs`.
+ */
 export interface GitSyncHunk {
   currentStart: number;
   currentEnd: number;
@@ -899,9 +907,10 @@ export interface GitNoteVersion {
   /** Commit time, seconds since the Unix epoch (UTC). */
   timestamp: number;
   message: string;
-  /** This is the user's own version from just before the last sync took *theirs*
-   *  over their edit to this note — i.e. what the merge replaced. The History
-   *  view flags it so the user can compare it with the current note. */
+  /**
+   * The user's own version from just before the last sync replaced their edit.
+   * The History view flags it for comparison.
+   */
   tookTheirsBaseline: boolean;
 }
 
@@ -946,12 +955,11 @@ export interface GitBundlePackagesResult {
 }
 
 // ============================================================================
-// Journal Scroll — ScrollQuery primitive.
+// Journal Scroll — ScrollQuery.
 //
-// Mirrors `src-tauri/src/commands/journal_scroll.rs`. The Journal Scroll
-// feed itself only ever uses `all` and `folder` (driven by the "Anchor
-// scope" setting); the remaining variants are used by the right-panel
-// sub-panes and wikilink routing.
+// Mirrors `src-tauri/src/commands/journal_scroll.rs`. The scroll itself uses
+// only `all` and `folder` (from the "Anchor scope" setting); the other
+// variants serve the right-panel panes and wikilink routing.
 // ============================================================================
 
 export type PropertyValueJson =
@@ -991,18 +999,20 @@ export interface ScrollQuery {
 export interface ScrollEntry {
   path: string;
   title: string;
-  /** This entry is the scroll's anchor and falls outside the scroll's scope.
-   *  It is still listed, placed where its date falls among the notes in
-   *  scope, so the scroll continues from that point in time. */
+  /**
+   * The entry is the scroll's anchor but outside its scope. It is still listed
+   * at its date, so the scroll continues from there.
+   */
   out_of_scope: boolean;
 }
 
 /** @deprecated use `ScrollEntry` directly. */
 export type JournalScrollEntry = ScrollEntry;
 
-/** Connection of an entry to the scroll's anchor. Drives the always-on
- *  `journal-scroll__entry--*` accent-strip CSS classes and the per-entry
- *  header connection icons. */
+/**
+ * How an entry connects to the scroll's anchor. Sets the entry's accent-strip
+ * classes and header icons.
+ */
 export interface ConnectionFlags {
   path: string;
   is_anchor: boolean;
@@ -1090,11 +1100,11 @@ export interface SearchResponse {
   total_count: number;
 }
 
-/// How a search treats text inside `#annotation[…]` / `#suggestion[…]` marks.
-/// Sent verbatim across IPC; mirrors the Rust `AnnotationScope` enum.
-///   "all"     — search body prose and annotation text alike (default)
-///   "only"    — restrict matches to annotation/suggestion lines
-///   "exclude" — hide annotation/suggestion text, search only body prose
+/// How search treats text inside `#annotation[…]` / `#suggestion[…]`. Mirrors
+/// the Rust `AnnotationScope`.
+///   "all"     — body and annotation text (default)
+///   "only"    — annotation and suggestion text only
+///   "exclude" — body text only
 export type AnnotationScope = "all" | "only" | "exclude";
 
 export interface ReplaceResult {
@@ -1134,9 +1144,8 @@ export type BookmarkKind =
   | { type: "Search"; data: { query: string } }
   | { type: "Heading"; data: { path: string; name: string; heading: string } }
   | { type: "Collection"; data: { path: string; name: string } }
-  // A saved Agenda view: a named, JSON-serialized filter snapshot, scoped to
-  // the notebox it was created in (its tag/task-list selections don't apply
-  // elsewhere). `filter` is a JSON `AgendaFilterSnapshot`.
+  // A saved Agenda view: a named filter snapshot (JSON `AgendaFilterSnapshot`),
+  // tied to the notebox it was made in.
   | { type: "AgendaView"; data: { name: string; notebox: string; filter: string } };
 
 export interface Bookmark {
@@ -1328,9 +1337,10 @@ export interface TypstSpan {
   /** Byte offsets into the file's UTF-8 source. */
   start: number;
   end: number;
-  /** 1-based line and column of `start`. `null` when the offset couldn't be
-   *  mapped to a source position. For the main note these are shifted back
-   *  from compiled-source space to the user's on-disk file by the backend. */
+  /**
+   * 1-based line and column of `start`, or `null` if unmapped. For the main
+   * note, the backend maps them back to the file on disk.
+   */
   line: number | null;
   column: number | null;
   /** True when the span points into the note being compiled rather than an
@@ -1368,9 +1378,10 @@ export interface TypstHtmlResult {
 
 // ── inkycap:// links (src-tauri/src/deep_link.rs) ─────────────────────────
 
-/** A link resolved and checked by the backend. `notebox.path` is the path the
- *  notebox list holds (what `openNotebox` takes); a `file` target is known to
- *  exist inside that notebox. */
+/**
+ * A link checked by the backend. `notebox.path` is as in the notebox list (what
+ * `openNotebox` takes); a `file` target exists in that notebox.
+ */
 export type DeepLink = {
   notebox: { path: string; name: string };
 } & (

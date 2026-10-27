@@ -39,12 +39,12 @@ function typstLengthToCss(value: string): string {
   return v;
 }
 
-/** Resolve the document offset of the `#image(...)` call backing an image
- *  widget anchored at `pos`. A bare image is anchored at its own `#image`;
- *  an alignment-wrapped image (`#align(kw)[#image(...)]`) is anchored at the
- *  `#align`, so we step inward to the `#image` whose `width:` we want to edit.
- *  Mirrors the inner-image resolution in `imageOptions` so drag-resize and the
- *  pill's Width field write to the same argument. */
+/**
+ * Document offset of the `#image(...)` call behind an image widget at `pos`. An
+ * aligned image (`#align(kw)[#image(...)]`) is anchored at the `#align`, so
+ * step inward to the `#image`. Matches `imageOptions`, so drag-resize and the
+ * pill's Width field edit the same argument.
+ */
 function resolveImageCallFrom(view: EditorView, pos: number): number {
   const liveTo = findCallEnd(view, pos);
   const src = view.state.doc.sliceString(pos, liveTo);
@@ -55,29 +55,21 @@ function resolveImageCallFrom(view: EditorView, pos: number): number {
   return pos;
 }
 
-// Round a fraction of the text column to a whole-percent width, clamped to a
-// sane authoring range. Typst's `image(width: …)` accepts a ratio, and a
-// percentage is the resolution-independent, WYSIWYM-friendly unit — it scales
-// to the page's text column the same way the editor preview scales to its own
-// content width (CLAUDE.md: the visual editor is an authoring tool, not a
-// pixel-faithful renderer).
+// Convert a width to a whole percentage of the text column, clamped to a
+// sensible range. A percentage scales with the page the same way the preview
+// scales with the editor.
 function fractionToPercent(width: number, reference: number): number {
   if (reference <= 0) return 100;
   return Math.max(5, Math.min(100, Math.round((width / reference) * 100)));
 }
 
-/** Attach a hover-revealed corner handle that resizes an image by dragging.
- *
- *  Width-only by design: Typst scales the unconstrained axis proportionally
- *  and the widgets already set `height: auto` when only width is present, so a
- *  single handle gives aspect-locked resizing for free. During the drag we
- *  update the `<img>` width in pixels for smooth feedback and pin the
- *  alignment container to the left so the handle tracks the cursor regardless
- *  of centre/right alignment; on release we convert to a percentage and write
- *  it through `applyCallTransform` + `upsertNamedArg` — the same source-mutation
- *  path the pill's Width field uses, so the source ↔ visual round-trip
- *  invariant (R11) holds. Nothing is dispatched mid-drag (per the CM6 widget
- *  recipe: sync the source once when the gesture ends, never per input event). */
+/**
+ * Attach a corner handle that resizes an image by dragging. Only the width is
+ * set; Typst scales the height to match. During the drag the `<img>` is resized
+ * in pixels; on release the width is written as a percentage through
+ * `applyCallTransform` + `upsertNamedArg`, as the pill's Width field does.
+ * Nothing is dispatched mid-drag.
+ */
 function attachImageResize(
   view: EditorView,
   holder: HTMLElement,
@@ -129,9 +121,7 @@ function attachImageResize(
     const rect = img.getBoundingClientRect();
     startX = e.clientX;
     startW = rect.width;
-    // Reference width = the content column the image lays out within. The
-    // block/inline image container spans that column, so its client width is
-    // the right base for the percentage.
+    // The percentage is relative to the column the image sits in.
     refW = holder.parentElement?.clientWidth || rect.width;
     // Pin the alignment container left so the dragged right edge tracks the
     // cursor 1:1 instead of growing symmetrically away from a centre anchor.
@@ -155,21 +145,10 @@ function attachImageResize(
   holder.appendChild(badge);
 }
 
-// Build the small pill row that block elements (image, callout,
-// blockquote) show at their top edge when the cursor is on the line.
-// The pill is rendered INSIDE the element's widget DOM, not as a
-// separate block widget above it: keeping it inside means
-// (a) the element's top edge stays at the same y whether the pill is
-// present, replaced by raw markup, or absent, so showing the pill
-// doesn't move the block, and
-// (b) there's no extra block-widget container introducing line-spacing
-// above the element.
-// Block content-bracket pills (callout, quote) where the body is the
-// real content — clicking the pill should always reveal the source for
-// editing, even when the call is "complex" by the simple/complex
-// classifier (multi-line / multi-paragraph callouts are the common
-// case). Other block-row pills (image, figure) stick to the
-// default simple→expand / complex→menu split.
+// Block pills (callout, quote) that always reveal the source when clicked,
+// since the body is the content and is often multi-line. Other block pills
+// (image, figure) use the default rule: simple calls expand, complex ones open
+// the menu.
 const ALWAYS_EXPAND_PILLS = new Set(["callout", "quote"]);
 
 /** The pill for a block-level call, wired to that call's option menu. */
@@ -186,10 +165,10 @@ function makeBlockPill(funcName: string, pos: number, view: EditorView): HTMLEle
   });
 }
 
-/** A block pill floated over the widget's top-left corner. The widget's root
- *  must be positioned (`position: relative`) so the row anchors to it. Used
- *  instead of a row stacked above the content so that showing the pill when
- *  the caret arrives doesn't change the widget's height. */
+/**
+ * A block pill floated over the widget's top-left corner, so showing it doesn't
+ * change the widget's height. The widget's root must be `position: relative`.
+ */
 function makeBlockPillOverlay(funcName: string, pos: number, view: EditorView): HTMLElement {
   const row = document.createElement("div");
   row.className = "cm-typst-block-pill-row cm-typst-block-pill-overlay";
@@ -197,10 +176,11 @@ function makeBlockPillOverlay(funcName: string, pos: number, view: EditorView): 
   return row;
 }
 
-/** The heading row shared by the rendered callout widget and the
- *  callout's edit-state head row. `pill` (edit state only) sits before the
- *  label, then the callout kind's `icon`; the row's fixed minimum height keeps
- *  it the same size either way. */
+/**
+ * Heading row shared by the rendered callout and its edit-state head row:
+ * optional `pill` (edit state only), then the label and the kind's `icon`. Its
+ * minimum height keeps both states the same size.
+ */
 function buildCalloutHeading(
   label: string,
   color: string,
@@ -239,9 +219,10 @@ function buildWikilinkSpan(target: string, display: string): HTMLElement {
   return link;
 }
 
-/** A 12px Lucide-style icon (24×24 view box, 2px round stroke) from static
- *  SVG markup, for widgets that build their DOM by hand. `markup` must be a
- *  constant from this file, never content from a note. */
+/**
+ * A 12px Lucide-style icon from static SVG markup. `markup` must be a constant
+ * from this file, never note content.
+ */
 function lucideIcon(markup: string, className: string): SVGSVGElement {
   const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   icon.setAttribute("width", "12");
@@ -257,10 +238,10 @@ function lucideIcon(markup: string, className: string): SVGSVGElement {
   return icon;
 }
 
-/** Build a tag pill (`<span class="cm-typst-tag">`) prefixed with a Lucide
- *  `tag` icon rather than a literal `#`. The hash is Typst syntax, not part of
- *  the tag name, so showing the icon reads as "tag" in InkyCap's context. Shared
- *  by TagWidget and the block-body renderer so both sites stay identical. */
+/**
+ * A tag pill (`<span class="cm-typst-tag">`) with a Lucide `tag` icon in place
+ * of the `#`. Shared by TagWidget and the block-body renderer.
+ */
 function buildTagPill(name: string): HTMLElement {
   const pill = document.createElement("span");
   pill.className = "cm-typst-tag";
@@ -286,11 +267,11 @@ export function linkTextFromUrl(url: string): string {
   return url.replace(/^(?:mailto|tel):/, "");
 }
 
-/** Build an interactive external-link span for a rendered block body. Mirrors
- *  LinkWidget's behaviour (pointer cursor, mousedown → openLink) and stops the
- *  event from reaching CM so the click opens the URL instead of dropping the
- *  block into source-edit mode. Without the handler the span is inert and a
- *  click inside the callout just enters edit mode. */
+/**
+ * An external-link span for a rendered block body. Like LinkWidget, a mousedown
+ * opens the URL and is kept from CM, so the click doesn't put the block into
+ * edit mode.
+ */
 function buildLinkSpan(url: string, display: string): HTMLElement {
   const a = document.createElement("span");
   a.className = "cm-typst-link";
@@ -306,16 +287,17 @@ function buildLinkSpan(url: string, display: string): HTMLElement {
   return a;
 }
 
-/** Optional context that makes a block body's inline elements interactive.
- *  `bodyFrom` is the absolute document offset where the body string begins, so
- *  a segment's in-body `start` resolves to a real source position. */
+/**
+ * Context that makes a block body's inline elements interactive. `bodyFrom` is
+ * the document offset where the body begins.
+ */
 type BlockBodyContext = { view: EditorView; bodyFrom: number; blockFrom: number };
 
-/** Build a task checkbox + body whose checkbox toggles the call's `done:`
- *  argument in source. Mirrors TaskWidget; used inside rendered block bodies so
- *  a task is checkable without first entering edit mode. The owning widget's
- *  `ignoreEvent` must let the checkbox's mousedown through (return true) so CM
- *  doesn't also place the cursor / enter edit mode. */
+/**
+ * A task checkbox and body for a rendered block body; the checkbox toggles the
+ * call's `done:` argument. The owning widget's `ignoreEvent` must let the
+ * checkbox's mousedown through.
+ */
 function buildTaskSpan(
   seg: Extract<BodySegment, { kind: "task" }>,
   ctx: BlockBodyContext | undefined,
@@ -328,15 +310,10 @@ function buildTaskSpan(
   box.className = "cm-typst-task__box";
   box.textContent = seg.done ? "☑" : "☐";
   if (ctx) {
-    // The task's offset from the enclosing block widget's start. ctx.bodyFrom and
-    // ctx.blockFrom are build-time absolutes, but their difference (plus
-    // seg.start within the body) is position-independent and stays valid as the
-    // document shifts. At click time we read the block widget's LIVE start from
-    // the DOM (posAtDOM resolves a node inside a replace widget to that widget's
-    // position) and re-add the offset — so an edit elsewhere that left this
-    // block's captured positions stale can't send the toggle to the wrong span.
-    // Same bug class as the inline TaskWidget: incremental decoration updates
-    // remap a widget's range but not the widget object holding the offset.
+    // The task's offset from the block widget's start stays valid as the document
+    // shifts. At click time the widget's current start is read from the DOM and
+    // the offset added, since incremental updates move a widget's range without
+    // rebuilding the widget.
     const offsetInBlock = ctx.bodyFrom + seg.start - ctx.blockFrom;
     const view = ctx.view;
     box.title = seg.done ? t("task.markNotDone") : t("task.markDone");
@@ -365,19 +342,16 @@ function buildTaskSpan(
   return wrap;
 }
 
-/** Render a block body string (callout / quote preview), turning
- *  recognized inline notebox primitives into their semantic elements while
- *  leaving everything else as plain text. Parsing lives in block-body-parse.ts;
- *  here we only build DOM, reusing the same classes as the standalone inline
- *  widgets (TaskWidget, TagWidget, …) so a task inside a callout looks identical
- *  to one in flowing text. With `ctx`, a task's checkbox toggles `done` in place
- *  and wikilinks navigate; without it everything is inert preview. */
-/** Drop the backslash from Typst inline escapes (`\*`, `\#`, `\[`, …) so the
- *  escaped character shows literally — the parser leaves the `\` in text runs. */
+/** Drop the backslash from Typst inline escapes (`\*`, `\#`, `\[`, …); the
+ *  parser leaves the `\` in text runs. */
 function unescapeInline(text: string): string {
   return text.replace(/\\([*_#`[\]()\\])/g, "$1");
 }
 
+/** Render a callout or quote body, turning recognized inline notebox
+ *  primitives into the same elements the inline widgets use and leaving
+ *  everything else as text. Parsing is in block-body-parse.ts. With `ctx`, task
+ *  checkboxes and wikilinks are interactive; without it the body is inert. */
 function renderTypstBody(text: string, parent: HTMLElement, ctx?: BlockBodyContext) {
   appendBodySegments(parseInlineBody(text), parent, ctx);
 }
@@ -421,9 +395,8 @@ function appendBodySegments(segs: BodySegment[], parent: HTMLElement, ctx?: Bloc
       case "format": {
         const span = document.createElement("span");
         span.className = seg.className;
-        // The class alone paints a highlight the default yellow. A call that
-        // names its own fill/stroke/radius gets those applied on top, so a
-        // highlight inside a callout looks the same as one in flowing text.
+        // The class gives the default highlight; a call's own
+        // fill/stroke/radius is applied on top.
         if (seg.className === HIGHLIGHT_FORMAT_CLASS && seg.args) {
           const style = highlightInlineStyle(seg.args, true);
           if (style) span.style.cssText += `;${style}`;
@@ -447,12 +420,11 @@ function appendBodySegments(segs: BodySegment[], parent: HTMLElement, ctx?: Bloc
   }
 }
 
-/** Shared `ignoreEvent` for rendered block bodies (callout / quote).
- *  A mousedown on an interactive child — a wikilink or a task checkbox — is
- *  handled by that child, so CM must ignore it (return true) and not also place
- *  the cursor inside the block, which would drop it into source-edit mode. Any
- *  other click falls through (return false) so clicking the body still enters
- *  edit mode as expected. */
+/**
+ * `ignoreEvent` for rendered block bodies. A mousedown on a wikilink or task
+ * checkbox is handled by that element, so CM ignores it; other clicks reach CM
+ * and enter edit mode.
+ */
 function blockBodyIgnoreEvent(e: Event): boolean {
   if (e.type !== "mousedown") return false;
   return !!(e.target as HTMLElement).closest(
@@ -488,11 +460,11 @@ function stripMetadata(source: string): string {
   return result.join("\n");
 }
 
-/** Rendered fenced code block: header strip, code area, footer strip. The
- *  strips exist so the edit state's opening and closing fence lines have a
- *  row of the same height to take over (see the code block rules in
- *  visual-theme.ts). `hasBody` is false when the fences are on adjacent lines
- *  with nothing between them; a body of one empty line is still a body. */
+/**
+ * Rendered fenced code block: header strip, code area, footer strip. The strips
+ * match the height of the edit state's fence lines (see visual-theme.ts).
+ * `hasBody` is false when the fences are on adjacent lines.
+ */
 export class CodeBlockWidget extends WidgetType {
   constructor(
     readonly lang: string,
@@ -564,9 +536,8 @@ export class CodeBlockWidget extends WidgetType {
       pre.appendChild(code);
       wrap.appendChild(pre);
 
-      // Highlight asynchronously; the synchronous fallback inside
-      // highlightCodeInto fills `code` with plain text first so the widget
-      // is never visibly empty during the language load.
+      // Highlighting is async; `highlightCodeInto` fills in plain text first so
+      // the widget is never empty.
       void highlightCodeInto(this.lang, this.code, code);
     }
 
@@ -577,9 +548,7 @@ export class CodeBlockWidget extends WidgetType {
     return wrap;
   }
 
-  // Let clicks on the copy button (or text selection inside the widget)
-  // through to the DOM handlers; CodeMirror would otherwise treat the whole
-  // widget as opaque.
+  // Let clicks on the copy button and text selection reach the widget's DOM.
   ignoreEvent(e: Event) {
     if (e.type === "mousedown" || e.type === "click") {
       const target = e.target as HTMLElement;
@@ -600,21 +569,19 @@ const EXTERNAL_LINK_ICON =
   '<polyline points="15 3 21 3 21 9"/>' +
   '<line x1="10" y1="14" x2="21" y2="3"/>';
 
-/** True when an `#image(...)` call points at a PDF. Typst places the PDF's
- *  page in the output, but the webview can't show it as a picture, so the
- *  visual editor shows the path with a button that opens the PDF instead. */
+/**
+ * True when an `#image(...)` points at a PDF. The webview can't show it as a
+ * picture, so the editor shows the path with a button to open it.
+ */
 function isPdfImage(path: string): boolean {
   return attachmentViewKind(path) === "pdf";
 }
 
 /**
- * Turn an embed widget's content row into a file row: the path label with a
- * button beside it that opens the file. A PDF opens in InkyCap's own viewer,
- * in front; a picture or player that couldn't be shown here (too large, or a
- * format the webview can't play) opens in the default application, since the
- * viewer would meet the same limit. The row is styled (`cm-typst-file-row`)
- * to fit the block pill and to size the button to match it. Does nothing if
- * the row already has its button.
+ * Turn an embed widget's content row into a file row: the path with a button
+ * that opens the file. A PDF opens in InkyCap's viewer; a picture or player
+ * that couldn't be shown here opens in the default application. Does nothing if
+ * the button is already there.
  */
 function appendFileOpener(row: HTMLElement, path: string, opens: "viewer" | "default-app"): void {
   if (row.classList.contains("cm-typst-file-row")) return;
@@ -637,10 +604,9 @@ function appendFileOpener(row: HTMLElement, path: string, opens: "viewer" | "def
 }
 
 /**
- * When an embedded file couldn't be loaded, offer to open it in the default
- * application if it exists but is too large to show here. Any other failure
- * (most often a missing file) keeps the plain path, and the right-click menu
- * says the file wasn't found.
+ * When an embedded file can't be loaded and is too large to show, offer to open
+ * it in the default application. Other failures (usually a missing file) keep
+ * the plain path.
  */
 function offerOpenerAfterLoadFailure(err: unknown, row: HTMLElement, wrap: HTMLElement, path: string) {
   if (!document.body.contains(wrap)) return;
@@ -721,9 +687,8 @@ export class ImageWidget extends WidgetType {
       img.src = url;
       if (this.width) img.style.width = typstLengthToCss(this.width);
       if (this.height) img.style.height = typstLengthToCss(this.height);
-      // Preserve aspect ratio when only one axis is constrained — Typst scales
-      // the other proportionally — and lift the default preview height cap so
-      // an explicitly-sized image isn't silently clipped to a different ratio.
+      // With only the width set, scale the height to match (as Typst does) and
+      // lift the preview's height cap.
       if (this.width && !this.height) img.style.height = "auto";
       if (this.height && !this.width) img.style.width = "auto";
       if (this.width || this.height) img.style.maxHeight = "none";
@@ -756,9 +721,8 @@ export class ImageBlockWidget extends WidgetType {
     readonly alt: string | null = null,
     readonly width: string | null = null,
     readonly height: string | null = null,
-    // Horizontal placement, mirroring the source's `#align(...)` wrapper so
-    // the visual editor reflects how the image will actually sit on the page.
-    // A bare `#image(...)` is left-aligned, matching Typst's inline layout.
+    // Horizontal placement from the source's `#align(...)` wrapper. A bare
+    // `#image(...)` is left-aligned.
     readonly align: ImageAlign = "left",
   ) {
     super();
@@ -818,10 +782,8 @@ export class ImageBlockWidget extends WidgetType {
         if (url) URL.revokeObjectURL(url);
         return;
       }
-      // The holder is an inline-block wrapper so (a) the resize handle can be
-      // absolutely positioned over the image's corner and (b) `inner`'s
-      // text-align governs left/centre/right placement of the whole image
-      // without per-margin overrides.
+      // An inline-block holder, so the resize handle can sit over the image's
+      // corner and `inner`'s text-align positions the image.
       const holder = document.createElement("div");
       holder.className = "cm-typst-image-holder";
 
@@ -831,9 +793,8 @@ export class ImageBlockWidget extends WidgetType {
       img.src = url;
       if (this.width) img.style.width = typstLengthToCss(this.width);
       if (this.height) img.style.height = typstLengthToCss(this.height);
-      // Preserve aspect ratio when only one axis is constrained — Typst scales
-      // the other proportionally — and lift the default preview height cap so
-      // an explicitly-sized image isn't silently clipped to a different ratio.
+      // With only the width set, scale the height to match (as Typst does) and
+      // lift the preview's height cap.
       if (this.width && !this.height) img.style.height = "auto";
       if (this.height && !this.width) img.style.width = "auto";
       if (this.width || this.height) img.style.maxHeight = "none";
@@ -849,18 +810,13 @@ export class ImageBlockWidget extends WidgetType {
     wrap.appendChild(inner);
   }
 
-  // Right-click is the attachment menu's, and a file row's open button handles its
-  // own clicks; everything else stays CM's so the block behaves like editor
-  // content (click places the caret, drag selects).
+  // Right-click opens the attachment menu and the open button handles its own
+  // clicks; everything else goes to CM.
   ignoreEvent(e: Event) { return e.type === "contextmenu" || isFileOpenerEvent(e); }
 }
 
-/// Block widget for `#video(...)` / `#audio(...)`: an inline player rendered
-/// from the notebox attachment, so the writer can scrub/preview media while
-/// authoring. The compiled output differs by target (a real <video>/<audio>
-/// element in HTML export, a placeholder in PDF) — this widget is purely an
-/// authoring convenience, per CLAUDE.md's "visual editor as a user-friendliness
-/// tool" principle.
+/// Block widget for `#video(...)` / `#audio(...)`: a player for previewing the
+/// attachment while writing.
 export class MediaBlockWidget extends WidgetType {
   constructor(
     readonly kind: "video" | "audio",
@@ -955,9 +911,10 @@ export class TagWidget extends WidgetType {
   ignoreEvent() { return false; }
 }
 
-/** Inline `#task(...)` — a checkbox + body. Clicking the checkbox toggles
- *  the call's `done:` argument; clicking the body routes to source editing
- *  (the func is interactive, so the cursor-adjacent path reveals raw markup). */
+/**
+ * Inline `#task(...)`: a checkbox and body. The checkbox toggles `done:`;
+ * clicking the body reveals the source.
+ */
 export class TaskWidget extends WidgetType {
   constructor(
     readonly body: string,
@@ -985,14 +942,9 @@ export class TaskWidget extends WidgetType {
     box.addEventListener("mousedown", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      // Resolve the call's CURRENT start from the DOM, not the `from` captured at
-      // build time. Incremental decoration updates remap a widget's range through
-      // later edits but do NOT rebuild the widget object, so `this.from` goes
-      // stale the moment another task (on a line that wasn't itself rebuilt) is
-      // toggled. Using that stale offset made the transform edit the wrong span
-      // and corrupt the source (`done: true` → `done(done: true): true`), after
-      // which the checkbox became unclickable. posAtDOM always reflects the live
-      // position of this widget.
+      // Read the call's current start from the DOM. Incremental updates move a
+      // widget's range without rebuilding it, so `this.from` can be stale and
+      // would edit the wrong span.
       const pos = view.posAtDOM(wrap);
       // Set `done: true` when checking; drop the arg (→ default false)
       // when unchecking, so a freshly-unchecked task reads cleanly.
@@ -1058,31 +1010,25 @@ function closeSuggestionMenu() {
   activeSuggestionMenu = null;
 }
 
-/** Render a suggestion body's text into `el`, interpreting Typst hard line
- *  breaks (a `\` followed by whitespace or end-of-text) as actual line breaks
- *  rather than showing a stray backslash, and collapsing literal newlines to
- *  spaces (Typst treats a single newline as a space within a paragraph). This is
- *  display-only — the source is never touched — so the widget reads as the text
- *  the suggestion proposes, not its raw markup. (A literal escaped `\\` is the
- *  rare case this simple split doesn't special-case; acceptable for a WYSIWYM
- *  affordance that is not a faithful renderer.) Exported for unit testing. */
+/**
+ * Split a suggestion body for display: a `\` followed by whitespace or the end
+ * becomes a line break, and newlines become spaces, as in Typst. An escaped `\\`
+ * isn't handled specially. Exported for tests.
+ */
 export function typstInlineSegments(txt: string): string[] {
   return txt
     .split(/\\(?=\s|$)/)
     .map((seg) => seg.replace(/\s*\n\s*/g, " "));
 }
 
-/** Inline `#suggestion(...)` tracked-change mark — the visual face of the
- *  suggesting-mode primitive. Renders the CriticMarkup idiom (insert = green
- *  underline, delete = red strike, replace = struck old + underlined new) and,
- *  on click, opens a small Accept / Reject menu.
+/**
+ * Inline `#suggestion(...)` tracked change: insert is underlined green, delete
+ * struck red, replace both. Clicking opens an Accept / Reject menu.
  *
- *  Accept/reject is a source transform that **unwraps** the call to clean
- *  Typst (`applyCallTransform`). The resolution table mirrors
- *  `typst_pipeline::suggestion::resolution_text` in Rust (the authoritative
- *  transform used for non-editor resolution — md-import, package review); the
- *  two must stay in lock-step. The func is interactive, so the
- *  cursor-adjacent path reveals raw markup for editing the proposed text. */
+ * Accepting or rejecting unwraps the call to plain Typst
+ * (`applyCallTransform`). The rules must match
+ * `typst_pipeline::suggestion::resolution_text` in Rust.
+ */
 export class SuggestionWidget extends WidgetType {
   constructor(
     readonly kind: SuggestionKind,
@@ -1189,11 +1135,12 @@ export class SuggestionWidget extends WidgetType {
   }
 }
 
-/** The data a suggestion's review menu needs — supplied by the inline
- *  [`SuggestionWidget`] or by the Changes & History pane (from a parsed
- *  `AnnotationEntry`). `from` is the call's start offset; the menu's actions go
- *  through [`applyCallTransform`], which re-resolves the call's live extent, so
- *  it stays correct even when opened from outside the editor. */
+/**
+ * What a suggestion's review menu needs, from the inline [`SuggestionWidget`]
+ * or the Changes & History pane. `from` is the call's start;
+ * [`applyCallTransform`] finds the call's current extent, so the menu works
+ * from outside the editor too.
+ */
 export interface SuggestionMenuParams {
   kind: SuggestionKind;
   body: string;
@@ -1216,9 +1163,10 @@ function suggestionResolution(p: SuggestionMenuParams, accept: boolean): string 
   }
 }
 
-/** Open the Accept / Reject / Comment review menu for a suggestion, anchored to
- *  `anchor`. Shared by the inline [`SuggestionWidget`] (anchored to its own DOM)
- *  and the Changes & History pane (anchored to the clicked row). */
+/**
+ * Open the Accept / Reject / Comment menu for a suggestion, anchored to
+ * `anchor`.
+ */
 export function openSuggestionMenu(
   view: EditorView,
   p: SuggestionMenuParams,
@@ -1241,13 +1189,9 @@ export function openSuggestionMenu(
   header.textContent = attr ? `${kindLabel} · ${attr}` : kindLabel;
   menu.appendChild(header);
 
-  // Comment — pre-filled with the suggestion's saved `note` so reopening the
-  // menu shows the existing remark. "Save comment" persists it onto the open
-  // suggestion (visible in the doc + Annotations pane). Accept/Reject resolve
-  // the change and DISCARD the comment along with the suggestion mark: once the
-  // change is decided, the review-conversation note is moot, so resolving leaves
-  // only the clean result. The proposed text itself is edited inline by expanding
-  // the pill (the marks can run to many paragraphs — too big for this popup).
+  // Comment field, filled with the suggestion's saved `note`. "Save comment"
+  // stores it on the suggestion; Accept and Reject discard it along with the
+  // mark. The proposed text is edited by expanding the pill.
   const comment = document.createElement("textarea");
   comment.className = "cm-suggestion-menu__comment";
   comment.rows = 2;
@@ -1259,9 +1203,8 @@ export function openSuggestionMenu(
   }
   menu.appendChild(comment);
 
-  // Save the comment onto the open suggestion without resolving it: rebuild the
-  // call carrying the updated `note` (byte-preserving the body/old content).
-  // Empty clears the note.
+  // Save the comment without resolving: rebuild the call with the new `note`,
+  // keeping the body as is. Empty clears it.
   const saveRow = document.createElement("div");
   saveRow.className = "cm-suggestion-menu__actions";
   const saveBtn = document.createElement("button");
@@ -1359,11 +1302,8 @@ export class WikilinkWidget extends WidgetType {
     if (this.isItalic) pill.classList.add("cm-typst-italic");
     if (this.isStrike) pill.classList.add("cm-typst-strike");
     applyWidgetHighlight(pill, this.highlight);
-    // Note: when this wikilink sits inside a heading, the heading mark
-    // already wraps this widget in a `cm-typst-h*` span, so it inherits
-    // the heading's font-size and weight. Adding the heading class here
-    // too would compound the `em`-based size (e.g. 1.8em × 1.8em),
-    // rendering the link larger than the surrounding heading text.
+    // Inside a heading this widget already inherits the heading's size; adding
+    // the heading class would apply the `em` size twice.
 
     const nameSpan = document.createElement("span");
     nameSpan.textContent = this.display || this.target;
@@ -1411,116 +1351,31 @@ export class WikilinkWidget extends WidgetType {
   ignoreEvent() { return true; }
 }
 
-// ───────────────────────────────────────────────────────────────────────
-// VerseWidget — first-class verse element.
-// =====================================================================
+// ── VerseWidget ──────────────────────────────────────────────────────────
 //
-// A "verse" in InkyCap is a freeform poetry/lyrics block. The visual
-// editor presents it as an open contentEditable canvas where the user
-// types, deletes, pastes, and applies inline formatting just like in
-// any rich-text editor. Behind the scenes, the canvas is a faithful
-// round-trip projection of a single Typst source call:
+// A verse is a freeform poetry block, shown as a contentEditable canvas over
+// a single source call: `#verse("body", align-to: center, font: "…")`.
 //
-//   #verse("body string", align-to: center, font: "Newsreader")
+// Round trip:
+//   - decodeVerseLiteral: string escapes resolved, markup escapes (`\*`) kept
+//   - renderVerseBody: *bold*, _italic_, #strike[…] etc. become HTML elements
+//   - the writer edits the canvas
+//   - on blur, encodeVerseDOM turns the DOM back into markup and escapes it,
+//     and one transaction replaces the text between the quotes
 //
-// Because the source is the source of truth (CodeMirror Live Preview,
-// not ProseMirror), every edit eventually flows back to that string.
-// The pipeline below is the round-trip — anyone touching this code
-// should keep it in mind:
-//
-//                    ┌─────────────────────────────────┐
-//                    │   #verse("...", align-to: …)    │   Typst source
-//                    └────────────────┬────────────────┘
-//                                     │ extract body string
-//                                     ▼
-//                            decodeVerseLiteral(src)
-//                          (\n/\t/\"/\\/\u{} resolved;
-//                          markup escapes \* \_ etc.
-//                          PRESERVED for the renderer)
-//                                     │
-//                                     ▼
-//                             renderVerseBody
-//                       (line-by-line, parses *bold*,
-//                        _italic_, #strike[…] etc. into
-//                        <strong>/<em>/<s>/<mark>/<u>)
-//                                     │
-//                                     ▼
-//                          contentEditable canvas DOM
-//                          (user types, formats, edits)
-//                                     │ blur
-//                                     ▼
-//                            encodeVerseDOM(canvas)
-//                       (DOM walk → markup → escape for
-//                        Typst string literal)
-//                                     │
-//                                     ▼
-//                          new body string → dispatch
-//                          a CM transaction replacing
-//                          the between-quotes range
-//                                     │
-//                                     ▼
-//                          (back to top — re-render)
-//
-// All markup metacharacters and string-escape backslashes are hidden
-// from the user — the canvas presents plain text plus styled spans,
-// and the encoder/decoder pair is the single source of truth for
-// going between user-typed characters and the literal Typst storage.
-// User-typed metacharacters are persisted as `\X` so they round-trip
-// literally and are not re-interpreted as markup the next time the
-// body is decoded.
-//
-// ── Sharp edges this widget has accumulated ───────────────────────
-//
-// 1. Focus routing on insertion. Inserting `/verse` from the command
-//    palette lands the CM cursor INSIDE the widget's logical range
-//    (between the quotes). At that point the canvas DOM exists but
-//    doesn't have focus; CM's contentDOM does. Typed characters
-//    bypass the canvas and land at CM's cursor — which sits
-//    adjacent-to or inside the widget — producing scrambled output
-//    (often reverse-typed because CM normalization keeps pulling the
-//    cursor back to a stable widget-boundary position). Fix: when
-//    the widget mounts and CM's selection is inside the widget's
-//    body range, programmatically focus the canvas via
-//    queueMicrotask. Once focus is in the canvas, contentEditable
-//    owns the input loop and typing is normal.
-//
-// 2. Atomic wrap. `wrap.contentEditable = "false"` on the outer
-//    element marks the widget atomic for CM6's MutationObserver, so
-//    the editor doesn't try to interpret canvas keystrokes as edits
-//    to its own document. The inner canvas overrides hierarchically
-//    with `contentEditable = "true"`.
-//
-// 3. Blur-dispatch, not input-dispatch. If we resynced the source on
-//    every input event, each keystroke would tear the widget DOM
-//    down mid-keystroke (rebuild race) and scatter focus back to CM.
-//    The canvas instead accumulates DOM mutations until blur, at
-//    which point we encode it once and dispatch a single transaction.
-//
-// 4. Stop-propagation belt-and-braces. Even with (2) in place, we
-//    `stopPropagation` on input/beforeinput/composition*/keydown/
-//    mousedown so they don't bubble to CM's contentDOM listener.
-//    Defense in depth.
-//
-// 5. Undo/redo forwarding. Ctrl/Cmd-Z inside the canvas would
-//    otherwise hit the contentEditable's per-element history,
-//    leaving CM's source out of sync. We blur first (flushing the
-//    canvas to source) then redispatch the keydown on CM's
-//    contentDOM so the editor's undo stack handles it.
-//
-// 6. Tab inserts a literal tab character. Verse layouts routinely
-//    need indentation and the alternative (focus moves to the next
-//    UI control) breaks the open-canvas illusion.
-// =====================================================================
+// Markup characters the writer types are stored as `\X`, so they stay
+// literal. The widget follows the CM6 widget recipe in AGENTS.md (atomic wrap,
+// focus routing on insertion, dispatch on blur, stopped input events), and
+// also forwards undo/redo to CM and makes Tab insert a tab.
 
 const VERSE_MARKUP_META = new Set([
   "\\", "*", "_", "#", "[", "]", "$", "`", "<", ">", "@", "~",
 ]);
 
-/** Re-dispatch a Ctrl/Cmd-Z or -Y on CM's contentDOM so the editor's
- *  undo stack handles it, rather than the contentEditable's internal
- *  one. The caller should `.blur()` the editable element first so its
- *  pending changes flush to source via the blur listener — otherwise
- *  CM's undo would replay against a stale doc state. */
+/**
+ * Send Ctrl/Cmd-Z or -Y to CM's contentDOM so the editor's undo stack handles
+ * it. Blur the editable element first so its changes reach the source.
+ */
 function forwardUndoRedo(view: EditorView, e: KeyboardEvent): void {
   view.focus();
   view.contentDOM.dispatchEvent(new KeyboardEvent("keydown", {
@@ -1550,9 +1405,10 @@ function encodeAsStringLiteral(markup: string): string {
   return out;
 }
 
-/** Encode user-typed text: first escape any markup metacharacter so
- *  Typst's `eval(..., mode: "markup")` treats it literally, then encode
- *  the result for the surrounding string literal. */
+/**
+ * Escape markup characters so `eval(..., mode: "markup")` treats them
+ * literally, then encode for the string literal.
+ */
 function encodeUserText(text: string): string {
   let markup = "";
   for (const ch of text) {
@@ -1562,20 +1418,15 @@ function encodeUserText(text: string): string {
   return encodeAsStringLiteral(markup);
 }
 
-/** Walk the contentEditable DOM, emitting the source-level Typst string
- *  literal contents. Structural inline formatting (`<strong>`, `<em>`,
- *  …) becomes unescaped markup (`*x*`, `_x_`, `#strike[x]`, etc.); text
- *  nodes are escape-laundered through {@link encodeUserText}.
+/**
+ * Walk the canvas DOM and produce the Typst string literal's contents.
+ * `<strong>`, `<em>` etc. become markup (`*x*`, `_x_`, `#strike[x]`); text goes
+ * through {@link encodeUserText}.
  *
- *  Block boundary handling: browsers wrap line-broken content in `<div>`
- *  or `<p>` after the first Enter (the canvas starts as text + `<br>`s
- *  but Chromium-family contentEditable upgrades the structure once the
- *  user presses Enter). Each block opens with an implicit newline
- *  EXCEPT the first one — `firstBlock` suppresses that lead so the
- *  encoded string doesn't gain a phantom blank line on every save.
- *  We also coalesce consecutive boundaries (skip if the buffer already
- *  ends in `\n`) so user-typed `<br>`s don't double up with the wrapper
- *  block's implicit break.  */
+ * After the first Enter the browser wraps lines in `<div>` or `<p>`. Each block
+ * except the first starts a new line, and consecutive breaks are merged so a
+ * `<br>` and a block boundary don't produce two newlines.
+ */
 function encodeVerseDOM(canvas: HTMLElement): string {
   const parts: string[] = [];
   let firstBlock = true;
@@ -1636,11 +1487,10 @@ function encodeVerseDOM(canvas: HTMLElement): string {
   return parts.join("");
 }
 
-/** Decode the raw between-quotes Typst string literal into the user's
- *  text — i.e., apply `\n`/`\t`/`\r`/`\"`/`\\`/`\u{…}` escapes.
- *  Markup-level escapes (`\*`, `\_`, …) are PRESERVED so the line
- *  renderer can recognize them and emit the literal char without
- *  interpreting it as bold/italic markup. */
+/**
+ * Decode a Typst string literal's contents (`\n`, `\t`, `\"`, `\\`, `\u{…}`).
+ * Markup escapes (`\*`, `\_`) are kept for the line renderer.
+ */
 export function decodeVerseLiteral(src: string): string {
   let out = "";
   let i = 0;
@@ -1675,25 +1525,16 @@ export function decodeVerseLiteral(src: string): string {
   return out;
 }
 
-/** Render one decoded verse line into `parent`, parsing `*bold*`,
- *  `_italic_`, `#strike[…]`/`#highlight[…]`/`#underline[…]`, and `\X`
- *  escapes. Recurses for nested formatting.
+/**
+ * Render one decoded verse line into `parent`, handling `*bold*`, `_italic_`,
+ * `#strike[…]` / `#highlight[…]` / `#underline[…]` and `\X` escapes,
+ * recursively.
  *
- *  This is a deliberately tiny subset parser, not a full Typst markup
- *  parser. The verse body is *constrained* to inline formatting only —
- *  no headings, no lists, no math, no functions other than the three
- *  bracket-content ones above — because the canvas can only present
- *  what HTML can faithfully edit (contentEditable doesn't have a
- *  notion of "headings nested inside a poem"). Anything beyond the
- *  recognized vocabulary is preserved as literal text by `flush()`,
- *  which means the user's source survives a round-trip even if it
- *  contains markup we don't render specially.
- *
- *  Why mirror Typst's emphasis rules (non-whitespace required on the
- *  inside of `*…*` and `_…_`): Typst itself rejects `* foo*` as
- *  emphasis. If we recognized it here, the rendered DOM would show
- *  bold but the compiled output wouldn't — a confusing source/visual
- *  divergence. Easier to refuse it everywhere. */
+ * This is a small subset of Typst markup: a verse holds inline formatting only.
+ * Anything else is kept as literal text, so the source survives a round trip.
+ * Like Typst, emphasis needs non-space just inside the delimiters (`* foo*`
+ * isn't bold), so the canvas matches the output.
+ */
 function renderVerseLine(parent: Element, line: string): void {
   let i = 0;
   let buf = "";
@@ -1708,9 +1549,8 @@ function renderVerseLine(parent: Element, line: string): void {
       i += 2;
       continue;
     }
-    // *…* → bold ; _…_ → italic — but only if a matching close exists
-    // on this line and the next char isn't whitespace (Typst's emphasis
-    // rules require non-space on the inside).
+    // Bold or italic only with a matching close on this line and non-space
+    // inside.
     if ((ch === "*" || ch === "_") && i + 1 < line.length) {
       const inner = line[i + 1];
       if (inner !== ch && inner !== " " && inner !== "\t") {
@@ -1799,9 +1639,10 @@ function renderVerseBody(canvas: HTMLElement, decoded: string): void {
 
 export type VerseAlign = "left" | "center" | "right";
 
-/** Discrete weight steps offered by the verse pill. Mirrors common
- *  Typst integer weights; matches the wght axis of any variable verse
- *  font and works fine on static fonts that ship Light/Bold faces. */
+/**
+ * Weight steps offered by the verse pill. They match a variable font's wght
+ * axis and static fonts with Light/Bold faces.
+ */
 export type VerseWeight = 300 | 400 | 500 | 600 | 700;
 export const VERSE_WEIGHT_DEFAULT: VerseWeight = 400;
 export const VERSE_WEIGHT_OPTIONS: ReadonlyArray<{ value: VerseWeight; label: string }> = [
@@ -1825,10 +1666,10 @@ export interface VerseWidgetOptions {
   /** Explicit `font:` argument from source, or null to fall back to the
    *  user's editor preference (resolved via CSS var --verse-font). */
   font: string | null;
-  /** Explicit `weight:` argument from source, or null to inherit. Only the
-   *  five discrete steps in `VERSE_WEIGHT_OPTIONS` are surfaced via the pill,
-   *  but a hand-authored value outside that set is preserved as-is in source
-   *  (the pill just shows no chip as active). */
+  /**
+   * Explicit `weight:` from source, or null to inherit. A value outside the
+   * pill's steps is kept; the pill just shows none as active.
+   */
   weight: number | null;
 }
 
@@ -1856,33 +1697,21 @@ export class VerseWidget extends WidgetType {
     if (this.opts.weight !== null) {
       wrap.style.fontWeight = String(this.opts.weight);
     }
-    // contentEditable="false" on the wrap marks the widget atomic for
-    // CM6's MutationObserver. The inner canvas overrides hierarchically
-    // with contentEditable="true" so typing works inside.
+    // Atomic wrap for CM6; the canvas inside is editable.
     wrap.contentEditable = "false";
-    // Body range stamped on the wrap so verseFocusRouter (below) can
-    // detect when CM's selection moves into this widget's body — e.g.
-    // backspacing from below into existing verse content — and forward
-    // focus to the canvas. Without this, the widget DOM is reused
-    // (eq() returns true while body bounds are unchanged) so toDOM's
-    // focus-routing branch doesn't re-run, and keystrokes go to CM.
+    // Body range stamped on the wrap so `verseFocusRouter` can route focus into
+    // the canvas when the selection enters the body (e.g. backspacing into it
+    // from below). The DOM is reused while the body is unchanged, so `toDOM`
+    // doesn't run again.
     //
-    // The offsets are stored RELATIVE to the call start, not as absolute
-    // document positions. Incremental decoration updates remap a widget's
-    // range through edits elsewhere (e.g. typing in a list above the
-    // verse) but do NOT rebuild the widget or re-run toDOM, so an absolute
-    // offset stamped here goes stale while the live document shifts. That
-    // stale window used to drift under the growing cursor offset and yank
-    // focus into the verse mid-typing. Relative offsets survive the shift
-    // because the whole call moves as one unit; readers recover the live
-    // absolute range via `liveVerseBodyRange` (posAtDOM + these offsets).
+    // The offsets are relative to the call start, because the widget isn't
+    // rebuilt when edits elsewhere shift it. `liveVerseBodyRange` turns them
+    // into document positions.
     wrap.dataset.bodyRelFrom = String(this.opts.bodyFrom - this.opts.callFrom);
     wrap.dataset.bodyRelTo = String(this.opts.bodyTo - this.opts.callFrom);
 
-    // ── Pill (top-left): identifies the block as verse and opens the
-    // super-menu, which includes the alignment options for verse. The
-    // pill is the unified PillChip (R1) — same visuals as every other
-    // pill in the editor. .cm-typst-verse-pill only positions it.
+    // Pill (top-left): identifies the verse and opens the menu with its
+    // alignment options.
     const pill = buildPillButton("verse", view, () => ({
       funcName: "verse",
       callFrom: this.opts.callFrom,
@@ -1906,15 +1735,11 @@ export class VerseWidget extends WidgetType {
 
     canvas.addEventListener("mousedown", (e) => {
       e.stopPropagation();
-      // Drop any search-match highlight before the click places the caret, so
-      // the user starts editing on clean DOM (the spans are pass-through and
-      // never corrupt source, but clearing first keeps the caret honest).
+      // Clear search highlights before the click places the caret.
       clearVerseHits(canvas);
     });
 
-    // Stop input-family events from bubbling to CM's `contentDOM`
-    // listener. Defense-in-depth on top of contentEditable=false on
-    // the wrap.
+    // Keep input events from reaching CM's contentDOM.
     for (const t of ["beforeinput", "input", "compositionstart", "compositionupdate", "compositionend"] as const) {
       canvas.addEventListener(t, (e) => { e.stopPropagation(); });
     }
@@ -1927,13 +1752,8 @@ export class VerseWidget extends WidgetType {
         if (k === "b") { e.preventDefault(); document.execCommand("bold"); return; }
         if (k === "i") { e.preventDefault(); document.execCommand("italic"); return; }
         if (k === "u") { e.preventDefault(); document.execCommand("underline"); return; }
-        // Forward undo/redo to CM6 so it operates on the source
-        // document, not the contentEditable's internal history.
-        // Mixing the two leaves the widget DOM and the source out of
-        // sync, which manifests as "characters appear in weird
-        // places, then the widget collapses to source mode" mid-undo.
-        // Blur first so the canvas's pending edits flush to source
-        // before CM applies the undo.
+        // Forward undo/redo to CM so it acts on the source, not the canvas's
+        // own history. Blur first so pending edits reach the source.
         if (k === "z" || k === "y") {
           e.preventDefault();
           canvas.blur();
@@ -1946,19 +1766,14 @@ export class VerseWidget extends WidgetType {
         document.execCommand("insertLineBreak");
         return;
       }
-      // Tab inside the canvas inserts a real tab character, rather
-      // than escaping focus to the next UI control. Verse layouts
-      // routinely need indentation — preserving Tab keeps the
-      // open-canvas feel honest.
+      // Tab inserts a tab character; verse often needs indentation.
       if (e.key === "Tab") {
         e.preventDefault();
         document.execCommand("insertText", false, "\t");
         return;
       }
-      // Arrow keys at the canvas edges hand control back to the source
-      // editor so the verse isn't a keyboard trap — mirrors a table cell
-      // exiting at the grid edge. Interior presses fall through to the
-      // browser's native caret motion inside the canvas.
+      // Arrow keys at the canvas edges return to the source editor, like a
+      // table cell at the grid edge.
       if ((e.key === "ArrowLeft" || e.key === "ArrowUp")
           && caretAtCanvasEdge(canvas, "start", e.key === "ArrowUp")) {
         e.preventDefault();
@@ -1974,9 +1789,8 @@ export class VerseWidget extends WidgetType {
     });
 
     canvas.addEventListener("paste", (e) => {
-      // Sanitize pasted content to plain text. Browser-supplied HTML
-      // would import attributes that don't round-trip cleanly through
-      // the encoder; plain text passes through encodeUserText cleanly.
+      // Paste as plain text; pasted HTML doesn't round-trip through the
+      // encoder.
       const text = e.clipboardData?.getData("text/plain");
       if (text != null) {
         e.preventDefault();
@@ -1990,19 +1804,10 @@ export class VerseWidget extends WidgetType {
 
     wrap.appendChild(canvas);
 
-    // Focus routing on insertion: if CM's selection is inside the
-    // widget's body range when this widget mounts, the user just
-    // inserted /verse (or otherwise positioned the cursor inside
-    // the widget). Without this, keystrokes go to CM's contentDOM
-    // and land adjacent to the widget — producing scrambled output.
-    // Transfer focus to the canvas and place the caret at the end
-    // of its content so typing flows into the canvas naturally.
-    // `view.hasFocus` gate: only pull focus into the canvas when the editor
-    // content itself is focused. When a panel owns focus — most notably the
-    // Ctrl+F search field, whose `findNext` moves the selection into matches
-    // anywhere in the doc — stealing focus here would route the user's typing
-    // into the verse and overwrite it. The panel input is in `view.dom` but
-    // not `contentDOM`, so `hasFocus` is false while it's active.
+    // Focus routing on insertion: if the selection is inside the body when the
+    // widget mounts, move focus into the canvas with the caret at the end. Only
+    // when the editor content has focus, so a panel such as the Ctrl+F search
+    // field (whose matches move the selection) keeps it.
     const sel = view.state.selection.main;
     if (
       view.hasFocus &&
@@ -2023,13 +1828,12 @@ export class VerseWidget extends WidgetType {
     return wrap;
   }
 
-  /** Move the caret from the verse canvas back into the source editor,
-   *  landing just before (`"before"`) or just after (`"after"`) the
-   *  `#verse(...)` call so the verse can be exited by keyboard. */
+  /**
+   * Move the caret from the canvas back to the source editor, just before or
+   * after the `#verse(...)` call.
+   */
   private exitToEditor(view: EditorView, wrap: HTMLElement, direction: "before" | "after"): void {
-    // Resolve the call's live start from the DOM — incremental decoration
-    // updates remap the widget without rebuilding it, so the build-time
-    // offset can be stale.
+    // The widget's build-time offset can be stale; read its start from the DOM.
     let callFrom: number;
     try {
       callFrom = view.posAtDOM(wrap);
@@ -2045,10 +1849,11 @@ export class VerseWidget extends WidgetType {
     view.focus();
   }
 
-  /** Read the canvas DOM, encode to Typst source, and dispatch a
-   *  transaction replacing the between-quotes range — but only if the
-   *  source actually changed. Recompute body bounds from the live
-   *  document because earlier edits elsewhere may have shifted them. */
+  /**
+   * Encode the canvas and replace the text between the quotes, if it changed.
+   * Body bounds come from the live document, since edits elsewhere may have
+   * moved them.
+   */
   private flushToSource(canvas: HTMLElement, view: EditorView): void {
     const next = encodeVerseDOM(canvas);
     if (next === this.opts.source) return;
@@ -2064,9 +1869,7 @@ export class VerseWidget extends WidgetType {
     });
   }
 
-  /** Build the verse pill's option sections (R7). Exposes alignment and
-   *  weight; future verse-specific options (numbering, leading, font
-   *  override) plug in here. */
+  /** The verse pill's option sections: alignment and weight. */
   private buildOptionSections(view: EditorView): PillMenuSection[] {
     const activeWeight: number = this.opts.weight ?? VERSE_WEIGHT_DEFAULT;
     return [
@@ -2096,18 +1899,21 @@ export class VerseWidget extends WidgetType {
     this.rewriteCallArgs(view, (args) => upsertAlignArg(args, next));
   }
 
-  /** Rewrite (or insert) the `weight:` named argument. Setting Regular
-   *  (400) drops the arg entirely so the source stays clean — same
-   *  policy as alignment's "left" default. */
+  /**
+   * Set the `weight:` argument. Regular (400) removes it, as "left" does for
+   * alignment.
+   */
   private setWeight(next: VerseWeight, view: EditorView): void {
     const current = this.opts.weight ?? VERSE_WEIGHT_DEFAULT;
     if (next === current) return;
     this.rewriteCallArgs(view, (args) => upsertWeightArg(args, next));
   }
 
-  /** Slice out the verse call's argument list, hand it to a rewriter,
-   *  and dispatch a CM change with the result. Quote-aware paren matching
-   *  avoids treating a `)` inside the body literal as the call's close. */
+  /**
+   * Pass the verse call's argument list to `rewrite` and apply the result.
+   * Paren matching skips quoted text, so a `)` in the body doesn't end the
+   * call.
+   */
   private rewriteCallArgs(view: EditorView, rewrite: (args: string) => string): void {
     const callFrom = this.opts.callFrom;
     const docText = view.state.doc.sliceString(
@@ -2166,10 +1972,10 @@ function upsertAlignArg(argsText: string, align: VerseAlign): string {
   return `${argsText.replace(/\s+$/, "")}, align-to: ${align}`;
 }
 
-/** Add or replace the `weight:` named arg in a verse argument list.
- *  Matches integer values (set by the pill) and named strings like
- *  `"bold"` (hand-authored) so an existing literal isn't duplicated.
- *  Setting Regular (400) drops the arg entirely. */
+/**
+ * Add or replace `weight:` in a verse argument list, matching integer and
+ * named-string values. Regular (400) removes it.
+ */
 function upsertWeightArg(argsText: string, weight: VerseWeight): string {
   const existing = /,\s*weight\s*:\s*(?:\d+|"[^"]*")/;
   if (existing.test(argsText)) {
@@ -2183,19 +1989,14 @@ function upsertWeightArg(argsText: string, weight: VerseWeight): string {
 }
 
 /**
- * A widget that draws a whole-line element around a body the writer edits in
- * place — a block quote, a callout, a margin comment.
+ * A widget that draws a whole-line element around a body edited in place (block
+ * quote, callout). Extending it tells the caret rules that the element has a
+ * body, so motion into it lands in the text rather than on the hidden markup
+ * (see `createBlockBodyCaretEntry` in pill-boundary-nav.ts).
  *
- * Extending this is what tells the caret rules that the element has a body to
- * land in, so motion crossing into it from outside comes to rest in the text
- * rather than on the hidden markup that draws the frame (see
- * `createBlockBodyCaretEntry` in pill-boundary-nav.ts). A new block element
- * gets that behaviour by extending this class; nothing has to list it by name.
- *
- * Elements that own their keyboard entry — a table's cells, a verse canvas —
- * deliberately do not extend it, and neither does a margin comment, which
- * stays a rendered widget until its pill is clicked: there is no body on
- * screen for the caret to land in.
+ * Elements that handle their own keyboard entry (table, verse) don't extend it,
+ * nor does a margin comment, which has no visible body until its pill is
+ * clicked.
  */
 export abstract class BlockBodyElementWidget extends WidgetType {}
 
@@ -2258,10 +2059,11 @@ export class BlockquoteWidget extends WidgetType {
   }
 }
 
-/** Rendered callout shown while the caret is outside the call. Its edit-state
- *  counterpart is `CalloutHeadRowWidget` plus per-line decorations; the two
- *  share the geometry variables in visual-theme.ts so switching between them
- *  never changes the block's height. */
+/**
+ * Rendered callout, shown while the caret is outside the call. Its edit state
+ * (`CalloutHeadRowWidget` and line decorations) uses the same geometry
+ * variables, so the height doesn't change.
+ */
 export class CalloutBlockWidget extends BlockBodyElementWidget {
   constructor(
     readonly kind: string,
@@ -2325,10 +2127,11 @@ export class CalloutBlockWidget extends BlockBodyElementWidget {
   }
 }
 
-/** Rendered block quote shown while the caret is outside the call. Its
- *  edit-state counterpart is per-line decorations plus, when there is an
- *  attribution, `BlockquoteAttributionRowWidget`; both states share the
- *  geometry variables in visual-theme.ts so the quote never changes height. */
+/**
+ * Rendered block quote, shown while the caret is outside the call. Its edit
+ * state (line decorations and `BlockquoteAttributionRowWidget`) uses the same
+ * geometry variables, so the height doesn't change.
+ */
 export class BlockquoteBlockWidget extends BlockBodyElementWidget {
   constructor(
     readonly content: string,
@@ -2382,10 +2185,11 @@ export class BlockquoteBlockWidget extends BlockBodyElementWidget {
   }
 }
 
-/** Edit-state heading row for a callout. Replaces the hidden `#callout(...)[`
- *  opener at the top of the first body line and shows the pill (kind, title,
- *  colour and "Edit source" live in its menu) beside the same heading the rendered
- *  widget draws, so the block keeps its height while the body is edited. */
+/**
+ * Edit-state heading row for a callout. Replaces the hidden opener on the first
+ * body line with the pill and the rendered widget's heading, so the height doesn't
+ * change.
+ */
 export class CalloutHeadRowWidget extends WidgetType {
   constructor(
     readonly kind: string,
@@ -2417,10 +2221,11 @@ export class CalloutHeadRowWidget extends WidgetType {
   ignoreEvent() { return true; }
 }
 
-/** Edit-state attribution row for a block quote. Replaces the hidden closing
- *  `]` at the end of the last body line with the same "— attribution" row the
- *  rendered widget shows, so a quote with an attribution keeps its height
- *  while the body is edited. The attribution itself is edited via the pill. */
+/**
+ * Edit-state attribution row for a block quote. Replaces the hidden closing `]`
+ * with the rendered widget's "— attribution" row. The attribution is edited
+ * through the pill.
+ */
 export class BlockquoteAttributionRowWidget extends WidgetType {
   constructor(readonly attribution: string) {
     super();
@@ -2443,12 +2248,8 @@ export class BlockquoteAttributionRowWidget extends WidgetType {
   ignoreEvent() { return true; }
 }
 
-// Bibliography is a non-editable region in visual mode by default — it's a
-// declarative directive rather than flowing prose. Rather than hiding the
-// line entirely (which would leave no signal that a bibliography exists),
-// we render a pill placeholder. The pill opens the universal super-menu,
-// from which the user can edit source, switch to source mode, or copy/
-// duplicate/delete the call.
+// A bibliography renders as a pill placeholder, so it is visible without being
+// editable prose. The pill's menu offers source editing, copy and delete.
 export class BibliographyBlockWidget extends WidgetType {
   constructor(readonly path: string, readonly pos: number) { super(); }
 
@@ -2491,9 +2292,8 @@ export class LinkWidget extends WidgetType {
   toDOM() {
     const el = document.createElement("span");
     el.className = "cm-typst-link";
-    // A replace widget is rendered outside any surrounding mark decoration, so
-    // bold/italic/etc. wrapping the call (`*#link(...)[…]*`) would be lost. Carry
-    // the formatting flags and apply the same classes the marks would have.
+    // A replace widget renders outside surrounding marks, so apply their
+    // formatting classes here.
     if (this.isBold) el.classList.add("cm-typst-bold");
     if (this.isItalic) el.classList.add("cm-typst-italic");
     if (this.isStrike) el.classList.add("cm-typst-strike");
@@ -2518,12 +2318,10 @@ export class LinkWidget extends WidgetType {
   ignoreEvent() { return true; }
 }
 
-/** A `#link(<label>)[text]` internal cross-reference — its destination is a
- *  Typst label (an anchor next to a heading, etc.) rather than a URL. The
- *  string-URL form is `LinkWidget`; this renders the same way but, on click,
- *  jumps the editor to where the `<label>` is defined in this note instead of
- *  opening anything externally. Without this the call fell through to raw
- *  source, showing `#link(<label>)[…]` literally. */
+/**
+ * A `#link(<label>)[text]` link to a label in this note. Renders like
+ * `LinkWidget`, but a click jumps to where the label is defined.
+ */
 export class LabelLinkWidget extends WidgetType {
   constructor(
     readonly label: string,
@@ -2587,10 +2385,10 @@ export class LabelLinkWidget extends WidgetType {
   ignoreEvent() { return true; }
 }
 
-/** Move the cursor to (and scroll to) the `<label>` definition in this note —
- *  the anchor that tags an element, not a reference to it (which would land the
- *  cursor back inside the clicked link and reveal its source). Cursor goes to
- *  the start of the tagged line so the heading/element reads naturally. */
+/**
+ * Move the cursor to the start of the line where `<label>` is defined, and
+ * scroll to it.
+ */
 function jumpToLabel(view: EditorView, label: string): void {
   const pos = findLabelDefinition(view.state.doc.toString(), label);
   if (pos < 0) return;
@@ -2635,14 +2433,10 @@ export class CitationWidget extends WidgetType {
 }
 
 /**
- * A pill for a `@label` reference to an in-document element (heading, figure,
- * equation, table) — Typst's `@` is the universal reference operator, and this
- * is the non-citation half of it. Unlike {@link CitationWidget} it shows the
- * *resolved* target text (the heading's words, or the label name) rather than
- * the raw `@key`, because the visual editor is WYSIWYM: the writer cares about
- * what they're pointing at, not the anchor's identity. Clicking jumps to the
- * label's definition. The reading view still renders Typst's real "Section 1"
- * style output — this is an authoring aid, not a faithful render.
+ * A pill for an `@label` reference to a heading, figure, equation or table in
+ * the note (the non-citation use of `@`). Unlike {@link CitationWidget} it
+ * shows the target's text (e.g. the heading) rather than `@key`. Clicking jumps
+ * to the label.
  */
 export class ReferenceWidget extends WidgetType {
   constructor(
@@ -2745,9 +2539,7 @@ function showCiteContextMenu(
   document.addEventListener("keydown", closeOnEscape, true);
 }
 
-/** Collapse the DOM selection to the start or end of a verse canvas's
- *  content. Shared by mount-time focus routing and keyboard entry so caret
- *  placement stays consistent. */
+/** Collapse the selection to the start or end of a verse canvas. */
 function placeCaretInVerseCanvas(canvas: HTMLElement, where: "start" | "end"): void {
   const range = document.createRange();
   range.selectNodeContents(canvas);
@@ -2757,11 +2549,11 @@ function placeCaretInVerseCanvas(canvas: HTMLElement, where: "start" | "end"): v
   sel?.addRange(range);
 }
 
-/** Whether the collapsed caret sits at the canvas edge that a given arrow key
- *  would leave from. `edge` is the boundary in question; `vertical` is true
- *  for ArrowUp/ArrowDown. Horizontal keys leave only at the absolute text
- *  boundary; vertical keys also leave from the first/last visual line so they
- *  don't get stuck mid-column. */
+/**
+ * Whether the caret is at the canvas edge an arrow key would leave from.
+ * Left/Right leave only at the very start or end; Up/Down also leave from the
+ * first or last visual line.
+ */
 function caretAtCanvasEdge(
   canvas: HTMLElement,
   edge: "start" | "end",
@@ -2771,9 +2563,7 @@ function caretAtCanvasEdge(
   if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return false;
   const caret = sel.getRangeAt(0);
 
-  // Absolute boundary: no rendered text between the caret and the canvas
-  // edge. Covers empty/single-line verses and is the guaranteed escape
-  // hatch for the horizontal arrows.
+  // No text between the caret and the edge.
   const probe = document.createRange();
   probe.selectNodeContents(canvas);
   if (edge === "start") probe.setEnd(caret.startContainer, caret.startOffset);
@@ -2793,13 +2583,10 @@ function caretAtCanvasEdge(
     : box.bottom - caretRect.bottom < tol;
 }
 
-/** Resolve a verse wrap's current body range in the live document.
- *  The wrap's DOM is reused across edits that shift the widget's position
- *  (typing in a list above it, etc.), so the relative offsets stamped at
- *  mount time are combined with the widget's live call start — read fresh
- *  from `posAtDOM` — to recover the true body range without a rebuild.
- *  Returns null if the range can't be resolved (missing data / unmounted
- *  node). */
+/**
+ * A verse wrap's current body range: the offsets stamped at mount time plus the
+ * widget's live start from `posAtDOM`. Null if it can't be resolved.
+ */
 function liveVerseBodyRange(
   view: EditorView,
   wrap: HTMLElement,
@@ -2817,15 +2604,11 @@ function liveVerseBodyRange(
   return { from: callFrom + relFrom, to: callFrom + relTo };
 }
 
-/** Route focus into a verse canvas whenever CM's logical cursor moves
- *  into a verse body range. Complements VerseWidget.toDOM's mount-time
- *  focus routing: that branch only fires on widget construction, but
- *  if the user backspaces from below into an existing verse, the
- *  widget DOM is reused (eq() returns true while the body bounds are
- *  unchanged) so toDOM doesn't re-run — yet CM's selection has
- *  entered the body range. Without this plugin, keystrokes go to CM's
- *  contentDOM instead of the canvas, producing reverse-typing /
- *  caret-at-edge symptoms documented in CLAUDE.md (CM6 widget recipe). */
+/**
+ * Route focus into a verse canvas when the cursor moves into its body. `toDOM`
+ * handles this when the widget is created; this covers a reused widget, e.g.
+ * after backspacing into a verse from below.
+ */
 export const verseFocusRouter = ViewPlugin.fromClass(
   class {
     update(update: ViewUpdate) {
@@ -2834,27 +2617,17 @@ export const verseFocusRouter = ViewPlugin.fromClass(
       const lo = Math.min(sel.anchor, sel.head);
       const hi = Math.max(sel.anchor, sel.head);
       const view = update.view;
-      // Defer the DOM scan: when a verse is just inserted, ViewPlugin
-      // `update` fires before CM flushes the new widget DOM, so an
-      // immediate querySelector wouldn't find it. queueMicrotask runs
-      // after the current task finishes (including CM's DOM write) but
-      // before paint.
+      // Defer the lookup until CM has written a just-inserted widget's DOM.
       queueMicrotask(() => {
-        // Only route focus into a verse canvas when the editor content has
-        // focus. The Ctrl+F search field's `findNext` fires `selectionSet`
-        // as it walks matches; without this gate, a match inside a verse
-        // body would steal focus from the search input and the user's typing
-        // would overwrite the verse. The search panel lives in `view.dom`
-        // but outside `contentDOM`, so `hasFocus` is false while it's active.
+        // Only when the editor content has focus, so a search match inside a
+        // verse doesn't take focus from the search field.
         if (!view.hasFocus) return;
         const wraps = view.dom.querySelectorAll<HTMLElement>(".cm-typst-verse");
         for (const wrap of wraps) {
           const body = liveVerseBodyRange(view, wrap);
           if (!body) continue;
-          // Selection (point or range) must lie entirely within this
-          // verse's body. Toolbar-wrap-around-selection produces a range;
-          // backspace-into-verse and slash-insert produce a point — both
-          // flow here.
+          // The selection (a point or a range) must lie within this verse's
+          // body.
           if (lo < body.from || hi > body.to) continue;
           const canvas = wrap.querySelector<HTMLElement>(".cm-typst-verse-canvas");
           if (!canvas) return;
@@ -2862,9 +2635,8 @@ export const verseFocusRouter = ViewPlugin.fromClass(
           canvas.focus({ preventScroll: true });
           const range = document.createRange();
           range.selectNodeContents(canvas);
-          // Empty source selection → caret at end; non-empty (wrap-around)
-          // → select the canvas contents so the user can immediately
-          // continue typing/formatting over their original text.
+          // Empty selection: caret at the end. A range: select the canvas
+          // contents.
           if (lo === hi) range.collapse(false);
           const docSel = window.getSelection();
           docSel?.removeAllRanges();
@@ -2877,11 +2649,10 @@ export const verseFocusRouter = ViewPlugin.fromClass(
 );
 
 /**
- * Locate a verse widget the cursor should step into from `pos` when moving in
- * `direction`, and which end the caret should land at. The verse renders as an
- * atomic range, so a plain arrow press skips the whole block; this finds the
- * block that press should instead enter. `decoField` is passed in to avoid a
- * circular import with visual-plugin. Mirrors `findTableWrapNear`.
+ * Find the verse widget an arrow press from `pos` should enter, and the end the
+ * caret lands at. The verse is atomic, so a plain arrow press would skip it.
+ * `decoField` is passed in to avoid a circular import. Like
+ * `findTableWrapNear`.
  */
 function findVerseEntry(
   view: EditorView,
@@ -2927,11 +2698,9 @@ function findVerseEntry(
 }
 
 /**
- * Keymap letting the arrow keys step into an adjacent verse canvas from the
- * source editor. Without it the verse's atomic range makes one arrow press
- * skip the whole block, so it could only be entered by mouse. Returned as a
- * factory so visual-plugin can supply its decoration StateField without a
- * circular import. Mirrors `createTableEntryKeymap`.
+ * Keymap for entering an adjacent verse canvas with the arrow keys. A factory,
+ * so visual-plugin can pass its decoration field without a circular import.
+ * Like `createTableEntryKeymap`.
  */
 export function createVerseEntryKeymap(decoField: StateField<DecorationSet>) {
   const enter = (view: EditorView, direction: "up" | "down" | "left" | "right"): boolean => {
@@ -2966,23 +2735,13 @@ export function createVerseEntryKeymap(decoField: StateField<DecorationSet>) {
 
 // ---------------------------------------------------------------------------
 // verseSearchHighlighter: paints the current Ctrl+F match inside a verse
-// canvas.
+// canvas. CM's own match decoration lands on the hidden source, so it isn't
+// visible.
 //
-// A verse renders as an atomic widget whose canvas replaces the underlying
-// `#verse("…")` source. CM's own search-match decoration is applied to that
-// hidden source range, so a match inside a verse is found and selected but
-// stays invisible — the user steps onto it with no visual cue. This plugin
-// re-paints the current match (CM's selection) directly in the canvas.
-//
-// Mapping doc offsets through the decode + inline-markup render pipeline
-// precisely would be costly; instead we locate the match by *occurrence*:
-// the matched text and how many earlier matches sit before it in the same
-// verse uniquely identify which rendered occurrence to highlight. This is
-// exact for plain verse (the common case) and for case-insensitive substring
-// search (the default). Markup/escapes or whole-word/regexp queries can in
-// rare cases shift the occurrence count; the highlight then lands on a
-// nearby same-text occurrence — never crashes, never corrupts source (the
-// highlight is a pass-through `<span>`; see `encodeVerseDOM`'s SPAN case).
+// The match is found by occurrence: its text and how many earlier matches
+// are in the same verse. This is exact for plain text; with markup or
+// regexp queries it can land on a nearby occurrence of the same text. The
+// highlight is a pass-through `<span>` and never changes the source.
 // ---------------------------------------------------------------------------
 
 const VERSE_HIT_CLASS = "cm-verse-search-hit";
@@ -3009,9 +2768,7 @@ export const verseSearchHighlighter = ViewPlugin.fromClass(
   },
 );
 
-/** Remove every search-hit span from a canvas, restoring the original text
- *  nodes. Pass-through spans never alter encoded source, but stale ones would
- *  leave a misleading highlight, so each refresh clears before re-painting. */
+/** Remove all search-hit spans from a canvas, restoring the text nodes. */
 function clearVerseHits(canvas: HTMLElement): void {
   const hits = canvas.querySelectorAll<HTMLElement>("." + VERSE_HIT_CLASS);
   if (hits.length === 0) return;
@@ -3026,9 +2783,10 @@ function clearVerseHits(canvas: HTMLElement): void {
   canvas.normalize();
 }
 
-/** Re-paint the current search match inside whichever verse canvas contains
- *  it. Clears all verse canvases first so a moved/cleared match leaves none
- *  behind. */
+/**
+ * Repaint the current search match in whichever verse contains it, clearing the
+ * others.
+ */
 function refreshVerseSearchHits(view: EditorView): void {
   for (const canvas of view.dom.querySelectorAll<HTMLElement>(".cm-typst-verse-canvas")) {
     clearVerseHits(canvas);
@@ -3085,9 +2843,8 @@ function paintVerseHit(
   occurrence: number,
   caseSensitive: boolean,
 ): void {
-  // Flatten the canvas to a string while recording each text node's span in
-  // that flat coordinate. `<br>` contributes a newline so multi-line matches
-  // line up with the decoded source.
+  // Flatten the canvas to a string, recording each text node's span. `<br>`
+  // counts as a newline.
   const segs: { node: Text; start: number; len: number }[] = [];
   let flat = "";
   const walk = (node: Node): void => {
@@ -3119,9 +2876,8 @@ function paintVerseHit(
   if (idx < 0) return;
   const end = idx + ndl.length;
 
-  // Collect the covered portion of each overlapping text node up front: the
-  // offsets are in the pre-mutation flat space, and splitting one text node
-  // never shifts another's, so wrapping them afterwards is safe.
+  // Collect each text node's covered portion first; splitting one node doesn't
+  // shift another's offsets.
   const portions = segs
     .map((s) => {
       const a = Math.max(idx, s.start);
@@ -3138,9 +2894,10 @@ function paintVerseHit(
   firstSpan?.scrollIntoView({ block: "nearest", inline: "nearest" });
 }
 
-/** Split `node` so that `[from, to)` is its own text node, wrap that node in a
- *  hit span (inserted in place, preserving any surrounding markup element),
- *  and return the span. */
+/**
+ * Split `node` so `[from, to)` is its own text node, wrap it in a hit span and
+ * return the span.
+ */
 function wrapTextPortion(node: Text, from: number, to: number): HTMLElement | null {
   let target = node;
   if (from > 0) target = target.splitText(from);

@@ -1,15 +1,13 @@
-//! The files a note uses, as an export handles them: what its links to
-//! notebox files become, and which files are copied into a folder beside the
-//! exported file (`<export name>-files/`). Every export shares this, so a
-//! single note, a batch, a book, a site and a Markdown export all treat files
-//! the same way.
+//! How exports handle the files a note uses: what links to notebox files
+//! become, and which files are copied into a folder beside the export (`<export
+//! name>-files/`). Shared by every export (single note, batch, book, site,
+//! Markdown).
 //!
-//! Links are rewritten in the Typst source before it is compiled or
-//! converted, through [`rewrite_file_links`]. Per CLAUDE.md's Typst-first
-//! principle, a `show link` rule in the notebox package was considered: it
-//! would cover the Typst-compiled formats, but the Markdown export converts
-//! the source without running Typst, so a source rewrite on the Typst syntax
-//! tree is the one place that serves every format.
+//! Links are rewritten in the Typst source before compiling or converting, with
+//! [`rewrite_file_links`]. Per CLAUDE.md's Typst-first principle: a `show link`
+//! rule in the notebox package would cover formats Typst compiles, but the
+//! Markdown export converts the source without Typst, so a rewrite on the
+//! syntax tree is the one place that serves every format.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -32,10 +30,10 @@ pub struct CompanionReport {
     pub copied: usize,
 }
 
-/// Plans and copies the files of one export. Prepare each note's source with
-/// [`Self::prepare`] before compiling it, then call [`Self::copy`] once the
-/// export is written. Notes of one export share the folder, and a file used
-/// by several notes is copied once.
+/// Plans and copies one export's files. Prepare each note's source with
+/// [`Self::prepare`] before compiling, then call [`Self::copy`] once the export
+/// is written. An export's notes share the folder, and a file used by several
+/// is copied once.
 pub(crate) struct CompanionFiles {
     options: LinkedFilesOptions,
     folder: PathBuf,
@@ -79,9 +77,8 @@ impl CompanionFiles {
         Self::new(options, dir, &stem)
     }
 
-    /// Files for an export of the collection at `collection_path` into the
-    /// folder `output_dir` (a batch, a site), going into
-    /// `<collection name>-files` there.
+    /// Files for exporting the collection at `collection_path` into
+    /// `output_dir` (a batch, a site), into `<collection name>-files` there.
     pub(crate) fn for_collection(
         options: Option<LinkedFilesOptions>,
         output_dir: &Path,
@@ -109,9 +106,9 @@ impl CompanionFiles {
         self.prepare(storage, &note_dir, source)
     }
 
-    /// `source`, with its links to notebox files rewritten as the options
-    /// say, after noting the files it needs copied. `note_dir` is the note's
-    /// folder relative to the notebox root, for relative image paths.
+    /// `source` with its links to notebox files rewritten per the options,
+    /// noting the files to copy. `note_dir` is the note's folder relative to
+    /// the notebox root, for relative image paths.
     pub(crate) fn prepare(
         &mut self,
         storage: &LocalNoteboxStorage,

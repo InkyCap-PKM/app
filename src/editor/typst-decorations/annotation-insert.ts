@@ -1,8 +1,6 @@
-// Build + insert `#annotation` / `#suggestion` markup, stamped with today's
-// date (`on:`) and the notebox's commit-author name (`by:`). Used by the
-// Annotations pane's bottom toolbar and the `/` command palette — the single
-// `buildAnnotationInsert` builder keeps the two surfaces in sync (they used to
-// carry two copies of the same template strings).
+// Build and insert `#annotation` / `#suggestion` markup with today's date
+// (`on:`) and the notebox's commit author name (`by:`). Used by the Annotations
+// pane toolbar and the `/` palette, both through `buildAnnotationInsert`.
 
 import { EditorView } from "@codemirror/view";
 import { commitAuthorName } from "../../stores/git";
@@ -32,20 +30,23 @@ function today(): string {
   return `${d.getFullYear()}-${m}-${day}`;
 }
 
-/** The author identity to stamp on a fresh mark: today's date, plus `by:` from
- *  the notebox's commit-author name (cached in the git store on open) so
- *  collaborators see who proposed each change — and so a user's own suggestions
- *  can be excluded from their "Changes to resolve" list. `by:` is omitted when
- *  there's no identity (e.g. a non-collaborative notebox). */
+/**
+ * The author fields for a new mark: today's date, and `by:` from the notebox's
+ * commit author name (cached in the git store), so collaborators see who
+ * suggested what and a user's own suggestions are left out of their "Changes to
+ * resolve". `by:` is omitted without a name (e.g. a non-collaborative notebox).
+ */
 function identity(): { by?: string; on: string } {
   const by = commitAuthorName().trim();
   return by ? { by, on: today() } : { on: today() };
 }
 
-/** Build a full `#suggestion(...)` call, preserving the body/old content
- *  verbatim. Shared by fresh inserts and by the widget's "Save comment" rebuild
- *  (which carries an existing body + an updated `note`). Argument order matches
- *  the Rust `suggestion_call` builder (kind, old, by, on) with `note` last. */
+/**
+ * Build a `#suggestion(...)` call, keeping the body and old content as they
+ * are. Used for new inserts and the widget's "Save comment" (an existing body
+ * with a new `note`). Argument order matches Rust's `suggestion_call` (kind,
+ * old, by, on), with `note` last.
+ */
 export function buildSuggestionCall(opts: {
   kind: "insert" | "delete" | "replace";
   body: string;
@@ -80,27 +81,26 @@ export function buildAnnotationInsert(kind: InsertKind, sel: string): BuiltInser
     case "replace": {
       // `old:` carries the selection; the empty trailing `[]` is the new text.
       const insert = buildSuggestionCall({ kind, body: "", oldText: sel, ...id });
-      // Caret inside the empty trailing body bracket. Expand the raw source
-      // (like `annotation` above) so the caret actually lands there — otherwise
-      // the markup collapses to the atomic SuggestionWidget and the atomic range
-      // rounds the caret out past the `]`, so the new text isn't captured.
+      // Caret in the empty body bracket. Expand the source (as for `annotation`
+      // above) so the caret lands there; otherwise the markup collapses to the
+      // atomic SuggestionWidget and the caret is moved past the `]`.
       return { insert, cursorOffset: insert.length - 1, expand: true };
     }
     case "insert":
     case "delete": {
       const insert = buildSuggestionCall({ kind, body: sel, ...id });
-      // Caret right after the body's opening bracket (before the wrapped text).
-      // Expand the raw source so the caret stays inside the bracket rather than
-      // being rounded out to the atomic widget boundary.
+      // Caret just after the body's opening bracket. Expand the source so the
+      // caret stays inside rather than at the widget's edge.
       return { insert, cursorOffset: insert.indexOf("[") + 1, expand: true };
     }
   }
 }
 
-/** Insert annotation/suggestion markup at the editor's current selection,
- *  wrapping any selected text. No-op when there is no editor (so a toolbar
- *  click does nothing when the cursor isn't in an editing area). Focuses the
- *  editor afterward so typing continues inside the new markup. */
+/**
+ * Insert annotation or suggestion markup at the selection, wrapping selected
+ * text. Does nothing without an editor. Focuses the editor afterwards so typing
+ * continues inside the markup.
+ */
 export function insertAnnotationMarkup(view: EditorView | undefined, kind: InsertKind): void {
   if (!view) return;
   const sel = view.state.selection.main;

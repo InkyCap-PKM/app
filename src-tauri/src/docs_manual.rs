@@ -1,23 +1,16 @@
-//! Bundled InkyCap user manual.
+//! The bundled user manual.
 //!
-//! The English and translated user manuals live in the repository under
-//! `documentation/manual/<notebox>/` and are embedded into the binary at
-//! compile time via [`include_dir!`]. The documentation window opens a writable
-//! working copy under the per-platform config dir; this module seeds and
-//! refreshes that copy from the embedded source.
+//! The manuals (English and translations) are in
+//! `documentation/manual/<notebox>/` and embedded in the binary with
+//! [`include_dir!`], which avoids resource-path lookup at runtime and keeps the
+//! docs matched to the app version. The documentation window opens a working
+//! copy in the config folder; this module creates and refreshes it.
 //!
-//! Why embed rather than ship as Tauri `bundle.resources`: embedding needs no
-//! runtime resource-path resolution (which CLAUDE.md flags as a recurring
-//! cross-platform path-handling hazard), keeps the docs version atomic with the
-//! app binary, and matches the existing `include_bytes!` embedding of the
-//! notebox package in [`crate::notebox_package`].
-//!
-//! The working copy is read-only/ephemeral at the app level — in-app edits
-//! never reach disk (see `NoteboxSession::is_documentation`) — so re-seeding
-//! never destroys user data. Re-seeding is gated by a content fingerprint
-//! stored at `.inkycap/.docs-version`: any change to the embedded manual,
-//! including a developer rebuild, produces a new fingerprint and refreshes the
-//! working copy (dropping notes that were renamed or removed upstream).
+//! In-app edits to the working copy are never saved (see
+//! `NoteboxSession::is_documentation`), so replacing it loses nothing. It is
+//! refreshed when the fingerprint stored in `.inkycap/.docs-version` differs
+//! from the embedded manual's, which also removes notes that were renamed or
+//! deleted.
 
 use std::path::Path;
 
@@ -36,10 +29,9 @@ static MANUAL_FR_CA: Dir<'static> =
 /// embedded manual it was last seeded from.
 const VERSION_MARKER: &str = ".docs-version";
 
-/// Resolve the embedded manual for a documentation-notebox folder name (the
-/// names produced by `docs_notebox_dir_name`). `None` for any name we don't
-/// bundle a manual for — callers fall back to English by passing the English
-/// folder name.
+/// The embedded manual for a documentation folder name (from
+/// `docs_notebox_dir_name`). `None` if no manual is bundled for it; callers
+/// then pass the English name.
 fn embedded_manual(dir_name: &str) -> Option<&'static Dir<'static>> {
     match dir_name {
         "InkyCap-Documentation" => Some(&MANUAL_EN),
@@ -53,13 +45,12 @@ pub fn has_embedded_manual(dir_name: &str) -> bool {
     embedded_manual(dir_name).is_some()
 }
 
-/// Seed or refresh the documentation working copy at `dest_root` from the
-/// embedded manual identified by `dir_name`.
+/// Create or refresh the working copy at `dest_root` from the manual for
+/// `dir_name`.
 ///
-/// No-op (returns `Ok(false)`) when the working copy already matches the
-/// embedded fingerprint, or when no manual is bundled for `dir_name`. When the
-/// content differs, everything in `dest_root` except `.inkycap/` is removed and
-/// the embedded tree is written fresh; returns `Ok(true)`.
+/// `Ok(false)` when it already matches the embedded fingerprint, or no manual
+/// is bundled for `dir_name`. Otherwise everything except `.inkycap/` is
+/// removed, the manual is written, and `Ok(true)` is returned.
 pub fn seed_if_stale(dir_name: &str, dest_root: &Path) -> std::io::Result<bool> {
     let Some(manual) = embedded_manual(dir_name) else {
         return Ok(false);
@@ -72,10 +63,8 @@ pub fn seed_if_stale(dir_name: &str, dest_root: &Path) -> std::io::Result<bool> 
         return Ok(false);
     }
 
-    // Replace the managed content. `.inkycap/` (the notebox package scaffold and
-    // per-machine state) is preserved; everything else is removed first so that
-    // notes renamed or deleted upstream don't linger. Safe because the working
-    // copy is ephemeral — in-app edits never persist.
+    // Keep `.inkycap/` (the package scaffold and per-machine state); remove
+    // everything else so renamed or deleted notes don't linger.
     clear_except_inkycap(dest_root)?;
     std::fs::create_dir_all(dest_root)?;
     extract_manual(manual, dest_root)?;
@@ -108,9 +97,8 @@ fn clear_except_inkycap(root: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Content fingerprint over the embedded manual: SHA-256 of every file's path
-/// and bytes, in a stable path-sorted order. Changes whenever any file is
-/// added, removed, renamed, or edited.
+/// Fingerprint of the embedded manual: SHA-256 of every file's path and bytes,
+/// sorted by path.
 fn manual_fingerprint(dir: &Dir<'static>) -> String {
     let mut files: Vec<&File> = Vec::new();
     collect_files(dir, &mut files);
@@ -126,10 +114,9 @@ fn manual_fingerprint(dir: &Dir<'static>) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-/// Name of the per-notebox working folder that the app creates when the manual
-/// source folder is opened as an ordinary notebox (for editing or book export).
-/// It holds caches and per-machine state, so it is never part of the manual:
-/// the fingerprint ignores it and it is never copied to the working copy.
+/// Working folder the app creates when the manual's source folder is opened as
+/// a notebox (to edit it or export a book). It holds caches and per-machine
+/// state, so the fingerprint ignores it and it isn't copied.
 const WORKING_DIR_NAME: &str = ".inkycap";
 
 /// Whether an embedded directory is a working folder to leave out.

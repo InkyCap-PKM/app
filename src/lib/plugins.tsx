@@ -1,11 +1,12 @@
-// Declarative-plugin loader — the Tier-1 manifest system. A plugin is a single
-// JSON manifest (no code) that contributes data to InkyCap's registries:
-//   • commands  → `/`-palette entries / snippets (palette registry)
-//   • views     → saved query-view sidebar panes (sidebar registry + QueryView)
+// Declarative plugin loader. A plugin is one JSON manifest (no code) adding data
+// to InkyCap's registries:
 //
-// The backend discovers manifest files (src-tauri/src/commands/plugins.rs); this
-// module owns the schema, validates each entry, and registers the valid ones. A
-// malformed manifest or entry is skipped with a console warning — never fatal.
+// • commands → `/` palette entries or snippets (palette registry) • views →
+// saved query-view sidebar panes (sidebar registry and QueryView)
+//
+// The backend finds the manifest files (src-tauri/src/commands/plugins.rs); this
+// defines the format, checks each entry and registers the valid ones. A
+// malformed manifest or entry is skipped with a warning.
 //
 // See documentation/developer/extending/declarative-plugins.md.
 

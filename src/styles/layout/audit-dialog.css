@@ -1,13 +1,11 @@
-/* Typ-audit dialog.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Audit dialogs. Part of layout.css, whose import order (see ../layout.css)
+   keeps the cascade. */
 
 /* ── Typ-audit dialog ────────────────────────────────────────────── */
 
-/* Shared shell for the full-screen audit dialogs (.typ compatibility
-   audit, notebox name audit). Both render the same structure: header,
-   scrollable body of collapsible finding groups, action footer. Add a
-   third audit by reusing these classes, not by copying them. */
+/* Shared frame for the audit dialogs (.typ compatibility, notebox names):
+   header, scrolling body of collapsible finding groups, action footer. Reuse
+   these classes for another audit. */
 .audit-dialog__backdrop {
   position: fixed;
   inset: 0;
@@ -114,12 +112,10 @@
   word-break: break-all;
 }
 
-/* A path inside a finding list that opens that exact note in a new tab.
-   Used by the duplicate-note-name section, whose rows are always notes and
-   whose whole point is getting to a specific one to rename it. Deliberately
-   NOT `.btn` — these sit inline in a dense monospace list, and button
-   geometry (padding, min-height) would break the alignment of the rows
-   around them. */
+/* A path in a finding list that opens that note in a new tab (the duplicate
+   note name section, whose rows are notes to rename). Not `.btn`: these sit
+   in a dense monospace list, and button padding and height would misalign
+   the rows. */
 .audit-dialog__file-link {
   font: inherit;
   color: var(--accent);

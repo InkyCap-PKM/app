@@ -1,11 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { setRuleLabel } from "./visual-plugin";
 
-// A standalone `#set` / `#show` rule (one dropped mid-document, e.g. from the
-// `/` Style menu) renders as a pill in the visual editor. `setRuleLabel`
-// derives that pill's chip text from the rule's source: the keyword plus its
-// target, kept literal so it mirrors the raw Typst the way every other pill
-// shows its `funcName`. These pin that derivation.
+// A standalone `#set` / `#show` rule (e.g. added mid-document from the `/`
+// Style menu) shows as a pill. `setRuleLabel` builds its label from the source:
+// the keyword and its target, as written, like other pills' `funcName`.
 describe("setRuleLabel", () => {
   it("names the property so two same-target rules read distinctly", () => {
     // The motivating case: both are `#set text(…)` but configure different fields.

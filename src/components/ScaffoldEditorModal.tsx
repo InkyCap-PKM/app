@@ -1,17 +1,14 @@
 /**
- * ScaffoldEditorModal — create or edit a scaffold without leaving Settings.
+ * ScaffoldEditorModal: create or edit a scaffold from Settings.
  *
- * The Creation Rules editor's "Scaffold file" dropdown can only pick from
- * scaffolds that already exist; discovering how to author one means leaving
- * Settings for the Scaffolds/Templates/Packages panel, which new users miss.
- * This modal closes that gap: it overlays the Settings modal (same pattern as
- * CustomTypstModal over CollectionSettings), so the Creation Rules form stays
- * mounted underneath and Cancel returns the user exactly where they were.
+ * The Creation Rules "Scaffold file" dropdown only lists existing scaffolds,
+ * and making one otherwise means leaving Settings for the Templates panel. This
+ * opens over Settings (like CustomTypstModal over CollectionSettings), so the
+ * rule form stays underneath and Cancel returns to it.
  *
- * Scaffolds are plain `.typ` files, so the editor reuses the source editor's
- * Typst highlighting via `editableTypstExtensions`. Create writes through the
- * single atomic `createScaffold(name, content)` command; Edit reads/writes the
- * file directly.
+ * Scaffolds are `.typ` files, so the editor uses the source editor's Typst
+ * highlighting (`editableTypstExtensions`). Create uses `createScaffold(name,
+ * content)`; Edit reads and writes the file directly.
  */
 
 import { onMount, onCleanup, Show, createSignal, createMemo } from "solid-js";
@@ -50,9 +47,10 @@ export default function ScaffoldEditorModal(props: ScaffoldEditorModalProps) {
     return base.endsWith(".typ") ? base : `${base}.typ`;
   });
 
-  /** Mirror of the backend `sanitize_template_name` + duplicate guard. Returns
-   *  a translated error string, or null when the name is valid. Only meaningful
-   *  in create mode. */
+  /**
+   * Same checks as the backend's `sanitize_template_name` and duplicate check.
+   * A translated error, or null if the name is valid. Only used when creating.
+   */
   const nameError = createMemo<string | null>(() => {
     if (props.mode !== "create") return null;
     const base = name().trim();

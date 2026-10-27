@@ -1,14 +1,10 @@
-//! Compile-validates that aligned images survive the HTML target.
+//! Checks that aligned images survive HTML output.
 //!
-//! `typst-html` (0.14) has no show rule for `align()`, so `#align(center)[#image
-//! (...)]` is dropped entirely from HTML output — a centred or right-aligned
-//! image silently disappears in the reading view and HTML export, while a bare
-//! (left) image renders fine (typst inlines it as a base64 `data:` URI). The fix
-//! is `html-align` in `inkycap-notebox/lib.typ`, installed as a document-wide
-//! `#show align: html-align` by `inject_html_align_shim` on every HTML compile
-//! path. This runs a real note through the actual injection + Typst HTML
-//! compiler so a regression (the rule failing to install, or `html-align`
-//! breaking) surfaces here.
+//! `typst-html` has no show rule for `align()`, so `#align(center)[#image(...)]`
+//! would vanish from HTML (a bare image renders, inlined as a `data:` URI).
+//! `html-align` in `inkycap-notebox/lib.typ` fixes it, applied as `#show align:
+//! html-align` by `inject_html_align_shim` on every HTML compile. This compiles
+//! a real note through that injection and the Typst HTML compiler.
 
 use inkycap_lib::storage::path::canonicalize_root;
 use inkycap_lib::typst_pipeline::compiler::TypstCompiler;

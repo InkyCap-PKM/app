@@ -1,10 +1,6 @@
-// Reactive store for the global property type registry.
-//
-// Consumers (PropertyEditor, context menus) read through `propertyType(key)`
-// to get the current type for a property key. After mutating a type,
-// call `reloadPropertyTypes()` to refresh the signal. We deliberately
-// cache the whole map in a signal rather than per-key resources so that
-// changing one key triggers a single reactive update across all editors.
+// Store for the property type registry. Read a key's type with
+// `propertyType(key)`; after changing a type, call `reloadPropertyTypes()`. The
+// whole map is one signal, so a change is one update for every editor.
 
 import { createSignal } from "solid-js";
 import {
@@ -42,10 +38,9 @@ export function allPropertyTypes() {
   return types();
 }
 
-// Concrete, user-selectable property types. "auto" is deliberately absent:
-// it's an internal default for keys the user hasn't typed yet, not a value a
-// user should pick. Untyped keys resolve to a concrete type for display via
-// `inferPropertyType` (from the value) or `KNOWN_FIELD_TYPES` (system keys).
+// Property types the user can choose. Not "auto", which is the default for keys
+// without a type: those show a type inferred with `inferPropertyType` (from the
+// value) or `KNOWN_FIELD_TYPES` (system keys).
 export const PROPERTY_TYPE_OPTIONS: PropertyType[] = [
   "checkbox",
   "date",
@@ -56,10 +51,9 @@ export const PROPERTY_TYPE_OPTIONS: PropertyType[] = [
   "text",
 ];
 
-/// Best-effort concrete type for a value whose key carries no declared type.
-/// Used so an untyped ("auto") property still shows a meaningful type in the
-/// UI instead of the ambiguous "Automatic". Mirrors the backend's
-/// frontmatter type inference (list / checkbox / number / date / text).
+/// A likely type for a value whose key has none, so an untyped ("auto")
+/// property shows a real type instead of "Automatic". Matches the backend's
+/// frontmatter inference (list / checkbox / number / date / text).
 export function inferPropertyType(value: unknown): PropertyType {
   if (Array.isArray(value)) return "list";
   if (typeof value === "boolean") return "checkbox";
@@ -91,17 +85,14 @@ export function propertyTypeLabel(ty: PropertyType): string {
   }
 }
 
-/// A handful of well-known property keys read better with a name-specific
-/// icon than the generic type icon — e.g. `due` is a deadline, so a checked
-/// calendar conveys more than a plain date grid. Keyed by property name; falls
-/// through to the type-based icon for everything else.
+/// Icons for a few well-known keys that read better than the type icon (e.g.
+/// `due` gets a checked calendar). Other keys use the type icon.
 const PROPERTY_NAME_ICONS: Record<string, Component<LucideProps>> = {
   due: CalendarCheck,
 };
 
-/// Lucide icon component matching a property. Used in the properties panel to
-/// show value-shape at a glance (matches Obsidian's affordance). A known
-/// property `name` may override the type icon; otherwise the type decides.
+/// Lucide icon for a property, showing its kind of value in the properties
+/// panel. A known `name` can override the type icon.
 export function propertyTypeIcon(ty: PropertyType, name?: string): Component<LucideProps> {
   if (name && PROPERTY_NAME_ICONS[name]) return PROPERTY_NAME_ICONS[name];
   switch (ty) {

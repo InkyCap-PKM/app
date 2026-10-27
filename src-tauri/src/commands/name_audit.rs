@@ -1,45 +1,29 @@
-//! Audit notebox entry names for cross-platform portability and link clarity.
+//! Audit notebox names for portability and wikilink clarity.
 //!
-//! A notebox is a plain folder of files, and users move them between machines:
-//! copied to a USB drive, pushed through the git collaboration transport,
-//! zipped and handed to someone else. Linux filesystems allow names that
-//! Windows and macOS cannot represent, and the damage is done *during the
-//! copy*, before InkyCap is ever launched on the other machine. By then a
-//! folder has been merged or a note silently overwritten.
+//! Noteboxes move between machines (USB drives, git, zip files), and names
+//! Linux allows but Windows or macOS can't represent are damaged during the
+//! copy, before InkyCap ever runs there. This reports names that won't survive,
+//! plus one InkyCap-specific problem:
 //!
-//! This module walks the notebox and reports names that will not survive the
-//! trip, plus one InkyCap-specific hazard:
+//! 1. **Case-only collisions** in one folder (`Dogs/` and `dogs/`). Windows and
+//!    macOS treat them as one, so a copy merges or overwrites.
+//! 2. **Windows reserved names** (`CON`, `PRN`, `LPT1`, …), impossible on
+//!    Windows with any extension.
+//! 3. **Characters Windows rejects**: `< > : " | ? *` and controls (`Chapter 1:
+//!    Intro.typ`).
+//! 4. **Trailing dots or spaces**, which Windows strips, so `notes .typ` and
+//!    `notes.typ` become one.
+//! 5. **Accent-encoding collisions**: `é` as one codepoint or as `e` plus a
+//!    combining accent are separate files on Linux and Windows but merge on
+//!    macOS, which normalizes names. The only macOS-specific finding.
+//! 6. **Duplicate note names** anywhere: wikilinks resolve by name across
+//!    folders, so `Projects/Ideas.typ` and `Archive/Ideas.typ` make `[[Ideas]]`
+//!    ambiguous. InkyCap prevents this when creating notes; duplicates come
+//!    from imports, git merges or outside edits.
 //!
-//! 1. **Case-only collisions among siblings.** `Dogs/` and `dogs/`, or
-//!    `Notes.typ` and `notes.typ`, in the same folder. Windows and macOS
-//!    (by default) treat these as one name, so copying merges the folders or
-//!    overwrites the file.
-//! 2. **Windows reserved device names.** `CON`, `PRN`, `LPT1`, and friends
-//!    cannot be created on Windows at all, extension or not.
-//! 3. **Characters Windows rejects.** `< > : " | ? *` and ASCII controls.
-//!    `Chapter 1: Intro.typ` is a perfectly ordinary Linux filename and an
-//!    impossible Windows one.
-//! 4. **Trailing dots or spaces.** Windows strips them at write time, so
-//!    `notes .typ` and `notes.typ` collapse into one file there.
-//! 5. **Accent-encoding collisions.** `café` written with a single `é`
-//!    codepoint and `café` written as `e` plus a combining acute are
-//!    different byte sequences, so Linux and Windows hold both as separate
-//!    files. macOS does not: HFS+ normalizes filenames on write, and while
-//!    APFS itself stores a bag of bytes, macOS layers normalization above it.
-//!    So these merge on a Mac the way case variants do. Unlike every other
-//!    finding here, this one is macOS-specific rather than Windows-specific.
-//! 6. **Duplicate note names anywhere in the notebox.** Wikilinks resolve by
-//!    filename across the whole notebox, ignoring folders, so
-//!    `Projects/Ideas.typ` and `Archive/Ideas.typ` make `[[Ideas]]`
-//!    ambiguous. InkyCap prevents this at creation time; these entries
-//!    arrive by import from tools that don't (an Obsidian vault, say), by
-//!    git merge, or by editing the folder outside the app.
-//!
-//! Report-only, by design. There is no repair command and there should not be
-//! one: which of two colliding notes keeps the name is a judgement about their
-//! contents, and renaming a note changes its wikilink identity, so inbound
-//! links would need rewriting too. The `.typ` audit sets the same precedent
-//! for syntax errors.
+//! Report only. Which of two notes keeps a name depends on their content, and
+//! renaming changes a note's links, so there is no repair command (as with the
+//! `.typ` audit).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -77,9 +61,8 @@ pub struct NameIssue {
     pub detail: String,
 }
 
-/// One note in a duplicate-name group, carrying both path shapes because the
-/// two consumers need different ones: the report note prints the relative path,
-/// while the dialog opens a tab and needs the absolute one.
+/// One note in a duplicate group, with both paths: the report prints the
+/// relative one, the dialog opens the absolute one.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DuplicateNotePath {
@@ -129,9 +112,8 @@ impl NameAuditReport {
     }
 }
 
-/// Walk the notebox and report names that break on other platforms or make a
-/// wikilink ambiguous. Never opens a file, so this stays fast on large
-/// noteboxes: it is a tree walk plus hashing, with no I/O beyond the listing.
+/// Report names that break on other platforms or make wikilinks ambiguous. Only
+/// walks the listing, without opening files, so it stays fast.
 #[tauri::command]
 pub async fn audit_notebox_names(
     state: State<'_, AppState>,
@@ -141,9 +123,8 @@ pub async fn audit_notebox_names(
     Ok(collect_name_audit(&session).await?.0)
 }
 
-/// The scan, shared by [`audit_notebox_names`] and [`save_name_audit_report`].
-/// Returns the report plus the notebox root, the latter only needed when
-/// writing the report note.
+/// The scan shared by [`audit_notebox_names`] and [`save_name_audit_report`],
+/// with the notebox root (needed for the report).
 async fn collect_name_audit(
     session: &NoteboxSession,
 ) -> Result<(NameAuditReport, PathBuf), InkyCapError> {
@@ -169,9 +150,8 @@ async fn collect_name_audit(
     Ok((report, notebox_root))
 }
 
-/// Resolve the collected note names into duplicate groups and put every list
-/// in display order. Split out from [`collect_name_audit`] so the scan can be
-/// exercised end-to-end in tests without touching a filesystem.
+/// Group duplicate note names and sort every list for display. Separate from
+/// [`collect_name_audit`] so tests can run it without a filesystem.
 fn finalize(
     report: &mut NameAuditReport,
     note_names: HashMap<String, Vec<String>>,
@@ -220,16 +200,11 @@ fn scan_level(
     report: &mut NameAuditReport,
     note_names: &mut HashMap<String, Vec<String>>,
 ) {
-    // Both collision kinds are a property of one directory: `Dogs/` and
-    // `archive/dogs/` are fine because they have different parents. So group
-    // siblings, never the whole tree.
-    //
-    // Two folds, because the platforms differ in what they merge:
-    //   * Windows (and macOS) fold case      -> `windows_key`
-    //   * macOS additionally folds accent encoding -> `macos_key`
-    // Every case collision is therefore also a macOS collision, so the
-    // normalization group only reports what case folding alone does *not*
-    // already explain.
+    // Collisions are per folder, so group siblings, not the whole tree. Two
+    // keys, since platforms differ: Windows and macOS fold case
+    // (`windows_key`); macOS also folds accent encoding (`macos_key`). Every
+    // case collision is also a macOS one, so the accent group reports only what
+    // case alone doesn't explain.
     let mut by_case: HashMap<String, Vec<String>> = HashMap::new();
     let mut by_normalized: HashMap<String, Vec<String>> = HashMap::new();
     for n in nodes {
@@ -252,9 +227,7 @@ fn scan_level(
         }
     }
     for (_, mut names) in by_normalized {
-        // Skip groups whose members already share a case-folded key: those are
-        // plain case collisions, reported above, and repeating them here would
-        // just be noise.
+        // Skip groups already explained by case alone (reported above).
         let unified_by_case_alone = names
             .windows(2)
             .all(|w| windows_key(&w[0]) == windows_key(&w[1]));
@@ -294,15 +267,11 @@ fn scan_level(
                 scan_level(children, &rel, report, note_names);
             }
         } else if n.name.to_ascii_lowercase().ends_with(".typ") {
-            // Like `resolve_wikilink`, match on the note stem case-folded — but
-            // fold accent encoding too, which resolution does not. That makes
-            // this check deliberately *coarser* than the resolver: two notes
-            // named `café` with different accent encodings are distinct to the
-            // resolver, yet identical to the reader, so `[[café]]` silently
-            // lands on whichever one matches the encoding the user's keyboard
-            // produced. An invisible near-miss is worth reporting even though
-            // it is not an ambiguity in the strict sense. Do not "fix" this
-            // back to a byte-exact key.
+            // Match on the stem with case and accents folded. This is
+            // deliberately coarser than `resolve_wikilink`, which doesn't fold
+            // accents: two `café` notes with different encodings look identical
+            // to a reader, and `[[café]]` lands on whichever matches the
+            // keyboard's encoding. Keep it this way.
             let stem = crate::link_index::note_stem(Path::new(&n.name));
             note_names
                 .entry(fold_case_and_accents(&stem))
@@ -316,16 +285,14 @@ fn scan_level(
 /// nothing to hold and needs no lazy initialization.
 const NFC: icu_normalizer::ComposingNormalizerBorrowed<'static> = ComposingNormalizer::new_nfc();
 
-/// Fold away both the differences a human reader cannot see in a filename:
-/// letter case, and whether an accent is one codepoint or a base letter plus a
-/// combining mark.
+/// Fold away the differences a reader can't see in a name: case and accent
+/// encoding.
 fn fold_case_and_accents(name: &str) -> String {
     NFC.normalize(name).to_lowercase()
 }
 
-/// The name as Windows sees it for collision purposes: case folded, bytes
-/// otherwise untouched. NTFS does not normalize accents, so `café` written two
-/// ways stays two files there.
+/// The name as Windows compares it: case folded, otherwise unchanged (NTFS
+/// doesn't normalize accents).
 fn windows_key(name: &str) -> String {
     name.to_lowercase()
 }
@@ -336,9 +303,8 @@ fn macos_key(name: &str) -> String {
     fold_case_and_accents(name)
 }
 
-/// The distinct Windows-illegal characters in `name`, in order of first
-/// appearance, space-separated. Controls render as `U+XXXX` so the report
-/// doesn't try to print an unprintable byte.
+/// The distinct Windows-illegal characters in `name`, in order,
+/// space-separated. Controls are shown as `U+XXXX`.
 fn illegal_chars_in(name: &str) -> String {
     let mut seen: Vec<char> = Vec::new();
     for ch in name.chars() {
@@ -358,14 +324,12 @@ fn illegal_chars_in(name: &str) -> String {
         .join(" ")
 }
 
-/// Filename of the name report written at the notebox root. Kept separate
-/// from the `.typ` audit's report so the two features don't overwrite each
-/// other's output.
+/// File name of the name report, distinct from the `.typ` audit's so they don't
+/// overwrite each other.
 const REPORT_NAME: &str = "InkyCap Name Report.typ";
 
-/// Write the name audit to a note at the notebox root and return its absolute
-/// (frontend-shaped) path, so the user can work through the findings in a tab
-/// while the dialog is closed. Re-running regenerates it.
+/// Write the name audit to a note at the notebox root and return its path, so
+/// it can be worked through in a tab. Re-running replaces it.
 #[tauri::command]
 pub async fn save_name_audit_report(
     state: State<'_, AppState>,
@@ -382,9 +346,8 @@ pub async fn save_name_audit_report(
     ))
 }
 
-/// Render the report as an InkyCap note. Paths go in inline-code spans so
-/// markup characters in filenames stay inert; note names additionally get a
-/// `#wikilink(...)` so the report doubles as a worklist.
+/// The report as a note. Paths are in inline code so markup characters stay
+/// literal; note names also get a `#wikilink(...)`.
 fn format_name_report(report: &NameAuditReport) -> String {
     use crate::commands::typ_audit::code_span;
     use std::fmt::Write as _;
@@ -456,10 +419,8 @@ fn format_name_report(report: &NameAuditReport) -> String {
              folders, so a link to one of these names is ambiguous.\n\n",
         );
         for d in &report.duplicate_note_names {
-            // Plain text, not a `#wikilink`: every note in this group shares the
-            // name, so a wikilink here would resolve to whichever has the
-            // shortest path and quietly misrepresent the other rows. The dialog
-            // is where you click through to a specific one.
+            // Plain text: every note in the group has this name, so a wikilink
+            // would pick one arbitrarily. Use the dialog to open a specific one.
             let _ = writeln!(s, "=== {}\n", d.name);
             for p in &d.paths {
                 let _ = writeln!(s, "- {}", code_span(&p.rel));
@@ -525,9 +486,8 @@ mod tests {
         }
     }
 
-    /// Run the scan over a synthetic tree through the same post-pass
-    /// `collect_name_audit` uses, so tests see exactly the finished report the
-    /// frontend would receive, ordering included.
+    /// Run the scan over a test tree through `collect_name_audit`'s post-pass,
+    /// so tests see the report as the frontend would.
     fn scan(tree: &[FileTreeNode]) -> NameAuditReport {
         let mut report = NameAuditReport::default();
         let mut names: HashMap<String, Vec<String>> = HashMap::new();
@@ -688,9 +648,8 @@ mod tests {
 
     #[test]
     fn case_plus_accent_difference_is_reported_as_normalization() {
-        // `Café.typ` (NFC) and `café.typ` (NFD) survive as separate files on
-        // both Linux and Windows — Windows folds case but not accents — and
-        // merge only on macOS. So it belongs in the normalization group.
+        // NFC `Café.typ` and NFD `café.typ` are separate on Linux and Windows
+        // and merge only on macOS, so they are in the accent group.
         let r = scan(&[file("Caf\u{e9}.typ"), file(CAFE_NFD)]);
         assert!(r.case_collisions.is_empty());
         assert_eq!(r.normalization_collisions.len(), 1);

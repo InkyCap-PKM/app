@@ -1,12 +1,8 @@
-// Shared pop-up menu utilities. Both the left sidebar's filetree-sort/
-// new-file/tag-sort menus and the right panel's link-sort menu use the
-// exact same placement algorithm — pulling it out of LeftSidebar so we
-// don't fork two copies that drift.
+// Shared placement for pop-up menus (the left sidebar's sort and new-file
+// menus, the right panel's link sort, …).
 
-/// Width of a classic (non-overlay) scrollbar, measured once from a
-/// throwaway element. Used to keep menus clear of a panel's vertical
-/// scrollbar rather than hardcoding a gutter guess. Returns 0 for
-/// overlay scrollbars (the menu can sit flush with the viewport edge).
+/// Width of a classic scrollbar, measured once, so menus keep clear of it. 0
+/// for overlay scrollbars.
 let cachedScrollbarWidth: number | null = null;
 function scrollbarWidth(): number {
   if (cachedScrollbarWidth !== null) return cachedScrollbarWidth;
@@ -28,15 +24,12 @@ interface Limits {
   bottom: number;
 }
 
-/// The box a menu has to stay inside: the viewport, less a small margin and
-/// less any right-edge scrollbar.
-///
-/// `bounds` narrows that to a region within the window — the graph canvas, for
-/// instance — so a menu opened near its right or bottom edge turns inward
-/// rather than spilling over the side panel or the status bar beyond it. The
-/// narrowing is dropped per axis whenever the menu is simply too big to fit
-/// inside it (a narrow split pane, say), since clamping into a box smaller
-/// than the menu would push it out the opposite side.
+/// The box a menu must stay in: the viewport less a margin and any right-edge
+/// scrollbar. `bounds` narrows it to a region (e.g. the graph canvas), so a
+/// menu near its edge turns inward rather than spilling over a side panel. The
+/// narrowing is dropped per axis when the menu doesn't fit inside it (a narrow
+/// split pane), since clamping into a smaller box would push it out the other
+/// side.
 function placementLimits(menuEl: HTMLElement, bounds?: HTMLElement): Limits {
   const viewport: Limits = {
     left: MENU_MARGIN,
@@ -76,11 +69,9 @@ function clampToLimits(
   return { left, top };
 }
 
-/// Measure `menuEl` once it has been attached, then position it. Shared by the
-/// anchors below: Solid `ref` callbacks fire before the element is in the
-/// document, so `offsetWidth`/`offsetHeight` read 0 if measured synchronously,
-/// which silently disables every clamp. The menu is held `visibility: hidden`
-/// until measured so it never paints at the wrong position.
+/// Measure `menuEl` once attached, then place it. Solid `ref` callbacks run
+/// before attachment, when sizes read 0 and every clamp would be skipped. The
+/// menu stays hidden until placed.
 function placeWhenMeasurable(
   menuEl: HTMLElement,
   stillValid: () => boolean,
@@ -97,18 +88,13 @@ function placeWhenMeasurable(
   });
 }
 
-/// Place a `.context-menu` at a pointer position — a right-click in a canvas
-/// or any other point with no trigger element to anchor to. `x`/`y` are client
-/// coordinates (`MouseEvent.clientX`/`clientY`).
-///
-/// The menu's top-left goes at the point. If that would run past an edge it
-/// flips to the other side of the point, so the cursor stays on a corner of the
-/// menu rather than ending up inside it; anything still overhanging is clamped.
-/// Fixed positioning is what lets it escape a parent's `overflow: hidden` and
-/// sit above panels that come later in the grid — see `anchorPanelMenu` below.
-///
-/// Pass `bounds` to keep the menu inside a region rather than the whole window,
-/// so it stays over the content it belongs to. See `placementLimits`.
+/// Place a `.context-menu` at a pointer position (`clientX` / `clientY`), e.g.
+/// a right-click with no trigger element. The top-left goes at the point; if
+/// that overflows an edge, it flips to the other side of the point (so the
+/// cursor stays at a corner), then any overhang is clamped. Fixed positioning
+/// lets it escape `overflow: hidden` and sit above later panels (see
+/// `anchorPanelMenu`). `bounds` keeps it inside a region (see
+/// `placementLimits`).
 export function anchorPointMenu(
   x: number,
   y: number,
@@ -123,29 +109,16 @@ export function anchorPointMenu(
   });
 }
 
-/// Anchor a `.context-menu` element to its trigger button using fixed
-/// viewport coordinates. Default placement: directly below the trigger,
-/// left-aligned to it. The menu is flipped or clamped if the natural
-/// position would clip the viewport.
+/// Anchor a `.context-menu` to its trigger with fixed positioning: below the
+/// trigger, left-aligned, flipped or clamped if it would leave the viewport.
+/// Fixed positioning lets the menu escape `overflow: hidden` and size to its
+/// content rather than to a narrow column.
 ///
-/// Using fixed-position placement (rather than `position: absolute` on a
-/// wrapper) is important: it lets the menu escape parent `overflow: hidden`
-/// regions and size itself to its content rather than to a narrow sidebar
-/// column. That's why the right panel's sort menu was wrapping its
-/// labels before — `absolute` inherited the panel width.
+/// A trigger inside an element with `data-menu-bounds` (the editor column)
+/// keeps its menu inside it, as `bounds` does for `anchorPointMenu`.
 ///
-/// A trigger inside an element marked `data-menu-bounds` (the editor column)
-/// keeps its menu inside that element, as `bounds` does for
-/// `anchorPointMenu`, so a menu opened near the column's edge turns inward
-/// rather than disappearing under the side panel next to it.
-///
-/// Placement is deferred to the next animation frame: Solid `ref`
-/// callbacks fire before the element is attached to the document, so
-/// `offsetWidth`/`offsetHeight` read 0 if measured synchronously — which
-/// silently disables the viewport clamps and lets the menu run off-screen
-/// (notably for right-anchored menus like the References sort control).
-/// The menu is held `visibility: hidden` until measured so it never
-/// paints at the wrong position.
+/// Placed on the next frame: `ref` callbacks run before attachment, when sizes
+/// read 0 and the clamps would be skipped. The menu stays hidden until placed.
 export function anchorPanelMenu(
   triggerEl: HTMLElement | undefined,
   menuEl: HTMLElement,

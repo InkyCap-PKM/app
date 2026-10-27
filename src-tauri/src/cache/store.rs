@@ -1,6 +1,6 @@
-//! [`MetadataCache`] — the public API for reading and writing the persistent
-//! metadata cache. All paths are stored relative to the notebox root, and all
-//! operations are scoped to a single notebox by `(notebox_id, path)`.
+//! [`MetadataCache`]: reading and writing the persistent metadata cache. Paths
+//! are stored relative to the notebox root, and every operation is scoped to
+//! one notebox by `(notebox_id, path)`.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -34,23 +34,21 @@ pub struct CachedFile {
     pub agenda_markers: Vec<crate::models::note::AgendaMarker>,
     /// Document-level `#note(recurrence: …)` repeat rule, if any.
     pub recurrence: Option<crate::models::recurrence::Recurrence>,
-    /// Count of unresolved `#suggestion(...)` tracked changes — the notebox-wide
-    /// "still awaiting accept/reject" signal, cached so the indicator survives
-    /// app restarts without recompiling every note.
+    /// Number of unresolved `#suggestion(...)` tracked changes, cached so the
+    /// notebox-wide indicator is right after a restart without compiling every
+    /// note.
     pub unresolved_suggestions: u32,
     /// Notebox files the note references (images, PDFs, media, data files),
     /// as notebox-relative paths. Cached so opening a notebox needn't parse
     /// unchanged notes again to list what uses each attachment.
     pub attachments: Vec<String>,
-    /// Full file content, cached so subsequent notebox opens can skip disk reads
-    /// for unchanged files. `None` for legacy cache entries created before
-    /// content caching was added.
+    /// The file's content, so later notebox opens skip reading unchanged files.
+    /// `None` for entries from before content was cached.
     pub content: Option<String>,
 }
 
-/// SQLite-backed metadata cache. Thread-safe via an internal mutex; the cache
-/// is not on a hot path during normal operation, so a single connection is
-/// sufficient and avoids the complexity of a connection pool.
+/// SQLite metadata cache, with one connection behind a mutex (it isn't used
+/// often enough to need a pool).
 pub struct MetadataCache {
     conn: Mutex<Connection>,
 }
@@ -105,9 +103,8 @@ fn cached_file_from_row(row: FileRow) -> Result<CachedFile> {
     ) = row;
     let properties: HashMap<String, PropertyValue> = serde_json::from_str(&properties_json)
         .map_err(|e| InkyCapError::Cache(format!("corrupt properties_json for {path}: {e}")))?;
-    // A corrupt agenda blob degrades to "no markers" rather than failing the
-    // whole cache read — the markers are rebuilt on the next compile of that
-    // file anyway. Same degrade-to-default policy for the recurrence rule.
+    // A corrupt agenda or recurrence value becomes the default rather than
+    // failing the read; it is rebuilt on the file's next compile.
     let agenda_markers = serde_json::from_str(&agenda_json).unwrap_or_default();
     let recurrence = serde_json::from_str(&recurrence_json).unwrap_or_default();
     let attachments = serde_json::from_str(&attachments_json).unwrap_or_default();
@@ -160,10 +157,9 @@ impl CachedFile {
 }
 
 impl MetadataCache {
-    /// Open (or create) the cache database at `db_path`. The parent directory
-    /// is created if it doesn't exist. On any failure (including a corrupt
-    /// database), the file is deleted and recreated — the cache must never
-    /// block app launch.
+    /// Open (or create) the cache database at `db_path`, creating the folder if
+    /// needed. On any failure, including corruption, the file is deleted and
+    /// recreated: the cache must never stop the app from starting.
     pub fn open(db_path: &Path) -> Result<Self> {
         if let Some(parent) = db_path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -175,9 +171,8 @@ impl MetadataCache {
         }) {
             Ok(c) => c,
             Err(err) => {
-                // Corrupt or incompatible — wipe and try once more. If this
-                // also fails, the error propagates and the caller falls back
-                // to a cacheless rebuild.
+                // Corrupt or incompatible: delete and try once more. If that
+                // fails too, the caller rebuilds without a cache.
                 log::warn!(
                     "Metadata cache at {} unusable ({err}); recreating",
                     db_path.display()
@@ -203,9 +198,8 @@ impl MetadataCache {
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
 
-        // Try update first; if no row exists, insert. This avoids racing
-        // SELECT-then-INSERT logic — both branches end with `last_opened_at`
-        // refreshed to `now`.
+        // Update, or insert if there is no row, rather than select then insert,
+        // which could race. Either way `last_opened_at` becomes `now`.
         let updated = conn.execute(
             "UPDATE noteboxes SET last_opened_at = ?1 WHERE root_path = ?2",
             params![now, key],
@@ -225,9 +219,8 @@ impl MetadataCache {
         Ok(id)
     }
 
-    /// Load every cached file for the given notebox, keyed by relative path.
-    /// Returns an empty map if the notebox has no cached entries yet (e.g.
-    /// first run on this notebox).
+    /// Load every cached file for the notebox, keyed by relative path. Empty if
+    /// nothing is cached yet.
     pub fn load_notebox(&self, notebox_root: &Path) -> Result<HashMap<PathBuf, CachedFile>> {
         let conn = self
             .conn
@@ -332,9 +325,9 @@ impl MetadataCache {
         Ok(Some(file))
     }
 
-    /// Insert or replace a batch of files in a single transaction. Tags and
-    /// links for each file are wiped and rewritten so callers don't need to
-    /// diff them — the cascading FK on `(notebox_id, path)` handles cleanup.
+    /// Insert or replace files in one transaction. Each file's tags and links
+    /// are deleted (by the cascading key on `(notebox_id, path)`) and
+    /// rewritten, so callers needn't compare them.
     pub fn upsert_many(&self, notebox_root: &Path, files: &[CachedFile]) -> Result<()> {
         if files.is_empty() {
             return Ok(());
@@ -483,10 +476,9 @@ impl MetadataCache {
     }
 }
 
-/// Check whether a cached entry is still valid for a file with the given
-/// filesystem `(mtime, size)`. Both must match — mtime alone can collide
-/// (e.g. files saved within the same second) and size alone misses
-/// content-changing edits that don't change length.
+/// Whether a cached entry is current for a file with this `(mtime, size)`. Both
+/// must match: mtime alone misses saves within the same second, size alone
+/// misses edits that keep the length.
 pub fn is_fresh(cached: &CachedFile, mtime: i64, size: u64) -> bool {
     cached.mtime == mtime && cached.size == size
 }
@@ -551,9 +543,8 @@ mod tests {
         assert_eq!(one.content, from_all.content);
     }
 
-    /// A path with no row is a clean miss, and rows are scoped to their
-    /// notebox, so another notebox's entry for the same relative path is not
-    /// served.
+    /// A path with no row is a miss, and another notebox's entry for the same
+    /// relative path is not returned.
     #[test]
     fn load_file_misses_unknown_and_other_notebox_paths() {
         let dir = tempfile::tempdir().unwrap();

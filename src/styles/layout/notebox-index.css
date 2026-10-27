@@ -1,6 +1,5 @@
-/* Notebox index sidebar.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Notebox index sidebar. Part of layout.css, whose import order (see
+   ../layout.css) keeps the cascade. */
 
 /* Notebox index sidebar */
 .notebox-index__section {

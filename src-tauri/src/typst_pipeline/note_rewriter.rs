@@ -1,24 +1,20 @@
-//! Source-level rewriter for `#note(...)` calls in `.typ` files.
+//! Rewrites the `#note(...)` call in `.typ` source using `typst::syntax`: the
+//! document is parsed as the compiler would, and edits work on the nodes' byte
+//! ranges. So:
 //!
-//! Backed by `typst::syntax` — we parse the document into the same AST the
-//! Typst compiler uses, locate the `#note(...)` call, and operate on byte
-//! ranges from the typed nodes. This means:
-//!
-//! - Multi-byte UTF-8 (em-dashes, smart quotes, accented characters, CJK)
-//!   passes through verbatim. Byte ranges from the parser always land on
-//!   character boundaries.
-//! - Argument-value source is preserved exactly for fields we don't touch:
-//!   `datetime(year: 2026, month: 4, day: 29)`, nested arrays, raw strings
-//!   with escaped quotes, and so on.
-//! - Anything outside the `#note(...)` call is preserved byte-for-byte.
+//! - multi-byte text is untouched (ranges land on character boundaries);
+//! - the source of arguments not being changed is kept exactly
+//!   (`datetime(...)`, nested arrays, escaped strings);
+//! - everything outside the `#note(...)` call is kept byte for byte.
 //!
 //! Public API:
-//! - [`update_note_property`] — set or add a single property
-//! - [`remove_note_property`] — remove a property; dematerialize when empty
-//! - [`note_call_span`] — byte range of the `#note(...)` call, including `#`
-//! - [`extract_note_properties`] — pull (key, raw value source) pairs
-//! - [`serialize_to_typst`] — render a [`PropertyValue`] as Typst source
-//! - [`typst_value_to_plain_text`] — best-effort raw-Typst → plain-text
+//! - [`update_note_property`]: set or add a property
+//! - [`remove_note_property`]: remove a property, and the call when it becomes
+//!   empty
+//! - [`note_call_span`]: byte range of the `#note(...)` call, including `#`
+//! - [`extract_note_properties`]: (key, raw value source) pairs
+//! - [`serialize_to_typst`]: a [`PropertyValue`] as Typst source
+//! - [`typst_value_to_plain_text`]: raw Typst value as plain text, best effort
 
 use std::ops::Range;
 
@@ -30,9 +26,8 @@ use crate::models::note::PropertyValue;
 // AST navigation
 // ---------------------------------------------------------------------------
 
-/// Walk the parsed tree depth-first and return the first `FuncCall` whose
-/// callee is `note`. Uses `LinkedNode` so callers get accurate byte ranges
-/// (a bare `SyntaxNode` doesn't carry parent offset information).
+/// The first `FuncCall` whose callee is `note`, depth-first. Uses `LinkedNode`
+/// for absolute byte ranges.
 fn find_note_call_node<'a>(node: &LinkedNode<'a>) -> Option<LinkedNode<'a>> {
     if node.kind() == SyntaxKind::FuncCall {
         if let Some(call) = node.cast::<ast::FuncCall>() {
@@ -51,10 +46,8 @@ fn find_note_call_node<'a>(node: &LinkedNode<'a>) -> Option<LinkedNode<'a>> {
     None
 }
 
-/// Extend a FuncCall's range to include the leading `#` from markup mode.
-/// In Typst markup, `#note(...)` is a `Hash` token followed by a `FuncCall`
-/// node — the FuncCall's own range covers `note(...)` only. Existing
-/// callers and tests treat the span as starting at `#`, so we extend.
+/// Extend a call's range to include the `#`: in markup, `#note(...)` is a
+/// `Hash` token followed by a `FuncCall` covering `note(...)`.
 fn span_with_hash_prefix(content: &str, range: Range<usize>) -> Range<usize> {
     let bytes = content.as_bytes();
     if range.start > 0 && bytes[range.start - 1] == b'#' {
@@ -77,13 +70,9 @@ pub fn note_call_span(content: &str) -> Option<Range<usize>> {
     Some(span_with_hash_prefix(content, node.range()))
 }
 
-/// Extract `(key, raw_value_source)` pairs from the named arguments of the
-/// `#note(...)` call. Positional and spread arguments are skipped (the
-/// `#note` API only takes named args; if a malformed call mixes types, we
-/// surface the named ones and ignore the rest).
-///
-/// `raw_value_source` is the exact substring from the source — preserves
-/// `datetime(...)` calls, nested arrays, escapes, and Unicode untouched.
+/// `(key, raw_value_source)` for each named argument of the `#note(...)` call;
+/// positional and spread arguments are skipped. `raw_value_source` is the exact
+/// source text of the value.
 pub fn extract_note_properties(content: &str) -> Vec<(String, String)> {
     let root = parse(content);
     let link = LinkedNode::new(&root);
@@ -105,11 +94,8 @@ struct CollectedNamed {
     value_range: Range<usize>,
 }
 
-/// Collect every named arg under a FuncCall LinkedNode. Walks the typed
-/// AST for the keys and uses the LinkedNode tree to recover byte ranges
-/// for the value expressions — neither piece alone is sufficient (typed
-/// AST loses absolute offsets, raw LinkedNode loses the parsed identifier
-/// shape).
+/// Every named argument of a call: keys from the typed AST, value ranges from
+/// the LinkedNode tree (each alone lacks one of the two).
 fn collect_named_args<'a>(call_link: &LinkedNode<'a>, _content: &str) -> Vec<CollectedNamed> {
     let mut out = Vec::new();
     let Some(args_link) = call_link.children().find(|c| c.kind() == SyntaxKind::Args) else {
@@ -124,10 +110,8 @@ fn collect_named_args<'a>(call_link: &LinkedNode<'a>, _content: &str) -> Vec<Col
             continue;
         };
         let key = named_ast.name().as_str().to_string();
-        // The value is the last non-trivia child of the Named node. The
-        // Named structure is `Ident Colon Expr` (with whitespace nodes
-        // potentially interleaved), so the trailing non-trivia child is
-        // always the expression.
+        // `Named` is `Ident Colon Expr`, possibly with whitespace, so the last
+        // non-trivia child is the value.
         let value_range = child
             .children()
             .filter(|c| !is_trivia(c.kind()))
@@ -154,24 +138,17 @@ fn is_trivia(kind: SyntaxKind) -> bool {
     )
 }
 
-/// Update a single property in the `#note(...)` call. If the call exists
-/// and the key is present, the value is replaced. If the call exists but
-/// the key is absent, a new named argument is appended. If no call exists
-/// at all, one is materialized after the notebox import line (or at the top
-/// of the file when no import is present).
-///
-/// Args other than the one being updated are preserved with their exact
-/// source bytes — nested datetimes, arrays, comments embedded in
-/// expressions, and Unicode all round-trip cleanly.
+/// Set one property in `#note(...)`: replace its value, or append it. Without a
+/// call, one is added after the notebox import (or at the top without an
+/// import). Other arguments keep their exact source.
 pub fn update_note_property(content: &str, key: &str, value: &PropertyValue) -> String {
     set_note_property_raw(content, key, &serialize_to_typst(value))
 }
 
-/// Add `link-ref("<name>")` to the list held by property `key`, keeping
-/// the existing entries' source exactly. A missing property becomes a
-/// one-item list; a single non-list value becomes the first item. `None`
-/// when the list already links to `name` (compared ignoring case), so the
-/// caller can leave the note untouched.
+/// Add `link-ref("<name>")` to the list in property `key`, keeping existing
+/// entries' source. A missing property becomes a one-item list; a single value
+/// becomes the first item. `None` if the list already links to `name` (ignoring
+/// case).
 pub fn append_link_ref(content: &str, key: &str, name: &str) -> Option<String> {
     let existing = extract_note_properties(content)
         .into_iter()
@@ -239,10 +216,9 @@ fn link_ref_target(raw: &str) -> Option<String> {
     }
 }
 
-/// Same as [`update_note_property`] but takes the value as raw Typst source
-/// (e.g. `"draft"`, `("a", "b")`, `datetime(year: 2026, month: 4, day: 29)`).
-/// Used by the scaffold-insert command, which already has merged values
-/// extracted as source bytes from another `#note(...)` call.
+/// Like [`update_note_property`], with the value as raw Typst source (e.g.
+/// `("a", "b")`, `datetime(year: 2026, month: 4, day: 29)`). Used by scaffold
+/// insertion, which has values as source from another `#note(...)`.
 pub fn set_note_property_raw(content: &str, key: &str, raw_value: &str) -> String {
     let serialized = raw_value.to_string();
     let root = parse(content);
@@ -256,12 +232,9 @@ pub fn set_note_property_raw(content: &str, key: &str, raw_value: &str) -> Strin
 
     let existing = collect_named_args(&call_link, content);
 
-    // Build a new args list: keep every existing key with its raw source
-    // value, replacing the target key when matched and appending it when
-    // not. Other arg kinds (positional, spread) don't appear in valid
-    // `#note(...)` calls; if they show up in malformed input we drop them
-    // — preserving them through this code path would surface invalid
-    // syntax further down the pipeline anyway.
+    // Keep each existing key with its raw value, replacing the target key or
+    // appending it. Positional and spread arguments aren't valid in
+    // `#note(...)` and are dropped.
     let mut pieces: Vec<String> = Vec::new();
     let mut updated = false;
     for named in &existing {
@@ -289,14 +262,9 @@ pub fn set_note_property_raw(content: &str, key: &str, raw_value: &str) -> Strin
     out
 }
 
-/// Reorder named arguments inside `#note(...)` to match `order`. Keys in
-/// `order` that exist in the call are placed first in that order; any keys
-/// present in the call but missing from `order` keep their original
-/// relative position at the end. Returns `content` unchanged when no
-/// `#note(...)` call exists, or when reordering would be a no-op.
-///
-/// Values are preserved with their exact source bytes — same contract as
-/// [`update_note_property`].
+/// Reorder `#note(...)`'s named arguments to match `order`; keys not in `order`
+/// keep their relative order at the end. Unchanged when there is no call or
+/// nothing moves. Values keep their exact source.
 pub fn reorder_note_properties(content: &str, order: &[String]) -> String {
     let root = parse(content);
     let link = LinkedNode::new(&root);
@@ -340,10 +308,8 @@ pub fn reorder_note_properties(content: &str, order: &[String]) -> String {
     out
 }
 
-/// Remove a single property from the `#note(...)` call. If the removed
-/// property was the last one, the entire call (and a single trailing
-/// blank line) is removed. Returns `content` unchanged when the call or
-/// the key is missing.
+/// Remove a property from `#note(...)`. If it was the last, remove the whole
+/// call and one trailing blank line. Unchanged when the call or key is missing.
 pub fn remove_note_property(content: &str, key: &str) -> String {
     let root = parse(content);
     let link = LinkedNode::new(&root);
@@ -360,9 +326,8 @@ pub fn remove_note_property(content: &str, key: &str) -> String {
 
     let span = span_with_hash_prefix(content, call_link.range());
     if pieces.is_empty() {
-        // Remove the entire call. Also eat one trailing newline (and a
-        // following blank-line-leading newline if present) so we don't
-        // leave a hanging blank where the call used to live.
+        // Remove the call and one trailing newline (two if a blank line
+        // follows), so no gap is left.
         let bytes = content.as_bytes();
         let mut end = span.end;
         if end < bytes.len() && bytes[end] == b'\n' {
@@ -402,9 +367,8 @@ pub fn serialize_to_typst(value: &PropertyValue) -> String {
             }
         }
         PropertyValue::String(s) => {
-            // `[[Target]]` is the wikilink shorthand the property editor
-            // uses for link-typed fields; serialize it as the equivalent
-            // package call so the value participates in the link graph.
+            // `[[Target]]` (the property editor's wikilink shorthand) becomes
+            // `link-ref(...)`, so it counts as a link.
             if let Some(target) = s.strip_prefix("[[").and_then(|s| s.strip_suffix("]]")) {
                 return format!("link-ref(\"{}\")", escape_typst_string(target));
             }
@@ -427,9 +391,8 @@ fn escape_typst_string(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-/// Render the existing argument fragments back into a `#note(...)` call.
-/// Single-arg calls stay on one line; multi-arg calls go multiline with a
-/// two-space indent and trailing comma to match the project style.
+/// Render the argument fragments as a `#note(...)` call: one line for a single
+/// argument, otherwise one per line with a two-space indent and trailing comma.
 fn render_pieces(pieces: &[String]) -> String {
     if pieces.is_empty() {
         return "#note()".to_string();
@@ -457,9 +420,8 @@ fn format_note_call(args: &[(String, String)]) -> String {
     format!("#note(\n{}\n)", lines.join("\n"))
 }
 
-/// Insert a fresh `#note(...)` call into a document that doesn't have one.
-/// Lands it immediately after the notebox import line; falls back to the top
-/// of the file if no import line is present.
+/// Add a `#note(...)` call after the notebox import line, or at the top if
+/// there is none.
 fn insert_note_call(content: &str, call: &str) -> String {
     for (i, line) in content.lines().enumerate() {
         if crate::notebox_package::is_notebox_import_line(line) {
@@ -474,10 +436,9 @@ fn insert_note_call(content: &str, call: &str) -> String {
     format!("{}\n{}", call, content)
 }
 
-/// Convert a raw Typst value fragment (e.g. `"draft"`, `("a", "b")`,
-/// `link-ref("Target")`) to a plain-text string suitable for cache and
-/// metadata embedding. Best-effort — anything more exotic than strings,
-/// arrays, and `link-ref(...)` passes through as the trimmed source.
+/// A raw Typst value (e.g. `"draft"`, `("a", "b")`, `link-ref("Target")`) as
+/// plain text for the cache and metadata. Other forms come back as their
+/// trimmed source.
 pub fn typst_value_to_plain_text(raw: &str) -> String {
     let trimmed = raw.trim();
 
@@ -637,9 +598,7 @@ Some body text here.
         assert!(updated.contains(r#"title: "He said \"hello\"""#));
     }
 
-    /// Multi-byte UTF-8 in property values must round-trip without
-    /// corruption — the AST byte ranges always land on char boundaries
-    /// so slicing into the source is safe.
+    /// Multi-byte text in values round-trips intact.
     #[test]
     fn roundtrip_preserves_unicode() {
         let src = r#"#import "/.inkycap/notebox.typ": *

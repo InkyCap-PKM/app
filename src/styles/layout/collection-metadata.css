@@ -1,6 +1,5 @@
-/* Collection metadata editor.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Collection metadata editor. Part of layout.css, whose import order (see
+   ../layout.css) keeps the cascade. */
 
 /* ── Collection Metadata Editor ── */
 
@@ -45,9 +44,8 @@
   border-top: 1px solid var(--border-primary);
 }
 
-/* Collection Settings tab body in the right panel — the rows reuse the
-   `.collection-meta__*` styles, this just provides the vertical rhythm the
-   old `.collection-meta__body` wrapper gave inside the table. */
+/* Collection Settings tab body in the right panel; the rows use the
+   `.collection-meta__*` styles, this adds the vertical spacing. */
 .collection-settings__body {
   display: flex;
   flex-direction: column;
@@ -57,9 +55,9 @@
   padding-inline: var(--space-2);
 }
 
-/* Every tab's first item sits the same distance below the panel's header
-   line, whatever kind of item it is (a section heading brings its own top
-   margin; a row or a note does not). */
+/* Every tab's first item sits the same distance below the header line,
+   whatever it is (a section heading has its own top margin; rows and notes
+   don't). */
 .collection-settings__body > :first-child {
   margin-top: var(--space-2);
 }
@@ -75,26 +73,23 @@
   display: flex;
   align-items: center;
   gap: var(--space-4);
-  /* Trailing controls (a Browse button, a help "?", an inline checkbox's
-     hint) wrap onto the next line instead of pushing the row past the
-     panel's right edge. */
+  /* Trailing controls (Browse, help "?", a checkbox hint) wrap to the next
+     line instead of overflowing the panel. */
   flex-wrap: wrap;
 }
 
-/* The right panel is narrow (and user-resizable down to 160px), so the
-   default 200px-wide, non-shrinking text input overflowed it and forced a
-   horizontal scrollbar. In a collection field, let text inputs shrink to the
-   space available — small fixed-width inputs (sizes, languages) keep their
-   inline width because they never need to shrink. */
+/* The right panel is narrow (resizable down to 160px), so text inputs in
+   collection fields shrink to fit instead of overflowing. Small fixed-width
+   inputs (sizes, languages) keep their width. */
 .collection-meta__row .settings__text-input {
   flex-shrink: 1;
   min-width: 0;
   max-width: 100%;
 }
 
-/* Style Overrides controls: a length field (number + unit dropdown) and a
-   preset picker (dropdown + optional revealed custom field). Both follow the
-   row label and fill the remaining width, shrinking with the narrow panel. */
+/* Style Overrides controls: a length field (number and unit) and a preset
+   picker (dropdown with an optional custom field). Both fill the row after
+   the label and shrink with the panel. */
 .length-input,
 .preset-select {
   display: flex;
@@ -105,10 +100,9 @@
   min-width: 0;
 }
 
-/* Trailing control cluster after a collection-meta label — a text input paired
-   with a dropdown and/or a Browse button (template, bibliography style/file).
-   Wraps onto the next line in the narrow, user-resizable right panel instead of
-   overflowing past its edge or shrinking the input to nothing. */
+/* Controls after a collection-meta label: a text input with a dropdown
+   and/or Browse button (template, bibliography style or file). Wraps in the
+   narrow panel instead of overflowing or shrinking the input to nothing. */
 .collection-meta__control-group {
   display: flex;
   align-items: center;
@@ -259,9 +253,8 @@
   border-bottom: 1px solid var(--border-primary);
 }
 
-/* Inline-suggestion Accept/Reject menu (SuggestionWidget). Portalled to
-   <body> and positioned via anchorPanelMenu, so it uses the --popup-* tokens
-   like every other floating surface. */
+/* Accept/Reject menu for inline suggestions (SuggestionWidget). Portalled to
+   <body> and positioned with anchorPanelMenu, using the --popup-* tokens. */
 .cm-suggestion-menu {
   position: fixed;
   z-index: var(--z-menu);
@@ -344,9 +337,9 @@
   user-select: none;
 }
 
-/* Reusable help-button + popover (HelpButton.tsx). A circled "?" trigger that
-   opens a dismissible explanation. Popover uses the --popup-* tokens; it is
-   portalled to <body>, so it positions itself with inline left/top. */
+/* Help button and popover (HelpButton.tsx): a circled "?" opening an
+   explanation. Portalled to <body>, positioned with inline left/top, using
+   the --popup-* tokens. */
 .help-button {
   display: inline-flex;
   align-items: center;
@@ -374,9 +367,8 @@
 
 .help-button__popover {
   position: fixed;
-  /* Floats above modals too: HelpButtons appear inside Settings/Export/etc.
-     and the popover is Portaled to <body>, so a plain --z-menu would hide
-     behind those dialogs. See --z-menu-over-modal in themes.css. */
+  /* Above modals too, since help buttons appear inside Settings, Export and
+     other dialogs. See --z-menu-over-modal in themes.css. */
   z-index: var(--z-menu-over-modal);
   box-sizing: border-box;
   max-width: calc(100vw - 16px);
@@ -416,10 +408,9 @@
   background: var(--bg-hover);
 }
 
-/* Pill content-boundary pulse (pill-boundary-nav.ts). A brief outline that
-   flashes around an inline pill's content when the caret crosses — or pauses
-   at — its boundary, so the region change is legible. Lives in global CSS so
-   the @keyframes resolves; the class is applied inside the editor DOM. */
+/* Pill boundary pulse (pill-boundary-nav.ts): a brief outline around an
+   inline pill's content when the caret crosses or pauses at its edge. In
+   global CSS so the @keyframes resolves; the class is applied in the editor. */
 @keyframes cm-typst-pill-pulse-kf {
   0% {
     box-shadow: 0 0 0 2px var(--accent);
@@ -449,10 +440,9 @@
   flex-wrap: wrap;
 }
 
-/* All row controls share one height/metric so inputs, the dropdown, and the
-   buttons line up. The dropdown trigger and .settings__text-input already use
-   4px 8px / --text-md; the toolbar buttons default to a smaller size, so they
-   are matched here. */
+/* Row controls share one height, so inputs, the dropdown and buttons line
+   up. The dropdown and .settings__text-input use 4px 8px / --text-md;
+   toolbar buttons are smaller by default, so they are matched here. */
 .contributors-editor__name {
   flex: 1 1 160px;
   min-width: 120px;
@@ -557,9 +547,9 @@
   padding: var(--space-2) 0;
 }
 
-/* When a Typst template owns the layout, the style overrides can't take
-   effect — dim and block the grid (the note above explains why). Custom Typst
-   lives outside this grid, so it stays editable. */
+/* When a Typst template controls the layout, style overrides have no effect,
+   so the grid is dimmed and disabled (the note above says why). Custom Typst
+   is outside the grid and stays editable. */
 .collection-meta__style-grid.is-template-locked {
   opacity: 0.55;
   pointer-events: none;

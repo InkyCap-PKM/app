@@ -1,4 +1,4 @@
-//! Bibliography-related Tauri commands (Phase 6).
+//! Bibliography commands.
 
 use std::path::PathBuf;
 
@@ -97,12 +97,9 @@ pub async fn get_file_citations(
     Ok(citations)
 }
 
-/// Render the references cited in `path` as static, pre-formatted Typst markup,
-/// using the notebox's resolved citation style, and return it for the frontend
-/// to place on the clipboard. Unlike a live `#bibliography(...)`, the result is
-/// a frozen snapshot the user can paste into any note and have render
-/// identically without citation resolution. Returns an empty string when the
-/// file cites nothing.
+/// The references cited in `path`, as pre-formatted Typst markup in the
+/// notebox's citation style, for the clipboard. A fixed copy that renders the
+/// same in any note without citation resolution. Empty when it cites nothing.
 #[tauri::command]
 pub async fn copy_file_bibliography(
     path: String,
@@ -234,9 +231,8 @@ pub async fn refresh_bibliography(
     ))
 }
 
-/// Return the count of entries skipped during the most recent BibTeX parse
-/// because of type-conversion errors. The UI uses this to surface a notice
-/// like "Loaded N of M entries" so silent data loss doesn't go unnoticed.
+/// Entries skipped in the last BibTeX parse because of conversion errors, so
+/// the UI can say "Loaded N of M entries".
 #[tauri::command]
 pub async fn get_bibliography_skip_count() -> Result<u32, InkyCapError> {
     Ok(bibliography::last_parse_skipped_count())
@@ -248,9 +244,8 @@ pub async fn detect_zotero_path() -> Result<Option<String>, InkyCapError> {
     Ok(crate::typst_pipeline::zotero::auto_detect_path().map(|p| p.to_string_lossy().to_string()))
 }
 
-/// Return notes attached to a bibliography entry identified by its cite key.
-/// For Zotero, fetches child notes from the SQLite DB (stripped to plain text).
-/// For file-based sources, returns the `note`/`annotation` field if present.
+/// Notes attached to the bibliography entry with this cite key: Zotero child
+/// notes (as plain text) or the `note` / `annotation` field of a file entry.
 #[tauri::command]
 pub async fn get_reference_notes(
     key: String,
@@ -367,17 +362,13 @@ fn is_block_tag(tag_content: &str) -> bool {
     BLOCK_TAGS.contains(&name.as_str())
 }
 
-/// Minimal HTML tag stripper for Zotero note content. Only block-level
-/// tags produce newlines; inline tags (`<em>`, `<strong>`, etc.) are
-/// removed silently so the surrounding text stays on one line.
+/// Strip HTML tags from a Zotero note. Block tags become newlines; inline tags
+/// (`<em>`, `<strong>`, …) are dropped so the text stays on one line.
 ///
-/// Per CLAUDE.md's Typst-first principle: Typst has no path for parsing
-/// HTML — Zotero's child notes live in a SQLite blob as serialized HTML
-/// from its rich-text editor, never touching the Typst document model.
-/// This function runs at the trust boundary between an external store
-/// and the user's note text, so a small hand-rolled stripper is the
-/// right shape; we deliberately don't take a heavyweight HTML parser
-/// dependency just to flatten a note into plain text.
+/// Per CLAUDE.md's Typst-first principle: Typst can't parse HTML, and Zotero
+/// stores notes as HTML in SQLite, outside any Typst document. A small stripper
+/// at this boundary is enough; a full HTML parser isn't needed to flatten a
+/// note.
 fn strip_html_tags(html: &str) -> String {
     let mut out = String::with_capacity(html.len());
     let mut rest = html;
@@ -426,10 +417,8 @@ fn strip_html_tags(html: &str) -> String {
     result
 }
 
-/// Decode HTML entities to their Unicode equivalents. Handles named entities
-/// (`&amp;`, `&mdash;`, etc.), decimal numeric refs (`&#8212;`), and
-/// hexadecimal numeric refs (`&#x2014;`). Unknown named entities are left
-/// in place so we don't lose information silently.
+/// Decode HTML entities: named (`&amp;`, `&mdash;`), decimal (`&#8212;`) and
+/// hex (`&#x2014;`). Unknown names are kept.
 fn decode_html_entities(input: &str) -> String {
     use regex::Regex;
     use std::sync::OnceLock;
@@ -481,16 +470,11 @@ fn decode_html_entities(input: &str) -> String {
     .into_owned()
 }
 
-/// Strip LaTeX markup from bibliography note fields (e.g. Zotero BibTeX
-/// annotation exports) to produce clean plain text for insertion.
+/// Strip LaTeX markup from bibliography notes (e.g. Zotero BibTeX annotations)
+/// to get plain text to insert.
 ///
-/// Per CLAUDE.md's Typst-first principle: LaTeX is a foreign syntax that
-/// will never compile in a Typst pipeline. There is no native Typst path
-/// for "decode LaTeX to plain text" because Typst deliberately doesn't
-/// understand LaTeX. The user-facing job here is to clean up a
-/// foreign-format export field at the trust boundary so it can be inserted
-/// as readable note text — a pragmatic, scoped task that doesn't belong
-/// inside the Typst document model.
+/// Per CLAUDE.md's Typst-first principle: Typst doesn't read LaTeX, so this
+/// cleans up a foreign field at the boundary before it becomes note text.
 fn strip_latex_markup(input: &str) -> String {
     use regex::Regex;
     use std::sync::OnceLock;
@@ -521,10 +505,8 @@ fn strip_latex_markup(input: &str) -> String {
     let named_break_re =
         NAMED_BREAK_RE.get_or_init(|| Regex::new(r"\\(?:par|newline)\b\s*").unwrap());
 
-    // Line-break: a literal `\\` (TeX's line-break operator). Split into
-    // its own pattern because `\b` after the backslashes mis-matches when
-    // followed by non-word characters (whitespace, EOL, punctuation),
-    // which is exactly the common case.
+    // TeX's `\\` line break, as its own pattern: `\b` after the backslashes
+    // fails before whitespace, line ends and punctuation, the usual case.
     static LINEBREAK_RE: OnceLock<Regex> = OnceLock::new();
     let linebreak_re = LINEBREAK_RE.get_or_init(|| Regex::new(r"\\\\\s*").unwrap());
 
@@ -592,9 +574,8 @@ pub struct FileCitation {
     pub zotero_item_key: Option<String>,
 }
 
-/// A citation key aggregated across many notes, enriched with
-/// bibliography metadata. Used by the Journal Scroll's "Scroll context"
-/// panel to summarise the citation footprint of the visible window.
+/// A citation key counted across notes, with bibliography details, for the
+/// Journal Scroll's Scroll Context panel.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct AggregatedCitation {
     pub key: String,
@@ -608,18 +589,14 @@ pub struct AggregatedCitation {
     /// Distinct notebox-relative paths of notes that cite this key,
     /// preserved in input order.
     pub paths: Vec<String>,
-    /// Zotero library item key, when the bibliography is Zotero-backed —
-    /// lets the panel surface an "open in Zotero" link, as the References
-    /// sidebar does.
+    /// Zotero item key when the bibliography comes from Zotero, for an "open in
+    /// Zotero" link.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub zotero_item_key: Option<String>,
 }
 
-/// Aggregate citation keys across a batch of notes. Returns one row per
-/// distinct key, ordered by descending occurrence count then by key. The
-/// bibliography is loaded once for the whole batch — calling
-/// `get_file_citations` per note and joining client-side would re-load
-/// it N times.
+/// Citation keys across a batch of notes: one row per key, most cited first,
+/// then by key. The bibliography is loaded once for the batch.
 #[tauri::command]
 pub async fn aggregate_citations(
     paths: Vec<String>,
@@ -650,10 +627,8 @@ pub async fn aggregate_citations(
             Ok(s) => s,
             Err(_) => continue,
         };
-        // `extract_citations` already de-duplicates within a single note,
-        // so the per-note contribution is +1 per distinct key. The
-        // resulting count is "how many visible notes cite this key",
-        // which is the value the panel surfaces.
+        // `extract_citations` de-duplicates within a note, so the count is the
+        // number of notes citing the key.
         for key in bibliography::extract_citations(&source) {
             let row = totals
                 .entry(key.clone())
@@ -725,9 +700,7 @@ mod tests {
 
     #[test]
     fn strip_latex_double_backslash_linebreak() {
-        // `\\` at end-of-line followed by whitespace must become a newline.
-        // Old regex `\\(?:par|newline|\\)\b\s*` failed this case because
-        // `\b` doesn't match between backslash and whitespace.
+        // A `\\` followed by whitespace must become a newline.
         let input = "first line \\\\ second line";
         let out = strip_latex_markup(input);
         assert!(out.contains("first line"));

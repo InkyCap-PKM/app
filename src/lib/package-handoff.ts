@@ -1,10 +1,6 @@
-// Offline package-handoff gestures, driven by a file dialog.
-//
-// These wrap the store's `exportPackage` / `importPackage` with the
-// open/save dialog so the whole gesture lives in one place — shared by the
-// collaboration panel's Export/Import buttons and the command-palette /
-// keyboard-shortcut entries. The store functions stay dialog-free (they take a
-// resolved path) so they remain unit-testable; this is the thin UI seam.
+// Package export and import with a file dialog, for the collaboration panel's
+// buttons and the command palette and shortcuts. The store's `exportPackage` /
+// `importPackage` take a path and have no dialog, so they can be tested.
 
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import * as ipc from "./ipc";
@@ -12,20 +8,22 @@ import { homeDirDefault } from "./dialog-defaults";
 import { exportPackage, importPackage } from "../stores/git";
 import { t } from "./i18n";
 
-/** Filename filter for package archives. A package is a plain `.zip` (of the
- *  notebox's `.git`); `.inkypkg` is still accepted on import for packages
- *  exported by earlier builds. */
+/**
+ * File filter for packages: a `.zip` of the notebox's `.git`. `.inkypkg` is
+ * still accepted on import for older packages.
+ */
 const PACKAGE_FILTERS = [{ name: "Notebox package (zip)", extensions: ["zip", "inkypkg"] }];
 
-/** Prompt for a destination file, then export the open notebox as a package.
- *  No-op if the user cancels the save dialog. `password` (optional) encrypts the
- *  archive — the recipient needs it out of band. */
+/**
+ * Ask where to save, then export the open notebox as a package. Does nothing if
+ * cancelled. `password` (optional) encrypts the archive; the recipient needs it
+ * separately.
+ */
 export async function exportPackageInteractive(password?: string): Promise<void> {
   const dest = await ipc.pickExportFile({
     title: t("git.package.exportTitle"),
-    // Default OUTSIDE the notebox (home), never the notebox root: writing the
-    // handoff package into the very folder being packaged would fold prior
-    // packages into each new one.
+    // Start outside the notebox (home): a package saved inside the folder being
+    // packaged would end up inside later packages.
     defaultPath: await homeDirDefault("notebox.zip"),
     filters: PACKAGE_FILTERS,
   });
@@ -33,9 +31,10 @@ export async function exportPackageInteractive(password?: string): Promise<void>
   await exportPackage(dest, password?.trim() || undefined);
 }
 
-/** Prompt for a package file, then import (reconcile) it into the open notebox.
- *  No-op if the user cancels the open dialog. `password` (optional) decrypts an
- *  encrypted archive. */
+/**
+ * Ask for a package file, then import (merge) it into the open notebox. Does
+ * nothing if cancelled. `password` (optional) decrypts it.
+ */
 export async function importPackageInteractive(password?: string): Promise<void> {
   const picked = await openDialog({
     multiple: false,

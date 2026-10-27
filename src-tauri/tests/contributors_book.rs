@@ -1,15 +1,11 @@
-//! Compile-validates the contributors byline + CRediT statement rendering.
+//! Checks that the contributors byline and CRediT statement compile.
 //!
-//! The `contributors-byline` / `credit-statement` helpers live in the
-//! `inkycap-notebox` Typst package (`lib.typ`); a syntax error there would
-//! only surface at book-export time. This test runs the real merged-book
-//! wrapper with a multi-role contributor roster + CRediT roles through the
-//! actual Typst compiler and asserts a non-empty PDF comes back — i.e. the
-//! emitted `#contributors-byline(...)` / `#credit-statement(...)` calls and
-//! the package functions they hit all compile.
+//! `contributors-byline` / `credit-statement` are in the `inkycap-notebox`
+//! package (`lib.typ`), where an error would only show at book export. This
+//! runs the real book wrapper with several roles and CRediT roles through the
+//! Typst compiler and expects a non-empty PDF.
 //!
-//! Unlike the veraPDF test this needs no external tooling, so it always
-//! runs.
+//! Needs no external tools, so it always runs.
 
 use inkycap_lib::collection_parser::model::{
     BibliographyMode, BookPageNumbering, BookWikilinkMode, Contributor, InjectChapterHeading,
@@ -70,9 +66,8 @@ fn merged_book_with_contributors_and_credit_compiles() {
     let notebox_root = canonicalize_root(dir.path()).expect("canonicalize tempdir");
     inkycap_lib::notebox_package::scaffold(&notebox_root);
 
-    // Stems with spaces + parens exercise the chapter-anchor fix: these are
-    // illegal in `<...>` markup-label syntax and previously derailed the
-    // merged compile with "unclosed label".
+    // Names with spaces and parentheses, which can't appear in `<...>` label
+    // syntax and used to break the book compile with "unclosed label".
     let chapters = vec![
         write_chapter(
             &notebox_root,
@@ -86,9 +81,9 @@ fn merged_book_with_contributors_and_credit_compiles() {
         ),
     ];
 
-    // A roster exercising the byline grouping (author + editor + translator)
-    // and CRediT statement (resolved labels), with a name containing a quote
-    // to confirm escaping survives the round-trip into Typst.
+    // Contributors covering the byline groups (author, editor, translator) and
+    // the CRediT statement, with a quote in a name to check escaping into
+    // Typst.
     const CONCEPT: &str = "https://credit.niso.org/contributor-roles/conceptualization/";
     const WRITING: &str = "https://credit.niso.org/contributor-roles/writing-original-draft/";
     let contributors = vec![
@@ -198,11 +193,12 @@ fn credit_statement_suppressed_when_disabled() {
 
 #[test]
 fn single_chapter_with_spaced_paren_stem_compiles() {
-    // Regression for two pre-existing book-export bugs:
-    //   1. a one-chapter book emitted `chapters: ("x")` — a string, not a
-    //      one-element array — tripping set-merged-context's assert;
-    //   2. a stem with spaces/parens emitted `<chap-... ...>` markup-label
-    //      syntax, illegal → "unclosed label".
+    // Two book export cases:
+    //
+    //   1. a one-chapter book must produce `chapters: ("x",)` (an array), not
+    //      `("x")` (a string), which set-merged-context's assert rejects;
+    //   2. a name with spaces or parentheses must not produce `<chap-... ...>`
+    //      label syntax ("unclosed label").
     let dir = tempfile::tempdir().expect("tempdir");
     let notebox_root = canonicalize_root(dir.path()).expect("canonicalize tempdir");
     inkycap_lib::notebox_package::scaffold(&notebox_root);

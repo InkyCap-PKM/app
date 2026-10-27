@@ -1,24 +1,19 @@
-//! Vendor the Typst packages a notebox uses into `<notebox>/.inkycap/packages/`
-//! so the notebox is self-contained for sharing (collaboration export).
+//! Copy the Typst packages a notebox uses into `<notebox>/.inkycap/packages/`,
+//! so the notebox is self-contained when shared (collaboration export).
 //!
-//! A notebox normally compiles against packages that live only in the shared
-//! Typst cache (`@preview` downloads) or the user's data dir (`@local`
-//! packages) — neither travels with a notebox handoff. When the user opts into
-//! "include packages" on collaboration export, this module copies the full
-//! transitive closure of packages the notebox imports into the notebox's own
-//! package directory, where the resolver looks first. A recipient who lacks
-//! them then compiles identically — and for `@local` packages, which have no
-//! registry to download from, this is the *only* way they can.
+//! Packages normally live in the shared Typst cache (`@preview`) or the user's
+//! data folder (`@local`), neither of which travels with the notebox. With
+//! "include packages" chosen on export, every package the notebox imports, with
+//! its dependencies, is copied into the notebox's own package folder, which the
+//! resolver checks first. Recipients then compile the same way, and for
+//! `@local` packages, which can't be downloaded, it's the only way. The default
+//! remains downloading into the shared cache on demand (see
+//! [`super::package_fetch`]).
 //!
-//! This is the explicit, opt-in form of "option C". The default path is
-//! on-demand download into the shared cache (see [`super::package_fetch`]);
-//! vendoring is only for making a notebox deliberately portable.
-//!
-//! Discovery is by parsing `#import "@ns/name:ver"` statements with Typst's own
-//! syntax tree — not by compiling — so it works even when individual notes have
-//! unrelated compile errors. Each newly-vendored package is itself scanned for
-//! further package imports, so transitive dependencies (lilaq → elembic → …)
-//! are pulled in.
+//! Imports are found by parsing `#import "@ns/name:ver"` with Typst's syntax
+//! tree, not by compiling, so notes with unrelated compile errors don't matter.
+//! Each copied package is scanned in turn, so dependencies of dependencies are
+//! included.
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -35,16 +30,14 @@ use crate::typst_packages::{copy_dir_all, locate_package_dir};
 pub struct VendorReport {
     /// Canonical specs (`@ns/name:ver`) newly copied into the notebox.
     pub vendored: Vec<String>,
-    /// Specs imported by the notebox but not found in any local source
-    /// (notebox, Typst data dir, or cache) — e.g. a never-installed `@local`
-    /// package. Surfaced so the export UI can warn that a recipient may be
-    /// unable to compile.
+    /// Imported specs not found locally (notebox, Typst data folder or cache),
+    /// e.g. an uninstalled `@local` package. The export dialog warns that
+    /// recipients may not be able to compile.
     pub unresolved: Vec<String>,
 }
 
-/// Extract the package specs imported by a single Typst source string.
-/// Relative/absolute imports (`#import "/.inkycap/notebox.typ"`) don't parse as
-/// a package spec and are naturally ignored.
+/// The package specs imported by one Typst source. Path imports (`#import
+/// "/.inkycap/notebox.typ"`) aren't package specs and are skipped.
 pub fn collect_package_imports(source: &str) -> HashSet<PackageSpec> {
     let root = parse(source);
     let mut out = HashSet::new();
@@ -54,9 +47,8 @@ pub fn collect_package_imports(source: &str) -> HashSet<PackageSpec> {
 
 fn collect_from_node(node: &LinkedNode, out: &mut HashSet<PackageSpec>) {
     if node.kind() == SyntaxKind::ModuleImport {
-        // The import source is the first string literal under the node. Extract
-        // and parse it in-place so the `ast::Str`'s borrow of the child stays
-        // contained.
+        // The import source is the first string literal under the node; parse
+        // it here so the borrow stays local.
         for child in node.children() {
             if let Some(s) = child.cast::<ast::Str>() {
                 if let Ok(spec) = s.get().parse::<PackageSpec>() {
@@ -71,12 +63,11 @@ fn collect_from_node(node: &LinkedNode, out: &mut HashSet<PackageSpec>) {
     }
 }
 
-/// Notebox-root-relative paths of every note whose source imports the package
-/// `canonical_spec` (`@ns/name:version`, exact-version match — a note importing
-/// `:0.2.0` is *not* reported for `:0.3.0`). Reuses the same Typst-AST import
-/// detector as vendoring, so commented-out or string-literal mentions never
-/// false-match. Used by the package-uninstall confirmation to warn which notes
-/// would fail to compile if the version is removed (warn-and-allow).
+/// Notebox-relative paths of the notes importing `canonical_spec`
+/// (`@ns/name:version`, exact version: `:0.2.0` doesn't match `:0.3.0`). Uses
+/// the same syntax-tree import detection as vendoring, so commented-out or
+/// quoted mentions don't count. The package uninstall confirmation uses it to
+/// list notes that would stop compiling.
 pub fn notes_importing(notebox_root: &Path, canonical_spec: &str) -> Vec<String> {
     notebox_typ_files(notebox_root)
         .into_iter()
@@ -95,18 +86,18 @@ pub fn notes_importing(notebox_root: &Path, canonical_spec: &str) -> Vec<String>
         .collect()
 }
 
-/// Vendor the full transitive closure of packages the notebox imports into
-/// `<notebox>/.inkycap/packages/`. Idempotent: a package already present there
-/// is left untouched (but still scanned for its own dependencies). Returns what
-/// was copied and what couldn't be located.
+/// Copy every package the notebox imports, with dependencies, into
+/// `<notebox>/.inkycap/packages/`. A package already there is left as is (but
+/// still scanned for dependencies). Returns what was copied and what couldn't
+/// be found.
 pub fn vendor_notebox_packages(notebox_root: &Path) -> Result<VendorReport> {
     let mut report = VendorReport::default();
     let mut seen: HashSet<PackageSpec> = HashSet::new();
     let mut queue: Vec<PackageSpec> = Vec::new();
 
-    // Seed from every note in the notebox. The reserved `.inkycap/` tree is
-    // skipped: `notebox.typ` imports nothing external, and already-vendored
-    // package sources are reached through the transitive walk below instead.
+    // Start from every note. `.inkycap/` is skipped: `notebox.typ` imports
+    // nothing external, and copied packages are reached through the dependency
+    // scan.
     for typ in notebox_typ_files(notebox_root) {
         if let Ok(src) = std::fs::read_to_string(&typ) {
             enqueue_new(collect_package_imports(&src), &mut seen, &mut queue);
@@ -255,10 +246,8 @@ mod tests {
             "#import \"@preview/foo:1.0.0\": *\n= Hi",
         )
         .unwrap();
-        // The package available in the notebox's own data-dir-like source:
-        // simulate by placing it in the notebox-vendored location of a
-        // *different* triple so locate_package_dir finds it. Here we put it
-        // directly where a prior install would live and assert idempotency.
+        // Place the package where a previous vendoring would have put it, and
+        // check it's left alone.
         let existing = root.join(".inkycap/packages/preview/foo/1.0.0");
         std::fs::create_dir_all(&existing).unwrap();
         std::fs::write(existing.join("lib.typ"), "#let foo = 1").unwrap();

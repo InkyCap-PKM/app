@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-/// Public-facing notebox summary. `path` is in the frontend-canonical shape
-/// (forward-slash, no Windows `\\?\` UNC prefix) — see
-/// `crate::storage::to_frontend_string`. Treat as opaque on the frontend.
+/// Notebox summary. `path` is in frontend-canonical form (forward slashes, no
+/// Windows `\\?\` prefix; see `crate::storage::to_frontend_string`); the
+/// frontend treats it as opaque.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NoteboxInfo {
     pub path: String,

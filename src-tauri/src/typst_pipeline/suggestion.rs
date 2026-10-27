@@ -1,20 +1,17 @@
-//! Rust ↔ Typst glue for the inline `#suggestion(...)` tracked-change
-//! primitive (the "suggesting mode" of the collaboration layer).
+//! Rust side of the inline `#suggestion(...)` tracked change. Uses
+//! `typst::syntax`, so ranges land on character boundaries and multi-byte text
+//! is preserved.
 //!
-//! Two jobs, both Typst-first (`typst::syntax` parses the source — the same
-//! parser the compiler uses — so byte ranges land on char boundaries and
-//! multi-byte UTF-8 passes through verbatim, per CLAUDE.md):
+//! 1. [`suggestion_call`] builds a `#suggestion(...)` call, for the Markdown
+//!    CriticMarkup import and other backend writers (the visual editor wraps
+//!    selections itself, like `#highlight[…]`).
+//! 2. [`resolve_suggestion_at`] / [`resolve_all_suggestions`] accept or reject
+//!    suggestions by unwrapping the call to plain Typst, so published documents
+//!    carry no marks. The same AST editing as `note_rewriter` and
+//!    `path_rebase`.
 //!
-//! 1. [`suggestion_call`] builds a `#suggestion(...)` call string. Used by the
-//!    markdown-import CriticMarkup mapping and any other host-side emitter; the
-//!    visual editor wraps a selection itself (like `#highlight[…]`).
-//! 2. [`resolve_suggestion_at`] / [`resolve_all_suggestions`] *accept* or
-//!    *reject* a suggestion as a source transform — they **unwrap** the
-//!    `#suggestion(...)` call to clean Typst so a published document never
-//!    carries suggestion marks. This is the same AST-edit discipline as
-//!    `note_rewriter` and `path_rebase`.
+//! Resolution (accept = take the proposed change):
 //!
-//! Resolution semantics (accept = take the proposed change):
 //! | kind    | accept            | reject            |
 //! |---------|-------------------|-------------------|
 //! | insert  | keep new text     | remove new text   |
@@ -58,12 +55,10 @@ impl SuggestionKind {
 
 /// Build a `#suggestion(...)[body]` call.
 ///
-/// - `body` is the inserted (insert/replace) or deleted (delete) text, placed
-///   verbatim in the content bracket — the caller supplies valid inline markup
-///   (a selection or plain text), exactly as `#highlight[…]` is emitted.
-/// - `old` is the replaced text for `Replace` (ignored otherwise); also placed
-///   verbatim as a content argument.
-/// - `by` / `on` attribute the author; omitted when empty.
+/// - `body`: the inserted (insert, replace) or deleted (delete) text, as inline
+///   markup, in the content bracket.
+/// - `old`: the replaced text, for `Replace` only, also as content.
+/// - `by` / `on`: the author and date, left out when empty.
 pub fn suggestion_call(
     kind: SuggestionKind,
     body: &str,
@@ -116,18 +111,15 @@ fn resolution_text(p: &ParsedSuggestion, source: &str, accept: bool) -> String {
     }
 }
 
-/// Accept (or reject) the `#suggestion(...)` call whose span contains `offset`
-/// — the byte offset of (or anywhere within) the call, as the visual editor
-/// knows it. Returns the rewritten source, unwrapping the call to clean Typst.
-/// Unchanged when no suggestion call contains `offset`.
+/// Accept or reject the `#suggestion(...)` call containing byte `offset`,
+/// unwrapping it to plain Typst. Unchanged if none contains it.
 pub fn resolve_suggestion_at(source: &str, offset: usize, accept: bool) -> String {
     let root = parse(source);
     let link = LinkedNode::new(&root);
     let mut calls: Vec<ParsedSuggestion> = Vec::new();
     collect_suggestions(&link, source, &mut calls);
-    // The call whose hash-extended span contains the offset; innermost
-    // (smallest span) wins if suggestions ever nest. `full_span.start` is the
-    // `#`, so an offset there matches.
+    // The call whose span (from its `#`) contains the offset; the innermost if
+    // they nest.
     let Some(parsed) = calls
         .into_iter()
         .filter(|p| p.full_span.contains(&offset))
@@ -143,9 +135,8 @@ pub fn resolve_suggestion_at(source: &str, offset: usize, accept: bool) -> Strin
     out
 }
 
-/// Accept (or reject) **every** `#suggestion(...)` call in the source — the
-/// "accept all / reject all" path. Edits are applied back-to-front so earlier
-/// offsets stay valid.
+/// Accept or reject every `#suggestion(...)` ("accept all" / "reject all"),
+/// back to front so offsets stay valid.
 pub fn resolve_all_suggestions(source: &str, accept: bool) -> String {
     let root = parse(source);
     let link = LinkedNode::new(&root);
@@ -172,12 +163,9 @@ pub fn count_suggestions(source: &str) -> usize {
     calls.len()
 }
 
-/// Count the `#suggestion(...)` calls **not** attributed to `me` — the changes
-/// awaiting *this* user's decision. A suggestion the local user authored is
-/// theirs to send, not to resolve, so it is excluded once its `by:` matches.
-/// Suggestions with no `by:` (unknown author, e.g. legacy) count as
-/// awaiting-decision. With an empty `me`, no attribution is possible, so all
-/// suggestions count (matches [`count_suggestions`]).
+/// Number of `#suggestion(...)` calls not by `me`: those awaiting this user's
+/// decision (their own are theirs to send). Calls without `by:` count. With an
+/// empty `me`, all count (as [`count_suggestions`]).
 pub fn count_suggestions_by_others(source: &str, me: &str) -> usize {
     let me = me.trim();
     let root = parse(source);

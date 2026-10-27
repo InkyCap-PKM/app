@@ -1,28 +1,26 @@
-//! Contributors: the multi-author byline + CRediT roster that supersedes
-//! the single `author` field in a collection's Book Metadata.
+//! Contributors: a collection's list of authors and other contributors with
+//! their roles, used for the byline and a CRediT statement in place of the
+//! single `author` field.
 //!
-//! This module owns two things:
-//!   1. the canonical role vocabularies — the 14 NISO CRediT roles and the
-//!      CSL/Hayagriva bibliographic roles — exposed to the frontend via a
-//!      command so the editor's dropdowns and the export renderer share one
-//!      source of truth (no duplicated lists drifting apart);
-//!   2. the Rust→Typst glue that turns a `Vec<Contributor>` into calls to
-//!      the `inkycap-notebox` package's `contributors-byline` /
-//!      `credit-statement` helpers.
+//! This module has:
 //!
-//! Per CLAUDE.md's Typst-first principle the *formatting* (grouping a byline
-//! by role, laying out a contributions statement) lives in `lib.typ`; Rust
-//! only resolves CRediT IDs to labels and emits a single function call with
-//! the data as a Typst array literal.
+//!   1. The role lists (the 14 NISO CRediT roles and the CSL/Hayagriva
+//!      bibliographic roles), sent to the frontend by a command so the editor
+//!      and export use one list.
+//!   2. The code that turns a `Vec<Contributor>` into calls to the
+//!      `inkycap-notebox` package's `contributors-byline` / `credit-statement`.
+//!
+//! Per CLAUDE.md's Typst-first principle the formatting (grouping the byline by
+//! role, laying out the statement) is in `lib.typ`; Rust maps CRediT ids to
+//! labels and emits one call with the data as a Typst array.
 
 use serde::Serialize;
 
 use crate::collection_parser::model::Contributor;
 use crate::typst_pipeline::book_wrapper::typst_escape;
 
-/// One selectable role for a frontend dropdown / multi-select: a stored
-/// value (the canonical CRediT URL, or the CSL role token) and a
-/// human-readable label.
+/// A role for a dropdown: the stored value (the CRediT URL or CSL role token)
+/// and a label.
 #[derive(Debug, Clone, Serialize)]
 pub struct CatalogEntry {
     pub value: String,
@@ -37,10 +35,9 @@ pub struct ContributorCatalogs {
     pub biblio_roles: Vec<CatalogEntry>,
 }
 
-/// The 14 NISO CRediT roles: `(canonical-id-url, label)`. The id is stored
-/// in `Contributor.credit_roles` so the data round-trips and interoperates;
-/// the label is what renders in the statement and the editor.
-/// Reference: <https://credit.niso.org/>.
+/// The 14 NISO CRediT roles: `(id URL, label)`. The id is stored in
+/// `Contributor.credit_roles`, so the data interoperates; the label is shown.
+/// See <https://credit.niso.org/>.
 const CREDIT_ROLES: &[(&str, &str)] = &[
     (
         "https://credit.niso.org/contributor-roles/conceptualization/",
@@ -100,10 +97,9 @@ const CREDIT_ROLES: &[(&str, &str)] = &[
     ),
 ];
 
-/// CSL/Hayagriva bibliographic roles: `(token, label)`. The token is stored
-/// in `Contributor.biblio_role` and drives the byline grouping (the matching
-/// "Edited by"/"Translated by" phrasing lives in `lib.typ`). `author` is the
-/// implicit default when unset.
+/// CSL/Hayagriva bibliographic roles: `(token, label)`. The token is stored in
+/// `Contributor.biblio_role` and groups the byline (the "Edited by"/"Translated
+/// by" wording is in `lib.typ`). Unset means `author`.
 const BIBLIO_ROLES: &[(&str, &str)] = &[
     ("author", "Author"),
     ("editor", "Editor"),
@@ -146,12 +142,10 @@ fn credit_label(id: &str) -> &str {
         .unwrap_or(id)
 }
 
-/// The names that should populate the document's `author` metadata
-/// (PDF/HTML catalog, and any downstream docx/odt export). Derived from the
-/// contributor roster — the bibliographic authors — so the metadata "author"
-/// flows from the same source the byline does. Falls back to the bare
-/// authors of *all* roles if no row is explicitly an author, then to the
-/// legacy single `author` string when there are no contributors at all.
+/// The names for the document's `author` metadata (PDF/HTML, and docx/odt
+/// exports): the contributors with the author role, so it matches the byline.
+/// If none has that role, the names of all contributors; with no contributors,
+/// the single `author` field.
 pub fn document_author_names(
     contributors: &[Contributor],
     legacy_author: Option<&str>,
@@ -185,10 +179,9 @@ pub fn document_author_names(
         .unwrap_or_default()
 }
 
-/// Wrap pre-serialized items as a Typst array literal. A single element
-/// needs a trailing comma — `("x")` is parenthesized grouping (a string),
-/// not a one-element array — the same gotcha as `note_rewriter`'s
-/// `serialize_to_typst`.
+/// Wrap serialized items in a Typst array. One item needs a trailing comma,
+/// since `("x")` is just a string in parentheses (as in `note_rewriter`'s
+/// `serialize_to_typst`).
 fn typst_array(items: &[String]) -> String {
     match items.len() {
         0 => "()".to_string(),
@@ -228,9 +221,8 @@ fn contributors_array(contributors: &[Contributor]) -> String {
     typst_array(&items)
 }
 
-/// `#contributors-byline((...))` for the title page, or `None` when there
-/// are no named contributors (the caller falls back to the legacy author
-/// line).
+/// `#contributors-byline((...))` for the title page, or `None` with no named
+/// contributors (the caller then uses the `author` line).
 pub fn byline_call(contributors: &[Contributor]) -> Option<String> {
     if contributors.iter().all(|c| c.name.trim().is_empty()) {
         return None;

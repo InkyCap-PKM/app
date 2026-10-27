@@ -1,38 +1,28 @@
-// i18n seam — one flat dictionary per locale, surfaced through two faces.
+// Translation layer: one flat dictionary per locale, used in two ways. Keys are
+// dotted IDs (e.g. "settings.appearance.theme.label"); a missing key returns
+// the key itself, so untranslated strings are visible.
 //
-// Strings are keyed by dotted ID (e.g. "settings.appearance.theme.label").
-// Missing keys return the key itself so unstrung literals stay visible during
-// development.
-//
-//   ── Reactive face (Solid components) ──
+//   ── Reactive (Solid components) ──
 //     const trans = useI18n();
 //     <span>{trans("settings.appearance.theme.label")}</span>
-//   Reads inside JSX / effects track the locale signal and re-render when the
-//   user switches language.
+//   Reads inside JSX and effects re-render on a language switch.
 //
-//   ── Static face (CM6 extensions, stores, command registry) ──
+//   ── Static (CM6 extensions, stores, command registry) ──
 //     import { t } from "../lib/i18n";
 //     button.title = t("references.clearFilter");
-//   `t` returns the current-locale string synchronously, outside any tracking
-//   scope. It does NOT cause re-renders; consumers that build strings once
-//   (CodeMirror extensions, command titles) refresh out-of-band off
-//   `localeVersion()` — see src/stores/locale.ts.
+//   `t` returns the current string without tracking. Code that builds strings
+//   once refreshes on `localeVersion()` (see src/stores/locale.ts).
 //
-// Conventions: namespace keys by FEATURE AREA, not component
-// (`settings.*`, `references.*`, `search.*`); shared vocabulary gets shared
-// keys, never per-component copies. Placeholders use single braces:
-// `"{count} entries"`, resolved by the shared resolver below. Plurals use
-// `.one`/`.other`/… sub-keys selected by `Intl.PluralRules` via `tPlural`.
+// Group keys by feature area (`settings.*`, `references.*`, `search.*`), not
+// component, and reuse shared keys. Placeholders use single braces (`"{count}
+// entries"`); plurals use `.one` / `.other` sub-keys through `tPlural`.
 //
-// Adding a language is one step: drop `<code>.json` next to `en.json` (it is
-// auto-discovered by the glob below) and add a `LOCALE_META` entry so it
-// appears in the Settings → Language picker. See
+// To add a language, put `<code>.json` beside `en.json` (picked up by the glob
+// below) and add a `LOCALE_META` entry. See
 // documentation/developer/CONTRIBUTING-translations.md.
 //
-// This module must NOT import the settings store: the command registry imports
-// it, and the settings store imports the command registry, so a settings
-// import here would close an import cycle. `setLocale` is therefore
-// settings-agnostic; src/stores/locale.ts is the only bridge between the two.
+// This module must not import the settings store, which imports the command
+// registry, which imports this; src/stores/locale.ts connects them.
 
 import { createSignal } from "solid-js";
 import { translator, type TemplateResolver } from "@solid-primitives/i18n";
@@ -40,9 +30,10 @@ import { translator, type TemplateResolver } from "@solid-primitives/i18n";
 /** A loaded locale: flat map of dotted key → translated string. */
 export type FlatDict = Record<string, string>;
 
-/** Display metadata for a locale. `dir` exists from day one so a future RTL
- *  language is an additive entry, not a redesign — RTL layout itself is out of
- *  scope for now. */
+/**
+ * Display data for a locale. `dir` is there so a right-to-left language can be
+ * added later; RTL layout itself isn't supported yet.
+ */
 export interface LocaleMeta {
   /** BCP-47 code, also the `<html lang>` value and the locale file's basename. */
   code: string;
@@ -53,19 +44,17 @@ export interface LocaleMeta {
 
 export const DEFAULT_LOCALE = "en";
 
-// Hand-maintained display metadata. A locale appears in the picker only if it
-// has BOTH a loaded dictionary (a `*.json` file) AND an entry here — this keeps
-// a half-added file (no metadata) from rendering a broken dropdown row.
+// A locale appears in the picker only with both a dictionary file and an entry
+// here.
 const LOCALE_META: Record<string, Omit<LocaleMeta, "code">> = {
   en: { nativeName: "English", dir: "ltr" },
   "fr-CA": { nativeName: "Français", dir: "ltr" },
 };
 
 // ── Dictionary loading ───────────────────────────────────────────────
-// Eager glob: every locale ships in the bundle and is available SYNCHRONOUSLY.
-// The static `t()` cannot await, and `setLocale` must swap dictionaries
-// atomically, so lazy/dynamic import is deliberately avoided here. At a handful
-// of locales (~15–40 KB JSON each) the bundle cost is negligible.
+// Eager glob, so every dictionary is available synchronously: `t()` can't wait,
+// and `setLocale` swaps dictionaries in one step. The few JSON files cost
+// little.
 const modules = import.meta.glob<FlatDict>("../locales/*.json", {
   eager: true,
   import: "default",
@@ -84,9 +73,8 @@ export const AVAILABLE_LOCALES: LocaleMeta[] = Object.keys(dicts)
   .map((code) => ({ code, ...LOCALE_META[code] }));
 
 // ── Placeholder resolution (shared by both faces) ────────────────────
-// Single-brace `{name}` substitution. A missing param leaves `{name}` intact —
-// matching the historical stub's behaviour exactly. Both `t` and the reactive
-// translator route through this so the two faces never diverge.
+// `{name}` substitution; a missing parameter leaves `{name}`. Both faces use
+// it.
 function substitute(raw: string, params?: Record<string, string | number>): string {
   if (!params) return raw;
   return raw.replace(/\{(\w+)\}/g, (_, name) =>
@@ -94,9 +82,8 @@ function substitute(raw: string, params?: Record<string, string | number>): stri
   );
 }
 
-// Adapter for @solid-primitives/i18n's translator, whose default resolver
-// expects `{{ name }}` (double brace). We feed it ours so en.json's
-// single-brace strings need no rewrite.
+// @solid-primitives/i18n expects `{{ name }}`; give it our resolver so en.json
+//   can keep single braces.
 const resolveTemplate: TemplateResolver = ((raw: string, args?: Record<string, string | number>) =>
   substitute(raw, args)) as TemplateResolver;
 
@@ -104,18 +91,16 @@ const resolveTemplate: TemplateResolver = ((raw: string, args?: Record<string, s
 const [localeCode, setLocaleCode] = createSignal<string>(DEFAULT_LOCALE);
 const [localeVersion, bumpLocaleVersion] = createSignal<number>(0);
 
-// Non-reactive snapshot for the static face. Updated synchronously inside
-// `setLocale`, BEFORE the signals are bumped, so any effect that re-runs on the
-// version bump already observes the new dictionary here.
+// The dictionary for `t`, replaced in `setLocale` before the signals change, so
+// effects re-running on the change see the new one.
 let activeDict: FlatDict = dicts[DEFAULT_LOCALE] ?? {};
 
 /** Reactive accessor to the active dictionary; backs the component translator. */
 const activeDictAccessor = (): FlatDict =>
   dicts[localeCode()] ?? dicts[DEFAULT_LOCALE] ?? {};
 
-// One translator instance, created once. Each call reads `activeDictAccessor()`
-// (and thus the locale signal), so calls inside a tracking scope re-render on
-// locale change; calls outside one just return the current value.
+// One translator. Each call reads `activeDictAccessor()`, so calls in a
+// tracking scope update on a language change.
 const reactiveTranslator = translator(activeDictAccessor, resolveTemplate);
 
 /** Current locale code (reactive). */
@@ -131,13 +116,11 @@ export function isLocaleAvailable(code: string): boolean {
 }
 
 /**
- * Switch the active UI locale. Settings-agnostic by design — persistence and
- * downstream refreshes (command relocalization, CM6 reconfigure) live in
- * src/stores/locale.ts. Unknown codes fall back to the default locale.
+ * Switch the UI language. Persistence and refreshes (commands, CM6) are in
+ * src/stores/locale.ts. Unknown codes fall back to the default.
  *
- * Mutation order is load-bearing: swap the static dict and the `<html>`
- * attributes FIRST, then the signals. Bumping a signal before the dict is
- * swapped would let a re-running effect read the previous dictionary.
+ * Order matters: replace the dictionary and the `<html>` attributes first, then
+ * the signals, so a re-running effect never reads the old dictionary.
  */
 export function setLocale(code: string): void {
   const resolved = code in dicts ? code : DEFAULT_LOCALE;
@@ -152,9 +135,8 @@ export function setLocale(code: string): void {
 
 // ── Reactive face ────────────────────────────────────────────────────
 /**
- * Translator for Solid components. Returns a function `(key, params?)`; reads
- * inside JSX/effects track the locale and re-render on switch. Use this in new
- * or migrated components in place of the static `t`.
+ * Translator for Solid components: `(key, params?)`, re-rendering on a
+ * language switch. Prefer it to the static `t` in components.
  */
 export function useI18n(): (key: string, params?: Record<string, string | number>) => string {
   return reactiveTranslator as unknown as (
@@ -165,10 +147,9 @@ export function useI18n(): (key: string, params?: Record<string, string | number
 
 // ── Static face ──────────────────────────────────────────────────────
 /**
- * Look up a translated string by dotted key, synchronously, with no tracking
- * scope. For CM6 extensions, stores, and the command registry. Returns the key
- * on a miss. Keeps the historical signature so existing call sites are
- * untouched. Components that should re-render on locale change use `useI18n()`.
+ * A translated string by dotted key, synchronously and without tracking, for
+ * CM6 extensions, stores and the command registry. Returns the key when
+ * missing. Components that re-render on a language switch use `useI18n()`.
  */
 export function t(key: string, params?: Record<string, string | number>): string {
   const raw = activeDict[key] ?? key;
@@ -190,9 +171,9 @@ function pluralRulesFor(locale: string): Intl.PluralRules {
 }
 
 /**
- * Plural-aware lookup. Selects the `<key>.<category>` sub-key (`.one`,
- * `.other`, …) for `count` via `Intl.PluralRules`, falling back to `.other`
- * then to the bare key. `{count}` is available to the chosen string.
+ * Plural-aware lookup: picks `<key>.<category>` (`.one`, `.other`, …) for `count`
+ * with `Intl.PluralRules`, falling back to `.other`, then the bare key. `{count}`
+ * is available in the string.
  *
  *   en.json:  "references.entry.one": "entry", "references.entry.other": "entries"
  *   tPlural("references.entry", 3)  →  "entries"
@@ -219,9 +200,11 @@ export function formatNumber(value: number, options?: Intl.NumberFormatOptions):
   return fmt.format(value);
 }
 
-/** Locale-aware date/time formatting. Reactive when read inside a tracking
- *  scope. Note: the app's custom token date format (`settings.appearance.
- *  date_format`) is separate and not reconciled here — see the plan. */
+/**
+ * Locale-aware date and time formatting, reactive in a tracking scope. The
+ * app's own date format setting (`settings.appearance.date_format`) is
+ * separate.
+ */
 export function formatDate(value: Date | number, options?: Intl.DateTimeFormatOptions): string {
   const locale = localeCode();
   const cacheKey = `${locale}|${options ? JSON.stringify(options) : ""}`;

@@ -1,8 +1,8 @@
-// Shared "Convert Markdown to Typst?" chooser, used by every gesture that can
-// bring a `.md` file into the notebox (the file tree's "Copy into notebox" and
-// external drag-drop). A markdown file is a note, not an attachment, so we ask
-// the user — once per operation — whether to run the markdown→Typst conversion
-// or keep the file as-is. The header ✕, Esc, and backdrop all cancel.
+// "Convert Markdown to Typst?" chooser for every way a `.md` file is brought
+// into the notebox (the file tree's "Copy into notebox", dragging in from
+// outside). A Markdown file is a note, not an attachment, so the user is asked
+// once per operation whether to convert it or keep it as is. ✕, Esc and the
+// backdrop cancel.
 
 import { promptChoice } from "../stores/prompt";
 import { t, tPlural } from "./i18n";
@@ -11,10 +11,9 @@ import { t, tPlural } from "./i18n";
 export type MarkdownImportChoice = "convert" | "keep" | "cancel";
 
 /**
- * Ask whether to convert the selected markdown file(s) to Typst. `names` is the
- * markdown filenames in the current operation (used to phrase the prompt); when
- * a single file is involved its name is shown. Returns `"cancel"` if the user
- * dismisses the modal, in which case the caller should abort the whole import.
+ * Ask whether to convert the Markdown files to Typst. `names` are the files in
+ * this operation (one file's name is shown). Returns `"cancel"` if dismissed;
+ * the caller should then stop the whole import.
  */
 export async function askMarkdownImport(
   names: string[],

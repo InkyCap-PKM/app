@@ -4,10 +4,10 @@ import { ensureSyntaxTree } from "@codemirror/language";
 import { typst } from "codemirror-lang-typst";
 import { scanListItems, listSubtreeEndLine, leadingWhitespace } from "./list-scan";
 
-// The list scan is parser-first (like heading-scan): a `- x` line only counts
-// as a list item where Typst's parser emits a list/enum marker, so lines inside
-// a ``` fence, a comment, or a string are excluded. Nesting itself is plain
-// indentation, exercised through `listSubtreeEndLine`.
+// Like heading-scan, the list scan follows the parser: a `- x` line is a list
+// item only where Typst sees a list marker, so lines in a ``` fence, comment or
+// string don't count. Nesting is indentation, tested through
+// `listSubtreeEndLine`.
 
 function mk(doc: string): EditorState {
   const state = EditorState.create({ doc, extensions: [typst()] });

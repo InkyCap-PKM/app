@@ -1,7 +1,6 @@
-// One row of the font picker UI. Presents a dropdown of modes
-// (System / InkyCap / Typst default / Follow / Custom — caller picks
-// which apply) and reveals the FontPicker beneath when "Custom" is
-// selected.
+// One row of the font settings: a dropdown of modes (System / InkyCap / Typst
+// default / Follow / Custom; the caller chooses which apply), with the
+// FontPicker below for "Custom".
 
 import { Component, Show } from "solid-js";
 import type { FontChoice, FontMode } from "../lib/types";

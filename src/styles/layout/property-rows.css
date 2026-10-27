@@ -1,10 +1,8 @@
-/* Property row layout (name/value/options columns).
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Property row layout (name, value and options columns). Part of layout.css,
+   whose import order (see ../layout.css) keeps the cascade. */
 
-/* Property row layout: name (icon + key) on left, value cell on right,
-   per-row options trigger floats at the far right and only appears on
-   hover. Mirrors Obsidian's two-column properties panel. */
+/* Property rows: name (icon and key) on the left, value on the right, and an
+   options button at the far right shown on hover. */
 .property-row__name {
   display: flex;
   align-items: center;

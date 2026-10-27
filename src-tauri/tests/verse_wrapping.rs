@@ -1,19 +1,16 @@
 //! Verse lines must wrap at the right margin.
 //!
-//! `#verse(...)` preserves idiosyncratic spacing by mapping ASCII spaces to
-//! non-breaking spaces. Doing that to *every* space (the original
-//! implementation) also removes every legal break opportunity, so a verse line
-//! longer than the measure ran straight off the right edge of the page in the
-//! SVG preview and in exported PDFs. `_verse-preserve-spaces` in
-//! `inkycap-notebox/lib.typ` keeps one ordinary space per interior run so the
-//! line can still break between words.
+//! `#verse(...)` keeps the author's spacing by turning spaces into non-breaking
+//! spaces. Doing that to every space would remove every place a line can break,
+//! so long lines would run off the page. `_verse-preserve-spaces` in
+//! `inkycap-notebox/lib.typ` keeps one ordinary space in each run between
+//! words.
 //!
-//! This pins both halves of that invariant: long lines wrap inside the page,
-//! and the preserved indentation / run-spacing survives. Tabs count as four
-//! spaces, the editor's tab width.
+//! This checks both: long lines wrap within the page, and indentation and
+//! spacing are kept. Tabs count as four spaces, the editor's tab width.
 //!
-//! Bundled fonts only (no `ensure_system_fonts()`) so the geometry is the same
-//! on every machine — same rationale as `tests/fidelity.rs`.
+//! Bundled fonts only (no `ensure_system_fonts()`), so the geometry is the same
+//! everywhere, as in `tests/fidelity.rs`.
 
 use std::collections::BTreeSet;
 
@@ -29,11 +26,9 @@ struct Run {
     text: String,
 }
 
-/// Flatten a frame tree into absolutely-positioned text runs.
-///
-/// Only the translation part of a group transform is applied: verse content is
-/// laid out by `align`/`block`/`grid`, none of which scale or rotate. A future
-/// fixture that does would need the full affine here.
+/// Flatten a frame tree into positioned text runs. Only translation is applied,
+/// since verse is laid out by `align`/`block`/`grid`, which don't scale or
+/// rotate.
 fn collect_runs(frame: &Frame, origin: Point, out: &mut Vec<Run>) {
     for (pos, item) in frame.items() {
         let at = origin + *pos;

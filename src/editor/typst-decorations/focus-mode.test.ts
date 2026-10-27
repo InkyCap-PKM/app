@@ -2,10 +2,9 @@ import { describe, it, expect } from "vitest";
 import { EditorSelection, EditorState } from "@codemirror/state";
 import { focusedLineNumbers, resolveFocusScope } from "./focus-mode";
 
-// "Focus mode" and "Dim unfocused text" are two settings over one idea: an
-// area around the caret is focused, and the rest is not. Focus mode tints the
-// focused area; dimming fades everything else. Either must work without the
-// other — dimming used to be silently ignored whenever focus mode was off.
+// "Focus mode" and "Dim unfocused text" share one idea: an area around the
+// caret is in focus and the rest isn't. Focus mode tints the focused area;
+// dimming fades the rest. Each must work without the other.
 
 describe("resolveFocusScope", () => {
   it("uses the focus mode's own scope when one is set", () => {

@@ -1,11 +1,11 @@
 /* Component styles, split by feature area.
  *
- * IMPORT ORDER IS LOAD-BEARING. Equal-specificity CSS rules resolve by
- * source order, and several later files deliberately override earlier
- * ones (e.g. chrome-buttons.css refines tabs.css). Never alphabetize or
- * reorder these imports. New files go at the end.
+ * The import order matters: equal-specificity rules apply in source order,
+ * and some later files override earlier ones (e.g. chrome-buttons.css
+ * refines tabs.css). Don't sort or reorder these imports; add new files at
+ * the end.
  *
- * Tokens (colours, radii, spacing, surfaces) live in themes.css — see
+ * Tokens (colours, radii, spacing, surfaces) are in themes.css; see
  * documentation/developer/ui-styling.md. */
 
 @import "./layout/app-shell.css";
@@ -51,7 +51,6 @@
 @import "./layout/snapshot-viewer.css";
 @import "./layout/mycelial.css";
 @import "./layout/editor-header.css";
-@import "./layout/live-preview.css";
 @import "./layout/chrome-buttons.css";
 @import "./layout/vertical-toolbar.css";
 @import "./layout/notebox-chrome.css";

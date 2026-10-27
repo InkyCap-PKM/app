@@ -1,23 +1,18 @@
-//! The passage of note text around a wikilink, found with Typst's own parser.
+//! The passage of note text around a wikilink, found with Typst's parser.
 //!
-//! A *passage* is the unit of writing a link sits in: the paragraph that holds
-//! it, or the list item, or (when the link is inside a heading) the heading
-//! plus the paragraph after it. For more context, each passage also carries
-//! the unit of writing just before and just after it, when there is one.
+//! A passage is the unit of writing holding the link: its paragraph, its list
+//! item, or for a link in a heading, the heading and the paragraph after it.
+//! Each also carries the units just before and after, when there are any.
 //!
-//! The Links pane shows inbound passages, and Compose mode copies them into a
-//! new note, so each passage carries both its Typst source (for copying) and a
-//! plain-text rendering (for display) in which the links are marked for
-//! highlighting. A passage also carries a *snippet*: a few sentences around
-//! the link, which the Links pane shows until the user asks for more context.
+//! The Links pane shows inbound passages and Compose copies them into a new
+//! note, so each has its Typst source (for copying) and plain text with the
+//! links marked (for display), plus a snippet of a few sentences around the
+//! link. [`phrase_passages`] finds passages around a recurring phrase instead,
+//! for Compose drafts from a Mycelial concept.
 //!
-//! A passage can also be found around a recurring phrase rather than a link
-//! ([`phrase_passages`]), for Compose drafts made from a Mycelial View
-//! emergent concept.
-//!
-//! Paragraph boundaries come from the syntax tree (`Parbreak`, `Heading`,
-//! list items), not from scanning lines, so a `= ` inside a code block or a
-//! blank line inside a string never splits a passage.
+//! Paragraph boundaries come from the syntax tree (`Parbreak`, `Heading`, list
+//! items), so a `= ` in code or a blank line in a string never splits a
+//! passage.
 
 use std::ops::Range;
 
@@ -37,8 +32,7 @@ use crate::typst_pipeline::syntax::{ast, parse, LinkedNode, Side, SyntaxKind};
 const MAX_DISPLAY_CHARS: usize = 1500;
 
 /// Most characters a snippet keeps on each side of the link, counted in plain
-/// text so markup never uses up the allowance. A sentence next to the one
-/// holding the link is included only when it fits whole.
+/// text. A neighbouring sentence is included only if it fits whole.
 const SNIPPET_CONTEXT_CHARS: usize = 100;
 
 /// Plain prose for display, with the stretches to highlight.
@@ -78,12 +72,9 @@ pub struct LinkPassage {
     pub after: Option<PassageText>,
 }
 
-/// Every passage in `source` that links to the note whose wikilink stem is
-/// `target_stem`, in document order. Several links to the same note inside
-/// one paragraph give one passage.
-///
-/// Links made through `link-ref(...)` property values have no passage, so a
-/// note that links only from its properties yields an empty list.
+/// Every passage in `source` linking to the note with stem `target_stem`, in
+/// order; several links in one paragraph give one passage. Links from
+/// `link-ref(...)` properties have no passage.
 pub fn inbound_passages(source: &str, target_stem: &str) -> Vec<LinkPassage> {
     let all_headings = headings(source);
     let target = target_stem.to_lowercase();
@@ -95,10 +86,9 @@ pub fn inbound_passages(source: &str, target_stem: &str) -> Vec<LinkPassage> {
         .collect()
 }
 
-/// Every passage in `source` whose prose holds `phrase`, in document order,
-/// with each occurrence of the phrase marked. The phrase is matched as
-/// [`phrase_ranges`] matches it: whole words on one line, ignoring case.
-/// Several occurrences inside one paragraph give one passage.
+/// Every passage in `source` containing `phrase`, in order, with each
+/// occurrence marked, matched as [`phrase_ranges`] does (whole words on one
+/// line, ignoring case). Several in one paragraph give one passage.
 pub fn phrase_passages(source: &str, phrase: &str) -> Vec<LinkPassage> {
     let all_headings = headings(source);
     let extract = |s: &str| mark_phrase(extract_marked_text(s, &|_| false), phrase);
@@ -114,10 +104,9 @@ pub fn phrase_passages(source: &str, phrase: &str) -> Vec<LinkPassage> {
         .collect()
 }
 
-/// The first unit of writing in `source`'s body, standing in for a note that
-/// is linked *to* rather than linking: its opening paragraph or list item, or
-/// its first heading plus the paragraph after it. `None` for an empty body.
-/// Carries no `before` (nothing comes before it) but does carry `after`.
+/// The first unit of writing in the body, for a note that is linked to rather
+/// than linking: its opening paragraph or list item, or first heading and the
+/// paragraph after. `None` for an empty body. Has an `after` but no `before`.
 pub fn lead_passage(source: &str) -> Option<LinkPassage> {
     let extract = |s: &str| extract_marked_text(s, &|_| false);
     span_passage(source, &headings(source), lead_span(source)?, &extract)
@@ -308,10 +297,9 @@ fn breaks_paragraph(kind: SyntaxKind) -> bool {
     kind == SyntaxKind::Parbreak || kind == SyntaxKind::Heading || is_item(kind)
 }
 
-/// The unit of writing holding `node`: climb to the nearest list item,
-/// heading, or run of markup and take the paragraph there. Also returns the
-/// unit's own text (see [`PassageSpan::own`]) and the markup the unit is a
-/// part of, where its neighbours are.
+/// The unit of writing holding `node`: the nearest list item, heading or run of
+/// markup. Also returns the unit's own text (see [`PassageSpan::own`]) and the
+/// markup containing it, where its neighbours are.
 fn unit_around<'a>(node: &LinkedNode<'a>) -> (Range<usize>, Range<usize>, Option<LinkedNode<'a>>) {
     let mut child = node.clone();
     while let Some(parent) = child.parent().cloned() {
@@ -327,9 +315,8 @@ fn unit_around<'a>(node: &LinkedNode<'a>) -> (Range<usize>, Range<usize>, Option
                 let unit = heading_and_next(&parent);
                 return (unit.clone(), unit, parent.parent().cloned());
             }
-            // Markup that is the body of a list item or heading belongs to
-            // that item, and the body of bold or italic text belongs to the
-            // paragraph around it; keep climbing so the right arm takes it.
+            // Markup inside a list item or heading belongs to it, and inside
+            // bold or italic to the paragraph around it; keep climbing.
             SyntaxKind::Markup
                 if !parent.parent_kind().is_some_and(|k| {
                     is_item(k)
@@ -362,9 +349,8 @@ fn item_own_range(item: &LinkedNode<'_>) -> Range<usize> {
     item.range().start..end
 }
 
-/// Every unit of writing directly inside `markup`, in order: each list item
-/// and heading on its own, and each run of other content between them and
-/// paragraph breaks.
+/// The units directly inside `markup`, in order: each list item and heading,
+/// and each run of other content between them and paragraph breaks.
 fn units_of(markup: &LinkedNode<'_>) -> Vec<Range<usize>> {
     let mut out = Vec::new();
     let mut run: Option<Range<usize>> = None;
@@ -441,9 +427,8 @@ fn heading_and_next(heading: &LinkedNode<'_>) -> Range<usize> {
     }
 }
 
-/// `range` with anything before the body cut off, or `None` if nothing is
-/// left. Keeps the `#note(...)` call out of a passage when the first
-/// paragraph follows it without a blank line.
+/// `range` with anything before the body removed, or `None` if nothing is left,
+/// so the `#note(...)` call isn't part of a passage.
 fn clip(range: Range<usize>, body_start: usize) -> Option<Range<usize>> {
     let start = range.start.max(body_start);
     (start < range.end).then_some(start..range.end)
@@ -523,11 +508,9 @@ fn shorten(text: &MarkedText, max: usize) -> MarkedText {
     }
 }
 
-/// The short preview of a link's own text: the sentence holding the first
-/// mark, with the sentence before and after when each fits whole within
-/// [`SNIPPET_CONTEXT_CHARS`] of the mark, and the holding sentence itself cut
-/// at a word to that allowance when it runs longer. Without a mark the
-/// preview is taken from the start of the text.
+/// The short preview: the sentence holding the first mark, with the sentences
+/// either side when each fits whole within [`SNIPPET_CONTEXT_CHARS`], and the
+/// holding sentence cut at a word if longer. Without a mark, from the start.
 fn snippet(text: &MarkedText) -> MarkedText {
     let s = &text.text;
     let anchor = text.marks.first().cloned().unwrap_or(0..0);
@@ -579,9 +562,8 @@ fn snippet(text: &MarkedText) -> MarkedText {
     excerpt(text, start..end)
 }
 
-/// `text[range]` trimmed of blank space, with an ellipsis on each side where
-/// text was left out and the marks moved to match. `range` must fall on
-/// character boundaries.
+/// `text[range]` trimmed, with an ellipsis where text was left out on either
+/// side and the marks shifted. `range` must be on character boundaries.
 fn excerpt(text: &MarkedText, range: Range<usize>) -> MarkedText {
     let s = &text.text;
     let inner = &s[range.clone()];

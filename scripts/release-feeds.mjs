@@ -290,10 +290,10 @@ ${channels.map((c) => `     ${`${shown}/updater/${c}.json`.padEnd(`${shown}/late
 async function checkLive(version, channel) {
   const problems = [];
 
-  // Downloads. Compared by size against the signed files in this computer's
-  // release folder; a different file (for example a rebuild attached by
-  // mistake) would fail the signature check on users' computers. From a
-  // computer without that folder, the links are only checked to exist.
+  // Downloads, compared by size with the signed files in this computer's
+  // release folder (a different file, such as a rebuild attached by mistake,
+  // would fail the signature check for users). Without that folder, the links
+  // are only checked to exist.
   console.log("Download links:");
   const dir = artifactsDir(version);
   const local = existsSync(dir) ? findArtifacts(dir, version).found : [];

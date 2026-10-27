@@ -1,47 +1,39 @@
-// Pure parser for the body string of a rendered block element (callout,
-// quote). It splits the text into plain runs and recognized inline notebox
-// primitives so the (cursor-away, read-only) block widget can render a task as a
-// checkbox, a tag as a pill, etc., instead of dumping raw Typst source.
-//
-// This is deliberately dependency-free (no DOM, no Tauri) so it is unit-testable
-// in isolation; widgets.ts turns these segments into DOM.
+// Parser for the body text of a rendered block element (callout, quote): splits
+// it into plain runs and recognized notebox functions, so the read-only widget
+// can draw a task as a checkbox, a tag as a pill, and so on. No DOM or Tauri, so
+// it can be tested alone; widgets.ts builds the DOM.
 
-// `start` is the offset of the segment within the parsed body string. Callers
-// that know where the body begins in the document (the block widgets) add it to
-// `start` to recover a call's absolute source position — needed to make an
-// inline task's checkbox toggle the right `#task(...)` call.
+// `start` is the segment's offset within the body text. Block widgets add the
+// body's document position to find a call's source position (so a task checkbox
+// toggles the right `#task(...)`).
 export type BodySegment =
   | { kind: "text"; start: number; text: string }
   | { kind: "wikilink"; start: number; target: string; display: string }
   | { kind: "tag"; start: number; name: string }
   | { kind: "link"; start: number; url: string; display: string }
   | { kind: "task"; start: number; body: string; done: boolean; due: string | null }
-  // Inline formatting wrapper (`*bold*`, `_italic_`, `#highlight[…]`, …). `children`
-  // are parsed recursively so nested markup renders; `className` is the CSS mark
-  // class the widget applies, matching the live-editor inline decorations.
-  // `args` is the call's raw argument text (`fill: rgb("#ff9f97")`), present
-  // only when it had any. This parser deliberately does not interpret it —
-  // turning a fill into a colour is the renderer's job, which keeps the
-  // parser free of DOM and styling concerns.
+  // Inline formatting (`*bold*`, `_italic_`, `#highlight[…]`, …). `children` are
+  // parsed recursively; `className` is the mark class the widget applies, matching
+  // the editor's inline marks. `args` is the call's raw argument text (`fill:
+  // rgb("#ff9f97")`), if any, left for the renderer to interpret.
   | { kind: "format"; start: number; className: string; args?: string; children: BodySegment[] }
   // Raw/code span — rendered verbatim, never re-parsed. `block` is true for a
   // fenced block (``` ```lang … ``` ```), false for inline (`` `code` ``).
   | { kind: "raw"; start: number; text: string; block: boolean }
-  // A block-level list. `ordered` is true for `+ ` markers (numbered), false
-  // for `- ` (bulleted). Each item holds its content parsed inline, so markup
-  // and inline funcs inside a list item still render.
+  // A list: `ordered` for `+` markers, otherwise `-`. Each item is parsed
+  // inline.
   | { kind: "list"; start: number; ordered: boolean; items: BodySegment[][] };
 
 // Inline funcs we lift out of the raw body as their own semantic element.
 // Anything else stays plain text.
 const RENDERABLE_INLINE_FUNCS = new Set(["wikilink", "task", "tag", "link"]);
 
-// Typst content-bracket formatting helpers → the CSS mark class the block
-// widget paints their body with. These mirror the live-editor inline marks in
-// visual-plugin.ts so a `#highlight[…]` inside a callout looks identical to one
-// in flowing text. Their body is recursed into, so `#strong[a _b_]` nests.
-/** Mark class for `#highlight[…]`. Named because the renderer singles it out:
- *  it is the one formatting func whose arguments change how it looks. */
+// Content-bracket formatting functions and the mark class the block widget
+// paints their body with, matching the inline marks in visual-plugin.ts, so a
+// `#highlight[…]` in a callout looks as it does in text. Bodies are parsed
+// recursively, so `#strong[a _b_]` nests.
+/** Mark class for `#highlight[…]`, named because the renderer treats it
+ *  specially: its arguments change how it looks. */
 export const HIGHLIGHT_FORMAT_CLASS = "cm-typst-highlight";
 
 const FORMAT_FUNCS: Record<string, string> = {
@@ -120,9 +112,10 @@ function segmentForFunc(name: string, start: number, args: string, content: stri
   }
 }
 
-/** Find the index of the marker `ch` that closes an emphasis run opened just
- *  before `from`, or -1 if there's no valid closer in `[from, to)`. A closer
- *  may not be escaped or follow whitespace (Typst's rule: `* x *` is not a run).
+/**
+ * Index of the marker `ch` closing an emphasis run opened just before `from`, or
+ * -1 if there is no valid closer in `[from, to)`. A closer can't be escaped or
+ * follow whitespace (in Typst `* x *` isn't a run).
  */
 function findEmphasisClose(text: string, from: number, to: number, ch: string): number {
   for (let i = from; i < to; i++) {
@@ -132,10 +125,11 @@ function findEmphasisClose(text: string, from: number, to: number, ch: string): 
   return -1;
 }
 
-/** Parse a `#name(...)?[...]?` call beginning at `hashAt`. On success pushes the
- *  resulting segment (after flushing pending plain text) and returns the index
- *  just past the call; returns -1 when it is not a call we render, so the caller
- *  leaves it as plain text. */
+/**
+ * Parse a `#name(...)?[...]?` call at `hashAt`. On success, push its segment
+ * (after any pending text) and return the index after the call; -1 when it isn't
+ * a call we render, so it stays text.
+ */
 function tryParseFunc(
   text: string,
   hashAt: number,
@@ -193,10 +187,11 @@ function tryParseFunc(
   return -1;
 }
 
-/** Parse `[from, to)` of a block body into segments. Plain runs coalesce; inline
- *  funcs, emphasis (`*`/`_`), and raw spans (`` ` ``) become structured segments.
- *  `start` offsets are absolute within the whole body string so an inline task's
- *  checkbox can recover its source position even when nested. */
+/**
+ * Parse `[from, to)` of a body into segments: plain runs merge; functions,
+ * emphasis (`*` / `_`) and raw (`` ` ``) become segments. `start` offsets are
+ * within the whole body, so nested tasks still know their position.
+ */
 function parseSegments(text: string, from: number, to: number): BodySegment[] {
   const segments: BodySegment[] = [];
   let plainStart = from;
@@ -235,9 +230,9 @@ function parseSegments(text: string, from: number, to: number): BodySegment[] {
       }
     }
 
-    // Raw `` `code` `` / fenced ``` ```lang … ``` ``` — verbatim, not re-parsed.
-    // A run of backticks opens a span closed by a run of the same length; 3+
-    // backticks is a fenced code block (rendered as a multi-line <pre>).
+    // Raw text: a run of backticks opens a span closed by a run of the same
+    // length; 3 or more is a code block (a multi-line `<pre>`). Not parsed
+    // further.
     if (ch === "`") {
       let n = 1;
       while (i + n < to && text[i + n] === "`") n++;
@@ -269,16 +264,16 @@ function parseSegments(text: string, from: number, to: number): BodySegment[] {
   return segments;
 }
 
-// A list item line: optional indent, a `+` (ordered) or `-` (unordered)
-// marker, whitespace, then the item content. Mirrors Typst's own list syntax,
-// which only treats `+`/`-` as a list marker at the start of a line.
+// A list item line: indent, `+` or `-`, whitespace, content. As in Typst,
+// markers only count at a line start.
 const LIST_ITEM_RE = /^(\s*)([+-])(\s+)(.*)$/;
 
-/** Split a body into block-level list segments and inline runs. Consecutive
- *  lines beginning with `+ ` (ordered) or `- ` (unordered) coalesce into one
- *  list; everything else is parsed inline by {@link parseSegments}. The
- *  newlines that frame a list block are dropped so the rendered <ol>/<ul>
- *  doesn't leave blank lines in the (pre-wrap) body. */
+/**
+ * Split a body into lists and inline runs. Consecutive `+ ` or `- ` lines form
+ * one list; everything else is parsed by {@link parseSegments}. Newlines around
+ * a list are dropped so the `<ol>` / `<ul>` leaves no blank lines in the
+ * pre-wrap body.
+ */
 function parseBlocks(text: string): BodySegment[] {
   const out: BodySegment[] = [];
 

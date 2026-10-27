@@ -1,21 +1,15 @@
-// Curated reference content for the Help panel.
+// Reference content for the Help panel that the command registry doesn't
+// provide (the registry generates the "UI shortcuts" view and the typing
+// shortcuts in "Visual editor"):
 //
-// Two kinds of content live here because neither has a home in the command
-// registry (which the panel's "UI shortcuts" view and the inline-typing half
-// of its "Visual editor" view are generated from):
+//   - VISUAL_EDITOR_KEYS: the editor key bindings for note content. They're
+//     defined in `typst-decorations/keymaps.ts` without labels, so this table
+//     describes them. Keep it in step with `typstKeymap`.
+//   - MARKUP_REFERENCE: a Typst markup cheat sheet with Markdown equivalents,
+//     InkyCap shortcuts and the `inkycap-notebox` functions.
 //
-//   - VISUAL_EDITOR_KEYS — the CodeMirror keymap bindings that act on note
-//     content. They are authored in `typst-decorations/keymaps.ts` as raw CM
-//     `KeyBinding`s with no human-readable label, so the panel needs this
-//     parallel descriptive table. Keep it in sync with `typstKeymap` there.
-//   - MARKUP_REFERENCE — a cheat-sheet of Typst markup, the equivalent a writer
-//     would reach for in Markdown, the InkyCap authoring shortcuts, and the
-//     notebox-native primitives bundled in the `inkycap-notebox` package.
-//
-// `labelKey` / `titleKey` / `noteKey` fields are i18n keys, resolved in
-// HelpPanel via the static `t`. The `keys` / `markup` / `markdown` fields are
-// literal syntax (code samples, not prose) and are intentionally not
-// translated.
+// `labelKey` / `titleKey` / `noteKey` are i18n keys, resolved in HelpPanel with
+// `t`. `keys` / `markup` / `markdown` are literal syntax and aren't translated.
 
 export interface VisualEditorKey {
   /** i18n key for the description of what this binding does. */

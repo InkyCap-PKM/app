@@ -1,23 +1,16 @@
-//! Where a note's headings, labels, and fenced raw blocks are, according to
-//! Typst's own parser.
+//! Where a note's headings, labels and fenced code blocks are, according to
+//! Typst's parser.
 //!
-//! Every line-oriented caller in the backend used to answer these questions
-//! with a regex over `content.lines()`, and each got the same thing wrong: a
-//! line reading `= Not a headliner` is a heading only where Typst says it is,
-//! and inside a ``` fence Typst says it is raw text (issue #21). The damage
-//! ranged from cosmetic to destructive — a false entry in heading
-//! autocomplete, a spurious PDF/UA accessibility warning, and, in merged book
-//! export, `normalize_heading_levels` *rewriting* the `=` markers of a code
-//! sample the author never meant as a heading.
+//! `= Not a headliner` is a heading only where Typst says so; inside a ```
+//! fence it is raw text (issue #21). Line patterns got this wrong, with effects
+//! from false heading suggestions and PDF/UA warnings to the book export
+//! rewriting a code sample's `=` markers. Per CLAUDE.md's Typst-first principle
+//! this uses [`typst::syntax::parse`] through
+//! [`crate::typst_pipeline::syntax`].
 //!
-//! Per CLAUDE.md's Typst-first principle the fix is not a better regex but
-//! [`typst::syntax::parse`] — the parser the compiler runs — reached through
-//! [`crate::typst_pipeline::syntax`]. It already knows where markup stops and
-//! raw text starts, and it keeps knowing as Typst evolves.
-//!
-//! The frontend answers the same question for the editor's outline and heading
-//! fold in `src/editor/typst-decorations/heading-scan.ts`, against the same
-//! parser compiled to WebAssembly.
+//! The frontend does the same for the outline and heading folding in
+//! `src/editor/typst-decorations/heading-scan.ts`, with the same parser
+//! compiled to WebAssembly.
 
 use std::collections::HashSet;
 use std::ops::Range;
@@ -27,9 +20,8 @@ use crate::typst_pipeline::syntax::{ast, parse, LinkedNode, SyntaxKind};
 /// One heading, as the parser sees it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceHeading {
-    /// Nesting depth — the number of `=` markers, saturating at `u8::MAX`.
-    /// Not clamped to 6: Typst doesn't cap heading depth, so callers that
-    /// need a ceiling (a UI indent, say) impose their own.
+    /// Number of `=` markers, saturating at `u8::MAX`. Not capped at 6, since
+    /// Typst has no limit; callers needing one apply their own.
     pub level: u8,
     /// The heading's source text with the markers stripped, trimmed. Still
     /// Typst markup — `= Hello *world*` yields `Hello *world*`.
@@ -56,14 +48,10 @@ pub fn headings(source: &str) -> Vec<SourceHeading> {
     out
 }
 
-/// One `<label>` definition standing on its own — a label the writer attached
-/// to prose, a figure, an equation, or a table.
-///
-/// Headings' own trailing labels are absent: [`headings`] already reports those
-/// on the heading they belong to, and listing them twice would double up the
-/// wikilink picker. Labels written as *arguments* (`#link(<intro>)`,
-/// `#ref(<intro>)`) are absent too — those point at a definition rather than
-/// making one.
+/// A standalone `<label>` definition, on prose, a figure, an equation or a
+/// table. Headings' trailing labels aren't included ([`headings`] reports
+/// them), nor are labels used as arguments (`#link(<intro>)`), which refer to a
+/// definition.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceLabel {
     /// The label name, without its angle brackets.
@@ -75,10 +63,8 @@ pub struct SourceLabel {
     pub context: String,
 }
 
-/// Every standalone label definition in `source`, in document order.
-///
-/// De-duplicated by name, first occurrence winning, because a name can only
-/// resolve to one target anyway.
+/// Every standalone label definition in `source`, in order, without duplicates
+/// (first wins).
 pub fn labels(source: &str) -> Vec<SourceLabel> {
     let root = parse(source);
     let mut ranges = Vec::new();
@@ -134,10 +120,9 @@ fn collect_labels(node: &LinkedNode<'_>, source: &str, out: &mut Vec<Range<usize
     }
 }
 
-/// True when this label is a heading's trailing label. Typst parses it as the
-/// heading's *sibling*, so sharing a line with the heading before it is the
-/// test — the mirror of [`trailing_label`], which asks the same question from
-/// the heading's side.
+/// True for a heading's trailing label: Typst parses it as the heading's
+/// sibling, so the test is sharing its line. The counterpart of
+/// [`trailing_label`].
 fn follows_heading_inline(node: &LinkedNode<'_>, source: &str) -> bool {
     let Some(prev) = node.prev_sibling() else {
         return false;
@@ -150,17 +135,13 @@ fn follows_heading_inline(node: &LinkedNode<'_>, source: &str) -> bool {
         .is_some_and(|between| !between.contains('\n'))
 }
 
-/// 1-based line numbers covered by a fenced raw block (```` ``` ````), from
-/// its opening delimiter's line through its closing delimiter's line.
+/// 1-based line numbers of fenced code blocks (```` ``` ````), from the opening
+/// to the closing fence.
 ///
-/// Inline raw spans (`` `like this` ``) are deliberately absent: they share a
-/// line with ordinary prose, so a caller that skipped the whole line would
-/// skip the prose too.
-///
-/// A fence the author hasn't closed yet is included as well. Typst reports it
-/// as one error region running to the end of the file, and for the rewriters
-/// that consume this — Markdown export, the `.typ` audit — leaving that region
-/// alone is the whole point: it is half-written code, not markup to translate.
+/// Inline raw (`` `like this` ``) isn't included, since it shares lines with
+/// prose. An unclosed fence is included: Typst treats it as an error to the end
+/// of the file, and the callers (Markdown export, the `.typ` audit) should
+/// leave half-written code alone.
 pub fn raw_block_lines(source: &str) -> HashSet<usize> {
     let root = parse(source);
     let mut ranges = Vec::new();
@@ -170,9 +151,8 @@ pub fn raw_block_lines(source: &str) -> HashSet<usize> {
     let mut lines = LineCounter::new(source);
     for range in ranges {
         let first = lines.line_at(range.start);
-        // Measure to the last byte *inside* the block: an unterminated fence
-        // runs to the end of the file, and counting its final line break would
-        // claim the empty line past it.
+        // Measure to the last byte inside the block, so an unclosed fence's
+        // final line break doesn't add the line after it.
         let last = lines.line_at(range.end.saturating_sub(1).max(range.start));
         out.extend(first..=last);
     }
@@ -217,11 +197,9 @@ fn build_heading(node: &LinkedNode<'_>, source: &str) -> Option<SourceHeading> {
     })
 }
 
-/// The `<label>` attached to this heading, if one follows it on the same line.
-///
-/// Typst parses the label as the heading's *sibling*, not its child, so a
-/// label two lines further down would also turn up here — hence the same-line
-/// check.
+/// The `<label>` after this heading on the same line, if any. Typst parses it
+/// as the heading's sibling, so a label further down would match too without
+/// the same-line check.
 fn trailing_label(node: &LinkedNode<'_>, source: &str) -> Option<String> {
     let next = node.next_sibling()?;
     if next.kind() != SyntaxKind::Label {
@@ -247,9 +225,8 @@ fn collect_raw_blocks(node: &LinkedNode<'_>, source: &str, out: &mut Vec<Range<u
             }
             return;
         }
-        // An unterminated fence never becomes a `Raw` node — the parser gives
-        // up and marks the rest of the file as one error. Recognize it by the
-        // backticks it opens with.
+        // An unclosed fence becomes an `Error` node, not `Raw`; recognize it by
+        // its opening backticks.
         SyntaxKind::Error => {
             let range = node.range();
             if source

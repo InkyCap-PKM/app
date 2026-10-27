@@ -1,18 +1,13 @@
-// Frontend spell checker built on hunspell-asm — real Hunspell compiled to
-// WebAssembly. We started on nspell (pure JS) but it can't expand affixes for
-// dictionaries that use AF flag aliases + `FLAG long` (which the French
-// Dicollecte dictionary, and many others, rely on): nspell recognized only base
-// forms, flagging "chien", "amis", "mangé", etc. Real Hunspell handles AF
-// aliases, FLAG long, complex affixes, and morphological fields natively, so all
-// inflected forms check correctly.
+// Spell checker using hunspell-asm (Hunspell compiled to WebAssembly), which
+// handles AF flag aliases, `FLAG long` and complex affixes, as the French
+// Dicollecte dictionary and many others need.
 //
-// Dictionaries are loaded from the backend (bundled or user-installed .aff/.dic
-// text) and cached, so toggling languages or reopening a notebox is cheap after
-// first use. A `SpellChecker` accepts a word if ANY active dictionary knows it
-// (bilingual notes), or if it's in the per-notebox user dictionary (the personal
-// allow-list shared with the Mycelial "rescue"). User words are kept in a
-// separate set rather than added to the shared Hunspell instances, so switching
-// noteboxes can't leak one notebox's custom words into another's.
+// Dictionaries come from the backend (bundled or user-installed .aff/.dic text)
+// and are cached, so switching languages or reopening a notebox is quick after
+// the first load. A `SpellChecker` accepts a word if any active dictionary knows
+// it (for bilingual notes) or it's in the notebox's user dictionary (shared with
+// the Mycelial rescue). User words are a separate set, not added to the shared
+// Hunspell instances, so one notebox's words never appear in another.
 
 import { loadModule, type Hunspell, type HunspellFactory } from "hunspell-asm";
 import * as ipc from "./ipc";
@@ -32,9 +27,9 @@ function getFactory(): Promise<HunspellFactory> {
   return factoryPromise;
 }
 
-// code → Hunspell instance. Each holds its parsed dictionary in WASM memory; we
-// keep instances for the life of the session (never disposed) since the set of
-// languages is small and reloading parses ~1 MB of dictionary text.
+// code → Hunspell instance, each holding its parsed dictionary in WASM memory.
+// Kept for the session: there are few languages, and reloading parses about 1
+// MB of text.
 const baseCache = new Map<string, Hunspell>();
 const encoder = new TextEncoder();
 
@@ -51,10 +46,9 @@ async function loadBase(code: string): Promise<Hunspell> {
 }
 
 /**
- * Build a checker over the given dictionary codes plus the notebox user words.
- * Returns null when no dictionary could be loaded (so callers treat "no checker"
- * as "don't underline anything"). Dictionaries that fail to load are skipped
- * with a console warning rather than failing the whole checker.
+ * Build a checker from the dictionary codes and the notebox's user words. Null
+ * if no dictionary loaded (callers then underline nothing). A dictionary that
+ * fails to load is skipped with a warning.
  */
 export async function buildChecker(
   codes: string[],

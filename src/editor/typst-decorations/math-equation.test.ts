@@ -6,12 +6,12 @@ import { typst } from "codemirror-lang-typst";
 import { buildDecorations, typstVisualMode } from "./visual-plugin";
 import { computeProtectedRanges } from "./visual-protected";
 
-// Typst's parser is error-tolerant: a lone `$` (or `/*`) already opens a node
-// that runs to the end of the document. Decorating one of those half-typed
-// nodes restyles every line below it — the reported symptom was the text and
-// caret jumping down a line while typing `$ al$` and snapping back once the
-// equation closed. These pin that a delimiter only takes effect once its
-// partner exists, and that display vs inline follows Typst's own rule.
+// Typst's parser tolerates errors: a lone `$` (or `/*`) opens a node running to
+// the end of the document. Styling such a half-typed node restyles every line
+// below it (the text and caret jumped down a line while typing `$ al$`, then
+// back once the equation closed). These check that a delimiter takes effect
+// only once its partner exists, and that display vs inline follows Typst's
+// rule.
 
 const TAIL = "\ntrailing text";
 
@@ -61,12 +61,11 @@ describe("half-typed equations stay undecorated", () => {
 });
 
 describe("a `$` typed above other equations pairs with the next one", () => {
-  // Typst pairs the new `$` with the next `$` anywhere below it, so the
-  // parser reports a closed equation that spans lines of ordinary prose
-  // until the writer types the real closing `$`. That transient state is
-  // unavoidable; what matters is that it can only recolour text. Nothing may
-  // be hidden or replaced across those lines, and the theme rule for the
-  // marks must stay layout-neutral (checked below).
+  // Typst pairs the new `$` with the next `$` anywhere below, so until the real
+  // closing `$` is typed the parser reports an equation spanning lines of
+  // prose. That can't be avoided, so it may only recolour text: nothing may be
+  // hidden or replaced on those lines, and the marks' theme rule must not
+  // affect layout (checked below).
   const doc = `intro $ al\nmore text $ y $ end\nlast $z$ tail`;
   const caret = "intro $ al".length;
 
@@ -93,10 +92,9 @@ describe("an equation under the caret is plain source", () => {
   });
 });
 
-// Typing a lone `$` above a code block pairs it with the next `$` in the
-// note, so for a moment the block parses as math. The writer must not see
-// that: the lines below the caret keep their styling throughout, and the new
-// equation is tinted only once the caret has left it.
+// A lone `$` typed above a code block pairs with the next `$`, so the block
+// briefly parses as math. The user must not see that: the lines below keep
+// their styling, and the new equation is tinted only once the caret leaves it.
 describe("a `$` typed above other content leaves that content alone", () => {
   const RAW = "```html\ncode\n```";
   const DOC = `\n\n${RAW}\n\n$ x $`;

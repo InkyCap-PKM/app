@@ -1,9 +1,7 @@
 /**
  * The note editor's side of tables: entering a table with the arrow keys,
- * clipboard routing, and keeping open cell editors in step with the note.
- *
- * Kept apart from visual-plugin.ts so table interaction logic lives in one
- * place alongside table-widget.ts, table-cell-editor.ts and table-parser.ts.
+ * clipboard handling, and keeping open cell editors in step with the note. With
+ * table-widget.ts, table-cell-editor.ts and table-parser.ts.
  */
 
 import { EditorView, ViewPlugin, type DecorationSet, type ViewUpdate, keymap } from "@codemirror/view";
@@ -29,10 +27,9 @@ import { inVerbatimLineContext } from "./keymaps";
 // ---------------------------------------------------------------------------
 
 /**
- * The table wrapper that holds keyboard focus in `view`, if any. In
- * navigation mode the DOM selection stays wherever it last was — usually the
- * note body, sometimes outside the editor — and that, not the focused
- * element, is where the browser fires copy and paste.
+ * The table wrapper with keyboard focus, if any. In navigation mode the DOM
+ * selection stays wherever it was (usually the note body), and that is where
+ * the browser fires copy and paste.
  */
 function focusedTableWrap(view: EditorView): HTMLElement | null {
   const active = document.activeElement;
@@ -42,9 +39,8 @@ function focusedTableWrap(view: EditorView): HTMLElement | null {
 }
 
 /**
- * Copy and paste for a table in navigation mode. Listens on the document in
- * the capture phase so the event is caught wherever the browser fires it,
- * and stops it there so the editor's own clipboard handling stays out.
+ * Copy and paste for a table in navigation mode. Listens on the document in the
+ * capture phase, and stops the event so the editor doesn't handle it too.
  */
 const tableFocusClipboard = ViewPlugin.fromClass(class {
   constructor(private readonly view: EditorView) {
@@ -87,11 +83,8 @@ const tableBodyPaste = EditorView.domEventHandlers({
     const target = event.target as HTMLElement;
     if (target.closest?.(".cm-typst-table-wrap")) return false;
 
-    // Never reinterpret a paste as a table inside a verbatim region. This is
-    // exactly where the cursor sits when editing a fenced code block, so
-    // pasting plain text there must stay literal rather than being folded
-    // into a `#table(...)` call (it would land inside the fence as garbage).
-    // Math and verse are protected for the same reason.
+    // Never turn a paste into a table inside code, math or verse; plain text
+    // pasted into a code block must stay as is.
     if (inVerbatimLineContext(view.state, view.state.selection.main.head)) return false;
 
     const grid = parseClipboardAsGrid(event);
@@ -135,17 +128,16 @@ const tableClipboardHandler = [tableFocusClipboard, tableBodyPaste];
 // ---------------------------------------------------------------------------
 
 /**
- * Keeps open cell editors in step with the note. Every change made in the
- * note itself (an undo, an edit elsewhere) is mirrored into them — changes
- * that came *from* a cell editor carry `cellSync` and are already there.
- * Focus returning to the note closes them.
+ * Keeps open cell editors in step with the note: changes made in the note (an
+ * undo, an edit elsewhere) are copied into them; changes from a cell editor
+ * carry `cellSync` and are already there. Focus returning to the note closes
+ * them.
  *
- * Focus also has to be defended. When the note's editor redraws the line
- * that holds the table, it takes the table's DOM out of the line and puts
- * it back, and the browser drops focus (and the caret) the moment the
- * focused cell editor leaves the document. A keystroke in a cell causes
- * exactly such a redraw, so after every update the cell editor that had
- * focus going in gets it back, once the DOM has settled.
+ * Focus must also be restored. When the note redraws the table's line it
+ * removes and re-adds the table's DOM, and the browser drops focus as the cell
+ * editor leaves the document. A keystroke in a cell causes such a redraw, so
+ * after every update the cell editor that had focus gets it back once the DOM
+ * has settled.
  */
 const cellEditorSync = [
   ViewPlugin.fromClass(class {
@@ -182,17 +174,12 @@ const cellEditorSync = [
 // ---------------------------------------------------------------------------
 
 /**
- * Scrolls a position inside a table into view by the cell that holds it.
- *
- * CodeMirror sees a table as one atomic widget, so its own scrolling can only
- * reach the table as a whole — stepping through find matches in a table taller
- * than the window left the match itself off screen. Anything outside a cell
- * (the table's own markup) is left to CodeMirror. This is the documented
- * `scrollHandler` seam, so the cell is reached however the scroll was asked
- * for: find and replace, a search result opened from the sidebar, or a jump to
- * a label. The request's placement (a result opened from the sidebar asks to
- * be centred) and the editor's scroll margins are honoured as they would be
- * for the caret.
+ * Scroll a position inside a table into view by its cell. CodeMirror sees a
+ * table as one widget and can only scroll to the whole table, so a find match
+ * in a tall table could stay off screen. Positions in the table's own markup
+ * are left to CodeMirror. As a `scrollHandler`, it works for find and replace,
+ * search results and label jumps alike, honouring the request's placement and
+ * the scroll margins.
  */
 const tableScrollHandler = EditorView.scrollHandler.of((view, range, request) => {
   const cell = tableCellDomAt(view, range.head);
@@ -202,18 +189,12 @@ const tableScrollHandler = EditorView.scrollHandler.of((view, range, request) =>
 });
 
 /**
- * Keeps the find panel's highlights in a table's cells up to date.
- *
- * A table is one atomic widget, so CodeMirror's search-match decorations are
- * applied to source the reader never sees. The cells are painted by hand and
- * paint the matches with them (see cell-search.ts); this plugin tells them
- * when to look again — the query changed, the panel opened or closed, the
- * user stepped to another match, or the text was replaced.
- *
- * The repaint waits for the next frame so CodeMirror has finished any widget
- * rebuild the change triggered and the cells painted into are the current
- * ones. Nothing runs while the panel is closed, so ordinary cursor movement in
- * the note costs nothing.
+ * Keeps find highlights in table cells up to date. CodeMirror's match
+ * decorations land on source the reader doesn't see, so cells paint matches
+ * themselves (see cell-search.ts); this tells them when to repaint: the query
+ * changed, the panel opened or closed, the current match moved, or text was
+ * replaced. The repaint waits a frame so any widget rebuild has finished.
+ * Nothing runs while the panel is closed.
  */
 const tableSearchSync = ViewPlugin.fromClass(class {
   private frame: number | null = null;
@@ -244,12 +225,8 @@ const tableSearchSync = ViewPlugin.fromClass(class {
 // ---------------------------------------------------------------------------
 
 /**
- * Walk the decoration set to find a TableWidget adjacent to `pos` in the
- * given direction. Returns the corresponding DOM wrapper element if found.
- *
- * The `decoField` parameter avoids a circular import — the caller passes
- * the `visualField` (or equivalent `StateField<DecorationSet>`) that owns
- * the table decorations.
+ * The DOM wrapper of a TableWidget next to `pos` in the given direction, if
+ * any. `decoField` (the `visualField`) is passed in to avoid a circular import.
  */
 export function findTableWrapNear(
   view: EditorView,
@@ -292,11 +269,8 @@ export function findTableWrapNear(
 }
 
 /**
- * Create a keymap extension that lets ArrowUp/ArrowDown enter an adjacent
- * table widget from the editor body.
- *
- * Returned as a factory so the caller can supply the decoration StateField
- * without creating a circular dependency.
+ * A keymap letting ArrowUp/ArrowDown enter an adjacent table. A factory, so the
+ * caller can pass its decoration field without a circular import.
  */
 export function createTableEntryKeymap(decoField: StateField<DecorationSet>) {
   return keymap.of([
@@ -305,9 +279,7 @@ export function createTableEntryKeymap(decoField: StateField<DecorationSet>) {
       run(view) {
         const head = view.state.selection.main.head;
         const line = view.state.doc.lineAt(head);
-        // On a wrapped line, only enter the table when the cursor is on
-        // the first visual line — otherwise let normal cursor movement
-        // navigate within the wrapped line first.
+        // On a wrapped line, only enter from its first visual line.
         const headCoords = view.coordsAtPos(head);
         const lineStartCoords = view.coordsAtPos(line.from);
         if (headCoords && lineStartCoords && headCoords.top > lineStartCoords.top + 2) {

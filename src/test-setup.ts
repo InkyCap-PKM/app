@@ -1,17 +1,13 @@
-// Vitest setup — runs in the jsdom environment before any test.
+// Vitest setup, run in jsdom before the tests.
 //
-// jsdom has no layout/rendering engine, so element/range geometry methods are
-// missing or absent. CodeMirror's `coordsAtPos()` calls `Range.getClientRects()`
-// to position popups (e.g. the wikilink autocomplete) — in jsdom that throws
-// `getClientRects is not a function`, and because the call is scheduled in a
-// `requestAnimationFrame` callback it surfaces *after* the test as an unhandled
-// rejection (making the suite's exit code flaky) rather than a real failure.
+// jsdom has no layout, so geometry methods like `Range.getClientRects()` are
+// missing. CodeMirror calls them to position popups (`coordsAtPos()`), in a
+// `requestAnimationFrame`, so the error would surface after the test as an
+// unhandled rejection and make the exit code flaky.
 //
-// Stub the geometry methods to return empty rects so editor code under test
-// no-ops cleanly (coordsAtPos then returns null and the popup simply isn't
-// positioned). We only fill in what jsdom is missing — `??`-style guards leave
-// any real implementation untouched. Cast through `Record` because lib.dom
-// types these as always-present, which they are in a real browser.
+// These stubs return empty rects (so popups just aren't positioned), and are
+// only added where jsdom lacks the method. Cast through `Record` because lib.dom
+// types them as always present.
 
 function emptyRect(): DOMRect {
   return {

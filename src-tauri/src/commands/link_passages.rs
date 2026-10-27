@@ -1,12 +1,10 @@
-//! Commands that return the passages of text around wikilinks (or around a
-//! recurring phrase), for the Links pane and Compose mode, and that help
-//! Compose edit its draft. The link index says *which* notes link; these read
-//! the notes on request to find *where*. See [`crate::typst_pipeline::link_passages`] for what a passage
+//! Commands returning the text around wikilinks (or around a recurring phrase) for the Links pane
+//! and Compose, and helping Compose edit its draft. The link index knows which notes link; these
+//! read the notes to find where. See [`crate::typst_pipeline::link_passages`] for what a passage
 //! is.
 //!
-//! Text meant for copying is returned with relative paths
-//! (`#image("pic.png")`) rebased to the notebox root, so it still finds its
-//! files when pasted into a note in another folder.
+//! Text for copying has relative paths (`#image("pic.png")`) rebased to the notebox root, so it
+//! still finds its files when pasted into another folder's note.
 
 use std::path::Path;
 use std::time::Instant;
@@ -73,10 +71,9 @@ pub async fn get_lead_passage(
     Ok(passage)
 }
 
-/// The passages in the note at `path` whose prose holds `phrase`, in
-/// document order, with the phrase marked. Compose shows these for a page
-/// made from a Mycelial View emergent concept, from the notes the concept
-/// recurs in.
+/// The passages in the note at `path` whose text contains `phrase`, in order,
+/// with the phrase marked. Compose shows these for a page made from a Mycelial
+/// View concept, from the notes where the concept recurs.
 #[tauri::command]
 pub async fn get_phrase_passages(
     path: String,
@@ -96,10 +93,10 @@ pub async fn get_phrase_passages(
     Ok(passages)
 }
 
-/// The whole body of the note at `path`, ready to copy into another note:
-/// without its `#import` lines, its `#note(...)` call, or any
-/// `#bibliography(...)` call (a document may hold only one), and with
-/// relative paths rebased to the notebox root.
+/// The body of the note at `path`, ready to paste into another note: without
+/// its `#import` lines, `#note(...)` call or `#bibliography(...)` call (a
+/// document may have only one), and with relative paths rebased to the notebox
+/// root.
 #[tauri::command]
 pub async fn get_note_body_for_copy(
     path: String,
@@ -119,19 +116,17 @@ pub async fn get_note_body_for_copy(
     ))
 }
 
-/// `content` with `source_name` added to its `derived-from` property, the
-/// list of notes a draft copied passages from. `None` when the list already
-/// holds that note. Works on text rather than the file so the editor can
-/// apply the change to an open, unsaved note without reloading it.
+/// `content` with `source_name` added to its `derived-from` property (the notes
+/// a draft copied passages from), or `None` if already there. Works on text, so
+/// the editor can apply it to an open, unsaved note.
 #[tauri::command]
 pub fn note_with_derived_from(content: String, source_name: String) -> Option<String> {
     let content = crate::notebox_package::ensure_import(&content);
     crate::typst_pipeline::note_rewriter::append_link_ref(&content, "derived-from", &source_name)
 }
 
-/// The lowercase names of the notes that `content`'s wikilinks point at, in
-/// order and without repeats. Works on text so it can read an open note's
-/// unsaved changes.
+/// The lowercase names of the notes `content`'s wikilinks point to, in order
+/// without repeats. Works on text, so it sees an open note's unsaved changes.
 #[tauri::command]
 pub fn wikilink_names(content: String) -> Vec<String> {
     link_passages::wikilink_names(&content)

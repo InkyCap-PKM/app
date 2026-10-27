@@ -10,14 +10,11 @@ use super::traits::{FileTreeNode, NoteboxStorage};
 use crate::errors::{InkyCapError, Result};
 use crate::models::note::FileMetadata;
 
-/// Filesystem-backed notebox storage for local noteboxes.
-///
-/// All path arguments passed to this storage are validated against
-/// `canonical_root` before any I/O. Paths that escape the notebox via `..`,
-/// symlinks, or absolute references outside the root are rejected with
-/// [`InkyCapError::InvalidPath`]. This is the primary enforcement point for
-/// the notebox sandbox — callers should not bypass this type to perform
-/// filesystem operations against notebox content.
+/// File storage for a local notebox. Every path is validated against
+/// `canonical_root` before any I/O; paths that leave the notebox (through `..`,
+/// symlinks or outside absolute paths) fail with [`InkyCapError::InvalidPath`].
+/// This is the main enforcement of the notebox sandbox, so don't bypass it for
+/// notebox content.
 pub struct LocalNoteboxStorage {
     root: PathBuf,
     canonical_root: PathBuf,
@@ -44,13 +41,10 @@ impl LocalNoteboxStorage {
         &self.canonical_root
     }
 
-    /// Resolve a caller-supplied path to a canonical location inside the
-    /// notebox. Returns an error if the path escapes the notebox.
-    ///
-    /// Public so adjacent subsystems (e.g. the Typst compile pipeline) can
-    /// participate in the same notebox-bound validation without duplicating the
-    /// canonicalization logic. Callers that perform I/O should still prefer
-    /// the [`NoteboxStorage`] trait methods, which validate internally.
+    /// Resolve a path to its canonical location inside the notebox, or fail if
+    /// it leaves it. Public so other subsystems (e.g. the compiler) can use the
+    /// same check; for I/O, prefer the [`NoteboxStorage`] methods, which check
+    /// internally.
     pub fn resolve_path(&self, path: &Path) -> Result<PathBuf> {
         validate_notebox_path(&self.canonical_root, path)
     }
@@ -191,9 +185,8 @@ impl NoteboxStorage for LocalNoteboxStorage {
     }
 
     async fn exists(&self, path: &Path) -> bool {
-        // An invalid / out-of-notebox path "doesn't exist" from the caller's
-        // perspective, so callers that are only probing for presence don't
-        // leak information about the filesystem outside the notebox.
+        // A path outside the notebox simply doesn't exist, so probes reveal
+        // nothing about the rest of the filesystem.
         let Ok(full) = self.resolve(path) else {
             return false;
         };
@@ -209,15 +202,10 @@ impl NoteboxStorage for LocalNoteboxStorage {
     async fn move_to_trash(&self, path: &Path) -> Result<()> {
         let full = self.resolve(path)?;
 
-        // Inside a flatpak sandbox the `trash` crate's freedesktop
-        // mount-detection is fooled by the sandbox's bind mounts: it decides
-        // the file lives on a different filesystem than ~/.local/share/Trash
-        // and falls back to the mount-level trash dir `/home/.Trash-$uid`,
-        // which isn't writable — so trashing fails with EACCES. Route through
-        // the flatpak-specific path instead, which trashes the file host-side
-        // and lands it in the user's normal trash, identical to the deb/rpm
-        // builds. Detected at runtime (not compile time) so one Linux binary
-        // behaves correctly both inside and outside the sandbox.
+        // In a flatpak sandbox, the `trash` crate's mount detection is confused
+        // by bind mounts and tries the unwritable `/home/.Trash-$uid`. Use the
+        // flatpak path instead, which ends up in the user's normal trash.
+        // Checked at runtime, so one binary works in and out of the sandbox.
         #[cfg(target_os = "linux")]
         if is_flatpak() {
             return trash_in_flatpak(&full).await;
@@ -234,28 +222,21 @@ impl NoteboxStorage for LocalNoteboxStorage {
     }
 }
 
-/// True when the process is running inside a flatpak sandbox. `/.flatpak-info`
-/// is present in every flatpak sandbox and absent otherwise, making it the
-/// reliable marker (the `FLATPAK_ID` env var is not always propagated).
+/// True inside a flatpak sandbox: `/.flatpak-info` exists there (`FLATPAK_ID`
+/// isn't always set).
 #[cfg(target_os = "linux")]
 fn is_flatpak() -> bool {
     Path::new("/.flatpak-info").exists()
 }
 
-/// Move a path to trash from inside a flatpak sandbox.
+/// Move a path to the trash from inside a flatpak sandbox.
 ///
-/// Prefers the XDG Desktop Portal, which trashes host-side and correctly
-/// handles files on external drives. But a range of widely-deployed portal
-/// versions (1.20.4 through 1.21.1) regressed: the CVE-2026-40354 symlink-race
-/// fix (GHSA-rqr9-jwwf-wxgj) compares the file's mount id as seen inside the
-/// sandbox against the host mount id, which never match under flatpak's bind
-/// mounts, so the portal rejects *every* sandboxed trash request with a generic
-/// "Failed to trash file" (xdg-desktop-portal#1972, PR #1982). The same generic
-/// failure is still seen on 1.22.1 hosts, so the fallback is not just for old
-/// portals. When the portal fails, fall back to a spec-compliant move into the
-/// user's home trash — reachable because the flatpak holds `--filesystem=home`,
-/// so `~/.local/share/Trash` is the real host trash and shares a filesystem with
-/// any notebox under `$HOME`.
+/// Tries the XDG Desktop Portal first, which handles external drives. Portal
+/// versions 1.20.4 to 1.21.1 reject every sandboxed request with "Failed to
+/// trash file" (a mount-id check that never matches under flatpak;
+/// xdg-desktop-portal#1972, PR #1982), and 1.22.1 has been seen failing the same
+/// way. Then fall back to moving the file into the home trash, which is the real
+/// host trash because the flatpak has `--filesystem=home`.
 #[cfg(target_os = "linux")]
 async fn trash_in_flatpak(full: &Path) -> Result<()> {
     match trash_via_portal(full).await {
@@ -270,10 +251,8 @@ async fn trash_in_flatpak(full: &Path) -> Result<()> {
     }
 }
 
-/// Move a path to trash via the XDG Desktop Portal's Trash interface. The
-/// portal takes an open file descriptor (which it resolves host-side, outside
-/// the sandbox) rather than a path string. Opening the path read-only yields a
-/// valid fd for both regular files and directories on Linux.
+/// Trash a path through the portal, which takes a file descriptor (resolved
+/// host-side) rather than a path. A read-only open works for files and folders.
 #[cfg(target_os = "linux")]
 async fn trash_via_portal(full: &Path) -> Result<()> {
     use std::os::fd::AsFd;
@@ -288,29 +267,23 @@ async fn trash_via_portal(full: &Path) -> Result<()> {
         .map_err(|e| InkyCapError::Io(std::io::Error::other(format!("Trash error: {e}"))))
 }
 
-/// Move a path into the user's home trash, following the FreeDesktop.org Trash
-/// specification (the host's `$XDG_DATA_HOME/Trash`, default
-/// `~/.local/share/Trash`). Only called from inside the flatpak sandbox.
+/// Move a path into the home trash (`$XDG_DATA_HOME/Trash`, default
+/// `~/.local/share/Trash`) per the FreeDesktop.org spec. Only used in the flatpak
+/// sandbox, where the `trash` crate and the portal both fail. Per CLAUDE.md's
+/// Typst-first principle, this is the last-resort path.
 ///
-/// This reimplements the small slice of the trash spec we need because the two
-/// off-the-shelf paths both fail inside the sandbox: the `trash` crate mis-detects
-/// the mount and the portal (1.20.4–1.21.1) rejects the request. Per CLAUDE.md's
-/// no-custom-code-unless-unreachable principle, this is the last-resort path.
-///
-/// The file is `rename`d into `Trash/files/<name>` and a matching
-/// `Trash/info/<name>.trashinfo` records its original location so the desktop can
-/// restore it. `rename` requires the file and the trash to share a filesystem;
-/// with `--filesystem=home` that holds for any notebox under `$HOME`. A notebox on
-/// a separate mount (external drive) produces `EXDEV`, which we report rather than
-/// silently copy — its correct home is the drive's own `.Trash-$uid`, which only a
-/// fixed portal can reach.
+/// The file is renamed to `Trash/files/<name>` with a
+/// `Trash/info/<name>.trashinfo` recording where it came from. `rename` needs one
+/// filesystem, which holds for noteboxes under `$HOME`; on another drive it fails
+/// with `EXDEV`, which is reported rather than copying, since that file belongs in
+/// the drive's own trash.
 #[cfg(target_os = "linux")]
 fn trash_into_home_trash(full: &Path) -> Result<()> {
     use percent_encoding::{percent_encode, AsciiSet, CONTROLS};
 
     // The trashinfo `Path` is percent-encoded like a URL path: everything
-    // outside the RFC 3986 unreserved set is escaped, but `/` stays literal
-    // (matching glib's `g_uri_escape_string(path, "/", TRUE)`).
+    // outside the RFC 3986 unreserved set except `/` (as glib's
+    // `g_uri_escape_string(path, "/", TRUE)`).
     const TRASH_PATH: &AsciiSet = &CONTROLS
         .add(b' ')
         .add(b'"')
@@ -333,10 +306,9 @@ fn trash_into_home_trash(full: &Path) -> Result<()> {
         InkyCapError::Io(std::io::Error::other(format!("home-trash: {ctx}: {e}")))
     };
 
-    // Flatpak points `XDG_DATA_HOME` at the app's private
-    // `~/.var/app/<id>/data`, which is its own mount inside the sandbox (so
-    // `rename` into it fails with EXDEV) and not a trash the desktop shows.
-    // The host's value, when it set one, is passed as `HOST_XDG_DATA_HOME`.
+    // Inside flatpak, `XDG_DATA_HOME` is the app's private data folder (a
+    // separate mount, and not the desktop's trash). The host's value, if set,
+    // is in `HOST_XDG_DATA_HOME`.
     let data_home = std::env::var_os("HOST_XDG_DATA_HOME")
         .map(PathBuf::from)
         .filter(|p| p.is_absolute())
@@ -417,11 +389,8 @@ fn build_file_tree(root: &Path) -> Result<Vec<FileTreeNode>> {
         let parent = entry.path().parent().unwrap_or(root).to_path_buf();
         let is_dir = entry.file_type().is_dir();
         let name = entry.file_name().to_string_lossy().into_owned();
-        // Read stat times before consuming `entry`. WalkDir caches the
-        // metadata so this doesn't trigger an extra syscall. Either time
-        // is allowed to fail (some platforms / filesystems don't track
-        // creation time); fall back to zero so the frontend can treat it
-        // as unknown.
+        // Read the times before consuming `entry` (WalkDir caches the
+        // metadata). Either may be unavailable; zero means unknown.
         let (modified_time, created_time) = match entry.metadata() {
             Ok(m) => (
                 m.modified()
@@ -474,30 +443,20 @@ fn build_file_tree(root: &Path) -> Result<Vec<FileTreeNode>> {
     Ok(children_map.remove(&root.to_path_buf()).unwrap_or_default())
 }
 
-/// Process-unique counter used to disambiguate atomic-write tmp files
-/// when multiple writes target the same parent directory in rapid
-/// succession. `AtomicU64::Relaxed` is sufficient — we only need
-/// uniqueness, not any ordering relationship with other memory.
+/// Counter making atomic-write temp file names unique. Relaxed ordering is
+/// enough.
 static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-/// Write `content` to `target` atomically: stream the bytes to a sibling
-/// `.tmp` file, fsync the data, then rename over the destination.
+/// Write `content` to `target` atomically: write a sibling `.tmp` file, fsync
+/// it, then rename it over the target. A plain write truncates first, so a
+/// crash or a reader (Syncthing, antivirus, the watcher) could see an empty or
+/// partial file; with the rename the target is always the old or the complete
+/// new content (rename is atomic on POSIX, and `tokio::fs::rename` replaces
+/// atomically on Windows).
 ///
-/// `tokio::fs::write` truncates `target` immediately and streams bytes
-/// in. A crash, power loss, or an external reader (Syncthing, antivirus,
-/// the file watcher itself) catching the file mid-write sees a truncated
-/// or empty file. The tmp + sync + rename pattern guarantees the
-/// destination is either the old content or the complete new content —
-/// never an intermediate state. POSIX guarantees rename atomicity
-/// within a single filesystem, and `tokio::fs::rename` routes through
-/// `MoveFileExW` with `MOVEFILE_REPLACE_EXISTING` on Windows for the
-/// same behaviour there.
-///
-/// The tmp filename uses a `.tmp` extension so the watcher's
-/// `is_editor_scratch_file` filter ignores the tmp file itself. The final
-/// rename still reaches the watcher: it reports the destination as a
-/// created file, so the note is reindexed and open editors see a
-/// `notebox:file-created` event for it after each save.
+/// The watcher ignores `.tmp` files; the rename is reported as a created file,
+/// so the note is reindexed and editors get `notebox:file-created` after each
+/// save.
 async fn atomic_write(target: &Path, content: &[u8]) -> std::io::Result<()> {
     let parent = target.parent().ok_or_else(|| {
         std::io::Error::new(
@@ -575,9 +534,8 @@ mod tests {
         storage.write_file(rel, "v1").await.unwrap();
         assert_eq!(storage.read_file(rel).await.unwrap(), "v1");
 
-        // Overwrite with a larger payload; the destination must either be
-        // the prior content or the new content at every observable moment
-        // — never an empty/truncated intermediate.
+        // The target must hold the old or new content at every moment, never a
+        // partial file.
         let big = "v2".repeat(50_000);
         storage.write_file(rel, &big).await.unwrap();
         assert_eq!(storage.read_file(rel).await.unwrap(), big);

@@ -1,14 +1,10 @@
-// Persistent top-of-app warning shown when the backend's notebox health
-// monitor reports that the active notebox directory has been deleted (OS
-// file manager, `rm -rf`, unmounted drive, etc.).
+// Warning at the top of the app when the notebox health monitor reports the
+// notebox folder is gone (deleted, `rm -rf`, unmounted drive, …).
 //
-// The banner stays visible until another notebox is opened — there is no
-// dismiss button, because the warning is load-bearing: any save attempt
-// will fail until the user opens a different notebox, and we don't want
-// the user to lose work to a misclick.
-//
-// Save gating happens at the IPC layer (see `assertNoteboxWritable` in
-// stores/notebox.ts); this component is purely UI.
+// It stays until another notebox is opened, with no dismiss button: nothing can
+// be saved until then, and a misclick shouldn't hide that. Saving is blocked at
+// the IPC layer (`assertNoteboxWritable` in stores/notebox.ts); this is only
+// the display.
 
 import { Component, Show } from "solid-js";
 import { AlertTriangle } from "lucide-solid";

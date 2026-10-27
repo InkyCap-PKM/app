@@ -36,18 +36,14 @@ import { useI18n, tPlural } from "../lib/i18n";
  *  edge and the top of its trigger. */
 const STATUS_MENU_GAP = 4;
 
-/** Position an upward-opening status-bar menu so its bottom edge sits a
- *  consistent {@link STATUS_MENU_GAP}px above the status bar. Menus carry
- *  varying numbers of entries and separators, so we measure the real rendered
- *  height instead of estimating it — that keeps the bottom baseline identical
- *  across every status-bar menu (notebox switcher, spellcheck language picker,
- *  …) while letting the top edge fall where it must.
+/**
+ * Place an upward status-bar menu so its bottom edge is {@link
+ * STATUS_MENU_GAP}px above the bar, measuring its real height so every
+ * status-bar menu shares the same bottom line.
  *
- *  Called from the menu element's `ref`. Measurement is deferred to a
- *  microtask because the menu's dynamic rows (`<For>`/`<Show>`) are inserted
- *  after the ref fires; reading `offsetHeight` synchronously would see a
- *  near-empty element and place the menu too low (opening downward). The menu
- *  stays `visibility: hidden` until placed, so there's no flicker. */
+ * Called from the menu's `ref`, measuring in a microtask, since the menu's rows
+ * are inserted after the ref runs. The menu stays hidden until placed.
+ */
 function placeUpwardStatusMenu(el: HTMLElement, anchorTop: number) {
   queueMicrotask(() => {
     if (!document.body.contains(el)) return;
@@ -62,10 +58,8 @@ const StatusBar: Component = () => {
   const isFileTab = () => getActiveTab()?.type === "file";
   const stats = wordCountStats;
 
-  // Shared "click anywhere to dismiss" wiring for the upward status-bar menus.
-  // The next document click closes the menu and removes the listener; tracking
-  // the active handler lets `onCleanup` tear it down too, so a menu left open
-  // when the component unmounts doesn't leak a document listener.
+  // Close the upward menus on the next document click. The active handler is
+  // tracked so `onCleanup` removes it if the menu is open at unmount.
   let activeDismiss: (() => void) | null = null;
   const armDismiss = (close: () => void) => {
     setTimeout(() => {
@@ -88,10 +82,9 @@ const StatusBar: Component = () => {
   };
   onCleanup(() => activeDismiss?.());
 
-  // Cursor line:column — shown only in Source Edit mode, where it matches the
-  // raw file so the user can jump to a reported error (e.g. the audit's L55:28).
-  // In Live/Reading mode the source positions don't line up with what's shown,
-  // so it's hidden.
+  // Cursor line:column, only in source mode, where it matches the file (so a
+  // reported error such as L55:28 can be found). Positions don't match what
+  // visual and reading modes show.
   const sourceCursor = createMemo(() => {
     const tab = getActiveTab();
     if (tab?.type !== "file") return null;
@@ -111,9 +104,7 @@ const StatusBar: Component = () => {
     return entry?.display_name ?? info.name;
   });
 
-  // `anchorTop` is the trigger's top edge; the menu element measures its own
-  // height at mount and positions its bottom just above it (see
-  // placeUpwardStatusMenu).
+  // `anchorTop` is the trigger's top edge (see placeUpwardStatusMenu).
   const [switcherMenu, setSwitcherMenu] = createSignal<{
     x: number;
     anchorTop: number;
@@ -132,9 +123,8 @@ const StatusBar: Component = () => {
   }
 
   // ── Spellcheck language switcher ──────────────────────────────────────
-  // The chip near the word count shows the active spellcheck language (or Off)
-  // and opens an upward menu — like the notebox switcher — to pick a single
-  // language, "All" (check against every enabled dictionary), or turn it off.
+  // The chip by the word count shows the active language (or Off) and opens an
+  // upward menu to choose one language, "All" enabled dictionaries, or Off.
   const [spellDicts] = createResource(() => ipc.listSpellcheckDictionaries());
   const [spellMenu, setSpellMenu] = createSignal<{ x: number; anchorTop: number } | null>(null);
 
@@ -179,18 +169,15 @@ const StatusBar: Component = () => {
     armDismiss(() => setSpellMenu(null));
   }
 
-  /// Notebox-relative path of the current file tab, e.g.
-  /// "notes/journal/2026.typ". Returns null if the file lives outside the
-  /// notebox root (which shouldn't happen for tabs opened normally) so the
-  /// status bar doesn't leak the user's full filesystem layout.
+  /// Notebox-relative path of the current file tab (e.g.
+  /// "notes/journal/2026.typ"), or null for a file outside the notebox, so the
+  /// full filesystem path isn't shown.
   const activeFilePath = createMemo(() => {
     const tab = getActiveTab();
     if (!tab || tab.type !== "file" || !tab.path) return null;
     const root = noteboxInfo()?.path;
     if (!root) return null;
-    // Normalize through the canonical-shape helper so a regression on
-    // either side of the IPC boundary (e.g. a stray Windows `\\?\` UNC
-    // prefix sneaking in) doesn't silently blank the status bar.
+    // Normalize so a stray `\\?\` prefix can't blank the status bar.
     const tabNorm = normalizePath(tab.path);
     const rootNorm = normalizePath(root);
     const prefix = rootNorm.endsWith("/") ? rootNorm : rootNorm + "/";
@@ -201,23 +188,17 @@ const StatusBar: Component = () => {
   });
 
   // ── Inline rename ──────────────────────────────────────────────────
-  // The path display swaps to an <input> in place, so renaming feels
-  // continuous with the status-bar instead of popping a modal. The
-  // rename icon stays visible as the affordance the user clicks to enter
-  // edit mode, and clicking it again (or pressing Enter / blurring)
-  // commits the change. Escape cancels without writing anything.
+  // The path turns into an input in place. The rename icon starts editing and,
+  // clicked again (or Enter, or leaving the field), commits; Escape cancels.
   const [renaming, setRenaming] = createSignal(false);
   const [renameDraft, setRenameDraft] = createSignal("");
   let renameInputRef: HTMLInputElement | undefined;
-  // The same blur and click handlers can both try to commit; this guard
-  // makes commitRename idempotent so a click-to-confirm followed by the
-  // implicit blur doesn't double-fire (which would attempt a second
-  // rename against a path that no longer exists).
+  // Blur and click can both commit; this makes commitRename run once, so the
+  // second doesn't rename a path that no longer exists.
   let renameSettled = false;
 
-  // The `file:rename` command (F2) starts the inline rename from anywhere via
-  // this event — the status bar owns the draft/commit state, so the command
-  // just signals intent. Mirrors the click affordance below.
+  // The `file:rename` command (F2) starts the rename through this event, since
+  // the status bar holds the rename state. Same as clicking the icon.
   onMount(() => {
     const onStart = () => startRename();
     document.addEventListener("inkycap:start-rename", onStart);
@@ -227,9 +208,8 @@ const StatusBar: Component = () => {
   function startRename() {
     const tab = getActiveTab();
     if (!tab || tab.type !== "file") return;
-    // Respect the same guard as the visible affordance: no inline rename for a
-    // collab-review tab or a file outside the notebox root (activeFilePath()
-    // is null in both cases). Keeps the F2 command / event in step with the UI.
+    // Same rule as the icon: no rename for a review tab or a file outside the
+    // notebox (`activeFilePath()` is null for both).
     if (!activeFilePath()) return;
     const oldName = tab.path.split("/").pop()?.replace(/\.[^.]+$/, "") ?? "";
     renameSettled = false;
@@ -272,9 +252,8 @@ const StatusBar: Component = () => {
     // A read-only "Check for updates" found incoming commits (status_summary's
     // own `behind` is upstream-tracking-based and often 0 without a fetch).
     if (incomingCount() > 0) return t("git.status.behind", { n: incomingCount() });
-    // Merge-first: the last sync folded incoming changes in; these notes are
-    // waiting to be reviewed (and reverted if unwanted). The primary incoming
-    // backlog, surfaced ahead of the manual-suggestion count and "to share".
+    // Notes the last sync changed, waiting for review. Listed before
+    // suggestions and "to share".
     if (changesSinceSyncCount() > 0)
       return t("git.status.sinceSync", { n: changesSinceSyncCount() });
     // Persistent, notebox-wide: notes still carry unresolved manual
@@ -321,9 +300,8 @@ const StatusBar: Component = () => {
     openNoteboxWindow();
   }
 
-  // Noteboxes currently open in another window. A notebox lives in only one
-  // window, so these are disabled in the switcher (the user can't switch to or
-  // re-open one that's already open elsewhere). Refetched when the menu opens.
+  // Noteboxes open in other windows, disabled in the switcher (a notebox can be
+  // open in only one window). Refetched when the menu opens.
   const [openBoxes] = createResource(
     () => switcherMenu(),
     async (menu) => (menu ? await ipc.listOpenNoteboxes() : []),
@@ -332,9 +310,8 @@ const StatusBar: Component = () => {
     !pathEquals(path, noteboxInfo()?.path) &&
     (openBoxes() ?? []).some((o) => pathEquals(o.path, path));
 
-  // The status bar element itself is the shared baseline for upward-opening
-  // menus: every menu's bottom edge aligns to its top, regardless of where the
-  // individual trigger sits within the bar.
+  // The status bar is the baseline for upward menus: each menu's bottom aligns
+  // with its top, wherever the trigger is.
   let statusBarEl: HTMLDivElement | undefined;
   const statusBarTop = () =>
     statusBarEl?.getBoundingClientRect().top ?? window.innerHeight;
@@ -424,9 +401,8 @@ const StatusBar: Component = () => {
               />
               <button
                 class="status-bar__path-rename"
-                /* mousedown so the click registers before the input's blur
-                   handler fires its own commit — without this, the blur
-                   commits first and the button click hits a stale state. */
+                /* mousedown, so the click registers before the input's blur
+                   commits. */
                 onMouseDown={(e) => {
                   e.preventDefault();
                   commitRename();

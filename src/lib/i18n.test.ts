@@ -1,9 +1,8 @@
-// Unit tests for the i18n seam. These double as executable documentation of
-// the load-bearing invariants: the static `t` contract, live locale swapping,
-// and the registry-gating rule.
+// Tests for the i18n layer: the static `t`, switching locale live, and the
+// registry rule.
 //
-// The module loads dictionaries at import time via `import.meta.glob`, so the
-// `en` source dictionary and the shipped `fr-CA` translation are both present.
+// Dictionaries load at import through `import.meta.glob`, so `en` and the
+// `fr-CA` translation are both present.
 
 import { describe, it, expect, afterEach } from "vitest";
 import {

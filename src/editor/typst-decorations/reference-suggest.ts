@@ -14,29 +14,23 @@ import {
 } from "./reference-form";
 import { escapeAts, inMarkupAt, linkEmail } from "./address-markup";
 
-// The `@` popup. In Typst `@` is the *universal reference* operator — it points
-// at any `<label>` (heading, figure, equation, table) as well as bibliography
-// entries; a citation is just one kind of reference target. So this popup lists
-// citations first (the common academic action, and the historical behaviour),
-// then the document's labelled targets grouped by kind.
+// The `@` popup. In Typst `@` refers to any `<label>` (heading, figure, equation,
+// table) as well as bibliography entries, so the popup lists citations first,
+// then the document's labels by kind.
 //
-// What gets inserted depends on whether `@name` would actually compile. Typst's
-// `ref` renders the target's *number*, so a label on prose has nothing to show
-// and errors with "cannot reference text". Those rows insert the equivalent
-// `#link(<name>)[…]` instead, with the placeholder wording selected, and the
-// row's muted secondary shows which form it will write. Headings follow the
-// same rule: `@` while the document numbers them, a link while it doesn't
-// (turning numbering on is the "Heading numbering" palette command's job, not
-// this popup's). The rules live in [reference-form.ts](./reference-form.ts).
+// What is inserted depends on whether `@name` compiles. `ref` shows the target's
+// number, so a label on prose errors with "cannot reference text"; those rows
+// insert `#link(<name>)[…]` instead, with the placeholder text selected, and the
+// row says which form it writes. Headings get `@` while the document numbers them
+// and a link otherwise. The rules are in
+// [reference-form.ts](./reference-form.ts).
 //
-// An `@` straight after a word (`results@smith2020`, `joshua@phydeau.org`) may be
-// a citation placed against the text, as a footnote style wants, or an email
-// address, so the popup opens there too. Below the matches it always offers two
-// rows that write something other than a reference: *E-mail address* (after a
-// word only) turns the address into a `mailto:` link, and *Plain text* escapes
-// the `@`. They are never selected by default; when nothing matches, nothing is
-// selected and Enter passes through, so the word is decided when it ends (see
-// url-typing.ts).
+// An `@` straight after a word (`results@smith2020`, `athena@inkycap.org`) may be
+// a citation set against the text or an email address, so the popup opens there
+// too. It always ends with *E-mail address* (after a word only), which makes a
+// `mailto:` link, and *Plain text*, which escapes the `@`. Neither is selected by
+// default; with no matches nothing is selected and Enter passes through, and the
+// word is classified when it ends (see url-typing.ts).
 
 interface SuggestState {
   active: boolean;
@@ -68,10 +62,9 @@ let cachedEntries: BibEntry[] | null = null;
 let cacheTime = 0;
 const CACHE_TTL = 30_000;
 
-// After accepting a suggestion, suppress the popup until the cursor leaves
-// the just-inserted range. Time-based suppression mis-fires on slow renders
-// (popup re-opens) and fast typists (popup stays gone). Position-based gives
-// the right answer regardless of timing.
+// After accepting, keep the popup closed until the cursor leaves the inserted
+// range (by position, not time, which misfires for slow renders or fast
+// typists).
 let suppressedRange: { from: number; to: number } | null = null;
 
 let preview: HTMLElement | null = null;
@@ -165,13 +158,10 @@ function isPopupVisible(): boolean {
 }
 
 /**
- * The `@` position of the live citation search, or null when no search popup is
- * open. The visual editor consults this to keep its citation/reference pill from
- * forming over a `@…` that is still being searched (e.g. `@einstein relativity`
- * mid-typing) — the span should read as plain editable text until the writer
- * commits a choice. The `@` offset is stable for a session's lifetime, so a
- * containment check against it is immune to the one-frame lag between a
- * keystroke and the popup's deferred redraw.
+ * The `@` position of the open citation search, or null. The visual editor uses
+ * it to keep a pill from forming over an `@…` still being searched (e.g.
+ * `@einstein relativity`). The offset doesn't change during a search, so it
+ * isn't affected by the popup's one-frame delay.
  */
 export function activeReferenceSearchAt(): number | null {
   return isPopupVisible() && currentState.active ? currentState.from : null;
@@ -188,14 +178,10 @@ async function getEntries(): Promise<BibEntry[]> {
   return cachedEntries;
 }
 
-// A citation search is allowed to span spaces — most titles and author names
-// contain them ("Smith & Jones 2020"), and the search text is matched against
-// `key + title + authors`. But an unbounded query would let the popup trail
-// through a whole paragraph, so the query is bounded: a leading space ("@ " is
-// a literal at-sign, never a search) is rejected, and the query is capped in
-// length and word count. Whether the writer has *stopped* searching and started
-// prose is decided at match time, not here — when no candidate matches every
-// typed word, `showPopup` closes the popup (see its zero-results branch).
+// A citation search may contain spaces ("Smith & Jones 2020"); it matches `key
+// + title + authors`. To keep it from running through a paragraph, a leading
+// space ("@ ") isn't a search and the query is capped in length and words. When
+// no candidate matches every word, `showPopup` closes the popup.
 const QUERY_MAX_CHARS = 48;
 const QUERY_MAX_WORDS = 6;
 
@@ -205,17 +191,12 @@ function queryTokens(query: string): string[] {
 }
 
 /**
- * Score a candidate's search text against a possibly multi-word `@` query.
- * Every whitespace-separated token must appear as a contiguous, case-insensitive
- * *substring* of the text (AND); the score is the sum of per-token scores.
- *
- * Substring — not scattered-subsequence — matching is deliberate: a citation
- * search is a "find the words I typed" filter (the same behaviour as the
- * wikilink and sidebar filters), so `move` should match titles *containing*
- * "move", not "**m**assive **o**bjects gra**v**itational **e**ffects". Returns
- * null when any token misses — the signal, on a multi-word query, that the
- * writer has typed past the citation into prose. An empty query matches
- * everything at score 0 (source order preserved).
+ * Score a candidate against an `@` query: every word must appear as a
+ * case-insensitive substring (AND), and the score sums the words' scores.
+ * Substrings rather than scattered letters, like the wikilink and sidebar
+ * filters, so `move` matches titles containing "move". Null when any word
+ * misses, which on a multi-word query means the writer has moved on to prose. An
+ * empty query matches everything at 0.
  */
 export function scoreReferenceQuery(query: string, text: string): number | null {
   const tokens = queryTokens(query);
@@ -242,18 +223,14 @@ function detectReferenceContext(view: EditorView): SuggestState {
   if (query.length > QUERY_MAX_CHARS) return EMPTY;
   if (queryTokens(query).length > QUERY_MAX_WORDS) return EMPTY;
 
-  // Two shapes of `@` are never a search. An escaped `\@` is a literal
-  // at-sign; skipping it also avoids the failure where an `@` typed right after
-  // a line's hidden trailing soft-break `\` would insert `\@key` and make the
-  // backslash render. And an `@` glued to the tail of a word or email local
-  // part (`athena@inkycap.org`) is an email address, not a reference — the
-  // same reading the visual editor and the compile pipeline apply, so the popup
-  // stays closed while an address is being typed. See `isEmailLikeAt`.
+  // Not a search: an escaped `\@` (also avoids inserting `\@key` after a hidden
+  // soft break, which would show the backslash), or an `@` after an email-style
+  // character (`athena@inkycap.org`), as in the visual editor and compiler. See
+  // `isEmailLikeAt`.
   const charBefore = atIdx > 0 ? textBefore[atIdx - 1] : "";
   if (charBefore === "\\") return EMPTY;
-  // An `@` glued to a word may be a citation or an email address; the popup
-  // offers both. Only in markup, though, so an address inside a `#link("…")`
-  // string doesn't reopen it.
+  // After a word the popup offers citation and email, but only in markup, not
+  // inside a `#link("…")` string.
   if (isEmailLikeAt(charBefore) && !inMarkupAt(view.state, line.from + atIdx)) return EMPTY;
 
   return { active: true, from: line.from + atIdx, query };
@@ -276,9 +253,10 @@ function searchText(item: RefItem): string {
   return "";
 }
 
-/** The rows that write the `@` as something other than a reference: an email
- *  link when the `@` follows a word and no space has been typed, and plain
- *  text always. */
+/**
+ * Rows that write the `@` as something else: an email link (after a word,
+ * before any space) and plain text.
+ */
 function nonReferenceItems(view: EditorView, state: SuggestState): RefItem[] {
   const charBefore = state.from > 0 ? view.state.doc.sliceString(state.from - 1, state.from) : "";
   const canBeEmail = isEmailLikeAt(charBefore) && !/\s/.test(state.query);
@@ -305,9 +283,8 @@ interface RenderGroup {
 }
 
 /**
- * Build the ordered, filtered groups: bibliography first, then label kinds.
- * Each group's items are fuzzy-scored and sorted; an empty query keeps source
- * order (citations as returned, labels as scanned).
+ * The groups in order, bibliography then label kinds, each scored and sorted.
+ * An empty query keeps source order.
  */
 export function buildGroups(
   entries: BibEntry[],
@@ -362,11 +339,9 @@ async function showPopup(view: EditorView, state: SuggestState) {
   );
   const matches = groups.flatMap((g) => g.items);
 
-  // A multi-word query that matches nothing means the writer has typed past
-  // the citation into ordinary prose ("@note this is just text") — close
-  // silently rather than nag with a "no results" box. A single-token miss
-  // ("@zzz", no space yet) is still an active search the writer may be mid-
-  // typing or about to correct, so the box stays up.
+  // A multi-word query with no match means the writer is typing prose; close
+  // quietly. A single word with no match ("@zzz") is still a search in
+  // progress, so the box stays.
   if (matches.length === 0 && /\s/.test(state.query)) {
     hidePopup();
     return;
@@ -430,9 +405,8 @@ function renderRow(view: EditorView, state: SuggestState, item: RefItem, index: 
     const year = entry.year ?? "";
     metaSpan.textContent = `${authors}${year ? ` (${year})` : ""}`;
   } else {
-    // Show the readable display (heading text, or the label name) up front and
-    // the markup that will be inserted as the muted secondary — so a row that
-    // writes a link instead of an `@` reference says so before it is picked.
+    // The display text first, with the markup to be inserted as the secondary,
+    // so a row that writes a link says so.
     nameSpan.textContent = item.label.display;
     metaSpan.textContent =
       item.form === "ref" ? `@${item.label.name}` : `#link(<${item.label.name}>)`;
@@ -463,9 +437,8 @@ function acceptItem(view: EditorView, state: SuggestState, item: RefItem) {
     acceptNonReference(view, state, item.type, cursor);
     return;
   }
-  // A prose label has no number for `@` to render, so it is inserted as a link
-  // whose display text starts out as the label name and lands selected, ready
-  // to be typed over.
+  // A prose label has no number, so insert a link with the label name as its
+  // text, selected so it can be typed over.
   const link =
     item.type === "label" && item.form === "link"
       ? linkReference(item.label.name, item.label.display || item.label.name)
@@ -474,10 +447,9 @@ function acceptItem(view: EditorView, state: SuggestState, item: RefItem) {
   const selection = link
     ? { anchor: state.from + link.displayFrom, head: state.from + link.displayTo }
     : { anchor: state.from + insert.length };
-  // Set suppression *before* dispatch: the dispatch synchronously runs the
-  // tracker's `update`, which would otherwise re-detect the `@key` context and
-  // requeue the popup. With the range already set, that update closes the popup
-  // instead of reopening it — so a single Enter both inserts and dismisses.
+  // Set suppression before dispatching: the dispatch runs the tracker's
+  // `update` synchronously, which would otherwise reopen the popup. One Enter
+  // inserts and closes.
   suppressedRange = { from: state.from, to: state.from + insert.length };
   view.dispatch({
     changes: { from: state.from, to: cursor, insert },
@@ -487,9 +459,8 @@ function acceptItem(view: EditorView, state: SuggestState, item: RefItem) {
 }
 
 /**
- * Write the `@` at `state.from` as an email address (a `mailto:` link of the
- * address typed so far, with the caret at its end to finish it) or as plain
- * text (an escaped `\@`, caret unmoved).
+ * Write the `@` at `state.from` as an email address (a `mailto:` link of what
+ * is typed so far, caret at its end) or as plain text (`\@`, caret unmoved).
  */
 function acceptNonReference(
   view: EditorView,
@@ -577,12 +548,9 @@ const suggestKeyHandler = Prec.highest(keymap.of([
 const suggestTracker = ViewPlugin.fromClass(
   class {
     private state: SuggestState = EMPTY;
-    // Handle of the deferred `showPopup` so a later update can cancel it. The
-    // popup is opened on the next animation frame (to coalesce bursts of
-    // keystrokes); without cancellation, the frame scheduled by the final
-    // keystroke before Enter would fire *after* `acceptItem` has already
-    // inserted the reference and hidden the popup — reopening it and forcing
-    // the user to press Enter a second time to dismiss it.
+    // The pending `showPopup` frame, so a later update can cancel it; otherwise
+    // the frame from the last keystroke before Enter would reopen the popup
+    // after the insert.
     private pendingFrame = 0;
 
     constructor(view: EditorView) {
@@ -593,9 +561,7 @@ const suggestTracker = ViewPlugin.fromClass(
       if (!update.docChanged && !update.selectionSet) return;
       this.state = detectReferenceContext(update.view);
 
-      // Clear post-accept suppression once the cursor moves outside the
-      // inserted range — that's the unambiguous signal that the user is
-      // back to free-form editing.
+      // Clear suppression once the cursor leaves the inserted range.
       if (suppressedRange) {
         const head = update.view.state.selection.main.head;
         if (head < suppressedRange.from || head > suppressedRange.to) {

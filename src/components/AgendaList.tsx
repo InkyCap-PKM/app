@@ -1,11 +1,7 @@
-// AgendaList: the shared presentation for a flat list of agenda items.
-// Three menu-driven controls — Sort, Task List filter, Tags filter — sit
-// above a search input (omitted where the host has its own) and the flat
-// row list. Owns no data fetching; callers pass an already-resolved
-// `AgendaItem[]`.
-//
-// Used by the left-sidebar Agenda pane and the Collection "Agenda" view
-// so the two surfaces stay consistent.
+// AgendaList: a flat list of agenda items with Sort, Task List and Tags menus
+// above a search box (left out where the host has its own). Does no fetching;
+// callers pass `AgendaItem[]`. Used by the sidebar Agenda and the Collection
+// "Agenda" view, so they match.
 
 import { Component, createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import { attachListNav } from "../lib/list-nav";
@@ -50,17 +46,19 @@ interface AgendaListProps {
   /** Invoked when a row is activated. `opts.newTab` requests opening the note
    *  in a new tab (ctrl/cmd-click, middle-click, or the context-menu entry). */
   onOpen: (item: AgendaItem, opts?: { newTab?: boolean }) => void;
-  /** When set, the panel restores and persists its filters under this
-   *  localStorage key (see {@link agendaFiltersKey}), and offers to save the
-   *  current filters as a view. Omitted by collection agenda views, whose
-   *  in-panel filters stay ephemeral. */
+  /**
+   * When set, filters are restored and saved under this localStorage key (see
+   * {@link agendaFiltersKey}), and the current filters can be saved as a view.
+   * Collection agenda views omit it.
+   */
   persistKey?: string;
   /** Persist the current filters as a named saved-view bookmark. Provided only
    *  alongside {@link persistKey} (the main panel). */
   onSaveView?: (name: string, snapshot: AgendaFilterSnapshot) => void | Promise<void>;
-  /** Extra class for the item list. The list is the only part of this
-   *  component that should scroll, so a host that pins chrome above it (the
-   *  sidebar pane) names it as its scroll body here. */
+  /**
+   * Extra class for the item list, the only part that should scroll; a host
+   * that pins its header (the sidebar pane) uses it as its scroll body.
+   */
   listClass?: string;
   /** Hide the text filter box. Set by hosts that narrow the items with their
    *  own search, such as the collection view's Find row. */
@@ -79,16 +77,13 @@ type SortMode =
   | "name-asc"
   | "name-desc";
 
-// Kinds of agenda row. The Task List filter is multi-select (like Tags): an
-// empty selection means "show all", otherwise a row shows if it matches ANY
-// selected kind — so combinations like "To do + Dates" work.
+// Agenda row kinds. The Task List filter is multi-select like Tags: none
+// selected shows all, otherwise rows matching any selected kind, so "To do +
+// Dates" works.
 type TaskKind = "todo" | "done" | "dates";
 
-// Whether recurring series collapse to a single row (their next occurrence) or
-// expand to show every upcoming occurrence. A global, device-persisted
-// preference shared by every Agenda surface (sidebar + Collection views), so
-// the user's Expand/Collapse-all choice survives restarts and stays consistent.
-// Defaults to collapsed so a busy recurrence doesn't flood the list.
+// Whether recurring series show one row (the next occurrence) or every upcoming
+// one. Saved on the device and shared by every Agenda. Collapsed by default.
 const COLLAPSE_RECURRING_KEY = "inkycap.agenda.collapseRecurring";
 
 function loadCollapseRecurring(): boolean {
@@ -111,9 +106,10 @@ function setCollapseRecurring(v: boolean) {
   }
 }
 
-/** Human-friendly short date, formatted with the user's configured pattern
- *  (Settings > Appearance > Date format). Returns the raw string unchanged
- *  when it isn't a parseable ISO date. */
+/**
+ * Short date in the user's date format (Settings > Appearance), or the text
+ * unchanged if it isn't an ISO date.
+ */
 function formatDate(iso: string): string {
   return formatUserDate(iso);
 }
@@ -125,13 +121,10 @@ function todayISO(): string {
   ).padStart(2, "0")}`;
 }
 
-// ── Persisted filter state (main Agenda panel only) ───────────────────
-//
-// The sidebar Agenda restores its filters across sessions, keyed per notebox so
-// a tag/task-list selection from one notebox never leaks into another (the
-// tags don't exist there). The Collection Agenda views deliberately pass no
-// key — collections express durable views through their own saved view
-// definitions, so their in-panel filters stay ephemeral.
+// ── Saved filter state (sidebar Agenda only) ───────────────────────
+// Restored across sessions per notebox, since one notebox's tags don't exist in
+// another. Collection Agenda views pass no key; collections keep lasting views
+// in their own definitions.
 
 const AGENDA_FILTERS_PREFIX = "inkycap.agenda.filters";
 
@@ -228,10 +221,9 @@ const AgendaList: Component<AgendaListProps> = (props) => {
     });
   });
 
-  // Consume a saved-view activation request (a global one-shot signal, so it
-  // survives this panel being mounted as part of the activation). Created after
-  // the restore effect so an explicit view wins over the restored state; gated
-  // to the main panel so a collection agenda view never steals the request.
+  // Take a request to activate a saved view (a one-time global signal, so it
+  // survives this panel mounting during the activation). After the restore
+  // effect, so the view wins; only in the sidebar panel.
   createEffect(() => {
     const requested = requestedAgendaView();
     if (!requested || !props.persistKey) return;
@@ -352,12 +344,10 @@ const AgendaList: Component<AgendaListProps> = (props) => {
    *  control so it only appears when there's something to act on. */
   const hasRecurring = createMemo(() => props.items.some((it) => it.recurring));
 
-  // Per-series expansion that overrides the global mode for a single recurring
-  // item, so the user can reveal one series' occurrences without expanding the
-  // whole list (and vice-versa). A series is identified by the shared id prefix
-  // its occurrences carry (`<base>#r0`, `#r1`, …). The set holds the series that
-  // are in the *opposite* state from the global default; flipping the global
-  // toggle clears it (the global action is set-all, not a per-item toggle).
+  // Recurring series shown in the opposite state from the global setting, so one
+  // series can be expanded (or collapsed) alone. A series is identified by its
+  // occurrences' shared id prefix (`<base>#r0`, `#r1`, …). Changing the global
+  // setting clears this, since it sets every item.
   const [seriesOverrides, setSeriesOverrides] = createSignal<Set<string>>(new Set<string>());
 
   const seriesKey = (it: AgendaItem) => it.id.replace(/#r\d+$/, "");
@@ -398,9 +388,8 @@ const AgendaList: Component<AgendaListProps> = (props) => {
     const dFilter = dateFilter();
 
     let list = props.items.filter((it) => {
-      // A recurring series' later occurrences show only when that series is
-      // expanded (per-item caret, falling back to the global mode). Its current
-      // occurrence always shows; the summary line conveys the rest when hidden.
+      // A series' later occurrences show only when it is expanded; the current
+      // one always shows, with a summary of the rest.
       if (it.recurring && (it.occurrence_index ?? 0) > 0 && !isSeriesExpanded(seriesKey(it))) {
         return false;
       }
@@ -872,9 +861,8 @@ const AgendaList: Component<AgendaListProps> = (props) => {
                 class="sidebar-item agenda__item"
                 classList={{
                   "agenda__item--done": it.done,
-                  // Later occurrences of a recurring series are de-emphasized so
-                  // a frequent reminder doesn't take over the list — the current
-                  // (next) occurrence stays at full strength.
+                  // Later occurrences are muted so a frequent reminder doesn't
+                  // dominate; the next one stays at full strength.
                   "agenda__item--recurrence-future":
                     it.recurring && (it.occurrence_index ?? 0) > 0,
                 }}

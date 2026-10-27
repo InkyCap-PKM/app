@@ -1,9 +1,8 @@
-// The "History" half of the right-panel "Changes & History" pane: the version
-// history of the open note, read from the git commit graph. Each row is a past
-// version (who / when / message); clicking opens that version as a read-only
-// scratch tab, and Restore writes it back as a new edit to Sync (never rewrites
-// history). Shown only for a collaborative notebox — version history is the git
-// commit graph, so a non-collaborative notebox has none.
+// The "History" half of the "Changes & History" pane: the open note's past
+// versions from the git history. Each row shows who, when and the message;
+// clicking opens that version read-only, and Restore writes it back as a new
+// edit to sync (history is never rewritten). Only for collaborative noteboxes,
+// since the history is git's.
 
 import { Component, For, Show, createResource, createMemo } from "solid-js";
 import { History, RotateCcw, Columns2 } from "lucide-solid";
@@ -24,11 +23,9 @@ function when(unixSeconds: number): string {
 }
 
 const NoteHistory: Component<{ path: string }> = (props) => {
-  // Re-fetch whenever the note changes, collaboration toggles, or the working
-  // tree moves (a sync/pull/revert bumps `syncReviewVersion`). Including the
-  // review version in the source means the list — and the HEAD reference the
-  // "current"/"latest shared" badge derives from — refreshes after a sync, so a
-  // just-synced note correctly reads "current" instead of "latest shared".
+  // Fetch again when the note changes, collaboration is turned on or off, or
+  // the files change (sync, pull or revert bump `syncReviewVersion`), so after
+  // a sync the list and its "current"/"latest shared" badge are up to date.
   const key = createMemo(() =>
     collaborative() ? { path: props.path, rev: syncReviewVersion() } : null,
   );
@@ -38,14 +35,11 @@ const NoteHistory: Component<{ path: string }> = (props) => {
 
   const basename = () => props.path.split("/").pop() ?? props.path;
 
-  // Whether the note's working copy matches the latest committed version (HEAD,
-  // the top row). In the merge-first model a note can sit *ahead of* its shared
-  // history — local edits, or a reverted incoming change, aren't committed until
-  // the next Sync — so the top commit isn't necessarily "what you have". This
-  // tells the badge whether to read "current" (working copy == HEAD) or "latest
-  // shared" (your local note differs). Re-checked when the working tree changes
-  // (`syncReviewVersion` bumps on saves / reverts) since a revert doesn't add a
-  // commit but does change the working copy. */
+  // Whether the note's file matches the latest commit (the top row). A note can
+  // be ahead of the shared history (local edits or a reverted incoming change
+  // are committed at the next sync), so the badge says "current" when they match
+  // and "latest shared" when they don't. Checked again when `syncReviewVersion`
+  // changes (saves, reverts), since a revert changes the file without a commit.
   const [headSync] = createResource(
     () => {
       const v = versions();
@@ -71,9 +65,10 @@ const NoteHistory: Component<{ path: string }> = (props) => {
   // a flash of the "latest shared" wording on every open.
   const workingMatchesHead = () => headSync() !== false;
 
-  /** Open a read-only inline diff comparing this past version with the note's
-   *  current content. Reuses an already-open compare tab for this note (clicking
-   *  another version updates it in place) rather than stacking tabs. */
+  /**
+   * Open a read-only inline comparison of this version with the note's current
+   * content, reusing this note's comparison tab if open.
+   */
   function viewVersion(v: GitNoteVersion) {
     openVersionDiff(
       props.path,

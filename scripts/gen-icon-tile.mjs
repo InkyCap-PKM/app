@@ -1,12 +1,10 @@
-// Generate the square app-icon tile from the canonical mark.
+// Generate the square app icon tile from the logo.
 //
-// The mark (src/assets/inkycap-logo.svg) is the single source of geometry:
-// the in-app logo renders it directly, and this script frames a copy of its
-// paths inside the dark rounded-square "dock" tile that `tauri icon` turns
-// into every platform icon. Previously the tile was a hand-maintained copy of
-// the mark's paths kept in sync by a comment — this removes that drift.
+// The logo (src/assets/inkycap-logo.svg) is the only source of the shape: the
+// app shows it directly, and this script places a copy of its paths on the dark
+// rounded-square tile that `tauri icon` turns into every platform's icons.
 //
-// Run via `npm run icons` (which then invokes `tauri icon` on the output).
+// Run with `npm run icons` (which then runs `tauri icon` on the output).
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
@@ -18,17 +16,16 @@ const OUT = resolve(root, "design-assets/inkycap-tile-ink.svg");
 
 const TILE = 1024; // tauri icon wants a square master; 1024 is its top size.
 const BG = "#10282C"; // dark "dock" tile background.
-// The master draws the glasses frames/bridge/pupils in this ink, and this
-// colour appears *nowhere else* in the mark — so recolouring it to the tile
-// background turns the lenses into clean cut-outs on the teal cap.
+// The glasses (frames, bridge, pupils) are drawn in this colour, used nowhere
+// else in the logo, so changing it to the tile background makes the lenses
+// clean cut-outs.
 const GLASSES_INK = "#071e22";
 
 const svg = readFileSync(MARK, "utf8");
 
-// Extract the drawing elements: everything between the metadata block and the
-// closing tag. The mark keeps its original 676-unit coordinate space — its
-// cropped viewBox only narrows the visible *window*, not the path coordinates
-// — so the geometry maps cleanly through the transform below.
+// The drawing elements: everything between the metadata block and the closing
+// tag. The logo's paths keep their 676-unit coordinates (its viewBox only crops
+// the view), so the transform below applies directly.
 const afterMeta = svg.includes("</metadata>") ? svg.split("</metadata>")[1] : svg;
 let body = afterMeta.slice(0, afterMeta.lastIndexOf("</svg>"));
 // Drop the mark's inline comments; the generated tile carries its own note.
@@ -36,11 +33,9 @@ body = body.replace(/<!--[\s\S]*?-->/g, "").trim();
 // Glasses cut-out (see GLASSES_INK above).
 body = body.replaceAll(GLASSES_INK, BG);
 
-// Centre the mark and scale it to fill the tile. The mark's artwork bounding
-// box is ≈ x[107,560], y[65,611] in 676-space — i.e. 453×546, centred at
-// (333.5, 337.8). We map that centre to the tile centre (512,512) and scale so
-// the mushroom stands ~760px tall, filling far more of the icon than the old
-// ~549px (which is what made it read small on Windows).
+// Centre and scale the logo. Its artwork spans about x[107,560], y[65,611] in
+// 676 units (453×546, centred at 333.5, 337.8); that centre goes to the tile
+// centre (512,512), scaled so the mushroom is about 760px tall.
 const MARK_CX = 333.5;
 const MARK_CY = 337.8;
 const MARK_H = 546;
@@ -49,16 +44,10 @@ const scale = +(TARGET_H / MARK_H).toFixed(5);
 const tx = +(TILE / 2 - MARK_CX * scale).toFixed(2);
 const ty = +(TILE / 2 - MARK_CY * scale).toFixed(2);
 
-// Background rounded square: a minimal (16px ≈ 1.5%) transparent keyline so
-// the antialiased edge has a hair of breathing room, with Apple-ish corner
-// rounding (~22.4% of the side) that also reads well on Windows/Linux. This is
-// near-full-bleed: GNOME/KDE/Windows ship rounded squares edge-to-edge, so a
-// minimal keyline maximizes the tile's footprint in the dock/alt-tab. The
-// corners are rounded, so there's nothing at the canvas corner to clip anyway.
-// macOS nominally prefers a larger inset, but this one tile feeds every
-// platform via `tauri icon`; the rounded shape keeps it from reading oversized
-// there. No large dock inset — the mark fills the tile uniformly across
-// platforms.
+// Rounded-square background with a 16px (≈1.5%) transparent margin for the
+// anti-aliased edge and corners of about 22.4% of the side. Nearly full-bleed,
+// as on GNOME, KDE and Windows; one tile serves every platform via `tauri
+// icon`, including macOS.
 const BG_MARGIN = 16;
 const bgSide = TILE - BG_MARGIN * 2;
 const bgRadius = Math.round(bgSide * 0.2237);
@@ -68,12 +57,10 @@ const indented = body
   .map((line) => (line.trim() ? "    " + line : line))
   .join("\n");
 
-// The `<svg>` element MUST be the first markup in the file — no comment before
-// it. gdk-pixbuf's SVG loader (what GNOME Shell, the dash, and the app grid use
-// to rasterize a scalable icon) sniffs only the first ~256 bytes for the SVG
-// signature; a leading comment that pushes `<svg>` past that window makes the
-// loader reject the file ("Unsupported image format") and GNOME falls back to a
-// blurry raster. So the provenance note lives *inside* <svg> instead.
+// `<svg>` must be the first markup in the file. gdk-pixbuf (which GNOME uses to
+// draw scalable icons) only checks the first ~256 bytes for the SVG signature
+// and rejects the file if a comment pushes `<svg>` past them. So the note goes
+// inside <svg>.
 const out = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${TILE}" height="${TILE}" viewBox="0 0 ${TILE} ${TILE}">
   <!-- GENERATED by scripts/gen-icon-tile.mjs from src/assets/inkycap-logo.svg.

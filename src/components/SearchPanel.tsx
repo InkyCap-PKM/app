@@ -1,10 +1,6 @@
-// Search panel shown in the left sidebar "search" mode.
-//
-// State (query, results, options) lives in `stores/search.ts` so it
-// survives sidebar mode switches. The user can step over to the file
-// tree, bookmarks, or any other mode and come back to find their
-// search exactly as they left it. State only resets when the user
-// clears the search box.
+// Search panel for the left sidebar's "search" mode. Its state lives in
+// `stores/search.ts`, so a search survives switching modes and only resets when
+// the box is cleared.
 
 import { errorText } from "../lib/errors";
 import HighlightedText from "./HighlightedText";
@@ -107,9 +103,8 @@ const FILTER_HINTS: FilterHint[] = [
   { prefix: "collection:", insert: "collection:", descKey: "search.filterHint.collection" },
 ];
 
-/// Informational tips (non-insertable) describing query syntax beyond
-/// the filter prefixes. The `label` is a literal syntax token (not
-/// translated); `descKey` resolves the human description at render.
+/// Query syntax tips (not insertable). `label` is literal syntax (not
+/// translated); `descKey` is the description.
 const SYNTAX_TIPS: { label: string; descKey: string }[] = [
   { label: "word*", descKey: "search.syntaxTip.truncation" },
   { label: '"…"', descKey: "search.syntaxTip.phrase" },
@@ -142,10 +137,7 @@ const ANNOTATION_SCOPE_OPTIONS: {
 
 const SearchPanel: Component = () => {
   const t = useI18n();
-  // UI-only ephemeral state — these don't need to persist across mode
-  // switches because they're transient overlays. Loading/showSettings
-  // etc. revert to defaults when the panel re-mounts; that matches what
-  // a user would expect.
+  // Temporary UI state, reset when the panel remounts.
   const [loading, setLoading] = createSignal(false);
   const [replacing, setReplacing] = createSignal(false);
   // showSettings lives in the search store (not here) so the "Search Options"
@@ -163,17 +155,18 @@ const SearchPanel: Component = () => {
     { x: number; y: number; result: SearchResult } | null
   >(null);
 
-  // Filter-value completions. The notebox's tags and property keys are small
-  // lists that change rarely, so they load once; a key's values are fetched on
-  // demand because there is one list per key.
+  // Filter-value completions. Tags and property keys are short and rarely
+  // change, so they load once; a key's values load on demand.
   const [allTags, setAllTags] = createSignal<[string, number][]>([]);
   const [allPropertyKeys, setAllPropertyKeys] = createSignal<string[]>([]);
   const folders = createMemo(() => folderPaths(fileList()));
   const [caretPos, setCaretPos] = createSignal(0);
   const [completionIndex, setCompletionIndex] = createSignal(0);
-  /** True once the arrows have moved the highlight, so Enter means "this
-   *  one"; false while the highlight is only the default first row, when
-   *  Enter runs the query as typed. Reset by typing. */
+  /**
+   * True once the arrows have moved the highlight, so Enter picks it; while
+   * only the first row is highlighted by default, Enter runs the query as
+   * typed. Reset by typing.
+   */
   const [completionChosen, setCompletionChosen] = createSignal(false);
   /** Set by Escape; cleared as soon as the caret moves to a new filter. */
   const [completionsDismissed, setCompletionsDismissed] = createSignal(false);
@@ -186,13 +179,10 @@ const SearchPanel: Component = () => {
     if (searchTimeout) clearTimeout(searchTimeout);
   });
 
-  // Focus the query box. Called on mount (opening the pane from another tab
-  // remounts this component) and from the open-search event (so Ctrl+Shift+F
-  // refocuses even when the pane is already open). The `autofocus` attribute
-  // alone only fires on the first page-load mount — browsers don't re-honour
-  // it on later dynamic remounts — which is why focus "only worked the first
-  // time". `cursorAtEnd` parks the caret after a pre-filled query (e.g. a
-  // property click) instead of selecting it.
+  // Focus the query box, on mount (opening the pane from another tab remounts
+  // it) and on the open-search event (so Ctrl+Shift+F refocuses an open pane).
+  // `autofocus` only works on the first mount. `cursorAtEnd` puts the caret
+  // after a pre-filled query instead of selecting it.
   function focusInput(cursorAtEnd = false) {
     queueMicrotask(() => {
       if (!inputRef) return;
@@ -340,10 +330,9 @@ const SearchPanel: Component = () => {
   }
 
   function handleKeyDown(e: KeyboardEvent) {
-    // The completion list owns the arrows, Tab and Escape while it is open.
-    // Enter is claimed only once the arrows have picked a row: a filter value
-    // is a substring match, so `tag:dr` typed on purpose is a complete query,
-    // and Enter must run it rather than swap in whatever ranks first.
+    // The completion list owns the arrows, Tab and Escape while open. Enter
+    // only once the arrows have picked a row: filter values match substrings,
+    // so `tag:dr` can be a complete query and Enter must run it.
     const items = completionItems();
     if (showCompletions()) {
       if (e.key === "Escape") {
@@ -381,10 +370,9 @@ const SearchPanel: Component = () => {
     setSearchQuery("");
     if (searchTimeout) clearTimeout(searchTimeout);
     resetSearchVolatileState();
-    // Re-run the now-empty query so the × matches manually deleting the text.
-    // executeSearch's empty-query branch clears results in normal mode, but in
-    // annotations-only mode an empty query *browses every annotation* — so the
-    // × must reissue that browse instead of leaving the list empty.
+    // Re-run the empty query, as deleting the text would. In annotations-only
+    // mode an empty query lists every annotation, so the list mustn't stay
+    // empty.
     executeSearch();
     inputRef?.focus();
   }
@@ -406,8 +394,8 @@ const SearchPanel: Component = () => {
   }
 
   // ── Filter-value completions ───────────────────────────────────────────
-  // A half-typed `tag:` or `property:` filter offers what the notebox
-  // actually contains, listed below the box where the results go.
+  // A half-typed `tag:` or `property:` filter lists what the notebox contains,
+  // where the results go.
 
   const completion = createMemo((): SearchCompletionContext | null => {
     if (completionsDismissed()) return null;
@@ -443,9 +431,8 @@ const SearchPanel: Component = () => {
     const all = (): string[] => {
       switch (c.kind) {
         case "path":
-          // The trailing `/` keeps the filter to the folder rather than also
-          // matching a note whose name merely starts the same way, and showing
-          // it in the list is how the user learns the shape.
+          // The trailing `/` limits the filter to the folder, and shows the
+          // user the form.
           return folders().map((folder) => `${folder}/`);
         case "tag":
           return allTags().map(([name]) => name);
@@ -466,11 +453,9 @@ const SearchPanel: Component = () => {
     if (!c) return [];
     const source = completionSource();
     if (!c.typed) {
-      // Nothing typed yet: tags keep the backend's most-used-first order,
-      // which is the more useful way to meet a tag list. Property values
-      // arrive in byte order, so they get the app's natural name ordering
-      // (`phase2` before `phase10`); property keys are already in the
-      // Properties panel's own order and keep it.
+      // Nothing typed: tags stay most-used first; property values are sorted
+      // naturally (`phase2` before `phase10`); property keys keep the
+      // Properties panel's order.
       if (c.kind !== "property-value") return source;
       return [...source].sort(compareName);
     }
@@ -502,9 +487,8 @@ const SearchPanel: Component = () => {
   function acceptCompletion(value: string) {
     const c = completion();
     if (!c) return;
-    // A property key is a step, not an answer: append the `=` so the list can
-    // switch straight to that key's values. A tag or a value finishes the
-    // filter, so the list closes until the user types again.
+    // A property key adds `=` so the list moves on to its values; a tag or
+    // value finishes the filter and closes the list.
     const isKey = c.kind === "property-key";
     const { text, caret } = applyCompletion(searchQuery(), c, value, isKey ? "=" : "");
     setSearchQuery(text);
@@ -531,10 +515,8 @@ const SearchPanel: Component = () => {
   function openResult(result: SearchResult, e?: MouseEvent) {
     const title = result.path.split(/[/\\]/).pop() ?? result.file_name;
     const forceNewTab = !!(e && (e.ctrlKey || e.metaKey));
-    // First match-range pinpoints where to land in the file. If the row
-    // came from a filter-only result (no real text match), the range is
-    // empty/zero-width — leave `match` undefined so the editor doesn't
-    // dispatch a no-op selection.
+    // The first range is where to land. A filter-only result has an empty
+    // range; leave `match` undefined.
     const first = result.match_ranges[0];
     const hasReal = first && first[1] > first[0];
     const match = hasReal
@@ -544,9 +526,8 @@ const SearchPanel: Component = () => {
           charEnd: first[1],
         }
       : undefined;
-    // Highlight *every* match in this file once it opens — not just the clicked
-    // line — so a multi-term query (e.g. `journ* AND canad*`) shows all matching
-    // portions. Gather all ranges for the path from the current result set.
+    // Highlight every match in the file when it opens, not just the clicked
+    // line, so all parts of a multi-term query show.
     const fileRanges: SearchHighlights["ranges"] = [];
     for (const r of searchResults()) {
       if (!pathEquals(r.path, result.path)) continue;
@@ -576,10 +557,8 @@ const SearchPanel: Component = () => {
   }
 
 
-  /// Ask any open editor tabs to reload the affected files from disk.
-  /// Reuses the existing `inkycap:note-property-changed` event that
-  /// `TypstEditor` already listens to — its handler does exactly the
-  /// reload-from-disk step we need after a search-and-replace write.
+  /// Ask open editors to reload the changed files after a replace, through the
+  /// `inkycap:note-property-changed` event TypstEditor already handles.
   function notifyFilesReloaded(paths: string[]) {
     for (const path of paths) {
       document.dispatchEvent(
@@ -666,9 +645,8 @@ const SearchPanel: Component = () => {
     setExpandOverrides(overrides);
   }
 
-  /// True when the file's match list should be visible. A path appears in
-  /// `expandOverrides` when the user has explicitly inverted the global
-  /// `collapseResults` setting for that file.
+  /// Whether the file's matches are shown: `collapseResults`, inverted for
+  /// paths in `expandOverrides`.
   function isFileExpanded(path: string): boolean {
     const overridden = expandOverrides().has(path);
     return collapseResults() ? overridden : !overridden;
@@ -716,10 +694,8 @@ const SearchPanel: Component = () => {
     return groups;
   });
 
-  // The plain-text core of the query, used to detect an exact filename
-  // match. Returns null whenever the query uses any operator (phrase
-  // quotes aside, which are unwrapped here) — pinning an exact name only
-  // makes sense for a literal query, not a boolean/regex/proximity one.
+  // The query's plain text, to detect an exact file-name match. Null if it uses
+  // any operator (phrase quotes are removed).
   const literalQuery = createMemo((): string | null => {
     let q = searchQuery().trim();
     if (!q) return null;
@@ -785,11 +761,9 @@ const SearchPanel: Component = () => {
       }
     })();
     groups.sort(cmp);
-    // A note whose filename is exactly the query jumps to the top of the
-    // Relevance and Filename sorts — the result the user almost certainly
-    // wants. Date sorts stay strictly chronological. The sort is stable, so
-    // this second pass only lifts the exact match and leaves the order of
-    // every other row (and of multiple exact matches) untouched.
+    // A note whose name is exactly the query goes to the top of the Relevance
+    // and Filename sorts; date sorts stay chronological. The sort is stable, so
+    // only the exact match moves.
     if (mode === "relevance" || mode === "name-asc" || mode === "name-desc") {
       groups.sort(
         (a, b) => Number(isExactNameMatch(b)) - Number(isExactNameMatch(a)),
@@ -886,10 +860,8 @@ const SearchPanel: Component = () => {
           <button
             class="ui-icon-btn"
             onClick={() => {
-              // Per-file overrides invert their meaning when the global
-              // flag flips. Clearing them ensures Expand/Collapse acts
-              // uniformly: every file lands in the target state, and
-              // files already in that state stay put.
+              // Overrides invert relative to the global flag, so clear them and
+              // every file ends up in the target state.
               setExpandOverrides(new Set<string>());
               setCollapseResults(!collapseResults());
             }}

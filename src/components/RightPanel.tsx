@@ -178,10 +178,8 @@ const RightPanel: Component = () => {
   // widens the panel to reveal them — see createOverflowWatcher).
   const tabsOverflow = createOverflowWatcher();
 
-  // The Scroll Context tab only exists while Journal Scroll is on. When the
-  // user turns scroll off (or switches to a non-scroll tab), revert the right
-  // panel to whatever tab they had focused before — otherwise the panel keeps
-  // showing the now-orphaned scroll-context pane until manually changed.
+  // The Scroll Context tab exists only while Journal Scroll is on; when it
+  // turns off, go back to the tab that was focused before.
   let prevScrollOn = false;
   let tabBeforeScroll: RightPanelTab = "outline";
   createEffect(() => {
@@ -197,34 +195,28 @@ const RightPanel: Component = () => {
     prevScrollOn = scrollOn;
   });
 
-  // Keep the active note's change list populated even when the Changes pane is
-  // collapsed, so the toolbar tab's attention badge can flag pending decisions.
-  // The pane runs the same scan when open; this covers tab switches / file opens
-  // while it's closed. Idempotent, and only re-runs when the active editor
-  // changes (not per keystroke), so it's cheap.
+  // Keep the active note's change list current even with the Changes pane
+  // closed, for the tab's badge. Re-runs only when the active editor changes.
   createEffect(() => {
     rescanAnnotations(activeEditorView()?.view);
   });
 
-  // Keep the outline populated. The heading tracker only updates live while the
-  // outline pane is open (gated + debounced for perf), so re-scan here whenever
-  // the active editor changes or the outline pane (re)opens.
+  // The heading tracker only updates while the outline is open, so re-scan when
+  // the editor changes or the outline opens.
   createEffect(() => {
     if (rightPanelTab() === "outline" && !rightCollapsed()) {
       rescanHeadings(activeEditorView()?.view);
     }
   });
 
-  // Tracked changes (suggestions) in the active note still awaiting an
-  // accept/reject decision — plain comments don't count. Drives the badge on
-  // the Changes & History tab.
+  // Suggestions in the active note awaiting a decision (comments don't count),
+  // for the Changes & History badge.
   const pendingDecisions = createMemo(
     () => noteAnnotations().filter((a) => a.kind !== "annotation").length,
   );
 
-  // The open note carries incoming changes the last sync folded in (merge-first
-  // review) — also lights the Changes & History tab badge so the user notices
-  // there's something to review/revert without opening the pane.
+  // The open note has changes from the last sync, which also lights the Changes
+  // & History badge.
   const noteHasIncoming = createMemo(() => {
     const tab = getActiveTab();
     const path = tab?.type === "file" ? tab.path : undefined;
@@ -233,9 +225,8 @@ const RightPanel: Component = () => {
     return changesSinceSync().some((e) => normalizePath(e.path) === target);
   });
 
-  // Mycelial-view sub-tab: the graph-context list, the Growth pane
-  // (under-developed pages + open questions), or the Concept Filtering pane.
-  // Local (session-scoped) — defaults to context on each panel mount.
+  // Mycelial sub-tab: context list, Growth or Concept Filtering. Resets to
+  // context on each mount.
   const [mycelialPanelTab, setMycelialPanelTab] =
     createSignal<"context" | "growth" | "filtering">("context");
 
@@ -245,18 +236,13 @@ const RightPanel: Component = () => {
   const [allPropKeys, setAllPropKeys] = createSignal<string[]>([]);
   const [addPropHighlight, setAddPropHighlight] = createSignal(0);
 
-  // Per-row context menu state. Anchored to a DOM element so the menu
-  // opens below the clicked type button without needing global mouse
-  // coordinates. `openLeft` flips the Property type submenu to the
-  // left side of the parent menu when there isn't room for it on the
-  // right — the ⋮ button in the right panel sits close to the window
-  // edge, so a normally-rightward submenu overflows off-screen.
+  // Row context menu, anchored to the clicked button. `openLeft` opens the type
+  // submenu to the left when there's no room on the right (the ⋮ button is near
+  // the window edge).
   const [rowMenu, setRowMenu] = createSignal<{
     key: string;
-    // Distance from the viewport's right edge, so the menu's right edge
-    // stays flush under the kebab button it opened from (the button lives
-    // at the property row's right edge). Anchoring by `right` keeps the
-    // menu connected to its trigger regardless of the menu's own width.
+    // Distance from the viewport's right edge, so the menu's right edge stays
+    // under its button whatever the menu's width.
     right: number;
     y: number;
     typeSubmenuOpen: boolean;
@@ -272,29 +258,24 @@ const RightPanel: Component = () => {
     return tab?.type === "file" ? tab : undefined;
   };
 
-  // The focused tab's published Mycelial state — keyed by tab id so split-pane
-  // Mycelial Views resolve to their own context list, not whichever rendered
-  // last. Empty when the focused tab isn't a mycelial view.
+  // The focused tab's Mycelial state, by tab id, so split Mycelial views each
+  // show their own context list.
   const mycelialState = () => mycelialStateFor(getActiveTab()?.id);
 
   // Contributed tabs whose `when` gate currently passes — file-scoped, shown in
   // the same tab group as Properties/Links/etc.
   const visibleContributions = () =>
     rightPanelContributions().filter((c) => !c.when || c.when());
-  // Contributed right-panel tab (plugin / manifest query-view) whose id is the
-  // current active panel, if any — but only when its `when` gate passes, so a
-  // note-scoped pane (e.g. an external tool's output) stops rendering once the
-  // user switches away from its note. Built-in ids resolve to undefined, so the
-  // built-in panes render exactly as before when nothing is contributed.
+  // The contributed tab (plugin or query view) that is the active panel, if its
+  // `when` gate passes, so a note-scoped pane (e.g. external tool output) stops
+  // showing when the user leaves its note.
   const activeContributed = () => {
     const c = rightPanelContribution(activePanel());
     return c && (!c.when || c.when()) ? c : undefined;
   };
 
-  // A note-scoped contributed pane (external-tool output) is hidden when its
-  // `when` gate closes — the user navigated away from the note it belongs to,
-  // or it was closed. If it was the active tab, fall back to a built-in one so
-  // the pane area isn't left blank. Mirrors the scroll-context revert above.
+  // When an active contributed pane's gate closes, fall back to a built-in tab,
+  // as for Scroll Context above.
   createEffect(() => {
     const active = activePanel();
     const contributed = rightPanelContribution(active);
@@ -324,18 +305,18 @@ const RightPanel: Component = () => {
     showAttachmentFileMenu(rect.left, rect.bottom + 4, tab.path, tab.id);
   }
 
-  /** True when the open file is a scaffold template. Scaffold property values
-   *  are routinely `{{var}}` placeholders, so the property editors relax their
-   *  typed pickers (date/checkbox) to raw text entry here — see PropertyEditor. */
+  /**
+   * True when the open file is a scaffold. Its values are often `{{var}}`
+   * placeholders, so the property editors use plain text instead of typed pickers
+   * (see PropertyEditor).
+   */
   const activeFileIsScaffold = () => {
     const t = activeFileTab();
     return !!t && normalizePath(t.path).includes("/.inkycap/scaffolds/");
   };
 
-  /// The collection's file stem (basename minus extension) — the membership
-  /// name the backend uses (`collection_membership_name`) and what
-  /// CollectionTable derives, so the package filename / default import folder
-  /// match across surfaces.
+  /// The collection's file stem: the membership name the backend uses
+  /// (`collection_membership_name`), as in CollectionTable.
   const collectionStem = (path: string): string => {
     const base = path.split(/[\\/]/).pop() ?? path;
     const dot = base.lastIndexOf(".");
@@ -360,9 +341,8 @@ const RightPanel: Component = () => {
     },
   );
 
-  // Source-order list of property keys so the right panel renders rows in
-  // whatever order the user has set inside the file's #note(...) — without
-  // this we'd snap rows back to KNOWN_FIELDS_ORDERED on every drag/drop.
+  // Property keys in source order, so rows follow the order in the file's
+  // `#note(...)`.
   const [propertyOrder, { refetch: refetchPropertyOrder }] = createResource(
     () => activeFileTab()?.path,
     async (path) => {
@@ -375,9 +355,8 @@ const RightPanel: Component = () => {
     },
   );
 
-  // Drag/drop state. `draggingKey` is the row being dragged; `dragOverKey`
-  // identifies the hovered drop target; `dropPosition` says whether the
-  // drop indicator sits above or below the target row.
+  // Drag and drop: `draggingKey` is the dragged row, `dragOverKey` the target,
+  // `dropPosition` above or below it.
   const [draggingKey, setDraggingKey] = createSignal<string | null>(null);
   const [dragOverKey, setDragOverKey] = createSignal<string | null>(null);
   const [dropPosition, setDropPosition] = createSignal<"before" | "after">("before");
@@ -409,14 +388,10 @@ const RightPanel: Component = () => {
     });
   }
 
-  // Just the keys, in display order. The property list `<For>` iterates these
-  // primitive strings rather than `[key, value]` tuples so its reconciliation
-  // keys on the (stable) key: editing a value yields a fresh metadata object —
-  // and thus fresh tuples — but the same key strings, so `<For>` reuses each
-  // row's DOM instead of tearing it down and rebuilding it. That keeps an open
-  // value picker (and its scroll position) alive across a save, and avoids a
-  // needless `getPropertyValues` refetch on every selection. The row reads its
-  // value reactively from `metadata()` by key.
+  // The keys in display order. `<For>` iterates the key strings rather than
+  // `[key, value]` pairs, so it keys on the stable key and reuses each row when
+  // a value changes. An open value picker (and its scroll) survives a save.
+  // Rows read their value from `metadata()`.
   function sortedPropertyKeys(): string[] {
     return sortedPropertyEntries().map(([k]) => k);
   }
@@ -477,28 +452,12 @@ const RightPanel: Component = () => {
     commitReorder(next);
   }
 
-  // Refetch metadata and link data when the active note (or any other
-  // note in the notebox) gets reindexed. The two events distinguish where
-  // the change originated:
-  //   • `inkycap:note-saved` — the editor in this window finished auto-
-  //     saving the active note. writeFileContent waits for the backend
-  //     reindex before resolving, so by the time this fires the indices
-  //     are up to date.
-  //   • `notebox:index-updated` (Tauri event) — the file watcher detected
-  //     an external change (drag-drop, external editor, sync) and
-  //     reindexed in the background. The payload's `path` is the file
-  //     that changed; we refresh links unconditionally because:
-  //       – inbound: another note's edit may have added/removed a link
-  //         pointing at this one
-  //       – outbound: a newly-appeared note may now satisfy one of our
-  //         previously unresolved wikilink targets
-  //       – potential: a new note may have appeared whose body mentions
-  //         this note's name
-  //
-  // The earlier bug — Links pane wouldn't refresh after dropping .typ
-  // files into the notebox, or after typing a new wikilink — was a missing
-  // `refetchBacklinks/refetchForwardLinks` here plus no listener for
-  // `notebox:index-updated` at all.
+  // Refetch metadata and links when notes are reindexed:
+  //   - `inkycap:note-saved`: this window saved the active note (the indexes
+  //     are already updated).
+  //   - `notebox:index-updated`: the watcher reindexed an external change.
+  //     Links are always refreshed, since another note may now link here, a new
+  //     note may resolve one of our links, or mention this note.
   const refreshAllLinks = () => {
     refetchBacklinks();
     refetchForwardLinks();
@@ -568,10 +527,8 @@ const RightPanel: Component = () => {
     },
   );
 
-  // When the background index build finishes, refetch the note's metadata
-  // and link data so the Properties and Links tabs populate without the user
-  // having to switch tabs. Until then the metadata comes from the cache, or
-  // is missing for a note the cache doesn't hold.
+  // When the index build finishes, refetch so Properties and Links fill in.
+  // Until then metadata comes from the cache, if it has the note.
   createEffect(() => {
     if (indexReady() && activeFileTab()) {
       refetchMetadata();
@@ -582,11 +539,8 @@ const RightPanel: Component = () => {
   });
 
   // ── Links pane: sort + filter helpers ────────────────────────────────
-  /// Sort comparator parameterized over the Links pane's sort mode.
-  /// Mirrors the file tree's behaviour so name / modified / created sort
-  /// directions feel identical between the two surfaces. Unresolved
-  /// outbound entries (path = "", mtime/ctime = 0) sort to the end of
-  /// time-based orderings instead of pretending to be ancient.
+  /// Comparator for the Links pane's sort mode, like the file tree's.
+  /// Unresolved links (no path, zero times) sort last in time-based orders.
   function compareByMode<
     T extends {
       name: string;
@@ -616,10 +570,7 @@ const RightPanel: Component = () => {
     }
   }
 
-  /// Compare two epoch seconds with 0 always sorting last, regardless of
-  /// direction. 0 means "stat unavailable" (unresolved wikilink or
-  /// freshly-deleted file) and should not pile up at the top of a
-  /// descending sort or the bottom of an ascending one.
+  /// Compare epoch seconds with 0 (unknown) always last, in either direction.
   function cmpEpoch(a: number, b: number): number {
     if (a === 0 && b === 0) return 0;
     if (a === 0) return 1;
@@ -642,24 +593,15 @@ const RightPanel: Component = () => {
     if (filterDebounceTimer) clearTimeout(filterDebounceTimer);
   });
 
-  /// Run the same notebox search the left-panel uses (boolean operators,
-  /// phrase quotes, tag:/file:/path:/section:/property: filters, /regex/
-  /// literals) and surface the result rows so the Links pane can filter
-  /// its sections to "links whose target file matches this query". The
-  /// search itself isn't scoped — the search engine has one inverted
-  /// index — but the *filter* is, because we only intersect hits with
-  /// the link lists we already have. Empty query short-circuits with no
-  /// IPC. A failure (parse error, index not ready) returns `[]` so the
-  /// pane falls back to showing no matches rather than blowing up.
+  /// Run the notebox search (same syntax as the search panel) and keep the
+  /// result rows, so the Links pane can show only links whose target matches.
+  /// Empty query: no call. On failure (parse error, index not ready), `[]`.
   const [filterMatches] = createResource(
     () => ({ q: debouncedFilterQuery().trim(), ready: indexReady(), show: linksShowFilter() }),
     async ({ q, ready, show }): Promise<SearchResult[] | null> => {
-      // The filter only applies while its input is actually shown. `filterQuery`
-      // persists across sessions (so re-opening the filter keeps your text), but
-      // `showFilter` can be false with a non-empty stored query — without this
-      // guard that stale query would filter the Inbound/Outbound lists down to
-      // nothing with no visible filter UI and no way to clear it, making links
-      // silently disappear in every notebox.
+      // Only filter while the filter box is shown. The query is saved, so a
+      // hidden filter with old text would otherwise empty the lists with no way
+      // to clear it.
       if (!show || !q || !ready) return null;
       try {
         const resp = await ipc.noteboxSearch(q, 1000, false);
@@ -670,18 +612,14 @@ const RightPanel: Component = () => {
     },
   );
 
-  /// Map link path → matching SearchResult, scoped to current sections.
-  /// Built once per query so the three sort memos don't each iterate the
-  /// full match list. Returns `null` when no filter is active, which
-  /// short-circuits to "show everything" in filterByQuery.
+  /// Link path → matching result, built once per query for the sort memos.
+  /// `null` when no filter is active.
   const filterMatchMap = createMemo<Map<string, SearchResult> | null>(() => {
     const matches = filterMatches();
     if (matches === null || matches === undefined) return null;
     const map = new Map<string, SearchResult>();
     for (const m of matches) {
-      // Keep the first hit per file — line_number / line_text already
-      // identifies the most relevant occurrence (search engine ranks
-      // matches before returning).
+      // Keep the first (best-ranked) hit per file.
       if (!map.has(m.path)) map.set(m.path, m);
     }
     return map;
@@ -693,19 +631,16 @@ const RightPanel: Component = () => {
     return items.filter((it) => it.path && map.has(it.path));
   }
 
-  /// Match line + surrounding context for a given link path under the
-  /// current filter. Returns undefined when no filter is active so the
-  /// caller falls back to the section's native preview line
-  /// (backlink context, potential-link match).
+  /// The matching line and context for a link under the current filter, or
+  /// undefined without one.
   function searchMatchFor(path: string): SearchResult | undefined {
     const map = filterMatchMap();
     if (!map) return undefined;
     return map.get(path);
   }
 
-  /// True when a filter query is active. Used to swap the section's
-  /// native preview line for the search-match line on rows that matched
-  /// the query, so the user sees *where* the file matched their search.
+  /// True when a filter is active; matching rows then show the search hit
+  /// instead of their usual preview.
   const filterActive = createMemo(() => filterMatchMap() !== null);
 
   const sortedBacklinks = createMemo(() => {
@@ -718,11 +653,8 @@ const RightPanel: Component = () => {
     return filterByQuery([...list]).sort((a, b) => compareByMode(a, b, linksSortMode()));
   });
 
-  // Potential Links are deliberately left outside the search filter's
-  // scope — the section's job is to surface notes the user *hasn't* yet
-  // linked to, and search-filtering it down to the active query would
-  // hide exactly the candidates the user might want to discover. The
-  // sort still applies (it's a display setting, not a scoping filter).
+  // Potential Links aren't filtered: they exist to show notes not linked yet.
+  // Sorting still applies.
   const sortedPotentialLinks = createMemo(() => {
     const list = potentialLinks() ?? [];
     return [...list].sort((a, b) => compareByMode(a, b, linksSortMode()));
@@ -732,21 +664,17 @@ const RightPanel: Component = () => {
     setLinksSectionExpanded(section, !linksSectionExpanded()[section]);
   }
 
-  /// Per-row preview visibility — the global `collapsePreviews` flag is
-  /// the default and `linksExpandOverrides` carries the user's
-  /// "I want to peek at this one" exceptions. Mirrors SearchPanel's
-  /// `isFileExpanded` so the two panes behave identically.
+  /// Whether a row's preview is open: `collapsePreviews` is the default and
+  /// `linksExpandOverrides` the exceptions, as in SearchPanel's
+  /// `isFileExpanded`.
   function isPreviewExpanded(section: LinksSection, path: string): boolean {
     const overridden = linksExpandOverrides().has(`${section}::${path}`);
     return linksCollapsePreviews() ? overridden : !overridden;
   }
 
-  /// Preview lines for sections covered by the search filter
-  /// (Inbound, Outbound). When a search filter is active and matched
-  /// this row, the search hit wins so the user sees *where* their query
-  /// matched. Otherwise we fall back to the section's native preview
-  /// (the backlink context line for Inbound; nothing for Outbound since
-  /// it has no stored preview).
+  /// Preview for filtered sections (Inbound, Outbound): the search hit when one
+  /// matched, otherwise the section's own preview (backlink context for
+  /// Inbound, none for Outbound).
   function rowPreview(
     link: {
       path: string;
@@ -770,11 +698,8 @@ const RightPanel: Component = () => {
     return nativePreview(link);
   }
 
-  /// Preview lines for sections that are *not* in scope of the search
-  /// filter (Potential Links). Always shows the section's own preview,
-  /// regardless of filter state — search-substituting the line here
-  /// would be misleading since the row itself was chosen by potential-
-  /// link logic, not by the user's query.
+  /// Preview for Potential Links, which aren't filtered: always the section's
+  /// own line.
   function nativePreview(link: {
     line?: string;
     marks?: [number, number][];
@@ -809,12 +734,9 @@ const RightPanel: Component = () => {
     );
   }
 
-  // Per-row context menu state for the Links pane. Mirrors the file
-  // tree's "Open in new tab / Open in new window" affordance. We don't
-  // currently surface notebox-mutation actions on links (no rename, no
-  // delete) because deleting from a navigation list is too easy to do
-  // by accident — those belong on the file tree where the source of
-  // truth lives.
+  // Row context menu for links: open in a new tab or window, as in the file
+  // tree. No rename or delete, which would be too easy to trigger by accident
+  // in a navigation list.
   const [linkRowMenu, setLinkRowMenu] = createSignal<
     { x: number; y: number; path: string; name: string } | null
   >(null);
@@ -875,12 +797,9 @@ const RightPanel: Component = () => {
     }
   }
 
-  // Serialize recurrence writes: each edit is a read-modify-write of the same
-  // `#note(...)` call, so overlapping in-flight writes would race and drop one
-  // another. Chaining makes every write read the file only after the previous
-  // one has fully landed and reindexed — and the final write's
-  // `bumpPropertyVersion` then refreshes the Agenda / Collection agenda against
-  // the settled state.
+  // Run recurrence writes one after another: each rewrites the same
+  // `#note(...)`, so overlapping writes would lose one. The last write's
+  // `bumpPropertyVersion` refreshes the Agenda.
   let recurrenceWriteChain: Promise<unknown> = Promise.resolve();
   function handleRecurrenceChange(recurrence: Recurrence | null) {
     const tab = activeFileTab();
@@ -1005,9 +924,8 @@ const RightPanel: Component = () => {
     setAddingProp(false);
   }
 
-  // Suggestions for the add-property input: known keys (canonical order)
-  // plus any custom keys, filtered by the current draft and excluding
-  // properties already present on the active note.
+  // Suggestions for the add-property input: known and custom keys matching the
+  // draft, minus those already on the note.
   function addPropSuggestions(): string[] {
     const current = metadata()?.properties ?? {};
     const draft = newPropKey().trim().toLowerCase();
@@ -1683,9 +1601,8 @@ const RightPanel: Component = () => {
               built-in panes below are unaffected. */}
           <Show when={activeContributed()}>
             {(c) => (
-              /* A contributed pane brings its own layout: it either leads with
-                 a header row of its own (ToolOutputPane) or adds
-                 `pane-top-inset` itself (QueryView). */
+              /* A contributed pane provides its own header row
+                 (ToolOutputPane) or `pane-top-inset` (QueryView). */
               <div class="right-panel__pane-body">
                 <Dynamic component={c().component} />
               </div>
@@ -1706,16 +1623,14 @@ const RightPanel: Component = () => {
                     <div class="properties-list">
                       <For each={sortedPropertyKeys()}>
                         {(key) => {
-                          // Read reactively by key so a value edit updates the row
-                          // in place rather than remounting it (see
+                          // Read by key so editing updates the row in place (see
                           // sortedPropertyKeys).
                           const value = () => meta().properties[key];
                           const ty = () => {
                             const declared = getPropertyType(key);
                             if (declared !== "auto") return declared;
-                            // Untyped key: resolve to a concrete type (system
-                            // default, else inferred from the value) so the row
-                            // never shows the ambiguous "Automatic".
+                            // Untyped key: use the system default or infer from
+                            // the value, never "Automatic".
                             return KNOWN_FIELD_TYPES[key] ?? inferPropertyType(value());
                           };
                           const isDragging = () => draggingKey() === key;
@@ -2136,11 +2051,8 @@ const RightPanel: Component = () => {
                   <Show when={linksSectionExpanded().outbound}>
                     <For each={sortedForwardLinks()}>
                       {(link) => {
-                        // Outbound rows have no native preview line, so this
-                        // only shows anything when a search filter matched.
-                        // The cm-typst-search-match-line styling makes the
-                        // line read as a search hit, not as a stored
-                        // backlink quote.
+                        // Outbound rows have no preview of their own, so this
+                        // only shows a search match.
                         const expanded = () => isPreviewExpanded("outbound", link.path);
                         const preview = () => rowPreview(link);
                         return (
@@ -2442,9 +2354,8 @@ const RightPanel: Component = () => {
               onClick={() => {
                 const key = menu().key;
                 closeRowMenu();
-                // A value that renders as a wikilink navigates on click, so the
-                // value cell can't be clicked to edit it. Ask the matching
-                // editor (keyed by property name) to enter edit mode instead.
+                // A wikilink value navigates on click, so ask the property's
+                // editor to start editing instead.
                 document.dispatchEvent(
                   new CustomEvent("inkycap:edit-property", { detail: { propKey: key } }),
                 );

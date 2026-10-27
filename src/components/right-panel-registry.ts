@@ -1,11 +1,7 @@
-// Right-panel registry — the additive seam for contributing extra right-panel
-// tabs at runtime (plugins, the declarative manifest loader's query-views).
-//
-// This is *additive*: the built-in panes (Properties, Outline, Links,
-// References, Annotations, …) stay exactly where they are in RightPanel.tsx.
-// Contributed tabs render alongside them. When nothing is registered — the
-// default — RightPanel renders byte-for-byte as before, because the
-// contribution list is empty.
+// Right panel registry: lets plugins and the declarative manifest loader's
+// query views add right panel tabs at runtime. The built-in panes (Properties,
+// Outline, Links, References, Annotations, …) stay in RightPanel.tsx, and added
+// tabs appear beside them.
 
 import { createSignal, type Component } from "solid-js";
 

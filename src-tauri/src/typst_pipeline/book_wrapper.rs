@@ -1,20 +1,12 @@
-//! Build the synthetic Typst document used by the "Export as book" action.
+//! Builds the Typst source for "Export as book": from an ordered list of a
+//! collection's notes, one document with a title page, optional abstract,
+//! outline, chapters and bibliography. It is compiled directly, never written
+//! to disk.
 //!
-//! Given an ordered list of notes from a collection, this module produces a
-//! single Typst source string that compiles to the merged book PDF — title
-//! page, optional abstract, outline, sequential chapters, and a single
-//! bibliography. The wrapper is never written to disk: it is passed straight
-//! to the Typst compiler the same way every other compile path works.
-//!
-//! Notes are inlined (not `#include`d) because the Typst world enforces a
-//! notebox-root sandbox that would reject temporary paths outside the notebox.
-//! Each note is preprocessed to strip its `#import` preamble, leading
-//! `#note(...)` call, and any `#bibliography(...)` call so the merged output
-//! has exactly one preamble and one bibliography.
-//!
-//! Interactive cross-chapter wikilinks rely on a `state` set in the
-//! `inkycap-notebox` package; see [`build_book_source`] for the
-//! `set-merged-context(...)` invocation.
+//! Notes are inlined rather than `#include`d, because the compiler only reads
+//! files inside the notebox. Each note's import, `#note(...)` call and
+//! `#bibliography(...)` calls are removed first. Links between chapters use the
+//! package's `set-merged-context(...)` state (see [`build_book_source`]).
 
 use std::path::PathBuf;
 
@@ -36,22 +28,19 @@ pub struct BookNote {
     pub stem: String,
     pub abs_path: PathBuf,
     pub content: String,
-    /// Title resolved from the note's `#note(title: ...)` argument, if any.
-    /// Used to inject a chapter heading when the note doesn't begin with one
-    /// and the inject mode requires it.
+    /// Title from the note's `#note(title: ...)`, used to add a chapter heading
+    /// when the note doesn't start with one.
     pub title: Option<String>,
 }
 
-/// Effective options for one book-export invocation. Built from the
-/// collection's `BookExportConfig` plus any per-export dialog overrides; all
-/// fields are required at this layer — defaults must already be resolved.
+/// Resolved options for one book export: the collection's `BookExportConfig`
+/// plus the dialog's overrides, with defaults already applied.
 #[derive(Debug, Clone)]
 pub struct BookExportOptions {
     pub title: Option<String>,
     pub subtitle: Option<String>,
-    /// Legacy single-author string. Retained as a fallback for the document
-    /// metadata when there are no `contributors`; the byline prefers the
-    /// roster.
+    /// Single author string, used for the document metadata when there are no
+    /// `contributors`.
     pub author: Option<String>,
     /// Multi-author + CRediT roster. Drives the title-page byline and, when
     /// non-empty, the document `author` metadata.
@@ -115,29 +104,20 @@ pub struct LabelCollision {
 
 // ── Note preprocessing ──────────────────────────────────────────────────────
 
-/// Strip a top-level `#bibliography(...)` call from a note body. The merged
-/// book renders one bibliography at the wrapper level, so per-note
-/// declarations would either duplicate or shadow it.
+/// Remove top-level `#bibliography(...)` calls from a note body; the book has
+/// its own. Finds `#bibliography(` at a line start and walks balanced
+/// parentheses, skipping strings.
 ///
-/// Conservative scan: matches `#bibliography(` at the start of a line
-/// (optionally indented), then walks balanced parentheses to the closing
-/// paren. Strings and escapes are tracked so a `)` inside a quoted argument
-/// does not end the call early.
-///
-/// Per CLAUDE.md's Typst-first principle: same reasoning as
-/// `bibliography::already_declares_bibliography` — the AST-based version
-/// would be cleaner on well-formed input but break on the half-typed or
-/// partially-broken notes we have to handle gracefully when assembling a
-/// merged book. The string-level walk gives correct stripping even when the
-/// surrounding note doesn't fully parse.
+/// Per CLAUDE.md's Typst-first principle: as in
+/// `bibliography::already_declares_bibliography`, an AST version would fail on
+/// the half-typed or broken notes a book has to tolerate, while this scan works
+/// even when the note doesn't parse.
 pub fn strip_bibliography_call(content: &str) -> String {
     let bytes = content.as_bytes();
     let len = bytes.len();
     let mut out = String::with_capacity(len);
-    // Cursor into `content`. Always sits on a char boundary because every
-    // place that advances it does so either by a newline (1 byte ASCII), by
-    // a previously-emitted slice end, or by the byte offset returned from
-    // `find_balanced_paren_end` (which only points at ASCII parentheses).
+    // `i` always sits on a char boundary: it only advances past newlines,
+    // earlier slice ends, or ASCII parentheses.
     let mut i = 0;
 
     while i < len {
@@ -149,10 +129,8 @@ pub fn strip_bibliography_call(content: &str) -> String {
             while j < len && (bytes[j] == b' ' || bytes[j] == b'\t') {
                 j += 1;
             }
-            // Match both Typst's own `#bibliography(...)` and our package
-            // wrapper `#apply-bibliography(...)` — the merged-book pipeline
-            // augments per-note sources before they reach this stripper, so
-            // the wrapper form must be removed too.
+            // Also remove the package's `#apply-bibliography(...)`, which may
+            // already have been added to the note.
             let call_prefix = if content[j..].starts_with("#bibliography(") {
                 Some("#bibliography")
             } else if content[j..].starts_with("#apply-bibliography(") {
@@ -163,9 +141,8 @@ pub fn strip_bibliography_call(content: &str) -> String {
             if let Some(prefix) = call_prefix {
                 let call_start = j + prefix.len(); // points at '('
                 if let Some(end) = find_balanced_paren_end(content, call_start) {
-                    // Drop the call (and the line's leading whitespace), plus
-                    // a single trailing newline so we don't leave a blank
-                    // line behind.
+                    // Remove the call, its indentation and one trailing
+                    // newline.
                     let mut after = end + 1;
                     if after < len && bytes[after] == b'\n' {
                         after += 1;
@@ -176,12 +153,8 @@ pub fn strip_bibliography_call(content: &str) -> String {
             }
         }
 
-        // Copy the rest of this line as a UTF-8 slice. Splitting at '\n' is
-        // safe because '\n' is single-byte and aligned with char
-        // boundaries — emitting individual bytes would shred multi-byte
-        // codepoints, which is what was previously corrupting Unicode
-        // content (Greek/CJK/em-dash/smart quotes) and producing spurious
-        // unbalanced delimiters when the corrupted output was parsed.
+        // Copy the rest of the line as a slice; '\n' is one byte, so this stays
+        // on char boundaries.
         let nl = content[i..].find('\n').map(|p| i + p + 1).unwrap_or(len);
         out.push_str(&content[i..nl]);
         i = nl;
@@ -189,9 +162,8 @@ pub fn strip_bibliography_call(content: &str) -> String {
     out
 }
 
-/// Returns the byte offset of the `)` that closes the `(` at `paren_open`.
-/// Tracks string literals (`"..."` with `\` escapes). Returns `None` if the
-/// parens never balance.
+/// Byte offset of the `)` closing the `(` at `paren_open`, skipping `"..."`
+/// strings with `\` escapes. `None` if unbalanced.
 fn find_balanced_paren_end(s: &str, paren_open: usize) -> Option<usize> {
     let bytes = s.as_bytes();
     debug_assert_eq!(bytes.get(paren_open), Some(&b'('));
@@ -231,9 +203,8 @@ fn find_balanced_paren_end(s: &str, paren_open: usize) -> Option<usize> {
     None
 }
 
-/// Prepare a note's content for inlining into the merged book: strip the
-/// notebox-package import, the leading `#note(...)` metadata call, and any
-/// `#bibliography(...)` declarations in the body.
+/// Prepare a note for inlining: remove the package import, the leading
+/// `#note(...)` call and any `#bibliography(...)` calls.
 pub fn prepare_note_for_include(content: &str) -> String {
     let after_preamble = strip_note_preamble(content);
     strip_bibliography_call(after_preamble)
@@ -241,12 +212,9 @@ pub fn prepare_note_for_include(content: &str) -> String {
 
 // ── Label collision detection ───────────────────────────────────────────────
 
-/// Find Typst label declarations of the form `<name>` in a note, using
-/// Typst's own parser so that only real labels count: a `<name>` inside a
-/// string, a comment, inline code, or a fenced code block is text, not a
-/// label, and is left alone. Typst remains the source of truth at compile
-/// time; this scan only catches the collisions that would otherwise fail
-/// inside the merged document.
+/// Label declarations (`<name>`) in a note, found with Typst's parser so labels
+/// in strings, comments and code don't count. Only used to catch collisions
+/// that would break the merged document.
 pub fn extract_label_decls(content: &str, note_stem: &str) -> Vec<LabelDecl> {
     use typst::syntax::{ast, parse, SyntaxKind, SyntaxNode};
 
@@ -270,17 +238,14 @@ pub fn extract_label_decls(content: &str, note_stem: &str) -> Vec<LabelDecl> {
     out
 }
 
-/// Detect labels declared in two or more notes. The injected per-chapter
-/// labels (`chap-<stem>`) are not in scope here — those live in the
-/// generated wrapper, not in the source notes.
+/// Labels declared in two or more notes. The generated `chap-<stem>` labels
+/// aren't in the notes and aren't checked.
 pub fn scan_label_collisions(notes: &[BookNote]) -> Vec<LabelCollision> {
     use std::collections::BTreeMap;
     let mut by_label: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for note in notes {
         for decl in extract_label_decls(&note.content, &note.stem) {
-            // <inkycap-*> labels are emitted by the notebox package itself
-            // (one per note/tag/link) — collisions are expected and
-            // harmless. Skip them.
+            // `<inkycap-*>` labels come from the package and repeat by design.
             if decl.name.starts_with("inkycap-") {
                 continue;
             }
@@ -290,9 +255,8 @@ pub fn scan_label_collisions(notes: &[BookNote]) -> Vec<LabelCollision> {
     by_label
         .into_iter()
         .filter(|(_, notes)| {
-            // Only collisions between *different* notes count; a single note
-            // declaring the same label twice is its own problem and Typst
-            // will report it at compile time.
+            // Only collisions between different notes; Typst reports a repeat
+            // within one note itself.
             let mut uniq = notes.clone();
             uniq.sort();
             uniq.dedup();
@@ -309,39 +273,24 @@ pub fn scan_label_collisions(notes: &[BookNote]) -> Vec<LabelCollision> {
 
 // ── Heading normalization (PDF/UA) ─────────────────────────────────────────
 
-/// Normalize heading levels in a note body so they nest under a level-1
-/// chapter heading without gaps. PDF/UA-1 requires strictly consecutive
-/// heading levels — you cannot jump from h1 to h3.
+/// Shift a note's headings so they nest under the level-1 chapter heading
+/// without gaps, which PDF/UA-1 requires. The lowest level present becomes
+/// `target_min` (usually 2) and gaps are closed: `=`, `===` at min 2 becomes
+/// `==`, `===`.
 ///
-/// Strategy: find the minimum `=` level in the note, shift all headings so
-/// that minimum becomes `target_min` (typically 2, the level directly under
-/// the chapter heading), and compress any remaining gaps so no level is
-/// skipped. A note with `=`, `===` headings targeted at min=2 becomes
-/// `==`, `===` (shifted, gap-free).
-///
-/// Why this is a Rust source rewrite and not a Typst `set heading(offset:)`
-/// rule: per CLAUDE.md's Typst-first principle, we considered the native
-/// path. `set heading(offset: N)` handles the *shift* half cleanly — it
-/// lifts every heading in scope by N levels — but it cannot compress gaps,
-/// because compressing requires looking at which levels actually appear in
-/// the body and remapping them onto consecutive integers. Typst show rules
-/// don't have that cross-element view at evaluation time. Splitting the
-/// algorithm (shift in Typst, compress in Rust) saves ~10 lines for a
-/// non-obvious split-responsibility design on a load-bearing PDF/UA-1 path.
-/// The veraPDF integration test in `tests/verapdf_pdf_ua.rs` is the
-/// regression net if this assumption is ever revisited.
+/// Per CLAUDE.md's Typst-first principle, `set heading(offset: N)` was
+/// considered: it can shift but not close gaps, which needs to know which
+/// levels appear. The veraPDF test in `tests/verapdf_pdf_ua.rs` covers this.
 pub fn normalize_heading_levels(body: &str, target_min: u8) -> String {
-    // Which headings these are is Typst's call, not a line scan's: `= Example`
-    // inside a ``` fence is a code sample, and rewriting its markers would
-    // corrupt the author's content on its way into the book.
+    // Typst decides which lines are headings, so `= Example` in a code block
+    // isn't changed.
     let headings = source_structure::headings(body);
     if headings.is_empty() {
         return body.to_string();
     }
 
-    // Build a mapping from original level → normalized level. The lowest
-    // heading becomes `target_min`, the next distinct level `target_min + 1`,
-    // and so on — which both shifts and compresses gaps.
+    // Map each level present to consecutive levels from `target_min`, which
+    // both shifts and closes gaps.
     let mut levels_present: Vec<u8> = headings.iter().map(|h| h.level).collect();
     levels_present.sort_unstable();
     levels_present.dedup();
@@ -351,18 +300,15 @@ pub fn normalize_heading_levels(body: &str, target_min: u8) -> String {
         .map(|(i, &level)| (level, target_min + i as u8))
         .collect();
 
-    // Rewrite in place: copy the source through, swapping each heading's run
-    // of `=` for the normalized run. Everything else — indentation, line
-    // endings, the trailing newline — is copied byte for byte.
+    // Copy the source, replacing only each heading's `=` run.
     let mut out = String::with_capacity(body.len());
     let mut copied = 0usize;
     for heading in &headings {
         let Some(&new_level) = level_map.get(&heading.level) else {
             continue;
         };
-        // Measure the marker run from the source rather than trusting
-        // `level`, which saturates at `u8::MAX`. `=` is ASCII, so counting
-        // bytes lands on a char boundary.
+        // Count the markers in the source, since `level` saturates at
+        // `u8::MAX`. `=` is ASCII, so the count lands on a char boundary.
         let markers = body[heading.range.clone()]
             .bytes()
             .take_while(|&b| b == b'=')
@@ -379,21 +325,16 @@ pub fn normalize_heading_levels(body: &str, target_min: u8) -> String {
 
 // ── Wrapper generation ──────────────────────────────────────────────────────
 
-/// Build the merged book Typst source. The returned string is meant to be
-/// passed directly to [`crate::typst_pipeline::compiler::TypstCompiler::compile_pdf`].
-///
-/// The caller owns the surrounding compile orchestration: applying
-/// collection-level `#set` rules, resolving the bibliography path, picking
-/// the synthetic main path, and writing the resulting PDF to disk. Keeping
-/// those concerns outside this module lets the wrapper builder stay a pure
-/// string transformation that is straightforward to unit-test.
+/// Build the book's Typst source, to pass to
+/// [`crate::typst_pipeline::compiler::TypstCompiler::compile_pdf`]. The caller handles
+/// collection `#set` rules, the bibliography path, the main path and writing the PDF,
+/// so this stays a testable string transformation.
 pub fn build_book_source(
     notes: &[BookNote],
     options: &BookExportOptions,
     style_rules: Option<&str>,
-    // The collection's raw custom Typst, emitted after the template's
-    // `#show: template` call so it overrides both the generated style rules and
-    // the template — the last styling layer before the chapters.
+    // The collection's custom Typst, emitted after the template so it overrides
+    // both the generated styles and the template.
     custom_typst: Option<&str>,
     template_import: Option<&str>,
     bibliography_path: Option<&str>,
@@ -401,17 +342,12 @@ pub fn build_book_source(
     // When true, normalize each note's heading levels so they nest under
     // the chapter h1 without gaps. Required for PDF/UA-1 compliance.
     normalize_headings: bool,
-    // Page-numbering pattern from the collection's Style Overrides
-    // (e.g. "1", "Page 1", "-- 1 --"). Used as the body-section
-    // pattern; the front-matter pattern is derived from it by
-    // swapping the format character to lowercase roman when the book
-    // uses RomanThenArabic. Defaults to "1" if None.
+    // Page-numbering pattern from Style Overrides (e.g. "1", "Page 1", "-- 1
+    // --") for the body. With RomanThenArabic, the front matter uses its roman
+    // form. Defaults to "1".
     body_page_numbering_pattern: Option<&str>,
-    // Heading-numbering pattern from the collection's Style Overrides
-    // (e.g. "1.1", "I.A.1", "1.a."). The sole control for chapter numbering:
-    // a pattern numbers chapters with it, the explicit "none" disables
-    // numbering, and an unset value (None / Inherit) defaults to "1.1" since
-    // books conventionally number their chapters.
+    // Heading-numbering pattern from Style Overrides (e.g. "1.1", "I.A.1").
+    // "none" disables chapter numbering; unset defaults to "1.1".
     heading_numbering_pattern: Option<&str>,
 ) -> String {
     let mut s = String::with_capacity(8 * 1024);
@@ -420,20 +356,15 @@ pub fn build_book_source(
     s.push_str(&crate::notebox_package::import_line());
     s.push('\n');
 
-    // Document-level metadata (title, author) for the PDF's catalog.
-    // Required for PDF/UA-1 conformance — Typst's PDF backend rejects an
-    // export with `missing document title` when the standard demands it.
-    // The date field is intentionally omitted here; the export pipeline's
-    // `ensure_document_date_for_standard` adds it, which keeps the
-    // "fall back to today's date" logic in one place.
+    // Document title and author, required for PDF/UA-1 (Typst refuses an export
+    // without a title). The date is added by
+    // `ensure_document_date_for_standard` in the export pipeline.
     let mut doc_args: Vec<String> = Vec::new();
     if let Some(title) = &options.title {
         doc_args.push(format!("title: \"{}\"", typst_escape(title)));
     }
-    // The document author flows from the contributor roster (its bibliographic
-    // authors), falling back to the legacy single `author` string. Emitted as
-    // a string for one author and an array for several, both of which
-    // `document(author:)` accepts.
+    // Authors from the contributor roster, else the single `author` string: a
+    // string for one, an array for several.
     let authors =
         contributors::document_author_names(&options.contributors, options.author.as_deref());
     match authors.len() {
@@ -463,9 +394,7 @@ pub fn build_book_source(
         .iter()
         .map(|n| format!("\"{}\"", typst_escape(&n.stem)))
         .collect();
-    // A single element needs a trailing comma — `("x")` is parenthesized
-    // grouping (a string), not a one-element array, and `set-merged-context`
-    // asserts an array. (Same Typst gotcha as the contributors serializer.)
+    // A one-element array needs a trailing comma: `("x")` is just a string.
     let chapters_array = match stems.len() {
         1 => format!("{},", stems[0]),
         _ => stems.join(", "),
@@ -485,11 +414,9 @@ pub fn build_book_source(
             }
         }
     }
-    // Chapter/heading numbering is driven solely by the collection's heading
-    // numbering style (Style Overrides → Heading numbering) — there is no
-    // separate book toggle. Books conventionally number chapters, so an unset
-    // value (Inherit) defaults to "1.1"; the explicit "none" disables it; any
-    // other value is used as the pattern verbatim.
+    // Chapter numbering comes only from the collection's heading numbering
+    // style: unset (Inherit) means "1.1", "none" disables it, anything else is
+    // the pattern.
     let heading_pattern = match heading_numbering_pattern.map(str::trim) {
         Some("none") => None,
         Some(p) if !p.is_empty() => Some(p),
@@ -510,9 +437,8 @@ pub fn build_book_source(
         }
     }
 
-    // The collection's custom Typst — emitted after the template so the user's
-    // own rules win over both the generated style and the template. This is the
-    // final styling layer before page numbering and the chapter bodies.
+    // The collection's custom Typst, after the template so its rules win. The
+    // last styling before page numbering and the chapters.
     if let Some(custom) = custom_typst {
         if !custom.trim().is_empty() {
             s.push_str(custom);
@@ -522,12 +448,9 @@ pub fn build_book_source(
         }
     }
 
-    // The user's preferred numbering pattern (from Style Overrides) acts
-    // as the body-section template — both for choosing the literal format
-    // ("1" vs "Page 1" vs "-- 1 --") and for deriving the roman-variant
-    // pattern used in front matter when the book is set to
-    // `RomanThenArabic`. Default to plain arabic if no style override is
-    // set.
+    // The Style Overrides page-numbering pattern is used for the body, and its
+    // roman form for the front matter with `RomanThenArabic`. Defaults to
+    // arabic.
     let body_pattern = body_page_numbering_pattern.unwrap_or("1");
     let roman_pattern = to_roman_pattern(body_pattern);
 
@@ -550,10 +473,9 @@ pub fn build_book_source(
         }
     }
 
-    // Title page. Governed solely by the user's checkbox: a template is applied
-    // via a `#show:` rule the user writes in Custom Typst (which InkyCap can't
-    // detect here), so when a template renders its own title block the user
-    // unchecks this rather than us guessing from the bare import's presence.
+    // Title page, controlled only by the user's setting. A template applied
+    // through Custom Typst can't be detected here, so if it draws its own title
+    // block the user turns this off.
     if options.include_title_page {
         s.push_str(&render_title_page(options));
     }
@@ -570,12 +492,9 @@ pub fn build_book_source(
         }
     }
 
-    // Resolve where the table of contents goes. The outline is whole-document
-    // regardless of position, so placement changes only *where* it sits.
-    // An `AfterChapter` anchor whose stem isn't part of the resolved note set
-    // falls back to `Beginning` (the safe front-matter default). Only a
-    // `Beginning`-placed ToC participates in front-matter page numbering;
-    // every other placement makes it ordinary body content.
+    // Where the table of contents goes; it always covers the whole document. An
+    // `AfterChapter` anchor not in the export falls back to `Beginning`. Only a
+    // `Beginning` table of contents takes front-matter page numbering.
     enum TocSpot<'a> {
         None,
         Beginning,
@@ -597,10 +516,8 @@ pub fn build_book_source(
             }
         }
     };
-    // The outline is routed through `outline-with-bare-page-numbers` in the
-    // notebox package — that helper scopes a `show outline.entry` rule to a
-    // single outline call so decorated body page-numbering patterns
-    // ("Page 1 of N", etc.) don't leak into the TOC's page labels.
+    // `outline-with-bare-page-numbers` (in the package) keeps decorated page
+    // patterns ("Page 1 of N") out of the table of contents.
     let outline_call = || {
         format!(
             "#outline-with-bare-page-numbers(depth: {})\n",
@@ -629,10 +546,8 @@ pub fn build_book_source(
             s.push_str("#counter(page).update(1)\n");
         }
         BookPageNumbering::ArabicFromPage { start_page } => {
-            // Arabic numerals turn on once the document reaches `start_page`.
-            // The closure body lives in the notebox package as
-            // `make-offset-numbering` so the Typst expression can be edited
-            // and tested in `.typ` rather than as a Rust string literal.
+            // Arabic numbering starts at `start_page`, using the package's
+            // `make-offset-numbering`.
             let start = start_page.max(1);
             s.push_str(&format!(
                 "#set page(numbering: make-offset-numbering({start}))\n"
@@ -646,11 +561,9 @@ pub fn build_book_source(
             s.push_str("#pagebreak(weak: true)\n");
         }
 
-        // In `Unified` and `PerChapter` modes every per-note `#bibliography(...)`
-        // is stripped — the book emits its own list(s) (one consolidated, or one
-        // scoped per chapter). In `InPlace` mode the author's own declarations
-        // are preserved verbatim (Typst 0.15 permits several). The preamble
-        // import and `#note(...)` call are stripped in every mode.
+        // `Unified` and `PerChapter` remove every per-note `#bibliography(...)`
+        // and emit their own; `InPlace` keeps them (Typst 0.15 allows several).
+        // The import and `#note(...)` call are always removed.
         let raw_body = match options.bibliography_mode {
             BibliographyMode::Unified | BibliographyMode::PerChapter => {
                 prepare_note_for_include(&note.content)
@@ -675,15 +588,10 @@ pub fn build_book_source(
             InjectChapterHeading::Fallback => !starts_with_heading,
         };
 
-        // Chapter anchor for in-book wikilink resolution, emitted via the
-        // package's `chapter-anchor` (which builds the label with the
-        // `label()` function). Using the function form — not `<chap-stem>`
-        // markup-label syntax — is essential: note stems routinely contain
-        // spaces and parens (e.g. "Information Technology and Libraries
-        // (ITAL)"), which are illegal in literal `<...>` labels and would
-        // otherwise derail the whole merged compile with "unclosed label".
-        // Placed at the chapter top so a wikilink lands at the start
-        // regardless of the note's own first heading.
+        // Chapter anchor for wikilinks, at the chapter top. The package's
+        // `chapter-anchor` builds the label with `label()`, since note names
+        // often contain spaces or parentheses that a literal `<...>` label
+        // can't.
         s.push_str(&chapter_anchor_call(&note.stem));
 
         if inject {
@@ -699,11 +607,8 @@ pub fn build_book_source(
             s.push('\n');
         }
 
-        // PerChapter mode: emit this chapter's own bibliography, scoped to the
-        // citations between this chapter's anchor and the next (the package's
-        // `chapter-bibliography` builds the label-bounded `target` selector).
-        // The final chapter passes `next-stem: none` so its scope runs to the
-        // document end.
+        // PerChapter: this chapter's bibliography, covering citations up to the
+        // next chapter's anchor (`next-stem: none` for the last chapter).
         if options.bibliography_mode == BibliographyMode::PerChapter {
             if let Some(path) = bibliography_path {
                 let next_stem = notes.get(idx + 1).map(|n| n.stem.as_str());
@@ -716,9 +621,8 @@ pub fn build_book_source(
             }
         }
 
-        // ToC anchored after this chapter. A leading pagebreak puts it on its
-        // own page; the next chapter supplies its own weak break (or, for the
-        // last chapter, the bibliography does).
+        // Table of contents after this chapter, on its own page; the next
+        // chapter (or the bibliography) adds its own break.
         if matches!(toc_spot, TocSpot::AfterChapter(st) if st == note.stem.as_str()) {
             s.push_str("#pagebreak(weak: true)\n");
             s.push_str(&outline_call());
@@ -732,15 +636,11 @@ pub fn build_book_source(
     }
 
     // ── Bibliography ───────────────────────────────────────────────────────
-    // Only `Unified` mode emits a consolidated bibliography. `InPlace` leaves
-    // the authors' own per-note `#bibliography(...)` declarations untouched
-    // (see the chapter loop) and emits nothing here.
+    // Only `Unified` emits a consolidated bibliography here.
     if options.bibliography_mode == BibliographyMode::Unified {
         if let Some(path) = bibliography_path {
             s.push_str("#pagebreak(weak: true)\n");
-            // Route through the package wrapper for consistency with the
-            // single-note pipeline; behaviour is identical because
-            // `apply-bibliography` forwards to Typst's own `#bibliography`.
+            // Through the package's `apply-bibliography`, as for single notes.
             match bibliography_style {
                 Some(style) => s.push_str(&format!(
                     "#apply-bibliography(\"{}\", style: \"{}\")\n",
@@ -813,18 +713,10 @@ pub(crate) fn typst_escape(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-/// Derive the roman-numeral variant of a Typst page-numbering pattern.
-/// Typst treats `1` in a pattern as the arabic-numeral format placeholder
-/// and the rest of the string as literal text. To turn a body pattern
-/// like `"Page 1 of 1"` into its front-matter roman equivalent
-/// (`"Page i of i"`), every `1` is swapped to lowercase `i`.
-///
-/// We deliberately do *not* touch `a` / `A` even though Typst recognises
-/// them as alpha format placeholders: those letters collide with normal
-/// English literal text far too often (a pattern like `"Page 1"` would
-/// turn into `"Pige i"`). Users who want a non-arabic body pattern can
-/// keep their override unchanged — without a `1`, this function is a
-/// no-op.
+/// The roman form of a page-numbering pattern: every `1` becomes `i` (`"Page 1
+/// of 1"` → `"Page i of i"`). `a` / `A` are left alone because they appear in
+/// ordinary text ("Page" would become "Pige"). Without a `1`, the pattern is
+/// unchanged.
 fn to_roman_pattern(pattern: &str) -> String {
     if !pattern.contains('1') {
         return pattern.to_string();
@@ -832,9 +724,8 @@ fn to_roman_pattern(pattern: &str) -> String {
     pattern.replace('1', "i")
 }
 
-/// The marker the wrapper emits at each chapter's start. Used both to emit
-/// the anchor and to map a compile error's source offset back to the note
-/// it occurred in ([`chapter_at_offset`]).
+/// The marker emitted at each chapter's start, also used to map an error's
+/// offset back to its note ([`chapter_at_offset`]).
 const CHAPTER_ANCHOR_PREFIX: &str = "#chapter-anchor(\"";
 
 /// The `#chapter-anchor("<stem>")` call emitted at a chapter's start. The
@@ -843,12 +734,10 @@ fn chapter_anchor_call(stem: &str) -> String {
     format!("{}{}\")\n", CHAPTER_ANCHOR_PREFIX, typst_escape(stem))
 }
 
-/// The `#chapter-bibliography(...)` call emitted at a chapter's end in
-/// `PerChapter` mode. The package helper builds the label-bounded `target`
-/// selector from the stems; here we only serialize the path, this chapter's
-/// stem, the next chapter's stem (omitted for the final chapter so its scope
-/// runs to the document end), and an optional citation style. Anchored at the
-/// chapter end so the bibliography sits after that chapter's body.
+/// The `#chapter-bibliography(...)` call at the end of a chapter in
+/// `PerChapter` mode. The package builds the selector; this passes the path,
+/// this chapter's stem, the next one's (omitted for the last chapter) and an
+/// optional style.
 fn chapter_bibliography_call(
     path: &str,
     stem: &str,
@@ -870,11 +759,9 @@ fn chapter_bibliography_call(
     call
 }
 
-/// Find the first `bibliography("…")` call (e.g. a template's
-/// `#show: …(bibliography: bibliography("path.bib"))`) and return its string
-/// argument — the path a collection export should materialize fresh. Skips
-/// `//`-commented lines and non-string-argument forms (`bibliography(none)`,
-/// `bibliography(read(...))`). Returns `None` when absent.
+/// The string argument of the first `bibliography("…")` call (e.g. in a
+/// template's `#show:` rule), the path a collection export should generate.
+/// Skips commented lines and non-string arguments. `None` when absent.
 pub fn extract_bibliography_path(source: &str) -> Option<String> {
     const NEEDLE: &str = "bibliography(";
     let mut search = 0usize;
@@ -895,9 +782,8 @@ pub fn extract_bibliography_path(source: &str) -> Option<String> {
     None
 }
 
-/// Read a Typst string-literal body up to its closing `"`, unescaping `\"`
-/// and `\\`. `s` must start at the first character *after* the opening
-/// quote. Returns the unescaped string, or `None` if unterminated.
+/// Read a Typst string body up to its closing `"`, unescaping `\"` and `\\`.
+/// `s` starts after the opening quote. `None` if unterminated.
 fn read_typst_string_body(s: &str) -> Option<String> {
     let mut out = String::new();
     let mut chars = s.chars();
@@ -911,10 +797,8 @@ fn read_typst_string_body(s: &str) -> Option<String> {
     None
 }
 
-/// Map a byte offset in a merged book source to the stem of the chapter
-/// (note) that contains it, by locating the `#chapter-anchor("<stem>")`
-/// markers. Returns `None` for offsets before the first chapter — i.e. the
-/// front matter (title page, abstract, outline).
+/// The stem of the chapter containing a byte offset in the book source, found
+/// from the `#chapter-anchor("<stem>")` markers. `None` in the front matter.
 pub fn chapter_at_offset(source: &str, offset: usize) -> Option<String> {
     let mut current = None;
     let mut search = 0usize;
@@ -932,12 +816,9 @@ pub fn chapter_at_offset(source: &str, offset: usize) -> Option<String> {
     current
 }
 
-/// Turn a failed book export's diagnostics into a message that names the
-/// note each error came from, so the author knows what to fix instead of
-/// getting a bare "expected expression". Errors are grouped by chapter
-/// (located via [`chapter_at_offset`]); duplicate messages within a chapter
-/// are collapsed. Spans outside the merged source (an imported file, e.g.
-/// the package) and front-matter spans are grouped under their own labels.
+/// A message for a failed book export naming the note each error came from,
+/// grouped by chapter (see [`chapter_at_offset`]) with duplicates merged.
+/// Errors in imported files and front matter get their own groups.
 pub fn describe_book_diagnostics(
     source: &str,
     diagnostics: &[TypstDiagnostic],
@@ -975,9 +856,8 @@ pub fn describe_book_diagnostics(
         format!("compilation failed. {}", parts.join(" "))
     };
 
-    // hayagriva's bibliography parse errors ("expected comma") are cryptic and
-    // name neither the file nor the cause. When one is present, point the author
-    // at the bib file and the usual culprit (a malformed entry / missing key).
+    // hayagriva's bibliography errors ("expected comma") name neither file nor
+    // cause, so point at the bib file and the usual culprit.
     let has_bib_parse_error = diagnostics.iter().any(|d| {
         let m = d.message.to_lowercase();
         m.contains("biblatex") || m.contains("bibtex")
@@ -993,14 +873,10 @@ pub fn describe_book_diagnostics(
     base
 }
 
-/// The stems of the notes (chapters) whose source produced compile errors, in
-/// first-seen order and de-duplicated. Only errors whose primary span lands in
-/// the merged source's chapter region are attributable to a removable note;
-/// front-matter, imported-file (package), and span-less errors are excluded —
-/// dropping a note can't fix those, so the export stays a hard failure when
-/// only those occur. Used by book export to offer "continue, excluding these
-/// notes" (cf. [`describe_book_diagnostics`], which renders the same grouping
-/// as prose).
+/// Stems of the chapters with compile errors, in order, without duplicates.
+/// Only errors inside a chapter count; front-matter, package and span-less
+/// errors can't be fixed by dropping a note. Used to offer "continue, excluding
+/// these notes" (see [`describe_book_diagnostics`]).
 pub fn book_diagnostic_note_stems(source: &str, diagnostics: &[TypstDiagnostic]) -> Vec<String> {
     let mut stems: Vec<String> = Vec::new();
     for d in diagnostics.iter().filter(|d| d.severity == "error") {
@@ -1017,10 +893,8 @@ pub fn book_diagnostic_note_stems(source: &str, diagnostics: &[TypstDiagnostic])
     stems
 }
 
-/// Escape user-provided text for Typst content/markup context. Backslashes
-/// and the small set of markup-active characters are escaped so authored
-/// titles like `# C* algebras` survive verbatim instead of being parsed as
-/// markup. Shared by every place that writes plain text into markup.
+/// Escape text for Typst markup (backslashes and markup characters), so a title
+/// like `# C* algebras` stays literal.
 pub(crate) fn escape_typst_markup(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for ch in s.chars() {
@@ -1141,11 +1015,7 @@ mod tests {
 
     #[test]
     fn strip_bibliography_preserves_utf8_content() {
-        // Multi-byte characters must survive verbatim. A previous
-        // implementation byte-cast each input byte to char, which
-        // shredded these into Latin-1 garbage and produced spurious
-        // "unclosed delimiter" parse errors when the corrupted output
-        // was fed back to the Typst compiler.
+        // Multi-byte characters must pass through unchanged.
         let src = "Some text — with “smart quotes”, an é, and PMBOK®.\n#bibliography(\"refs.bib\")\nMore — text.\n";
         let out = strip_bibliography_call(src);
         assert_eq!(
@@ -1154,12 +1024,9 @@ mod tests {
         );
     }
 
-    /// Sample of representative non-ASCII content — em/en dashes, smart
-    /// quotes, accented Latin, RTL Arabic, Hebrew, CJK, Cyrillic, Devanagari,
-    /// emoji (4-byte UTF-8), and combining marks. The book wrapper must
-    /// pass any of these through verbatim. New string-transform helpers
-    /// added to this module should be exercised against
-    /// `UNICODE_BODY_FIXTURES` so they stay UTF-8-correct.
+    /// Representative non-ASCII content: dashes, smart quotes, accented Latin,
+    /// Arabic, Hebrew, CJK, Cyrillic, Devanagari, emoji and combining marks.
+    /// Test new string helpers in this module against these.
     const UNICODE_BODY_FIXTURES: &[&str] = &[
         "Em-dash — en-dash – ellipsis…",
         "“Smart quotes” and ‘apostrophes’",
@@ -1227,9 +1094,7 @@ mod tests {
 
     #[test]
     fn extract_label_decls_handles_unicode() {
-        // Labels themselves are ASCII-only by Typst rules, but the
-        // surrounding content can be any Unicode. The scanner must not
-        // get confused mid-codepoint.
+        // Labels are ASCII, but the text around them may not be.
         for fixture in UNICODE_BODY_FIXTURES {
             let src = format!("{}\n= Heading <intro>\n{}\n", fixture, fixture);
             let labels = extract_label_decls(&src, "note-a");
@@ -1265,9 +1130,7 @@ After
 
     #[test]
     fn extract_labels_skips_inkycap_internal() {
-        // The notebox package emits <inkycap-note> on every #note(...) call.
-        // Those are not user-authored labels so they should still be
-        // extracted (the collision filter handles them).
+        // `<inkycap-note>` is still extracted; the collision check skips it.
         let labels = extract_label_decls("#metadata((x: 1)) <inkycap-note>\n", "a");
         assert_eq!(labels.len(), 1);
         assert_eq!(labels[0].name, "inkycap-note");
@@ -1337,10 +1200,8 @@ After
             None,
             None,
         );
-        // Wrapper emits exactly one `#apply-bibliography(...)`; any
-        // per-chapter user-written `#bibliography(...)` calls are stripped
-        // during chapter prep so the merged book has a single bibliography
-        // rendering point.
+        // One `#apply-bibliography(...)` from the wrapper; the chapters' own
+        // are removed.
         assert_eq!(
             src.matches("#apply-bibliography(").count(),
             1,
@@ -1446,9 +1307,7 @@ After
             "alpha",
             "#import \"/x\": *\n#note()\n= Alpha\nA\n#bibliography(\"refs.bib\")",
         )];
-        // Even with a collection bib path supplied, InPlace mode must not emit a
-        // consolidated #apply-bibliography, and must preserve the note's own
-        // #bibliography(...) rather than stripping it.
+        // InPlace emits no consolidated bibliography and keeps the note's own.
         let src = build_book_source(
             &notes,
             &opts,
@@ -1536,9 +1395,8 @@ After
         let mut n = note("intro", "= Introduction\nBody.\n");
         n.title = Some("Introduction".to_string());
         let src = build_book_source(&[n], &opts, None, None, None, None, None, false, None, None);
-        // Fallback mode must NOT inject a heading when the note already has
-        // one — so `= Introduction` appears exactly once (the note's own),
-        // not a second injected copy. The anchor is still emitted.
+        // No heading is added when the note has one, so `= Introduction`
+        // appears once. The anchor is still emitted.
         assert!(src.contains("#chapter-anchor(\"intro\")"));
         assert_eq!(
             src.matches("= Introduction").count(),
@@ -1760,9 +1618,7 @@ After
 
     #[test]
     fn build_book_uses_style_override_pattern_for_body() {
-        // When the user has set a custom page-numbering pattern in the
-        // collection's Style Overrides, the book wrapper must use that
-        // pattern in body sections rather than its default `"1"`.
+        // A custom page-numbering pattern is used for the body.
         let mut opts = options();
         opts.page_numbering = BookPageNumbering::RomanThenArabic;
         let n = note("a", "= A\n");
@@ -1796,9 +1652,7 @@ After
 
     #[test]
     fn build_book_uses_style_override_pattern_with_arabic_numbering() {
-        // With Arabic numbering, both front matter and body use the same
-        // pattern — the user's override should appear once and replace
-        // the wrapper's default.
+        // With Arabic numbering, front matter and body share the pattern.
         let mut opts = options();
         opts.page_numbering = BookPageNumbering::Arabic;
         let n = note("a", "= A\n");
@@ -1841,11 +1695,8 @@ After
 
     #[test]
     fn build_book_routes_outline_through_package_helper() {
-        // The TOC must show bare page integers regardless of the page
-        // pattern set in Style Overrides. The wrapper now delegates this
-        // to `outline-with-bare-page-numbers` in the notebox package — the
-        // helper installs the same show rule we used to inline here, so
-        // the rendered TOC stays independent of the body pattern.
+        // The table of contents shows plain page numbers whatever the page
+        // pattern.
         let n = note("a", "= A\n");
         let src = build_book_source(
             &[n],
@@ -1924,8 +1775,7 @@ After
 
     #[test]
     fn build_book_skips_heading_rule_when_numbering_none() {
-        // Heading numbering "none" (the replacement for the old number-chapters
-        // = false toggle) must suppress the wrapper's #set heading rule.
+        // Heading numbering "none" must suppress the wrapper's #set heading rule.
         let opts = options();
         let n = note("a", "= A\n");
         let src = build_book_source(
@@ -1957,11 +1807,7 @@ After
 
     #[test]
     fn to_roman_pattern_leaves_letters_alone() {
-        // We deliberately do not swap `a` / `A` because they collide with
-        // ordinary English literal text — a pattern like "Page" would be
-        // mangled into "Pige". Users who want a non-arabic format can
-        // already type whatever they want; this function only handles
-        // the common case.
+        // `a` / `A` aren't swapped; they appear in ordinary text.
         assert_eq!(to_roman_pattern("Page A"), "Page A");
         assert_eq!(to_roman_pattern("Section a"), "Section a");
     }

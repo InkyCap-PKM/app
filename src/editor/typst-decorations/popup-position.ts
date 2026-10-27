@@ -1,16 +1,12 @@
-// Shared viewport-aware placement for editor popups that anchor to a rectangle
-// on screen: the wikilink/citation suggestions, the `/` command palette and the
-// paste-as-URL menu (all anchored to a caret coordinate), plus the selection
-// format toolbar and its two sub-menus (anchored to the selection and to the
-// toolbar itself). Each of these is a `position: fixed` element appended to
-// `document.body`. Left to its own devices a popup that always opens in one
-// direction gets clipped when its anchor sits near a viewport edge, so this
-// module measures the popup and flips it to the opposite side when there isn't
-// room, then clamps on both axes so it can never run off screen.
+// Placement for editor popups anchored to a rectangle: the wikilink and
+// citation suggestions, the `/` palette and the paste-as-URL menu (at the
+// caret), and the selection toolbar and its two submenus. Each is a `position:
+// fixed` element in `document.body`. The popup is measured, moved to the other
+// side when it doesn't fit, and kept on screen on both axes.
 //
-// The geometry lives in the pure `computePlacement` so it can be unit-tested
-// without a layout engine (jsdom reports every element as 0×0);
-// `positionPopupAtAnchor` is the thin DOM wrapper that measures and applies.
+// The geometry is in `computePlacement`, which can be unit-tested without
+// layout (jsdom measures everything as 0×0); `positionPopupAtAnchor` measures
+// and applies it.
 
 /** Anchor rectangle — e.g. a caret rect from `EditorView.coordsAtPos`. */
 export interface AnchorCoords {
@@ -39,9 +35,8 @@ export interface PlacementOptions {
   /** Side to open on when it fits. Default `"below"`. */
   prefer?: PlacementSide;
   /**
-   * Horizontal alignment against the anchor: `"start"` lines the popup's left
-   * edge up with the anchor's, `"center"` centres it on the anchor. Default
-   * `"start"`.
+   * Horizontal alignment: `"start"` lines up the left edges, `"center"` centres
+   * on the anchor. Default `"start"`.
    */
   align?: "start" | "center";
   /** Distance between the anchor edge and the popup. Default `GAP`. */
@@ -61,21 +56,18 @@ const GAP = 4; // distance between the anchor and the popup edge
 const MARGIN = 8; // minimum breathing room from the viewport edge
 
 function clamp(value: number, min: number, max: number): number {
-  // `max` can fall below `min` when the popup is larger than the viewport;
-  // biasing to `min` then keeps the top-left corner visible rather than
-  // pushing the whole popup off the leading edge.
+  // When the popup is larger than the viewport, `max` is below `min`; using
+  // `min` keeps the top-left corner visible.
   return Math.min(Math.max(value, min), Math.max(min, max));
 }
 
 /**
- * Work out where a popup of `size` should sit relative to `anchor` so that it
- * stays inside `viewport`.
+ * Where a popup of `size` should go relative to `anchor` to stay in `viewport`.
  *
- * Opens on the preferred side, flips to the other side when the preferred one
- * can't fit it *and* the other side has more room, then clamps both axes to the
- * viewport margins. A popup taller or wider than the viewport ends up pinned to
- * the top/left margin — callers that can overflow should cap themselves in CSS
- * (`max-height` + `overflow-y: auto`) so the measured size stays sane.
+ * Opens on the preferred side, flips when that side can't fit it and the other
+ * has more room, then keeps both axes within the margins. A popup larger than
+ * the viewport is pinned to the top-left margin; popups that can be that large
+ * should set `max-height` and `overflow-y: auto` in CSS.
  */
 export function computePlacement(
   anchor: AnchorCoords,
@@ -88,9 +80,8 @@ export function computePlacement(
   const spaceBelow = viewport.height - anchor.bottom - margin;
   const spaceAbove = anchor.top - margin;
 
-  // Only flip when the preferred side genuinely can't fit the popup and the
-  // other side is roomier. When it fits neither way we stay on the preferred
-  // side and let the clamp below keep the popup on screen.
+  // Flip only when the preferred side can't fit and the other has more room;
+  // otherwise stay and let the clamp keep it on screen.
   let side = prefer;
   if (prefer === "below" && spaceBelow < size.height && spaceAbove > spaceBelow) {
     side = "above";
@@ -109,13 +100,11 @@ export function computePlacement(
 }
 
 /**
- * Measure `el` and place it against `coords` via {@link computePlacement}.
- *
- * The element must already hold its final content so the measurement is
- * accurate. This helper reveals it first (`display`, `"block"` by default —
- * pass `"flex"` for flex surfaces) so the measured size honours any CSS
- * `max-height`, then writes `top`/`left` in the same synchronous task, so the
- * browser never paints the intermediate position.
+ * Measure `el` and place it against `coords` with {@link computePlacement}. The
+ * element must already have its content. It is shown first (`display`,
+ * `"block"` by default; `"flex"` for flex surfaces) so `max-height` applies to
+ * the measurement, and `top`/`left` are set in the same task, so the
+ * intermediate position is never painted.
  */
 export function positionPopupAtAnchor(
   el: HTMLElement,

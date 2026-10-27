@@ -1,25 +1,21 @@
 #!/usr/bin/env node
-// i18n locale linter — run with `npm run i18n:check`.
+// Locale checker: `npm run i18n:check`.
 //
-// `en.json` is the source of truth. This script validates it, then diffs every
-// sibling locale file against it so a translator (or CI) can see at a glance
-// what still needs work. It checks three things:
+// `en.json` is the source. This checks it, then compares every other locale with
+// it:
 //
-//   1. en.json health — valid JSON, every value a string, and NO duplicate keys
-//      (JSON.parse silently keeps the last of a duplicated key, so a copy-paste
-//      slip would otherwise vanish without a trace).
-//   2. Key parity — keys in en.json missing from a locale (untranslated), and
-//      keys in a locale that no longer exist in en.json (orphaned/renamed).
-//   3. Placeholder parity — a translation must carry the SAME `{name}` tokens as
-//      its English source. A dropped `{detail}` or a typo'd `{cont}` would
-//      otherwise ship a broken string that only fails at runtime.
+//   1. en.json: valid JSON, all values strings, no duplicate keys (JSON.parse
+//      keeps only the last, so a duplicate would vanish unnoticed).
+//   2. Keys: keys missing from a locale (untranslated), and keys no longer in
+//      en.json (removed or renamed).
+//   3. Placeholders: a translation must have the same `{name}` tokens as the
+//      English, or the string breaks at runtime.
 //
-// Exit code is 0 when everything is consistent, 1 otherwise — safe to wire into
-// CI. With only en.json present (no translations yet) it validates en.json and
-// reports that there is nothing to diff.
+// Exits 0 when consistent, 1 otherwise. With only en.json it checks that and
+// reports nothing to compare.
 //
-// The dev-only `en-XX` pseudo-locale is generated at runtime (see i18n.ts) and
-// never lives on disk, so it is never checked here.
+// The dev-only `en-XX` pseudo-locale is generated at runtime (see i18n.ts), so
+// it isn't checked.
 
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -33,9 +29,10 @@ function placeholders(value) {
   return new Set([...value.matchAll(/\{(\w+)\}/g)].map((m) => m[1]));
 }
 
-/** Keys that appear more than once in the raw JSON text. en.json is flat with
- *  one `"key": "value"` per line, so a line scan catches duplicates that
- *  JSON.parse would silently collapse. */
+/**
+ * Keys appearing more than once in the raw JSON. en.json has one `"key":
+ * "value"` per line, so a line scan finds duplicates JSON.parse would hide.
+ */
 function duplicateKeys(rawText) {
   const seen = new Set();
   const dupes = new Set();

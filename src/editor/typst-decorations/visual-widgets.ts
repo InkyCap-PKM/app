@@ -42,17 +42,13 @@ export class FuncChipWidget extends WidgetType {
 
 
 /**
- * Collapsed affordance for a contiguous leading run of `#set` / `#show` rules
- * (the "document style preamble"). Replaces the whole multi-line block with a
- * single chip so the visual editor isn't cluttered with configuration markup.
- *
- * Routes through {@link buildPillButton} so it inherits the universal pill
- * behaviour: left-click reveals the raw source for editing (`alwaysExpandOnClick`
- * — the block is multi-line, so it would otherwise be classed "complex" and
- * open the menu), and right-click / Enter open the standard super-menu (Edit
- * source / Open in source editor / Copy / Duplicate / Delete) acting on the
- * whole block. The block re-collapses once the cursor leaves (handled in
- * visual-plugin's collapse decision). `from`/`to` bound the block's lines.
+ * Chip for the leading run of `#set` / `#show` rules (the style preamble),
+ * replacing the whole block so configuration doesn't clutter the visual editor.
+ * Uses {@link buildPillButton}: left-click reveals the source
+ * (`alwaysExpandOnClick`, since a multi-line block would otherwise open the
+ * menu), and right-click or Enter opens the standard menu for the whole block. It
+ * collapses again when the cursor leaves (see visual-plugin). `from` / `to` bound
+ * its lines.
  */
 export class StylePreambleWidget extends WidgetType {
   constructor(readonly from: number, readonly to: number, readonly count: number) { super(); }
@@ -98,10 +94,10 @@ function tooltipText(text: string): string {
 }
 
 /**
- * An annotation (`#annotation[…]`) in the visual editor. A reviewer's remark
- * isn't part of the writing, so only a pill marks where it sits; hovering shows
- * the comment, and clicking reveals its source and opens the Changes & History
- * pane on it. `summary` is the comment text (with attribution) for the tooltip.
+ * An annotation (`#annotation[…]`). A reviewer's remark isn't part of the
+ * writing, so only a pill marks it; hovering shows the comment, and clicking
+ * reveals the source and opens Changes & History on it. `summary` is the
+ * comment with attribution, for the tooltip.
  */
 export class AnnotationPillWidget extends WidgetType {
   constructor(readonly pos: number, readonly summary: string) { super(); }
@@ -137,11 +133,10 @@ export class AnnotationPillWidget extends WidgetType {
 }
 
 /**
- * A run of Typst comments (line or block comments) in the visual editor. Comments
- * don't appear in the compiled note, but they are still text the caret has to
- * move around, so a pill marks each run rather than hiding it outright.
- * Hovering shows the comment; clicking reveals it for editing, with the caret
- * at its end. A run over several lines carries its line count.
+ * A run of Typst comments. They don't appear in the output but the caret still
+ * moves around them, so a pill marks each run. Hovering shows the comment;
+ * clicking reveals it with the caret at its end. A multi-line run shows its line
+ * count.
  */
 export class CommentPillWidget extends WidgetType {
   constructor(readonly run: CommentRun, readonly raw: string) { super(); }
@@ -182,18 +177,12 @@ export class CommentPillWidget extends WidgetType {
 }
 
 /**
- * Pill for a standalone `#set` / `#show` rule that appears *after* content. A
- * contiguous *leading* run of such rules is the document style preamble and
- * collapses into {@link StylePreambleWidget} instead; this widget is for the
- * local configuration a writer drops mid-document — typically the `#set text(…)`
- * / `#set par(…)` / `#set page(…)` calls inserted from the `/` Style menu.
- * Without it those rules render as raw markup; here they get the same pill
- * affordance as every other Typst call: a labelled chip (the rule keyword plus
- * its target, e.g. `set text`), left-click to reveal the source for editing
- * (simple single-line rules) or open the menu, and right-click / Enter for the
- * standard super-menu (Edit source / Open in source editor / Copy / Duplicate /
- * Delete). `from`/`to` bound the rule including its leading `#`; `raw` is the
- * rule's source, shown on hover.
+ * Pill for a `#set` / `#show` rule after content, such as `#set text(…)` / `#set
+ * par(…)` from the `/` Style menu (a leading run is the preamble; see {@link
+ * StylePreambleWidget}). Shows the keyword and target (e.g. `set text`);
+ * left-click reveals simple rules for editing or opens the menu, right-click or
+ * Enter opens the standard menu. `from` / `to` include the `#`; `raw` is shown
+ * on hover.
  */
 export class SetRuleWidget extends WidgetType {
   constructor(
@@ -226,13 +215,10 @@ export class SetRuleWidget extends WidgetType {
 }
 
 /**
- * Pill for a `#sym.*` named-symbol reference (a `FieldAccess` code expression,
- * e.g. `#sym.arrow.r`). Renders the resolved glyph when the symbol is in the
- * curated set, otherwise the raw dotted name — either way clearer than the raw
- * `#sym.…` markup. Routes through {@link buildPillButton} so it gets the
- * standard pill behaviour; the pill menu (see pill-options `symOptions`) carries
- * a name input so any symbol can be entered/changed without touching source.
- * `from`/`to` bound the whole `#sym.…` reference.
+ * Pill for a `#sym.*` reference (e.g. `#sym.arrow.r`), showing the glyph for
+ * known symbols, otherwise the dotted name. Its menu (`symOptions` in
+ * pill-options) has a name field, so any symbol can be set. `from` / `to` bound
+ * the whole reference.
  */
 export class SymWidget extends WidgetType {
   constructor(
@@ -288,9 +274,10 @@ export class ShorthandWidget extends WidgetType {
   }
 }
 
-/** A `#line(...)` horizontal rule. While the caret is on the call the pill
- *  floats over the rule's left end rather than replacing the rule, so the
- *  rule and the gap around it keep their height and the page doesn't shift. */
+/**
+ * A `#line(...)` rule. With the caret on it, the pill floats over the rule's
+ * left end instead of replacing it, so the height doesn't change.
+ */
 export class HrWidget extends WidgetType {
   constructor(readonly pos: number, readonly withPill: boolean) { super(); }
   eq(other: HrWidget) { return this.pos === other.pos && this.withPill === other.withPill; }

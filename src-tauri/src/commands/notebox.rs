@@ -16,21 +16,17 @@ pub async fn get_saved_notebox_path() -> Result<Option<String>, InkyCapError> {
     Ok(cfg.notebox_path)
 }
 
-/// Where the documentation window should boot: the system notebox root plus the
-/// landing note to open first (so the window doesn't start on a blank "no file
-/// selected" pane). `index` is `None` only if the notebox somehow has no
-/// top-level `.typ` at all.
+/// Where the documentation window starts: the notebox root and the note to open
+/// first. `index` is `None` only if there is no top-level `.typ`.
 #[derive(serde::Serialize)]
 pub struct DocsNoteboxLocation {
     pub root: String,
     pub index: Option<String>,
 }
 
-/// Config-dir folder name for the documentation notebox in a given UI locale.
-/// English is the base manual and the universal fallback; other locales live in
-/// a suffixed sibling (e.g. `InkyCap-Documentation-fr-CA`). A locale only earns
-/// its own notebox once that manual has actually been authored — until then the
-/// caller falls back to English.
+/// Config folder name of the documentation notebox for a UI locale. English is
+/// the default and fallback; translated manuals have a suffixed folder (e.g.
+/// `InkyCap-Documentation-fr-CA`).
 fn docs_notebox_dir_name(ui_locale: &str) -> &'static str {
     match ui_locale {
         "fr-CA" => "InkyCap-Documentation-fr-CA",
@@ -38,19 +34,13 @@ fn docs_notebox_dir_name(ui_locale: &str) -> &'static str {
     }
 }
 
-/// Resolve (and lazily seed) the bundled "InkyCap Documentation" system
-/// notebox, returning its path plus the landing note for the frontend to open
-/// in a window.
+/// Resolve the bundled "InkyCap Documentation" notebox, creating it on first
+/// use, and return its path and landing note.
 ///
-/// It lives under the per-platform config dir (alongside the notebox registry),
-/// so it survives notebox switches and is never confused with a user notebox.
-/// The notebox served matches the user's UI locale when a translated manual
-/// exists for it (falling back to the English manual otherwise), so a
-/// French-language user gets the French documentation window.
-///
-/// The working copy is seeded (and refreshed on app updates / content changes)
-/// from the manual bundled into the binary — see [`crate::docs_manual`]. The
-/// `.inkycap/` scaffold is reapplied on every call (idempotent).
+/// It lives in the config folder, apart from user noteboxes, and matches the UI
+/// language when a translated manual exists. Its contents are refreshed from
+/// the manual built into the app (see [`crate::docs_manual`]); the `.inkycap/`
+/// scaffold is reapplied each time.
 #[tauri::command]
 pub async fn open_documentation_notebox(
     state: State<'_, AppState>,
@@ -71,9 +61,8 @@ pub async fn open_documentation_notebox(
     let config_dir = crate::app_paths::config_dir();
     let ui_locale = state.settings.read().await.appearance.ui_locale.clone();
 
-    // Serve the manual matching the UI locale. `docs_notebox_dir_name` already
-    // falls back to the English folder for any locale without a bundled manual,
-    // and `seed_if_stale` is a no-op for a folder we don't bundle.
+    // `docs_notebox_dir_name` falls back to English; `seed_if_stale` does
+    // nothing for a folder we don't bundle.
     let dir_name = docs_notebox_dir_name(&ui_locale);
     let root = config_dir.join(dir_name);
 
@@ -81,10 +70,8 @@ pub async fn open_documentation_notebox(
     crate::docs_manual::seed_if_stale(dir_name, &root)?;
     crate::notebox_package::scaffold(&root);
 
-    // Pick the landing note: a top-level `.typ` whose stem contains "index"
-    // (case-insensitive — matches both the seeded `index.typ` and a renamed
-    // "0 - Index.typ" in the authored manual), falling back to the first note
-    // when sorted by name.
+    // Landing note: a top-level `.typ` whose name contains "index"
+    // (case-insensitive), else the first by name.
     let files = top_level_typ(&root);
     let index = files
         .iter()
@@ -128,21 +115,17 @@ pub async fn open_notebox(
     // shape the rest of the backend stores.
     let canonical = crate::storage::path::canonicalize_root(&notebox_path)?;
 
-    // Flag the bundled documentation notebox as a special, help-only session:
-    // content edits are kept for the session but never written to disk, and
-    // structural mutations are refused (see the mutating commands). Set on every
-    // open so a window reused for a different notebox reverts to a normal,
-    // writable session.
+    // The documentation notebox keeps edits for the session but never writes
+    // them, and refuses structural changes. Set on every open, so a reused
+    // window becomes writable again.
     let is_docs = is_docs_notebox(&path);
     if is_docs {
         log::info!("documentation notebox opened: ephemeral edits + docs fonts active");
     }
     session.set_documentation(is_docs);
 
-    // One notebox per window: a notebox open in two windows would let two
-    // editors over the same file silently overwrite each other. If it's
-    // already open elsewhere, refuse — the frontend focuses that window
-    // instead of opening a duplicate.
+    // A notebox can be open in only one window; the frontend focuses the other
+    // window instead.
     if let Some(other) = state.window_for_notebox(&canonical, &label).await {
         return Err(InkyCapError::NoteboxAlreadyOpen(other));
     }
@@ -151,19 +134,15 @@ pub async fn open_notebox(
     // another) — the inner notebox's files would also belong to the outer.
     validate_no_notebox_nesting(&canonical)?;
 
-    // Phase A — fast path: walk the directory, set notebox_root + storage, list
-    // collection files. The UI can render the file tree as soon as this returns.
-    // Citation style falls back to the user-global named style, so pass the
-    // global citation settings in.
+    // Fast path: set up the root and storage and list collections, so the file
+    // tree can render right away.
     let global_citations = state.settings.read().await.citations.clone();
     let note_count = session
         .open_notebox_fast(notebox_path.clone(), &global_citations)
         .await?;
 
-    // Replace the per-notebox health monitor: abort any previous one (from
-    // a notebox that's just been closed/reopened) and spawn a fresh monitor
-    // for this notebox's canonical root. The monitor handles both
-    // "notebox root vanished" detection and `.inkycap/` auto-healing.
+    // Replace the health monitor with one for this notebox. It detects a
+    // vanished root and repairs `.inkycap/`.
     if let Some(canonical_root) = session.notebox_root.read().await.clone() {
         let mut slot = session.health_monitor.write().await;
         if let Some(prev) = slot.take() {
@@ -182,26 +161,19 @@ pub async fn open_notebox(
         Ok((watcher, rx)) => {
             *session.watcher.write().await = Some(watcher);
 
-            // Spawn a background task to forward watcher events to the Tauri
-            // frontend, and to write file changes through to the persistent
-            // metadata cache so externally-edited files don't have to be
-            // re-parsed on next launch.
-            //
-            // The watcher channel is a synchronous `std::sync::mpsc`, so the
-            // dispatcher itself runs on a blocking task; per-event async work
-            // (cache upserts) is offloaded to short-lived tokio tasks.
+            // Forward watcher events to the frontend and write changes through
+            // to the metadata cache. The watcher channel is synchronous, so the
+            // dispatcher runs on a blocking task, with async work in short
+            // tokio tasks.
             let handle = app_handle.clone();
             let owner = label.clone();
             tokio::task::spawn_blocking(move || {
                 use std::sync::mpsc::RecvTimeoutError;
                 use std::time::Duration;
 
-                // Coalesce a burst of watcher events into one batch: after the
-                // first event, keep draining until the stream goes quiet for
-                // `COALESCE_WINDOW` (or we hit `COALESCE_MAX`). This collapses a
-                // git checkout / bulk rewrite / editor write-then-touch storm
-                // into a single reindex pass — one notebox-wide backlink
-                // rebuild — instead of one O(notebox) rebuild per event.
+                // Batch a burst of events (until `COALESCE_WINDOW` passes
+                // quietly or `COALESCE_MAX` is reached), so a git checkout or
+                // bulk rewrite causes one reindex.
                 const COALESCE_WINDOW: Duration = Duration::from_millis(200);
                 const COALESCE_MAX: usize = 1024;
 
@@ -232,14 +204,11 @@ pub async fn open_notebox(
         }
     }
 
-    // Notebox-level git collaboration: if this notebox carries a git config
-    // and is already a git repo, refresh its `.gitignore` and surface a
-    // status summary to the frontend. No auto-fetch — review always sits
-    // between fetch and apply, so opening only reads local state.
+    // If the notebox has a git config and is a repo, refresh its `.gitignore`
+    // and send a status summary. Opening never fetches.
     if let Some(canonical_root) = session.notebox_root.read().await.clone() {
-        // One-time migration for noteboxes from before the git config moved out
-        // of the shared settings.json into the per-machine local.json. Idempotent
-        // and a no-op for already-migrated (and never-collaborative) noteboxes.
+        // Move the git config from the shared settings.json to the per-machine
+        // local.json, for older noteboxes. Idempotent.
         if let Err(err) = crate::notebox_settings::migrate_git_config(&canonical_root) {
             log::warn!("notebox git: could not migrate git config to local.json: {err}");
         }
@@ -248,10 +217,8 @@ pub async fn open_notebox(
             Some(git_cfg) => {
                 surface_git_status(&app_handle, label.clone(), canonical_root, git_cfg)
             }
-            // No collaboration config, but the notebox may still be a git repo
-            // with a remote (an external clone, or a config dropped/not yet
-            // written) — surface a reconnect offer rather than treating it as
-            // plainly non-collaborative.
+            // No config, but it may be a repo with a remote (e.g. an external
+            // clone): offer to reconnect.
             None => surface_reconnectable_git(&app_handle, label.clone(), canonical_root),
         }
     }
@@ -261,10 +228,9 @@ pub async fn open_notebox(
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| "Notebox".to_string());
 
-    // Persist the "last opened" notebox + registry entry ONLY for the main
-    // window. A secondary window (the docs window, an "open in new window"
-    // note) opening a different notebox must not change what the app reopens
-    // next launch, nor add system noteboxes to the user's registry.
+    // Save the last-opened notebox and registry entry only for the main window,
+    // so other windows (documentation, "open in new window") don't change what
+    // opens next launch.
     if label == "main" {
         let mut cfg = config::load_config();
         cfg.notebox_path = Some(path.clone());
@@ -274,10 +240,8 @@ pub async fn open_notebox(
 
     let collection_count = session.collection_files.read().await.len();
 
-    // Phase B — spawn the heavy index build in the background for this
-    // session. The UI is already interactive; features that depend on the
-    // indexes (search, tags, backlinks, properties) show a loading state until
-    // the `notebox:index-ready` event fires.
+    // Build the indexes in the background. Search, tags, backlinks and
+    // properties show a loading state until `notebox:index-ready`.
     spawn_index_rebuild(app_handle.clone(), session.clone());
 
     Ok(NoteboxInfo {
@@ -289,18 +253,13 @@ pub async fn open_notebox(
     })
 }
 
-/// Rebuild a session's indexes in the background after a bulk on-disk change
-/// (notebox open, markdown import, git sync/pull, package import, backup
-/// restore) and signal the frontend when they are ready via
-/// `notebox:index-ready` (or `notebox:index-error` on failure).
+/// Rebuild a session's indexes in the background after a bulk change on disk
+/// (open, import, sync, package import, restore), then emit
+/// `notebox:index-ready` (or `notebox:index-error`).
 ///
-/// `build_indexes` is incremental — the metadata cache reconciles by mtime, so
-/// only files that actually changed are re-parsed — which makes this cheap for a
-/// small sync and correct for a large one. It is the reliable alternative to
-/// leaning on the file watcher alone, whose OS event queue can silently overflow
-/// when thousands of files land at once (a bulk import, a large pull, a full
-/// restore), leaving the link graph, search index, and corpus stale so
-/// backlinks, search, and the Mycelial View show the new notes as unconnected.
+/// `build_indexes` is incremental (by mtime), so this is cheap for small
+/// changes. The file watcher alone isn't enough: its OS event queue can overflow
+/// when thousands of files change at once.
 pub(crate) fn spawn_index_rebuild(
     app_handle: tauri::AppHandle,
     session: std::sync::Arc<crate::state::NoteboxSession>,
@@ -325,16 +284,11 @@ pub(crate) fn spawn_index_rebuild(
     session.replace_index_build(task.inner().abort_handle());
 }
 
-/// User-initiated "Rebuild cache" recovery action (Settings → Files & Links).
-///
-/// Discards this notebox's persisted caches and rebuilds every index from disk
-/// (see [`NoteboxSession::rebuild_indexes_from_disk`]). Unlike the open-time
-/// background rebuild, this blocks until done so the frontend can drive a busy
-/// state off the returned promise; it re-parses the whole notebox, so it can
-/// take seconds-to-minutes on a large one. On success it emits the same
-/// refresh signals the open flow does — `notebox:index-ready` (counts, aliases)
-/// and `notebox:index-updated` (open collection views) — scoped to this window
-/// since the notebox is per-window.
+/// "Rebuild cache" (Settings → Files & Links): discard the caches and rebuild
+/// every index from disk (see [`NoteboxSession::rebuild_indexes_from_disk`]).
+/// Waits until done, so the frontend can show a busy state; can take minutes on
+/// a large notebox. Then emits `notebox:index-ready` and
+/// `notebox:index-updated` to this window.
 #[tauri::command]
 pub async fn rebuild_notebox_indexes(
     state: State<'_, AppState>,
@@ -356,15 +310,12 @@ pub async fn rebuild_notebox_indexes(
     Ok(stats)
 }
 
-/// On opening a *collaborative* notebox (one carrying a [`NoteboxGitConfig`]
-/// that is already a git repo), refresh its `.gitignore` and emit a status
-/// summary (`notebox:git-status`) the frontend can show. Runs on a blocking
-/// task because libgit2 calls are synchronous.
+/// When a collaborative notebox opens (it has a [`NoteboxGitConfig`] and is a
+/// repo), refresh its `.gitignore` and emit `notebox:git-status`. On a blocking
+/// task, since libgit2 is synchronous.
 ///
-/// Deliberately read-only: it never fetches or commits. A notebox that has a
-/// configured remote but has not been initialized as a repo yet (Phase 4
-/// setup) is skipped with a log line, not auto-`init`ed — turning a notebox
-/// into a repo is an explicit user action, not a side effect of opening it.
+/// Read-only: never fetches or commits. A notebox with a remote configured but
+/// no repo yet is skipped; creating a repo is the user's choice.
 ///
 /// [`NoteboxGitConfig`]: crate::notebox_settings::NoteboxGitConfig
 fn surface_git_status(
@@ -431,12 +382,9 @@ fn surface_git_status(
     });
 }
 
-/// On opening a notebox that has **no** collaboration config, check whether it
-/// is nonetheless a git repo with an `origin` remote — an external clone, or a
-/// config that was dropped or never written. If so, emit
-/// `notebox:git-reconnectable` so the frontend can offer a one-click reconnect
-/// (deriving the remote/branch from git) instead of presenting a blank setup
-/// form. A plain notebox (no repo, or a repo without a remote) emits nothing.
+/// When a notebox without a collaboration config opens, check whether it is a
+/// git repo with an `origin` remote. If so, emit `notebox:git-reconnectable` so
+/// the frontend can offer a one-click reconnect.
 fn surface_reconnectable_git(
     handle: &tauri::AppHandle,
     owner_label: String,
@@ -473,17 +421,10 @@ fn surface_reconnectable_git(
     });
 }
 
-/// Apply one coalesced window of watcher events.
-///
-/// Frontend refresh events are emitted immediately, per event, so the file
-/// tree and open editors stay responsive (each window self-scopes; see the
-/// dispatcher comment). The *heavy* index work — re-parsing notes and
-/// rebuilding the backlink index — is collapsed into a single batched reindex
-/// so a burst doesn't trigger N concurrent O(notebox) rebuilds.
-///
-/// Deletes and renames are rarer and keep their dedicated per-event helpers,
-/// but a path that ends the window deleted or renamed is removed from the
-/// reindex set so we never re-parse a file that no longer exists.
+/// Apply one batch of watcher events. Frontend refresh events go out per event,
+/// so the UI stays responsive; the reindex is batched, so a burst causes one
+/// backlink rebuild. Deletes and renames are handled per event, and a path
+/// deleted or renamed by the end of the batch isn't reindexed.
 fn dispatch_watcher_batch(
     handle: &tauri::AppHandle,
     owner: &str,
@@ -519,9 +460,8 @@ fn dispatch_watcher_batch(
                 removals_and_renames.push(WatcherIndexStep::Remove(path.clone()));
             }
             AppEvent::FileRenamed { from, to } => {
-                // Fire delete+create so the tree refreshes the same way it
-                // always has, plus the dedicated rename event for listeners
-                // that follow the move (e.g. an open editor tab).
+                // Delete and create refresh the tree; the rename event lets an
+                // open tab follow the move.
                 let audience = Audience::Window(owner);
                 publish(
                     handle,
@@ -544,10 +484,9 @@ fn dispatch_watcher_batch(
     // `reindex_order` but removed from the set).
     reindex_order.retain(|p| reindex_set.contains(p));
 
-    // Apply the index work here, on the watcher thread, before the next batch
-    // is read: removals and renames in the order they happened, then the
-    // reindex of what was changed. Separate background tasks could run in any
-    // order and, say, drop a note after its re-creation had been indexed.
+    // Apply the index work on the watcher thread, in order, before the next
+    // batch: separate tasks could run out of order and, say, drop a note after
+    // its re-creation was indexed.
     if !removals_and_renames.is_empty() || !reindex_order.is_empty() {
         tauri::async_runtime::block_on(apply_watcher_index_work(
             handle,
@@ -587,11 +526,9 @@ async fn apply_watcher_index_work(
     }
 }
 
-/// Re-parse a coalesced set of changed/created notes and push them through
-/// [`NoteboxSession::reindex_notes`] — a single notebox-wide backlink
-/// resolution for the whole batch. Each path is re-validated against the
-/// canonical notebox root (defense in depth for symlinked watcher events) and
-/// read through the validated storage pipeline.
+/// Re-parse changed notes and pass them to [`NoteboxSession::reindex_notes`],
+/// with one backlink resolution for the batch. Each path is checked against the
+/// canonical root and read through the storage layer.
 ///
 /// [`NoteboxSession::reindex_notes`]: crate::state::NoteboxSession::reindex_notes
 async fn reindex_changed_notes(
@@ -610,9 +547,8 @@ async fn reindex_changed_notes(
 
     let mut batch: Vec<(std::path::PathBuf, String)> = Vec::with_capacity(paths.len());
     for path in paths {
-        // Skip files outside the canonical notebox root — watcher events
-        // for symlinked files resolve to their real paths, so an out-of-
-        // root path is an escape attempt and we refuse to index it.
+        // Events for symlinks resolve to their real paths; refuse anything
+        // outside the root.
         let rel = match path.strip_prefix(&notebox_root) {
             Ok(rel) => rel.to_path_buf(),
             Err(_) => continue,
@@ -644,22 +580,17 @@ async fn reindex_changed_notes(
     }
 }
 
-/// Handle an externally-observed rename: rewrite wikilinks in every note
-/// that referenced `from` so they point at `to`, then update the indices
-/// (drop `from`, index `to`). Without this, external `mv`s would leave
-/// orphan `[[Old Name]]` / `#wikilink("Old Name")` references behind,
-/// since the watcher's split delete+create events provide no way to
-/// correlate the two sides.
+/// An external rename: rewrite wikilinks to `from` so they point at `to`, then
+/// update the indexes. Otherwise an external `mv` would leave dangling `[[Old
+/// Name]]` links.
 async fn follow_renamed_note(
     handle: &tauri::AppHandle,
     session: &crate::state::NoteboxSession,
     from: std::path::PathBuf,
     to: std::path::PathBuf,
 ) {
-    // Only `.typ` notes participate in the link index. A rename whose
-    // *new* side isn't a note (e.g. `note.typ` → `note.bak`) is handled
-    // upstream by the watcher emitting the asymmetric delete/create
-    // pair, so we won't see a `FileRenamed` for it.
+    // Only notes are in the link index. A rename to a non-note arrives as
+    // delete and create instead.
     if to.extension().and_then(|e| e.to_str()) != Some("typ") {
         return;
     }
@@ -671,17 +602,13 @@ async fn follow_renamed_note(
         return;
     };
 
-    // Symlink-escape defence: both endpoints must live under the
-    // canonical notebox root. Watcher events for symlinked paths
-    // resolve to their real targets, so an out-of-root path here
-    // is an escape attempt.
+    // Both ends must be under the canonical root (symlinks resolve to their
+    // real targets).
     if from.strip_prefix(&notebox_root).is_err() || to.strip_prefix(&notebox_root).is_err() {
         return;
     }
 
-    // Rewrite wikilinks in every backlink of the old path. Errors
-    // are logged but non-fatal — a partial rewrite is still better
-    // than no rewrite, and the user can re-save manually if needed.
+    // Errors are logged; a partial rewrite is better than none.
     if let Err(err) =
         crate::commands::file_ops::rewrite_backlinks_for_rename(&from, &to, &storage, session).await
     {
@@ -765,12 +692,9 @@ pub async fn get_notebox_info(
     }))
 }
 
-/// True if `path` refers to a system documentation notebox — the English
-/// `InkyCap-Documentation` or any locale variant (`InkyCap-Documentation-fr-CA`,
-/// …). Matched structurally: a directory sitting directly under the config dir
-/// whose name is (or is prefixed by) `InkyCap-Documentation`. This recognizes
-/// every shipped manual, not just the English one, so the special-case
-/// behaviour (ephemeral edits, docs fonts) applies to the localized docs too.
+/// True for a documentation notebox, English or any locale
+/// (`InkyCap-Documentation-fr-CA`, …): a folder directly in the config dir whose
+/// name starts with `InkyCap-Documentation`.
 pub(crate) fn is_docs_notebox(path: &str) -> bool {
     let candidate = std::path::PathBuf::from(path);
     let canon = std::fs::canonicalize(&candidate).unwrap_or(candidate);
@@ -785,9 +709,8 @@ pub(crate) fn is_docs_notebox(path: &str) -> bool {
     }
 }
 
-/// Reject a notebox folder that is nested inside another notebox, or that
-/// contains an existing (registered) notebox. Nesting breaks the model — the
-/// inner notebox's files would also be scanned as part of the outer.
+/// Reject a folder inside another notebox or containing a registered one; the
+/// outer notebox would scan the inner one's files.
 fn validate_no_notebox_nesting(canonical: &std::path::Path) -> Result<(), InkyCapError> {
     // Child-of-notebox: any ancestor folder that is itself a notebox.
     let marker = crate::notebox_package::format_marker_relpath();
@@ -816,19 +739,16 @@ fn validate_no_notebox_nesting(canonical: &std::path::Path) -> Result<(), InkyCa
     Ok(())
 }
 
-/// A notebox currently open in some window: its path plus the owning window's
-/// label. Lets the frontend disable / focus already-open noteboxes (a notebox
-/// is exclusive to one window).
+/// A notebox open in some window: its path and the window's label.
 #[derive(Debug, serde::Serialize)]
 pub struct OpenNoteboxWindow {
     pub path: String,
     pub label: String,
 }
 
-/// Validate a folder the user wants to add to their notebox list, BEFORE the
-/// add is committed. Rejects a folder that is already in the registry, or that
-/// is nested inside / contains another notebox — so the Settings "Add" button
-/// can disable itself and explain why instead of silently no-op'ing.
+/// Check a folder before adding it to the notebox list: reject one already
+/// listed, or nested inside or containing another notebox, so Settings can
+/// explain why.
 #[tauri::command]
 pub async fn validate_notebox_location(path: String) -> Result<(), InkyCapError> {
     let p = std::path::PathBuf::from(&path);
@@ -872,12 +792,8 @@ pub async fn list_open_noteboxes(
 
 // ── Notebox registry commands ──────────────────────────────────────────
 
-/// A registry entry as presented to the frontend. Extends the persisted
-/// [`config::NoteboxRegistryEntry`] with `collaborative`, computed fresh per
-/// call so the Settings list can show each notebox's true collaboration state
-/// without opening it. (The persisted registry deliberately does not store
-/// this — it would drift from the source of truth, the notebox's own
-/// `.inkycap/settings.json`.)
+/// A registry entry for the frontend, with `collaborative` computed on each
+/// call from the notebox's settings (it isn't stored, so it can't go stale).
 #[derive(Debug, serde::Serialize)]
 pub struct NoteboxRegistryItem {
     pub path: String,
@@ -900,9 +816,8 @@ pub async fn get_notebox_registry() -> Result<Vec<NoteboxRegistryItem>, InkyCapE
     Ok(entries
         .into_iter()
         .map(|e| {
-            // Cheap: reads only the notebox's own settings.json (no index, no
-            // git subprocess). A missing/unreadable file yields a non-collaborative
-            // default, which is the correct fallback for the toggle.
+            // Reads only the notebox's settings.json. A missing file means not
+            // collaborative.
             let collaborative =
                 crate::notebox_settings::load_settings(std::path::Path::new(&e.path))
                     .git
@@ -956,13 +871,9 @@ pub async fn update_notebox_entry(path: String, display_name: String) -> Result<
     Ok(())
 }
 
-/// Remove a notebox from the persistent registry (does not delete files on disk).
-///
-/// If the removed notebox was also the saved/active one, the `notebox_path`
-/// pointer is cleared so a later launch doesn't try to reopen a notebox the
-/// user just removed. The frontend separately unloads the active notebox (see
-/// `closeActiveNotebox` in stores/notebox.ts) so the user is walked back to a
-/// valid notebox rather than left editing one that is no longer registered.
+/// Remove a notebox from the registry (files on disk are kept). If it was the
+/// saved notebox, the pointer is cleared so it isn't reopened. The frontend
+/// unloads it separately (see `closeActiveNotebox` in stores/notebox.ts).
 #[tauri::command]
 pub async fn remove_notebox_from_registry(path: String) -> Result<(), InkyCapError> {
     let mut cfg = config::load_config();
@@ -974,12 +885,9 @@ pub async fn remove_notebox_from_registry(path: String) -> Result<(), InkyCapErr
     Ok(())
 }
 
-/// Returns `true` if `path` is a directory containing no entries, or does not
-/// exist yet (a clone will create it). Used by the clone-from-remote flow to
-/// keep a collaborator from cloning onto a folder that already holds files —
-/// git requires an empty destination, and overlaying a clone onto live notes
-/// would be destructive. An existing notebox always contains `.inkycap/`, so
-/// this also rejects "clone into my other notebox" by construction.
+/// `true` if `path` is an empty directory or doesn't exist yet, as git requires
+/// for a clone destination. An existing notebox has `.inkycap/`, so cloning
+/// into one is refused.
 #[tauri::command]
 pub async fn dir_is_empty(path: String) -> Result<bool, InkyCapError> {
     let dir = std::path::PathBuf::from(&path);
@@ -1030,9 +938,8 @@ pub async fn move_notebox(
         }
     }
 
-    // Run the rename on a blocking pool — a cross-directory move can fall back
-    // to a recursive copy on some filesystems, which must not block the async
-    // worker.
+    // On a blocking thread: a move across filesystems can turn into a recursive
+    // copy.
     {
         let (old, new) = (old.clone(), new.clone());
         tauri::async_runtime::spawn_blocking(move || std::fs::rename(&old, &new))
@@ -1073,9 +980,7 @@ pub struct NoteboxSeedResult {
     pub warnings: Vec<String>,
 }
 
-/// Returns `true` if the folder already holds an InkyCap notebox (it has an
-/// `.inkycap` folder). The frontend offers the seed-from-existing prompt only
-/// when this is `false`.
+/// `true` if the folder already holds a notebox (it has `.inkycap`).
 #[tauri::command]
 pub async fn notebox_is_existing(path: String) -> Result<bool, InkyCapError> {
     let dir = std::path::PathBuf::from(&path);
@@ -1088,17 +993,13 @@ pub async fn notebox_is_existing(path: String) -> Result<bool, InkyCapError> {
     Ok(crate::notebox_settings::is_existing_notebox(&dir))
 }
 
-/// Seed a fresh notebox's `.inkycap/` from another notebox: copies the
-/// per-notebox settings file, the creation rules file, the scaffolds
-/// folder, and the property-types registry. Absolute paths inside the
-/// copied settings (`citations.bibliography_path`,
-/// `citations.custom_csl_path`) are sanitized — any path that doesn't
-/// resolve in the destination is cleared and a warning is surfaced so the
-/// user can fix it later.
+/// Seed a new notebox's `.inkycap/` from another notebox: settings, creation
+/// rules, scaffolds and property types. Absolute paths in the settings
+/// (`citations.bibliography_path`, `citations.custom_csl_path`) that don't
+/// resolve in the new notebox are cleared, with a warning.
 ///
-/// Refuses to run if the target is already a notebox (has an `.inkycap`
-/// folder), so an existing notebox's setup is never overwritten. Both paths
-/// must exist as directories.
+/// Refuses if the target is already a notebox. Both paths must be existing
+/// directories.
 #[tauri::command]
 pub async fn seed_notebox_from_source(
     target_path: String,
@@ -1164,9 +1065,8 @@ fn seed_notebox_from_source_blocking(
     let src_settings_path = crate::notebox_settings::settings_path(&source);
     if src_settings_path.is_file() {
         let mut nb_settings = crate::notebox_settings::load_settings(&source);
-        // Bibliography path: if absolute, only keep it when it resolves
-        // on disk. Notebox-relative paths are kept as-is — they'll
-        // resolve (or not) inside the new notebox.
+        // Keep an absolute bibliography path only if it exists; keep relative
+        // ones as they are.
         if let Some(ref bib) = nb_settings.citations.bibliography_path {
             if std::path::Path::new(bib).is_absolute() && !std::path::Path::new(bib).exists() {
                 warnings.push(format!(
@@ -1175,10 +1075,8 @@ fn seed_notebox_from_source_blocking(
                 nb_settings.citations.bibliography_path = None;
             }
         }
-        // Custom CSL path: notebox-root-absolute (`/styles/foo.csl`). Resolve
-        // it against the new notebox and clear it if the style file didn't
-        // travel (seeding copies `.inkycap/`, not the notebox's `styles/`
-        // folder), so the new notebox carries no dangling style reference.
+        // The custom CSL path is notebox-root-absolute; `styles/` isn't copied,
+        // so clear it if the file isn't in the new notebox.
         if let Some(ref csl) = nb_settings.citations.custom_csl_path {
             if !target.join(csl.trim_start_matches('/')).exists() {
                 warnings.push(format!(
@@ -1206,9 +1104,7 @@ fn seed_notebox_from_source_blocking(
         copied_files += 1;
     }
 
-    // User word lists — the shared dictionary (spellcheck + Mycelial rescue
-    // allow-list) and the Mycelial stopword list. Both are personal vocabulary
-    // the user has curated, worth carrying into a notebox seeded from this one.
+    // The user's word lists (spellcheck dictionary and Mycelial stopwords).
     for name in ["dictionary.txt", "mycelial-stopwords.txt"] {
         let src = source_inkycap.join(name);
         if src.is_file() {
@@ -1217,9 +1113,7 @@ fn seed_notebox_from_source_blocking(
         }
     }
 
-    // Scaffolds folder — copy every `.typ` file (creation rules reference
-    // these by name, so the rules-copy above won't make sense without
-    // them).
+    // Scaffolds, which the copied creation rules refer to by name.
     let src_scaffolds = source_inkycap.join("scaffolds");
     if src_scaffolds.is_dir() {
         let dst_scaffolds = target_inkycap.join("scaffolds");

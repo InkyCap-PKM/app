@@ -5,14 +5,14 @@ import { typst } from "codemirror-lang-typst";
 import { ensureSyntaxTree } from "@codemirror/language";
 import { typstKeymap } from "./keymaps";
 
-// Enter at the end of a freshly-opened code fence steps into the block's empty
-// body line rather than pushing a second blank line into it. Pairs with the
-// ``` gesture in auto-pair-typst.ts, which now leaves the caret on the fence so
-// the language can be typed: ``` → `typ` → Enter → code.
+// Enter at the end of a just-opened code fence moves into the block's empty
+// body line rather than adding another blank line. Goes with the ``` gesture in
+// auto-pair-typst.ts, which leaves the caret on the fence for the language: ```
+// → `typ` → Enter → code.
 //
-// These editors carry the real Typst language: the rule asks the syntax tree
-// whether a fence opens or closes a block, which is the whole point — counting
-// backticks in TypeScript got that wrong (see stepIntoOpenFence).
+// These editors use the real Typst language: the rule asks the syntax tree
+// whether a fence opens or closes a block, which counting backticks gets wrong
+// (see stepIntoOpenFence).
 
 function mk(doc: string, head: number) {
   const view = new EditorView({

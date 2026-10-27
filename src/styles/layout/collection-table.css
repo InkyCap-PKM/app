@@ -1,10 +1,9 @@
-/* Collection table: view tabs, grid, column resize/reorder, column picker.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Collection table: view tabs, grid, column resizing and reordering, column
+   picker. Part of layout.css, whose import order (see ../layout.css) keeps
+   the cascade. */
 
-/* A collection tab as a whole: the pane's nav bar flush at the top, the table
-   filling the rest. Mirrors the editor, which stacks its own header over
-   `.typst-editor-body` the same way. */
+/* A collection tab: the pane's navigation bar at the top, the table filling
+   the rest, as in the editor. */
 .collection-view {
   display: flex;
   flex-direction: column;
@@ -36,16 +35,15 @@
   display: flex;
   gap: var(--space-1);
   align-items: center;
-  /* Outer wrapper: takes the row's free width. The scroll-area inside it holds
-     the tabs; chevron buttons and the add-view "+" sit outside it so they stay
-     put while the tabs scroll. */
+  /* Takes the row's free width. The tabs scroll inside it; the arrow buttons
+     and the add-view "+" are outside, so they stay put. */
   flex: 1 1 auto;
   min-width: 0;
 }
 
-/* The scrolling track for the view tabs. `overflow: hidden` (not auto) keeps
-   the tabs scrollable programmatically via the chevron buttons / wheel without
-   a visible scrollbar eating into the row — mirrors the file tab strip. */
+/* The scrolling row of view tabs. `overflow: hidden` (not auto) allows
+   scrolling by the arrows and wheel without a scrollbar, as in the file tab
+   strip. */
 .collection-table__view-tabs-scroll {
   display: flex;
   gap: var(--space-1);
@@ -77,9 +75,8 @@
   align-items: center;
   gap: var(--space-2);
   background: none;
-  /* A visible border (matching the Filter/Columns/Export toolbar buttons
-     beside them) so the view switchers read clearly as clickable tab-buttons
-     rather than plain text. The active tab strengthens it below. */
+  /* A visible border, like the Filter/Columns/Export buttons beside them, so
+     the view tabs look clickable. The active tab strengthens it below. */
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-md);
   color: var(--fg-muted);
@@ -129,9 +126,8 @@
   background: var(--bg-hover);
 }
 
-/* The close affordance stays visible on every tab — active, hovered, or
-   not — so it never pops in under the cursor (which made it easy to click
-   by accident). It sits muted by default and turns red on direct hover. */
+/* The close button shows on every tab, so it never appears under the cursor
+   and gets clicked by accident. Muted, red on direct hover. */
 .collection-table__view-delete {
   background: none;
   border: none;
@@ -169,9 +165,8 @@
 .collection-table__toolbar-btn {
   background: none;
   border: 1px solid var(--border-primary);
-  /* Compact toolbar control — uses the small-control radius (not --radius-md),
-     matching .btn--sm and the other dense toolbar buttons so it isn't
-     over-rounded at this footprint. */
+  /* Small control: the small-control radius, like .btn--sm and the other
+     compact toolbar buttons. */
   border-radius: var(--radius-control);
   color: var(--fg-muted);
   cursor: pointer;
@@ -274,9 +269,8 @@
   color: var(--fg-primary);
 }
 
-/* Column-width resize grip: a thin hit area straddling the header's right
-   edge. Invisible until the header (or grip) is hovered, then a faint rule
-   hints at the draggable boundary. */
+/* Column resize grip: a thin hit area across the header's right edge,
+   showing a faint line when the header or grip is hovered. */
 .collection-table__col-resize {
   position: absolute;
   top: 0;
@@ -322,9 +316,8 @@
   color: var(--accent-text);
 }
 
-/* Per-column filter funnel. Sits inline after the header label; faint until the
-   header is hovered, and shown solid (accent) when the column has an active
-   filter so an applied filter reads at a glance. */
+/* Column filter funnel after the header label: faint until the header is
+   hovered, solid accent when the column has a filter. */
 .collection-table__filter-btn {
   display: inline-flex;
   align-items: center;
@@ -494,11 +487,10 @@
 
 
 /* ── Row gutter: "open in visual editor" ──
-   A narrow leading column carrying one pencil button per row, so a note can be
-   opened straight into the visual editor without first hunting for the
-   file-name cell (which the user may have hidden). The button is faint until
-   its row is hovered, matching the column-header funnel's reveal-on-hover
-   treatment, and shows fully on keyboard focus. */
+   A narrow first column with a pencil button per row, to open a note in the
+   visual editor without finding its file name cell (which may be hidden).
+   Faint until the row is hovered, like the header funnel, and fully shown on
+   keyboard focus. */
 .collection-table__gutter-th,
 .collection-table__gutter-td {
   width: 1%;

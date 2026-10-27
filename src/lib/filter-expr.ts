@@ -1,10 +1,7 @@
-// Shared leaf-expression (de)serialization for the collection filter DSL.
-//
-// A "leaf" is a single property/operator/value triple that the backend
-// evaluates (`prop.contains("x")`, `prop >= "2025-01-01"`, …). Both the
-// advanced FilterBuilder and the per-column header filters
-// (ColumnFilterPopover, column-filter.ts) build the same expression strings,
-// so the serializer lives here, in one place, rather than being duplicated.
+// Reading and writing single collection filter expressions: a property,
+// operator and value (`prop.contains("x")`, `prop >= "2025-01-01"`, …) that the
+// backend evaluates. Used by the FilterBuilder and the column header filters
+// (ColumnFilterPopover, column-filter.ts).
 
 import type { FilterGroup } from "./types";
 
@@ -16,9 +13,11 @@ export interface FilterRow {
   value: string;
 }
 
-/** Parse a filter expression string into a FilterRow for the UI. Unrecognized
- *  syntax falls back to an equality row carrying the raw text as the property,
- *  so a hand-authored expression is never silently dropped. */
+/**
+ * Parse a filter expression into a FilterRow for the UI. Anything unrecognized
+ * becomes an equality row with the raw text as the property, so a hand-written
+ * expression is never lost.
+ */
 export function parseFilterRow(expr: string): FilterRow {
   const trimmed = expr.trim();
 
@@ -34,9 +33,8 @@ export function parseFilterRow(expr: string): FilterRow {
     return { property: isEmpty[1], operator: ".isEmpty", value: "" };
   }
 
-  // Negated contains: !prop.contains("value"). Checked before the plain
-  // contains/isEmpty cases so the leading "!" isn't swallowed into the
-  // property name.
+  // Negated contains: !prop.contains("value"). Checked before plain
+  // contains/isEmpty so the "!" doesn't become part of the property name.
   const negContains = trimmed.match(/^!(.+)\.contains\("(.*)"\)$/);
   if (negContains) {
     return { property: negContains[1], operator: "!.contains", value: negContains[2] };
@@ -64,14 +62,16 @@ export function parseFilterRow(expr: string): FilterRow {
   return { property: trimmed, operator: "==", value: "" };
 }
 
-/** Operators that compare against a literal value (everything except the
- *  empty/not-empty predicates). Shared so callers can decide whether a value
- *  input is needed. */
+/**
+ * Operators that compare with a value (all but the empty/not-empty checks), so
+ * callers know whether a value field is needed.
+ */
 export const RELATIONAL_OPERATORS = ["==", "!=", "<", "<=", ">", ">="] as const;
 
-/** Every operator a filter row can carry, with its i18n label key. Shared by
- *  the FilterBuilder and the Mycelial exclusion editor so the two present
- *  identical operator vocabularies. */
+/**
+ * Every operator a filter row can have, with its i18n label key. Shared by the
+ * FilterBuilder and the Mycelial exclusion editor.
+ */
 export const FILTER_OPERATORS = [
   { value: "==", labelKey: "filter.op.equals" },
   { value: "!=", labelKey: "filter.op.notEquals" },
@@ -107,10 +107,9 @@ export function serializeFilterRow(row: FilterRow): string {
     case ">":
     case ">=": {
       const val = row.value.trim();
-      // Booleans, numbers, and property references (this.*, file.*, note[…])
-      // are emitted unquoted — quoting a reference like `this.file.name`
-      // would compare against that literal string instead of the referenced
-      // value, breaking e.g. the default self-exclusion row.
+      // Booleans, numbers and property references (this.*, file.*, note[…])
+      // aren't quoted; quoting `this.file.name` would compare with that text,
+      // breaking e.g. the default self-exclusion row.
       if (
         val === "true" ||
         val === "false" ||
@@ -126,10 +125,11 @@ export function serializeFilterRow(row: FilterRow): string {
   }
 }
 
-/** The note names a filter group requires notes to link to: the values of
- *  `file.links.contains("…")` leaves under `and`/`or`, at any depth, in
- *  order and without repeats. Leaves under `not` are skipped, since those
- *  notes must *not* link to the name. */
+/**
+ * The note names a filter group requires links to: the values of
+ * `file.links.contains("…")` under `and`/`or` at any depth, in order without
+ * repeats. Those under `not` are skipped, since notes must not link to them.
+ */
 export function linkTargetsInFilter(group: FilterGroup | null | undefined): string[] {
   const out: string[] = [];
   const visit = (g: FilterGroup) => {

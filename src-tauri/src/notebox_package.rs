@@ -1,17 +1,13 @@
-//! Notebox-bundled `inkycap-notebox` Typst library.
-//!
-//! The library source is embedded in the binary at compile time. On notebox
-//! open, [`scaffold`] writes it to a stable, version-less location at
-//! `<notebox>/.inkycap/notebox.typ`. Notes import it with the canonical line
-//! returned by [`import_line`]:
+//! The `inkycap-notebox` Typst library bundled with each notebox. Built into the
+//! binary; on notebox open, [`scaffold`] writes it to
+//! `<notebox>/.inkycap/notebox.typ`, and notes import it with [`import_line`]:
 //!
 //! ```typst
 //! #import "/.inkycap/notebox.typ": *
 //! ```
 //!
-//! The file content is still versioned at build time so that future migrations
-//! can be applied to existing notebox content; only the import path users see in
-//! their notes is stable.
+//! The library is still versioned at build time, so existing noteboxes can be
+//! migrated; only the import path is fixed.
 
 use std::path::{Path, PathBuf};
 
@@ -19,21 +15,17 @@ use std::path::{Path, PathBuf};
 /// of notebox content. Not part of the import path.
 pub const VERSION: &str = "0.5.0";
 
-/// External, file-readable notebox **format contract** version. Distinct from
-/// [`VERSION`] (the embedded library's build version): this is the number an
-/// *outside* tool keys on to decide whether it understands the on-disk layout
-/// and the queryable metadata labels. Bump it only on a breaking change to the
-/// `.inkycap/` layout or the label/dict surface, paired with a migration note.
-/// Surfaced on disk via `.inkycap/format.json` (see `write_format_marker`) so
-/// programs that operate on a notebox *without InkyCap running* can detect it.
-/// Documented in `documentation/developer/extending/notebox-format.md`.
+/// Version of the on-disk notebox format, for tools that work on a notebox
+/// without InkyCap. Separate from [`VERSION`] (the library's build version).
+/// Bump only for a breaking change to the `.inkycap/` layout or the labels and
+/// their dicts, with a migration note. Written to `.inkycap/format.json` (see
+/// `write_format_marker`) and documented in
+/// `documentation/developer/extending/notebox-format.md`.
 pub const FORMAT_VERSION: &str = "1";
 
-/// The stable Typst label names InkyCap emits and queries (e.g.
-/// `typst query <file> "<inkycap-note>"`). Part of the documented open-format
-/// contract; mirrored into `.inkycap/format.json` so external tools can
-/// discover them without parsing the library. Keep in sync with the labels in
-/// `inkycap-notebox/lib.typ`.
+/// The Typst labels InkyCap emits and queries (e.g. `typst query <file>
+/// "<inkycap-note>"`). Part of the documented format and copied into
+/// `.inkycap/format.json`. Keep in sync with `inkycap-notebox/lib.typ`.
 pub const QUERY_LABELS: &[&str] = &[
     "inkycap-note",
     "inkycap-tag",
@@ -53,21 +45,15 @@ pub fn import_line() -> String {
     "#import \"/.inkycap/notebox.typ\": *".to_string()
 }
 
-/// Build the document-language typesetting directive for a UI locale, or
-/// `None` when none is warranted (English — Typst's default needs no directive
-/// — or an unparseable code).
+/// The language directive for a UI language, or `None` for English (Typst's
+/// default) or an unparseable code. The first subtag is the language and a
+/// two-letter subtag the region (script subtags like `Hant` are skipped):
+/// `"fr-CA"` → `#set text(lang: "fr", region: "CA")`, `"zh-Hant-TW"` → `lang:
+/// "zh", region: "TW"`.
 ///
-/// `ui_locale` is a BCP-47 code: the first subtag is the language, and a
-/// trailing two-letter subtag is taken as the ISO 3166-1 region (script
-/// subtags like `Hant` are skipped). So `"fr-CA"` → `#set text(lang: "fr",
-/// region: "CA")`, `"de"` → `#set text(lang: "de")`, `"zh-Hant-TW"` →
-/// `lang: "zh", region: "TW"`.
-///
-/// Emitted into a newly created note (after the `#import` line) when the user
-/// has "Use corresponding language typesetting" enabled for a non-English UI
-/// locale, so French/German/… prose hyphenates and spaces correctly. The
-/// visual editor folds this line into the hidden leading-preamble machinery,
-/// so a localized note reads like an English one there.
+/// Added to new notes after the import when "Use corresponding language
+/// typesetting" is on, so non-English prose hyphenates and spaces correctly.
+/// The visual editor hides it with the imports.
 pub fn locale_typesetting_directive(ui_locale: &str) -> Option<String> {
     let subtags: Vec<&str> = ui_locale
         .trim()
@@ -100,10 +86,8 @@ pub fn library_relpath() -> &'static str {
     ".inkycap/notebox.typ"
 }
 
-/// Reserved directory for `.collection` files. Collections are an InkyCap
-/// architectural concept (not user-arrangeable like notes), so they live
-/// under `.inkycap/` alongside the notebox library and scaffolds. No user
-/// setting; the path is fixed by design.
+/// Folder for `.collection` files, fixed inside `.inkycap/` since collections
+/// aren't arranged by the user like notes.
 pub fn collections_relpath() -> &'static str {
     ".inkycap/collections"
 }
@@ -113,10 +97,9 @@ pub fn collections_dir(notebox_root: &Path) -> PathBuf {
     notebox_root.join(collections_relpath())
 }
 
-/// Reserved directory for scaffold (`.typ` note-template) files. Like
-/// collections, scaffolds are an InkyCap architectural concept and live in a
-/// fixed `.inkycap/` subdirectory — naturally excluded from search and the
-/// note browser, editable in-app via the Templates panel.
+/// Folder for scaffolds (note templates), fixed inside `.inkycap/` like
+/// collections, so they stay out of search and the note list. Edited through
+/// the Templates panel.
 pub fn scaffolds_relpath() -> &'static str {
     ".inkycap/scaffolds"
 }
@@ -126,9 +109,7 @@ pub fn scaffolds_dir(notebox_root: &Path) -> PathBuf {
     notebox_root.join(scaffolds_relpath())
 }
 
-/// Match the line that imports the inkycap-notebox library. Used by detection
-/// code to find a note's preamble import via the single canonical, version-less
-/// path emitted by [`import_line`].
+/// Whether `line` is the notebox library import ([`import_line`]).
 pub fn is_notebox_import_line(line: &str) -> bool {
     // A file's first line may begin with a byte order mark, which
     // `trim_start` doesn't treat as whitespace.
@@ -139,9 +120,8 @@ pub fn is_notebox_import_line(line: &str) -> bool {
     trimmed.contains("/.inkycap/notebox.typ")
 }
 
-/// Ensure the source contains an inkycap-notebox import line. If missing,
-/// prepend it. Used by export paths to handle notes created outside InkyCap
-/// or with a missing preamble.
+/// Add the notebox import if missing. Used by export for notes made outside
+/// InkyCap.
 pub fn ensure_import(source: &str) -> String {
     if source.lines().any(is_notebox_import_line) {
         return source.to_string();
@@ -155,9 +135,9 @@ pub fn ensure_import(source: &str) -> String {
 
 static LIB_TYP: &[u8] = include_bytes!("../../inkycap-notebox/lib.typ");
 
-/// Default scaffold seeded for the built-in "New Note" creation rule.
-/// Written to `<notebox>/.inkycap/scaffolds/new-note.typ` on first notebox open
-/// and only when the file is absent — never overwritten so user edits stick.
+/// Default scaffold for the built-in "New Note" rule, written to
+/// `<notebox>/.inkycap/scaffolds/new-note.typ` only when absent, so user edits
+/// are kept.
 pub const DEFAULT_NEW_NOTE_SCAFFOLD: &str = r#"#import "/.inkycap/notebox.typ": *
 
 #note(
@@ -197,10 +177,9 @@ pub fn library_path(notebox_root: &Path) -> PathBuf {
     notebox_root.join(library_relpath())
 }
 
-/// Ensure the inkycap-notebox library is present and up-to-date in the notebox.
-/// Writes are skipped when the file already matches the embedded bytes.
-/// Errors are logged and swallowed — a missing file will surface as a
-/// compile error, which is better than blocking notebox open.
+/// Make sure the notebox library is present and current, writing only when it
+/// differs. Errors are logged; a missing file shows up as a compile error
+/// rather than blocking the open.
 pub fn scaffold(notebox_root: &Path) {
     let inkycap_dir = notebox_root.join(".inkycap");
     if let Err(err) = std::fs::create_dir_all(&inkycap_dir) {
@@ -237,9 +216,8 @@ pub fn scaffold(notebox_root: &Path) {
         );
     }
 
-    // Reserved location for `.collection` files. Created on every notebox open
-    // so the directory exists before the scanner runs; collections never
-    // live anywhere else.
+    // The collections folder, created on every open so it exists before the
+    // scanner runs.
     let collections_dir = collections_dir(notebox_root);
     if let Err(err) = std::fs::create_dir_all(&collections_dir) {
         log::warn!(
@@ -248,9 +226,7 @@ pub fn scaffold(notebox_root: &Path) {
         );
     }
 
-    // Best-effort cleanup of the old versioned package layout. Leaving the
-    // stale tree in place would not break anything, but keeping the notebox
-    // tidy after a one-time migration is preferable.
+    // Remove the old versioned package folder, if any.
     let old_packages_dir = inkycap_dir.join("packages").join("inkycap-notebox");
     if old_packages_dir.exists() {
         let _ = std::fs::remove_dir_all(&old_packages_dir);
@@ -266,28 +242,17 @@ pub fn scaffold(notebox_root: &Path) {
     }
 }
 
-/// Strip the Typst note preamble (`#import` lines and `#note(...)` call)
-/// from the top of a note, returning the body content. Used for previews
-/// and when merging notes to avoid duplicate preambles.
+/// The body of a note without its `#import` lines and `#note(...)` call, for
+/// previews and merged documents.
 pub fn strip_note_preamble(content: &str) -> &str {
-    // Locate the `#note(...)` call through Typst's own parser
-    // (`note_call_span`) and return everything after it. Per CLAUDE.md's
-    // Typst-first principle, the AST is the source of truth for the call's
-    // extent: a hand-rolled "skip imports, then expect `#note(` immediately"
-    // scan tripped over anything the parser tolerates between the import and
-    // the note — `//` line comments, `/* */` block comments, and the
-    // locale `#set text(lang, region)` directive InkyCap injects into
-    // non-English notes. When it tripped, it dropped the `#note(...)` call
-    // from the preamble, which silently emptied the property panel for notes
-    // whose body fails to compile (the query pipeline's body-stripped
-    // fallback then saw no metadata) and leaked the raw call into note
-    // previews and merged book exports.
+    // Find the `#note(...)` call with Typst's parser (`note_call_span`) and
+    // return what follows. Per CLAUDE.md's Typst-first principle the parser
+    // decides the call's extent, so comments or the locale `#set text(...)`
+    // between the import and the call are handled.
     if let Some(span) = crate::typst_pipeline::note_rewriter::note_call_span(content) {
         return content[span.end..].trim_start();
     }
-    // No `#note(...)` — skip a leading run of imports, line comments, and
-    // blank lines so a preview/body view starts at real content rather than
-    // at the file's machinery.
+    // No `#note(...)`: skip leading imports, comments and blank lines.
     let mut rest = content;
     loop {
         let trimmed = rest.trim_start();
@@ -302,9 +267,8 @@ pub fn strip_note_preamble(content: &str) -> &str {
     }
 }
 
-/// Write `bytes` to `path` only if no file exists there. Used to seed
-/// user-editable templates: once a user has touched the file (or
-/// intentionally deleted it), we don't recreate it on the next notebox open.
+/// Write `bytes` to `path` only if nothing is there, so user-editable templates
+/// aren't recreated after the user edits or deletes them.
 fn write_if_absent(path: &Path, bytes: &[u8]) {
     if path.exists() {
         return;
@@ -317,10 +281,10 @@ fn write_if_absent(path: &Path, bytes: &[u8]) {
     }
 }
 
-/// Write the `.inkycap/format.json` marker documenting the open-format
-/// contract for external tools. Refreshed (not write-once) so the recorded
-/// versions track the running build. The shape is itself part of the contract:
-/// see `documentation/developer/extending/notebox-format.md`.
+/// Write `.inkycap/format.json`, describing the format for external tools.
+/// Rewritten on each open so the versions match the running build. Its shape is
+/// part of the format (see
+/// `documentation/developer/extending/notebox-format.md`).
 fn write_format_marker(notebox_root: &Path) {
     let marker = serde_json::json!({
         "notebox_format_version": FORMAT_VERSION,
@@ -364,9 +328,8 @@ mod tests {
 
     #[test]
     fn strip_note_preamble_tolerates_comments_and_set_rules_before_note() {
-        // Regression: `//` line comments, `/* */` block comments, and the
-        // locale `#set text(...)` directive between the import and `#note(...)`
-        // must not prevent the call from being recognized and stripped.
+        // Comments and the locale `#set text(...)` between the import and
+        // `#note(...)` don't stop the call being found.
         let src = "#import \"/.inkycap/notebox.typ\": *\n\n\
                    // a note about this note\n\
                    /* block */\n\

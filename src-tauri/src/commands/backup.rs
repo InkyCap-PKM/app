@@ -1,20 +1,18 @@
-//! Tauri commands that expose the backup feature to the frontend.
+//! Backup commands for the frontend.
 //!
-//! Five run/state commands:
-//!   - `backup_now`              — run an immediate one-shot backup.
-//!   - `get_backup_state`        — read last-run info for the settings UI.
-//!   - `set_backup_password`     — store a password in the OS keychain.
-//!   - `clear_backup_password`   — wipe the stored password.
-//!   - `has_backup_password`     — does the OS keychain currently hold one?
+//! Run and state:
+//!   - `backup_now`: run a backup now.
+//!   - `get_backup_state`: last-run info for Settings.
+//!   - `set_backup_password` / `clear_backup_password`: store or remove the
+//!     keychain password.
+//!   - `has_backup_password`: whether the keychain holds one.
 //!
-//! Three browse/restore commands:
-//!   - `list_backup_archives`    — enumerate archives in the destination.
-//!   - `list_backup_contents`    — entry list of one archive.
-//!   - `restore_backup_files`    — selective extract back to a target root.
+//! Browse and restore:
+//!   - `list_backup_archives`: archives in the destination.
+//!   - `list_backup_contents`: one archive's entries.
+//!   - `restore_backup_files`: extract chosen entries to a folder.
 //!
-//! Scheduling (interval timer, on-launch trigger, only-on-change guard)
-//! is a separate concern that lives in a background task spawned from
-//! `lib.rs::run`; those don't need IPC bindings.
+//! Scheduling runs in a background task started from `lib.rs::run`.
 
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
@@ -28,10 +26,8 @@ use crate::errors::{InkyCapError, Result};
 use crate::state::AppState;
 use crate::storage::to_frontend_string;
 
-/// Run a backup immediately. Returns `Ok(None)` when the only-on-change
-/// guard kicked in for a *scheduled* tick — manual runs from the command
-/// palette set `is_scheduled=false` and never skip, so the frontend can
-/// safely treat `None` as "this shouldn't happen here".
+/// Run a backup now. `Ok(None)` means the only-on-change check skipped a
+/// scheduled run; manual runs pass `is_scheduled=false` and never skip.
 #[tauri::command]
 pub async fn backup_now(
     app: AppHandle,
@@ -69,9 +65,8 @@ pub async fn backup_now(
     // keep a copy so a failure can be recorded against the right notebox.
     let notebox_root_for_record = notebox_root.clone();
 
-    // The zip writer is synchronous; do it in a blocking task so we
-    // don't tie up the tokio reactor on big noteboxes. The cost of one
-    // OS thread is negligible vs. the cost of stalling other commands.
+    // The zip writer is synchronous; run it on a blocking thread so other
+    // commands aren't stalled.
     let result = tokio::task::spawn_blocking(move || {
         runner::run(runner::RunInputs {
             settings: &settings,
@@ -84,29 +79,22 @@ pub async fn backup_now(
     .await
     .map_err(|e| InkyCapError::ExportFailed(format!("backup task panicked: {e}")))?;
 
-    // Record the failure into persisted state so the UI's "Last run"
-    // line shows the actual error rather than the previous success.
-    // A user-requested cancellation isn't a failure — leave the
-    // persisted state alone so the previous successful run stays the
-    // "Last backup" record.
+    // Save a failure so "Last run" shows the error. A cancellation isn't a
+    // failure; the previous success stays the record.
     if let Err(e) = &result {
         if !matches!(e, InkyCapError::Cancelled) {
             runner::record_failure(&notebox_root_for_record, &e.to_string());
         }
     }
 
-    // Tell the UI to refresh its "Last backup" line. Fires on both
-    // success and failure — either way the persisted state changed.
-    // Emit best-effort: a closed UI just drops the event harmlessly.
+    // Tell the UI to refresh "Last backup", after success or failure.
     publish(&app, Audience::AllWindows, AppEvent::BackupStateChanged);
 
     result
 }
 
-/// Read the persisted "last backup" record for the *currently open*
-/// notebox. Backups are per-notebox, so the settings UI must only ever see
-/// the active notebox's record — never another notebox's. Returns the
-/// default ("never ran") record when no notebox is open.
+/// The last-backup record for the open notebox (backups are per notebox), or
+/// the "never ran" default with none open.
 #[tauri::command]
 pub async fn get_backup_state(
     state: State<'_, AppState>,
@@ -120,21 +108,17 @@ pub async fn get_backup_state(
     })
 }
 
-/// Request cancellation of any backup currently in flight. Sets the
-/// shared cancel flag the archive writer polls between entries and
-/// returns immediately — the actual abort happens cooperatively in the
-/// background thread. Idempotent: calling when no backup is running is
-/// harmless (the flag is cleared at the start of every run).
+/// Ask a running backup to stop: sets the flag the archive writer checks
+/// between entries and returns at once. Harmless when none is running (the flag
+/// is cleared at the start of each run).
 #[tauri::command]
 pub async fn cancel_backup(state: State<'_, AppState>) -> Result<()> {
     state.backup_cancel.store(true, Ordering::Release);
     Ok(())
 }
 
-/// Store a new backup password in the OS keychain. Overwrites any
-/// existing entry. Empty string is rejected at the boundary — the UI
-/// should never call this with an empty string, but a defensive check
-/// here saves us from a keychain that thinks "" is a valid password.
+/// Store a backup password in the OS keychain, replacing any existing one. An
+/// empty password is refused.
 #[tauri::command]
 pub async fn set_backup_password(password: String) -> Result<()> {
     if password.is_empty() {
@@ -156,9 +140,8 @@ pub async fn clear_backup_password() -> Result<()> {
         .map_err(|e| InkyCapError::BadRequest(format!("keychain task panicked: {e}")))?
 }
 
-/// Probe the OS keychain — true when a backup password is currently
-/// stored. Lets the settings UI render "Password set ✓" without ever
-/// fetching the secret itself.
+/// Whether the keychain holds a backup password, so Settings can show "Password
+/// set" without reading it.
 #[tauri::command]
 pub async fn has_backup_password() -> Result<bool> {
     let res = tokio::task::spawn_blocking(password::get)
@@ -167,9 +150,8 @@ pub async fn has_backup_password() -> Result<bool> {
     Ok(res?.is_some())
 }
 
-/// List archives in the configured backup destination folder, newest
-/// first. Returns an empty list when the destination isn't set or
-/// doesn't exist yet — the UI treats both as "nothing to restore from".
+/// Archives in the backup folder, newest first. Empty when the folder isn't set
+/// or doesn't exist yet.
 #[tauri::command]
 pub async fn list_backup_archives(state: State<'_, AppState>) -> Result<Vec<restore::BackupEntry>> {
     let settings = state.settings.read().await.backup.clone();
@@ -186,10 +168,8 @@ pub async fn list_backup_archives(state: State<'_, AppState>) -> Result<Vec<rest
         .map_err(|e| InkyCapError::ExportFailed(format!("list task panicked: {e}")))?
 }
 
-/// Open one archive and return its entry list. Decryption isn't needed
-/// for listing (central directory metadata is plaintext), but the
-/// `encrypted` flag on each entry lets the UI know whether a password
-/// will be required to restore.
+/// One archive's entries. No password is needed to list; each entry's
+/// `encrypted` flag shows whether restoring needs one.
 #[tauri::command]
 pub async fn list_backup_contents(
     archive_path: String,
@@ -200,21 +180,15 @@ pub async fn list_backup_contents(
         .map_err(|e| InkyCapError::ExportFailed(format!("list-contents task panicked: {e}")))?
 }
 
-/// Pull selected entries out of `archive_path` into `target_root`.
+/// Extract the chosen entries of `archive_path` into `target_root`.
 ///
-/// Password resolution: each archive is encrypted with whichever password
-/// was in the keychain at the moment that archive was created — the
-/// keychain holds only the *current* password, so the value there may
-/// no longer match an older archive. The frontend can pass an explicit
-/// `password_override` to handle that case (e.g. the user typed the
-/// password the archive was made with). When `password_override` is
-/// `None`, we fall back to the keychain value, mirroring the historical
-/// behaviour.
+/// Each archive uses the keychain password at the time it was made, and the
+/// keychain only holds the current one, so `password_override` lets the user
+/// give an older password; `None` uses the keychain.
 ///
-/// `target_root` is the destination *root* (typically the notebox
-/// root or a user-picked alternate folder); interior `notebox/` /
-/// `user-config/` prefixes are stripped before joining so files land
-/// at their original relative paths.
+/// `target_root` is the destination root (the notebox or another folder);
+/// `notebox/` and `user-config/` prefixes are removed so files land at their
+/// original relative paths.
 #[tauri::command]
 pub async fn restore_backup_files(
     archive_path: String,
@@ -234,10 +208,9 @@ pub async fn restore_backup_files(
             .await
             .map_err(|e| InkyCapError::BadRequest(format!("keychain task panicked: {e}")))??,
     };
-    // Is this an in-place restore of the notebox open in this window? Decides
-    // (a) whether `user-config/` entries route back to the OS app-config dir
-    // instead of landing loose in the notebox root, and (b) whether to rebuild
-    // the session indexes afterward.
+    // An in-place restore of this window's notebox decides whether
+    // `user-config/` entries go back to the app config folder and whether the
+    // indexes are rebuilt.
     let session = state.session(window.label()).await;
     let restoring_to_open_notebox = match session.notebox_root.read().await.clone() {
         Some(root) => std::fs::canonicalize(&target_root)
@@ -248,10 +221,9 @@ pub async fn restore_backup_files(
 
     let results = tokio::task::spawn_blocking(move || -> Result<Vec<restore::RestoreResult>> {
         if restoring_to_open_notebox {
-            // `user-config/` entries are a snapshot of the OS app-config dir
-            // (the backup's `user_config_root`); restore them there, not into
-            // the notebox root. `notebox/` (and any unprefixed) entries still
-            // restore to the notebox.
+            // `user-config/` entries are a snapshot of the app config folder
+            // and go back there; `notebox/` (and unprefixed) entries go to the
+            // notebox.
             let (config_entries, notebox_entries): (Vec<String>, Vec<String>) = entries
                 .into_iter()
                 .partition(|e| e.starts_with("user-config/"));
@@ -283,10 +255,8 @@ pub async fn restore_backup_files(
     .await
     .map_err(|e| InkyCapError::ExportFailed(format!("restore task panicked: {e}")))??;
 
-    // The in-place restore changed the notebox's files underneath the session —
-    // rebuild the indexes so search, backlinks, and the Mycelial View reflect
-    // the restored content (a multi-file restore is a bulk write the file
-    // watcher can miss).
+    // Rebuild the indexes after an in-place restore; the watcher can miss a
+    // bulk write.
     if restoring_to_open_notebox {
         crate::commands::notebox::spawn_index_rebuild(app_handle, session.clone());
     }

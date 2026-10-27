@@ -63,10 +63,8 @@ export function FontPicker(props: FontPickerProps) {
     setOpen(false);
   }
 
-  // Clear the current value. The SettingsPanel callsites translate an
-  // empty string to `null` in the underlying setting, which means
-  // "fall back to the default" — so the placeholder hint becomes the
-  // user's effective choice. Mirrors SearchPanel's clearQuery UX.
+  // Clear the value. Callers turn an empty string into `null` in the setting,
+  // meaning the default, which the placeholder shows.
   function clearValue() {
     props.onChange("");
     setQuery("");

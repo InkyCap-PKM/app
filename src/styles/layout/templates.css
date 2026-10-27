@@ -1,6 +1,5 @@
-/* Scaffold picker, templates pane, legacy templates modal.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Scaffold picker and templates pane. Part of layout.css, whose import order
+   (see ../layout.css) keeps the cascade. */
 
 /* ── Scaffold picker (Ctrl+\) ────────────────────────────────────────── */
 
@@ -41,10 +40,9 @@
 }
 
 /* ── Templates pane (.templates-pane) ───────────────────────────────────
-   Inline sidebar pane (rendered when LeftSidebar mode === "templates").
-   Triggered by the LayoutTemplate button on the vertical toolbar. The
-   list-item / badge / button styles below (.templates-panel__*) are
-   shared with this pane. */
+   Sidebar pane (LeftSidebar mode "templates"), opened by the LayoutTemplate
+   toolbar button. It also uses the .templates-panel__* list, badge and
+   button styles below. */
 
 .templates-pane__header {
   gap: var(--space-2);
@@ -110,9 +108,7 @@
   flex: 0 0 auto;
 }
 
-/* ── Templates modal (.templates-panel) — DEPRECATED, kept only because
-   the list/button/badge styles below are still consumed by the sidebar
-   pane above. The original modal mount was removed. */
+/* ── .templates-panel: list, button and badge styles used by the templates pane above. */
 
 .templates-panel {
   background: var(--modal-bg);

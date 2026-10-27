@@ -1,6 +1,5 @@
-// Settings panel — modal overlay for configuring user preferences.
-// Thin tab host: owns the overlay chrome, the tab list, and the per-tab
-// reset action; each tab's body lives in its own module under ./settings/.
+// Settings dialog: owns the frame, tab list and each tab's reset action; each
+// tab's content is in its own module under ./settings/.
 
 import { Component, createEffect, createSignal, Show, For } from "solid-js";
 import { X } from "lucide-solid";
@@ -46,10 +45,11 @@ const TABS: { id: SettingsTab; labelKey: string }[] = [
   { id: "sources", labelKey: "settings.tab.sources" },
 ];
 
-/** Which settings groups a tab's "Reset to defaults" button resets.
- *  Tabs can span both user-global and per-notebox groups (e.g. the
- *  Files tab resets both user-global file-workflow toggles and the
- *  notebox's folder paths). */
+/**
+ * Which settings groups a tab's "Reset to defaults" resets. A tab can cover
+ * user and notebox groups (e.g. Files resets the user file toggles and the
+ * notebox's folder paths).
+ */
 type TabSettingGroups = {
   user: (keyof UserSettings)[];
   notebox: (keyof NoteboxSettings)[];
@@ -86,10 +86,9 @@ function resetTabSettings(tab: SettingsTab) {
   if (g.notebox.length > 0) resetNoteboxSettingGroups(g.notebox);
 }
 
-// The last-viewed settings tab, remembered across the modal's open/close
-// within a session. Module scope (not component-local) so it survives the
-// panel's unmount when closed; it resets to "overview" on app restart because
-// it's never persisted. An explicit `initialTab` prop (a deep-link) still wins.
+// The last settings tab viewed, at module level so it survives closing the
+// dialog. Not saved, so it starts at "overview" after a restart. An
+// `initialTab` prop (a deep link) wins.
 const [activeTab, setActiveTab] = createSignal<SettingsTab>("overview");
 
 const SettingsPanel: Component<SettingsPanelProps> = (props) => {

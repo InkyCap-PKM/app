@@ -14,12 +14,9 @@ const LEVEL_ICONS: Record<ToastLevel, typeof Info> = {
   success: CircleCheck,
 };
 
-/// Split a toast message that ends in `…` (or `...`) into its static
-/// prefix and an `animated` flag. Used to swap a static ellipsis for
-/// the staggered-dot pulse so an "in-progress" toast that lingers (a
-/// persistent toast waiting on a long backend call) reads as alive
-/// rather than stuck. Strings that don't end in an ellipsis pass
-/// through unchanged.
+/// Split a message ending in `…` (or `...`) into its text and an `animated`
+/// flag, so a lingering "in progress" toast shows pulsing dots instead of a
+/// static ellipsis and doesn't look stuck. Other messages pass through.
 function splitTrailingEllipsis(message: string): { prefix: string; animated: boolean } {
   if (message.endsWith("…")) return { prefix: message.slice(0, -1), animated: true };
   if (message.endsWith("...")) return { prefix: message.slice(0, -3), animated: true };
@@ -33,16 +30,13 @@ const ToastHost: Component = () => {
       <For each={toasts()}>
         {(toast) => {
           const { prefix, animated } = splitTrailingEllipsis(toast.message);
-          // Persistent toasts (in-progress indicators) must not
-          // dismiss-on-click: clicking the whole toast away while
-          // the underlying work keeps running is confusing — the
-          // user thinks they cancelled. Non-persistent toasts keep
-          // click-to-dismiss because they auto-dismiss anyway.
+          // Persistent (in-progress) toasts don't close on click: closing one
+          // while the work continues would look like cancelling it. Others
+          // close on click, since they close by themselves anyway.
           const allowBodyDismiss = !toast.persistent;
-          // Show an explicit close/cancel button when either:
-          //   - the toast wires `onCancel` (work that can be aborted), or
-          //   - the toast is persistent without `onCancel` (the user
-          //     needs *some* way to clear it manually).
+          // Show a close/cancel button when the toast has `onCancel`
+          // (cancellable work), or is persistent without one (so it can still
+          // be cleared).
           const showCloseBtn = toast.onCancel != null || toast.persistent;
           const closeBtnLabel = () => t(toast.onCancel ? "common.cancel" : "common.dismiss");
 

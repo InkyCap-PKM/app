@@ -1,10 +1,6 @@
-//! `typst::World` implementation backed by a notebox directory on disk.
-//!
-//! The World is the interface Typst's compiler uses to resolve everything it
-//! needs from the host: the standard library, fonts, source files, binary
-//! files, and "today". We keep one World per open notebox and re-use it across
-//! compiles so comemo memoization stays warm — that's what gets us the
-//! sub-millisecond warm-path numbers from the Phase 0 bench.
+//! `typst::World` for a notebox folder: how the compiler gets the standard
+//! library, fonts, sources, files and today's date. One World per open notebox,
+//! reused so comemo memoization stays warm.
 
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
@@ -24,13 +20,10 @@ use crate::storage::path::validate_notebox_path;
 use crate::typst_packages::package_search_dirs;
 use crate::typst_pipeline::fonts::{self, FontSlot};
 
-/// A `FileId`-keyed cache with a fixed capacity and FIFO eviction. Insertion of
-/// a new key past the cap drops the oldest-inserted entry. Re-inserting an
-/// existing key updates its value in place without changing its position;
-/// callers that want an entry treated as fresh (e.g. the main file each compile)
-/// [`remove`](Self::remove) it first, so the following `put` re-adds it at the
-/// back. Eviction is always safe here because both users are pure read-through
-/// caches of on-disk content.
+/// A `FileId`-keyed cache with a fixed size and FIFO eviction. Re-inserting a
+/// key updates it in place; to make an entry fresh (e.g. the main file),
+/// [`remove`](Self::remove) it first. Both uses are read-through caches of files
+/// on disk, so eviction is always safe.
 struct BoundedCache<V> {
     map: HashMap<FileId, V>,
     /// Insertion order; front is oldest. Kept in sync with `map`: every key in
@@ -76,19 +69,14 @@ impl<V> BoundedCache<V> {
     }
 }
 
-/// Max distinct source files retained. The open-time indexing pass compiles
-/// every note in the notebox, which would otherwise leave every note's parsed
-/// `Source` (text + syntax tree) resident for the whole session. This is a pure
-/// read-through cache, so a too-small bound only costs a re-read on the next
-/// compile, never correctness — even a single compile whose include graph
-/// exceeds the cap still succeeds, because typst holds each `Source` it was
-/// handed for the duration of that compile. The cap is comfortably above any
-/// realistic single-document include graph.
+/// Maximum source files kept. Indexing compiles every note, which would
+/// otherwise keep every parsed `Source` for the session. A small cap only costs
+/// re-reads; a compile whose includes exceed it still works, since Typst holds
+/// its sources during the compile.
 const SOURCE_CACHE_CAP: usize = 512;
 
-/// Per-FileId cached source text with a bounded, FIFO-evicted working set.
-/// Held under a Mutex so `World::source` can take `&self` (Typst requires
-/// `Sync`).
+/// Source text per FileId, in a bounded FIFO cache. Behind a Mutex so
+/// `World::source` can take `&self`.
 struct SourceCache {
     inner: Mutex<BoundedCache<Source>>,
 }
@@ -131,10 +119,8 @@ impl SourceCache {
     }
 }
 
-/// Max distinct binary files retained. Binary reads are images and
-/// bibliography files; images can be multi-megabyte, so this cap is lower than
-/// the source cap to bound resident bytes. Like [`SourceCache`], it's a pure
-/// read-through cache: eviction only ever costs a re-read.
+/// Maximum binary files kept (images, bibliographies). Lower than the source
+/// cap, since images can be large.
 const FILE_CACHE_CAP: usize = 128;
 
 /// Cached binary-file bytes (images, bibliography files, etc.) with a bounded,
@@ -175,11 +161,9 @@ impl FileCache {
 }
 
 pub struct NoteboxWorld {
-    /// Canonical notebox root. The caller is responsible for canonicalizing
-    /// before construction (see [`crate::storage::path::canonicalize_root`]);
-    /// see also the test helper which does this. Storing the canonical form
-    /// is what lets [`fs_path`] use `validate_notebox_path` to reject symlink
-    /// escapes — `starts_with` only works against a canonical prefix.
+    /// Canonical notebox root, canonicalized by the caller (see
+    /// [`crate::storage::path::canonicalize_root`]). [`fs_path`] relies on it
+    /// to reject symlink escapes with `validate_notebox_path`.
     canonical_notebox_root: PathBuf,
     library: LazyHash<Library>,
     book: LazyHash<FontBook>,
@@ -192,26 +176,22 @@ pub struct NoteboxWorld {
     now: Mutex<Option<DateTime<Local>>>,
     /// Whether system + notebox fonts have been loaded (on-demand, not at startup).
     system_fonts_loaded: bool,
-    /// Remote-namespace packages the resolver couldn't locate in any known
-    /// directory (notebox-vendored, Typst data dir, or Typst cache dir).
-    /// Drained by the compile command layer via [`take_missing_packages`],
-    /// which downloads them into the shared Typst cache and recompiles. This
-    /// is what makes transitive dependencies resolve: each compile pass
-    /// surfaces the next missing package. `@local` packages are never recorded
-    /// — they have no registry to download from.
+    /// Remote packages that couldn't be found in any package folder (notebox,
+    /// Typst data dir, Typst cache dir). The command layer takes them with
+    /// [`take_missing_packages`], downloads them and recompiles; each pass
+    /// finds the next missing dependency. `@local` packages are never recorded,
+    /// as there's nowhere to download them from.
     missing_packages: Mutex<Vec<PackageSpec>>,
 }
 
 impl NoteboxWorld {
-    /// Build a World rooted at `canonical_notebox_root`. The path MUST already
-    /// be canonical (no `..`, no symlinks in the prefix). The notebox open path
-    /// at [`crate::state::AppState::open_notebox_fast`] ensures this; tests use
-    /// the [`canonicalize_root`] helper.
+    /// A World rooted at `canonical_notebox_root`, which must be canonical (no
+    /// `..`, no symlinks). [`crate::state::AppState::open_notebox_fast`]
+    /// ensures this; tests use [`canonicalize_root`].
     pub fn new(canonical_notebox_root: PathBuf) -> Self {
         let (book, fonts) = fonts::load_embedded();
-        // Placeholder main; set_main replaces it before the first compile.
-        // 0.15: FileId wraps a RootedPath (root + vpath); VirtualPath::new now
-        // validates (forward-slashes only) and returns a Result.
+        // Placeholder main, replaced by set_main before the first compile.
+        // `VirtualPath::new` validates and returns a Result.
         let placeholder = FileId::new(RootedPath::new(
             VirtualRoot::Project,
             VirtualPath::new("/__placeholder__.typ").expect("static placeholder path is valid"),
@@ -234,11 +214,9 @@ impl NoteboxWorld {
         }
     }
 
-    /// Drain the set of remote packages the resolver failed to find since the
-    /// last call. The compile command layer downloads these into the shared
-    /// Typst cache and recompiles (the World caches only successful reads, so a
-    /// plain recompile picks up a freshly-downloaded package — no explicit
-    /// cache eviction needed).
+    /// Take the remote packages that weren't found since the last call. Only
+    /// successful reads are cached, so a recompile after downloading finds
+    /// them.
     pub fn take_missing_packages(&self) -> Vec<PackageSpec> {
         self.missing_packages
             .lock()
@@ -246,10 +224,8 @@ impl NoteboxWorld {
             .unwrap_or_default()
     }
 
-    /// Record a package the resolver couldn't locate, for later download.
-    /// Only remote namespaces are recorded — `@local` has no registry URL,
-    /// so a missing `@local` package is a genuine "not found" the user must
-    /// resolve by providing the files (it stays an unrecoverable compile error).
+    /// Record a missing package for download. Only remote namespaces: a missing
+    /// `@local` package stays an error the user must fix.
     fn record_missing_package(&self, spec: &PackageSpec) {
         if spec.namespace.as_str() == "local" {
             return;
@@ -269,10 +245,8 @@ impl NoteboxWorld {
         self.system_fonts_loaded
     }
 
-    /// Load system and notebox-local fonts into the font book. Called once on
-    /// demand when the user configures a non-embedded font family. Rebuilds
-    /// the book and slots from scratch (embedded + system + notebox) so the
-    /// index stays consistent.
+    /// Load system and notebox fonts, rebuilding the font book (embedded,
+    /// system, notebox) from scratch.
     pub fn load_system_fonts(&mut self) {
         if self.system_fonts_loaded {
             return;
@@ -283,9 +257,7 @@ impl NoteboxWorld {
         self.system_fonts_loaded = true;
     }
 
-    /// Convert a notebox-absolute filesystem path into the FileId Typst uses to
-    /// reference it. The path must be inside the notebox; otherwise we return
-    /// `None`.
+    /// The FileId for a path inside the notebox, or `None` outside it.
     pub fn file_id_for(&self, abs_path: &Path) -> Option<FileId> {
         let rel = abs_path.strip_prefix(&self.canonical_notebox_root).ok()?;
         let mut vpath = String::from("/");
@@ -317,21 +289,15 @@ impl NoteboxWorld {
         Ok(id)
     }
 
-    /// Empty the source and binary-file caches. Call after compiling many
-    /// unrelated notes in a row (the index build compiles every note): the
-    /// caches are then full of files the next compiles are unlikely to need,
-    /// such as images from the last notes scanned, and emptying them only
-    /// costs a re-read later.
+    /// Empty the source and file caches, e.g. after indexing compiles every
+    /// note and leaves them full of files the next compiles won't need.
     pub fn forget_cached_files(&self) {
         self.sources.clear();
         self.files.clear();
     }
 
-    /// Drop a single file from both source and binary caches. Hook for the
-    /// notebox watcher: when a file changes on disk, invalidate it so the next
-    /// compile picks up the new bytes. The watcher already canonicalizes
-    /// paths before forwarding events, so paths that arrive here are
-    /// expected to share the canonical root prefix.
+    /// Drop one file from both caches, so the next compile reads it again. For
+    /// the watcher, whose paths are already canonical.
     #[allow(dead_code)]
     pub fn invalidate(&self, abs_path: &Path) {
         if let Some(id) = self.file_id_for(abs_path) {
@@ -340,16 +306,10 @@ impl NoteboxWorld {
         }
     }
 
-    /// Resolve a FileId to an on-disk path inside the notebox.
-    ///
-    /// Package imports (`@namespace/name:version`) are resolved against a local
-    /// package directory at `<notebox>/.inkycap/packages/<namespace>/<name>/<version>/`.
-    /// The entrypoint defaults to the root vpath of the package (typically
-    /// `/lib.typ` as declared in `typst.toml`).
-    ///
-    /// Goes through [`validate_notebox_path`] so a symlink inside the notebox
-    /// pointing at `/etc/passwd` (or anywhere outside the canonical root)
-    /// fails before bytes leave disk.
+    /// The on-disk path for a FileId inside the notebox. Package files
+    /// (`@namespace/name:version`) resolve through [`Self::resolve_package_path`]. Goes
+    /// through [`validate_notebox_path`], so a symlink pointing outside the canonical
+    /// root fails before anything is read.
     fn fs_path(&self, id: FileId) -> FileResult<PathBuf> {
         if let VirtualRoot::Package(spec) = id.root() {
             return self.resolve_package_path(spec, id.vpath());
@@ -360,25 +320,19 @@ impl NoteboxWorld {
             .map_err(|_err| FileError::AccessDenied)
     }
 
-    /// Resolve a package file to a local path, searching three roots in
-    /// priority order:
+    /// Resolve a package file, searching in order:
     ///
-    /// 1. **Notebox-vendored** — `<notebox>/.inkycap/packages/<ns>/<name>/<ver>/`.
-    ///    Packages bundled with the notebox (travels under sync, highest
-    ///    priority so a notebox can pin its own copy).
-    /// 2. **Typst data dir** — `dirs::data_dir()/typst/packages/...`, where
-    ///    `@local` packages and manually-persisted installs live.
-    /// 3. **Typst cache dir** — `dirs::cache_dir()/typst/packages/...`, where
-    ///    downloaded `@preview` packages land (shared with `typst-cli` and
+    /// 1. **Notebox**: `<notebox>/.inkycap/packages/<ns>/<name>/<ver>/`, bundled
+    ///    with the notebox; first, so a notebox can pin its own copy.
+    /// 2. **Typst data dir**: `dirs::data_dir()/typst/packages/...`, for `@local`
+    ///    and installed packages.
+    /// 3. **Typst cache dir**: `dirs::cache_dir()/typst/packages/...`, where
+    ///    downloaded `@preview` packages go (shared with `typst-cli` and
     ///    Tinymist).
     ///
-    /// The three-level `<namespace>/<name>/<version>/<vpath>` layout under each
-    /// root is the Typst-canonical one used by `typst-cli`, Tinymist, and
-    /// `typst.ts`, so a package found in any of them compiles identically here.
-    ///
-    /// On a total miss the spec is recorded via [`record_missing_package`] so
-    /// the compile command layer can download it and recompile (tier-B
-    /// on-demand resolution), then `NotFound` is returned for this attempt.
+    /// All use Typst's standard `<namespace>/<name>/<version>/` layout. If none
+    /// has it, the spec is recorded with [`record_missing_package`] for download
+    /// and `NotFound` is returned.
     fn resolve_package_path(&self, spec: &PackageSpec, vpath: &VirtualPath) -> FileResult<PathBuf> {
         let rel_file = vpath.get_without_slash();
         let roots = package_search_dirs(
@@ -392,11 +346,9 @@ impl NoteboxWorld {
             if !pkg_dir.is_dir() {
                 continue;
             }
-            // Containment-validate against this package root (not the notebox
-            // root — the cache/data dirs live outside it) so a `..` in the
-            // package's own vpath can't escape its directory. Canonicalize the
-            // root first; `validate_notebox_path` needs a canonical prefix for
-            // the `starts_with` check to hold when the path contains symlinks.
+            // Validate against this package's root (the cache and data dirs are
+            // outside the notebox), so a `..` can't escape it. The root is
+            // canonicalized first, as `validate_notebox_path` needs.
             let canon_root = match std::fs::canonicalize(pkg_dir) {
                 Ok(p) => p,
                 Err(err) => return Err(FileError::from_io(err, pkg_dir)),
@@ -482,9 +434,7 @@ mod tests {
     use std::fs;
     use tempfile::tempdir;
 
-    /// 1×1 transparent PNG — smallest valid PNG the typst-svg image decoder
-    /// will accept end-to-end. Generated by zlib-compressing a one-pixel RGBA
-    /// scanline; verified by feeding through Typst's compile pipeline below.
+    /// Smallest valid 1×1 transparent PNG; compiled in the test below.
     const TINY_PNG: &[u8] = &[
         0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
         0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f,
@@ -499,12 +449,9 @@ mod tests {
         let root = canonicalize_root(tmp.path()).expect("canonicalize");
         let world = NoteboxWorld::new(root.clone());
 
-        // VirtualPath normalizes `..`/leading-slashes against the virtual root,
-        // so a literal escape attempt like `../../etc/passwd` ends up resolving
-        // back inside the root before fs_path even runs. That's good — but it's
-        // not the case we care about here. The case we *do* care about is a
-        // symlink inside the notebox that targets outside of it; see the
-        // `rejects_symlink_escape` test below.
+        // VirtualPath normalizes `..` against the root, so `../../etc/passwd`
+        // stays inside. The real risk is a symlink out of the notebox; see
+        // `rejects_symlink_escape`.
         let inside = root.join("note.typ");
         let id = world.file_id_for(&inside).expect("inside-notebox id");
         let resolved = world.fs_path(id).expect("inside notebox should resolve");
@@ -520,10 +467,8 @@ mod tests {
         let outside = tempdir().expect("outside tempdir");
         let root = canonicalize_root(notebox.path()).expect("canonicalize notebox");
 
-        // An attacker drops a symlink inside the notebox that points at a
-        // sensitive file outside it, then crafts a `.typ` doing
-        // `#read("escape/secret.txt")` (or `#image(...)`, etc.). The compile
-        // pipeline must refuse to read through it.
+        // A symlink inside the notebox pointing at a file outside, read with
+        // `#read("escape/secret.txt")` (or `#image`): the compile must refuse.
         fs::write(outside.path().join("secret.txt"), "shh").expect("write secret");
         symlink(outside.path(), root.join("escape")).expect("create symlink");
 
@@ -541,11 +486,8 @@ mod tests {
 
     #[test]
     fn world_reads_image_bytes_for_compile() {
-        // End-to-end: a `.typ` file referencing a notebox-local PNG should
-        // compile and render — typst-svg embeds the image bytes as a
-        // `data:image/png;base64,...` URL inside the SVG, which is what makes
-        // the reading-mode renderer self-contained (no asset protocol needed
-        // for v0.1).
+        // A note with a notebox PNG compiles and renders; typst-svg embeds the
+        // image as a `data:` URL.
         let tmp = tempdir().expect("tempdir");
         let root = canonicalize_root(tmp.path()).expect("canonicalize");
         fs::write(root.join("pic.png"), TINY_PNG).expect("write png");

@@ -1,11 +1,9 @@
-// Small helpers for emitting Typst source from TypeScript.
+// Helpers for writing Typst source from TypeScript.
 //
-// Typst string literals (`"..."`) follow Rust-style escapes: backslash
-// and double-quote must be escaped, and control characters need their
-// `\n` / `\r` / `\t` forms. Any TypeScript code that interpolates a
-// user-derived value into a `"..."` literal must run it through
-// `typstStringEscape` first — otherwise an alias, heading, or filename
-// containing a quote produces broken Typst.
+// Typst strings (`"..."`) use Rust-style escapes: backslash and double quote
+// are escaped, and control characters use `\n` / `\r` / `\t`. Any user-derived
+// value put into a `"..."` literal must go through `typstStringEscape`, or a
+// quote in an alias, heading or file name breaks the Typst.
 
 export function typstStringEscape(s: string): string {
   return s
@@ -16,10 +14,9 @@ export function typstStringEscape(s: string): string {
     .replace(/\t/g, "\\t");
 }
 
-/// Characters not allowed in an alias. Aliases are simple display strings;
-/// the comma is reserved as the user-visible separator in the property
-/// editor, and quotes/backslashes/newlines would either break the emitted
-/// Typst or escape out of the alias intent.
+/// Characters not allowed in an alias: the comma separates aliases in the
+/// property editor, and quotes, backslashes and newlines would break the Typst
+/// written.
 const ALIAS_FORBIDDEN = /[",\\\n\r\t]/g;
 
 /// Strip characters that aren't allowed inside an alias string.

@@ -1,6 +1,5 @@
-/* Per-tab editor header (live-preview toggle).
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Editor header for each tab. Part of layout.css, whose import order (see
+   ../layout.css) keeps the cascade. */
 
 /* ─── Editor header (per-tab live-preview toggle) ─── */
 
@@ -14,12 +13,12 @@
   /* Surface (gradient, lip shadow, stacking) comes from .pane-toolbar. */
 }
 
-/* Every control group in the row lands on the row's own control height, so the
-   groups match each other, the row keeps the shared band height, and the row's
-   buttons end on the same line as those in the side panels' headers (see
-   `.left-sidebar__section-header` in panel-header.css). Height, not
-   min-height: a floor still lets a taller icon or line box push a group past
-   the band. Same pattern as `.mycelial-view__toolbar` (mycelial.css). */
+/* Every control group in the row has the row's control height, so groups
+   match, the row keeps the shared band height, and its buttons line up with
+   those in the side panel headers (see `.left-sidebar__section-header` in
+   panel-header.css). Height, not min-height, which would let a taller icon
+   push a group past the band. As in `.mycelial-view__toolbar`
+   (mycelial.css). */
 .editor-header__nav,
 .editor-header__mode-toggle,
 .editor-header__icon-btn {

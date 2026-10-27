@@ -1,35 +1,31 @@
-// Type-aware per-column filters for collections.
+// Column header filters for collections, shaped by the column's property type.
+// This decides which operators each type offers, how a choice becomes the
+// backend's filter expressions (`FilterGroup`; see filter-expr.ts), and the
+// matching predicate the Agenda uses for its date filter on an already-fetched
+// list.
 //
-// Each column header offers a quick filter shaped to the column's property
-// type. This module is the single source of truth for:
-//   • which operators each type offers,
-//   • how a chosen operator + value(s) lower to the backend filter DSL
-//     (`FilterGroup` of expression strings — see filter-expr.ts), and
-//   • the equivalent client-side predicate the Agenda uses for its date filter
-//     (the Agenda filters an already-fetched list in TS rather than re-querying
-//     the backend).
-//
-// Date operators never need backend date math: they lower to day-boundary
-// range comparisons over ISO-8601 strings, which the Rust evaluator compares
-// lexically (chronologically correct for ISO dates). "is within" and numeric
-// "between" likewise decompose into two relational comparisons ANDed together,
-// so no new backend operator is required beyond `< <= > >=`.
+// Date operators need no date arithmetic in the backend: they become
+// day-boundary comparisons of ISO strings, which the Rust evaluator compares as
+// text. "is within" and numeric "between" are two comparisons ANDed, so only `<
+// <= > >=` are needed.
 
 import type { FilterGroup, PropertyType } from "./types";
 import { type FilterRow, parseFilterRow, serializeFilterRow } from "./filter-expr";
 import { compareName } from "./sort";
 
-/** The control shape a column header presents, derived from its property type.
- *  `list` and `commalist` both render a multi-select checklist but lower to
- *  different operators (membership vs. substring). */
+/**
+ * The control a column header shows, from its property type. `list` and
+ * `commalist` both show a checklist but use different operators (membership vs.
+ * substring).
+ */
 export type ColumnFilterKind = "list" | "commalist" | "text" | "number" | "date" | "checkbox";
 
-/** Fixed types for the filesystem-derived `file.*` columns. These are NOT
- *  declared property types and must never be inferred from cell content — a
- *  notebox of `YYYY-MM-DD.typ` files would otherwise make `file.name` look like
- *  a date and offer the wrong filter. Names/paths are text; the stat
- *  timestamps are ISO dates (`file.ctime`/`file.mtime` are RFC3339, which sort
- *  chronologically); the byte size is numeric; the link lists hold note names. */
+/**
+ * Fixed types for the `file.*` columns, never inferred from content
+ * (`YYYY-MM-DD.typ` names would look like dates). Names and paths are text,
+ * `file.ctime` / `file.mtime` ISO dates (RFC 3339, sorting chronologically), the
+ * size a number, and link lists note names.
+ */
 const FILE_COLUMN_TYPES: Record<string, PropertyType> = {
   "file.name": "text",
   "file.folder": "text",
@@ -47,9 +43,10 @@ export function fileColumnType(col: string): PropertyType | undefined {
   return FILE_COLUMN_TYPES[col];
 }
 
-/** Resolve a property type to the header-filter control it should use. `auto`
- *  is treated as text; callers that can infer a concrete type from values
- *  should do so before calling this. */
+/**
+ * The header control for a property type. `auto` is text; infer a concrete type
+ * from values first where possible.
+ */
 export function columnFilterKind(type: PropertyType): ColumnFilterKind {
   switch (type) {
     case "list":
@@ -109,15 +106,11 @@ export const DATE_OPS: { value: DateOp; labelKey: string }[] = [
 
 // ── Relative dates ("today ± N days") ─────────────────────────────────
 //
-// A date filter value is either a fixed `YYYY-MM-DD` string or a relative
-// token anchored to the current day: `@today`, `@today+N`, or `@today-N`
-// (N = whole days, so `@today` means today, `@today+7` a week out, `@today-1`
-// yesterday). Relative tokens are stored symbolically and resolved to a
-// concrete date only at evaluation time — by the Rust filter evaluator for
-// collections (filter.rs `resolve_relative_date`) and by `matchesDateFilter`
-// below for the Agenda. Storing them symbolically is what keeps a saved
-// "within the next 7 days" filter meaning the next 7 days every session
-// instead of freezing to the day it was created.
+// A date value is a fixed `YYYY-MM-DD` or a relative token: `@today`,
+// `@today+N` or `@today-N` (whole days). Tokens stay symbolic and are resolved
+// when evaluated (by `resolve_relative_date` in filter.rs for collections, by
+// `matchesDateFilter` below for the Agenda), so a saved "within the next 7
+// days" stays relative to each day.
 
 const REL_PREFIX = "@today";
 
@@ -169,10 +162,9 @@ function shiftDayFixed(iso: string, delta: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-// Shift a date filter *value* by whole days, preserving its kind: a relative
-// token shifts its offset (so `nextDay("@today")` is `"@today+1"`) while a
-// fixed date shifts its calendar day. This lets the single lowering in
-// `dateClauses` treat both kinds uniformly.
+// Shift a date value by whole days, keeping its kind: `@today` becomes
+// `@today+1`, a fixed date moves a day. So `dateClauses` handles both the same
+// way.
 function shiftDay(value: string, delta: number): string {
   const off = relativeOffset(value);
   if (off !== null) return makeRelativeDate(off + delta);
@@ -187,10 +179,11 @@ type DateClause =
   | { kind: "empty" }
   | { kind: "notEmpty" };
 
-/** Lower a date filter to the comparison clauses it represents. The one place
- *  the operator semantics live — both the expression builder and the Agenda
- *  predicate read from here, so they can never diverge. Returns `[]` when the
- *  filter is incomplete (no date chosen yet), meaning "no constraint". */
+/**
+ * The comparisons a date filter stands for. The only place operator meanings
+ * are defined; the expression builder and the Agenda predicate both use it.
+ * `[]` when incomplete (no date yet), meaning no constraint.
+ */
 function dateClauses(f: DateFilterState): DateClause[] {
   if (f.op === "empty") return [{ kind: "empty" }];
   if (f.op === "notEmpty") return [{ kind: "notEmpty" }];
@@ -233,9 +226,10 @@ export function buildDateFilter(prop: string, f: DateFilterState): FilterGroup |
   return { and: clauses.map((c) => clauseToExpr(prop, c)) };
 }
 
-/** Client-side predicate matching the same semantics as {@link buildDateFilter},
- *  for the Agenda (which filters an in-memory list). ISO strings compare
- *  lexically, exactly as the Rust evaluator does. */
+/**
+ * The same test as {@link buildDateFilter}, for the Agenda's in-memory list. ISO
+ * strings compare as text, as in Rust.
+ */
 export function matchesDateFilter(value: string | null, f: DateFilterState): boolean {
   const clauses = dateClauses(f);
   if (clauses.length === 0) return true;
@@ -256,10 +250,11 @@ export function isDateFilterActive(f: DateFilterState): boolean {
   return dateClauses(f).length > 0;
 }
 
-/** Recover an editable date-filter state from a saved FilterGroup. Best-effort:
- *  it returns a state that is *equivalent* to the saved filter, not necessarily
- *  the exact operator originally chosen (e.g. a lone `>=` reads back as
- *  `onOrAfter`, which produces the identical query). */
+/**
+ * An editable date-filter state from a saved FilterGroup. Equivalent to the
+ * saved filter, though not necessarily the original operator (a lone `>=` comes
+ * back as `onOrAfter`, the same query).
+ */
 export function parseDateFilter(group: FilterGroup | undefined | null): DateFilterState {
   const rows = leafRows(group);
   if (rows.some((r) => r.operator === ".isEmpty")) return { op: "empty", date: "", date2: "" };
@@ -347,9 +342,11 @@ export function parseTextFilter(group: FilterGroup | undefined | null): string {
 
 // ── Multi-select (list / commalist) ───────────────────────────────────
 
-/** Build the OR-of-equality (list) or OR-of-contains (commalist) group for a
- *  multi-select. A list cell is an array, so `==` tests membership; a commalist
- *  cell is one comma-joined string, so `.contains` tests for the value. */
+/**
+ * The group for a multi-select: OR of equality for list columns (`==` tests
+ * membership in the array), OR of `.contains` for commalist columns (one
+ * comma-joined string).
+ */
 export function buildMultiSelectFilter(
   prop: string,
   selected: string[],
@@ -369,9 +366,10 @@ export function parseMultiSelectFilter(group: FilterGroup | undefined | null): s
     .map((r) => r.value);
 }
 
-/** Split a column's raw facet values into the distinct options a multi-select
- *  should show. For commalist columns each cell is one comma-joined string, so
- *  it is split into its parts; list columns already arrive as separate values. */
+/**
+ * The options a multi-select shows: commalist cells are split at commas; list
+ * values already arrive separately.
+ */
 export function multiSelectOptions(rawValues: string[], kind: "list" | "commalist"): string[] {
   if (kind === "list") return rawValues;
   const set = new Set<string>();
@@ -402,9 +400,10 @@ export function parseCheckboxFilter(group: FilterGroup | undefined | null): Chec
 
 // ── Shared ────────────────────────────────────────────────────────────
 
-/** Flatten a group's leaf expression strings (from either `and` or `or`) into
- *  parsed rows. Header filters only ever produce single-combinator groups, so
- *  reading both is enough to recover their state. */
+/**
+ * The leaf expressions of a group (from `and` or `or`) as parsed rows. Header
+ * filters only make single-combinator groups.
+ */
 function leafRows(group: FilterGroup | undefined | null): FilterRow[] {
   const members = [...(group?.and ?? []), ...(group?.or ?? [])];
   return members.filter((m): m is string => typeof m === "string").map(parseFilterRow);

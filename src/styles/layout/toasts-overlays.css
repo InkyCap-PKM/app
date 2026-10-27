@@ -1,6 +1,5 @@
-/* Toast notifications and busy overlay.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Toasts and the busy overlay. Part of layout.css, whose import order (see
+   ../layout.css) keeps the cascade. */
 
 /* ── Toast notifications ── */
 
@@ -96,16 +95,14 @@
   padding-top: var(--space-1);
 }
 
-/* Persistent toasts (in-progress work) suppress the default body cursor
-   so it doesn't suggest the user can click anywhere to dismiss — the X
-   button is the only intended dismiss surface. */
+/* Persistent (in-progress) toasts don't show the pointer cursor, so they
+   don't suggest a click dismisses them; only the X does. */
 .toast--persistent {
   cursor: default;
 }
 
-/* Close / cancel button on toasts that wire `onCancel` or are
-   persistent. Sits on the right, sized to feel like a control rather
-   than a glyph in the toast body. */
+/* Close/cancel button on toasts with `onCancel` or that are persistent, on
+   the right, sized as a control. */
 .toast__close {
   flex-shrink: 0;
   background: transparent;

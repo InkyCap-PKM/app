@@ -1,34 +1,20 @@
-//! Who the user is with respect to a git remote — two distinct concerns
-//! that both key off the remote:
+//! Sign-in and identity details for a git remote.
 //!
-//! 1. **Transport credentials** — what *authenticates* a fetch or push. The
-//!    primary, beginner-friendly path is a **username + password** for the
-//!    repository (over HTTPS); SSH keys are the advanced alternative. The
-//!    password is a secret and lives in the OS keychain via [`keyring`]; the
-//!    username is not a secret and lives in a per-installation store. Both are
-//!    keyed by the (normalized) remote URL, so different noteboxes can sign in
-//!    as different accounts on the same service.
-//! 2. **Author identity** — the name + email stamped on commits. *Not* a
-//!    secret; stored per-installation, keyed by remote URL, so a user can use
-//!    a different account per notebox and so the choice re-applies to any
-//!    clone of that notebox on this machine.
+//! 1. **Credentials** for fetch and push. The main path is a **username and
+//!    password** over HTTPS; SSH keys are the advanced option. The password is
+//!    kept in the OS keychain ([`keyring`]) and the username in a
+//!    per-installation store, both keyed by the normalized remote URL, so
+//!    noteboxes can use different accounts on one service.
+//! 2. **Author identity** (name and email for commits). The current choice is
+//!    stored per notebox in `local.json` (see
+//!    `commands::git::resolved_local_identity`); the per-installation store
+//!    here, keyed by remote, is the older location and is still read as a
+//!    fallback.
 //!
-//! ## Why author identity is stored here, keyed by remote
-//! Commit identity is *per-user*, not a property of the notebox: if it
-//! travelled inside the committed notebox settings, every collaborator who
-//! opened the notebox would commit under one name. Git's own transport is the
-//! committed repo, so anything that travels through it reaches collaborators
-//! too. Keying identity by remote URL in a *per-installation* store keeps it
-//! out of the repo (no leak) while still being per-notebook (different remote
-//! ⇒ different account) and auto-applying to every clone of that notebox on
-//! this machine. Carrying it to a *second* machine automatically would need
-//! InkyCap settings-sync (a future feature); the store is shaped so that slots
-//! in additively — sync the file and identities follow.
-//!
-//! Resolution order at commit time is: this store (by remote) → git's own
-//! config (`user.name`/`user.email`, which [`git2`] reads via
-//! `Repository::signature`) → prompt. Only the first is implemented here; the
-//! backend handles the git-config fallback.
+//! Identity is never stored in the shared notebox settings, or every
+//! collaborator would commit under one name. At commit time: the notebox's
+//! identity, then this store, then git config (`user.name` / `user.email`),
+//! else the user is asked.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -63,18 +49,16 @@ pub struct GitIdentityStore {
     identities: BTreeMap<String, GitIdentity>,
 }
 
-/// On-disk location of the identity store. Per-installation (config dir),
-/// alongside the other preference files — never inside a notebox, so it never
-/// travels through collaboration.
+/// Location of the identity store, in the config folder, never inside a
+/// notebox.
 fn identity_store_path() -> PathBuf {
     crate::app_paths::config_dir().join("git-identities.json")
 }
 
-/// Normalize a remote URL so equivalent spellings (`https://h/o/r` vs
-/// `https://h/o/r.git`, `git@h:o/r.git` vs `ssh://git@h/o/r`) resolve to the
-/// same identity key. Best-effort: lower-cases, drops a `.git` suffix and any
-/// trailing slash, and reduces SSH `host:path` to `host/path`. Unknown shapes
-/// fall through unchanged, so a key always exists.
+/// Normalize a remote URL so equivalent forms (`https://h/o/r` and
+/// `https://h/o/r.git`, `git@h:o/r.git` and `ssh://git@h/o/r`) give the same
+/// key: lower-cased, without `.git` or a trailing slash, SSH `host:path` as
+/// `host/path`. Other forms pass through unchanged.
 pub fn normalize_remote(remote: &str) -> String {
     let mut s = remote.trim().to_ascii_lowercase();
     // scp-like `git@host:owner/repo` → `git@host/owner/repo`
@@ -139,9 +123,8 @@ pub fn clear_identity_for_remote(remote: &str) -> Result<()> {
 
 // ───────────────────────── HTTPS username (not secret) ─────────────────────
 
-/// Per-installation map of remote URL → the username to sign in as over HTTPS.
-/// The username is not a secret (the password is), so it lives in a plain
-/// preference file alongside the identity store — never inside a notebox.
+/// Per-installation map of remote URL to HTTPS username. Not a secret (the
+/// password is), so a plain file in the config folder.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GitUsernameStore {
@@ -195,10 +178,9 @@ pub fn clear_username_for_remote(remote: &str) -> Result<()> {
 
 // ──────────────────────── Transport secret (password) ──────────────────────
 
-/// OS-keychain service for repository passwords. The keychain *account* is the
-/// normalized remote URL (host **and** path), so two repositories — even on the
-/// same host — can hold passwords for two different accounts. Stable across
-/// versions; reverse-DNS form per the keyring backends' conventions.
+/// Keychain service for repository passwords. The account is the normalized
+/// remote URL (host and path), so two repositories on one host can use
+/// different accounts. Keep it stable across versions.
 const HTTPS_TOKEN_SERVICE: &str = "ca.unom.inkycap.git.https";
 
 fn map_keyring_err(err: keyring::Error) -> InkyCapError {
@@ -236,7 +218,7 @@ pub fn clear_remote_password(remote: &str) -> Result<()> {
 }
 
 /// First existing default SSH private key under `~/.ssh`, if any. Used as a
-/// fallback when ssh-agent has nothing; explicit key selection is Phase 4.
+/// fallback when ssh-agent has nothing.
 fn default_ssh_key() -> Option<PathBuf> {
     static KEY: OnceLock<Option<PathBuf>> = OnceLock::new();
     KEY.get_or_init(|| {
@@ -249,18 +231,16 @@ fn default_ssh_key() -> Option<PathBuf> {
     .clone()
 }
 
-/// Build the [`git2::RemoteCallbacks`] used for fetch/push against `remote`.
+/// The [`git2::RemoteCallbacks`] for fetching from and pushing to `remote`.
+/// Credentials, in order:
 ///
-/// The credentials callback resolves, in order:
-/// - **HTTPS** (`USER_PASS_PLAINTEXT`): the saved username + the keychain
-///   password for this repository. The username falls back to one embedded in
-///   the URL, then `git`. This is the primary path.
-/// - **SSH** (`SSH_KEY`): ssh-agent first, then the first default `~/.ssh` key.
-///   The advanced path, for users who already use SSH.
+/// - **HTTPS** (`USER_PASS_PLAINTEXT`): the saved username and keychain
+///   password for this repository; the username falls back to one in the URL,
+///   then `git`.
+/// - **SSH** (`SSH_KEY`): ssh-agent, then the first default `~/.ssh` key.
 ///
-/// When nothing resolves, libgit2 surfaces an auth error; the fetch/push
-/// command surfaces it to the user rather than blocking. Returning callbacks
-/// (not performing auth here) keeps this layer free of any UI concern.
+/// If nothing works, libgit2 reports an auth error, which the command passes to
+/// the user.
 pub fn remote_callbacks(remote: &str) -> git2::RemoteCallbacks<'static> {
     let remote = remote.to_string();
     let mut cb = git2::RemoteCallbacks::new();

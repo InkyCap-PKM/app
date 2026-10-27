@@ -4,22 +4,19 @@ import type { DecorationSet } from "@codemirror/view";
 import { typstLanguage } from "../typst-language";
 import { buildDecorations, rebuildDirtyLines, rebuildDocChange } from "./visual-plugin";
 
-// A cursor move rebuilds only the lines the caret left and arrived on, grown
-// to cover whole block elements. The result has to match a full rebuild: any
-// decoration the partial pass fails to drop stays on screen contradicting the
-// fresh ones.
+// A cursor move rebuilds only the lines the caret left and reached, widened to
+// whole block elements. The result must equal a full rebuild: a decoration the
+// partial pass fails to remove stays on screen.
 //
-// The case that broke: a fenced code block written as a list item. Its
-// `` ``` `` opens after the `- ` marker, so the range grown to the block began
-// mid-line, while the block's edit-state line decorations sit at the line
-// *start* — just outside the range, so they were kept and their background
-// stayed painted around the re-rendered code block. The same block at the top
-// level opens at column 0, where the two coincide, which is why it only showed
-// up inside lists.
+// The case that failed: a code block in a list item. Its `` ``` `` starts after
+// `- `, so the widened range began mid-line, while the block's line decorations
+// sit at the line start, just outside it, so they were kept and their
+// background stayed around the code block. At the top level the block starts at
+// column 0, so only lists were affected.
 
 // Long enough that a two-line rebuild stays well under the "more than half the
-// document is dirty" threshold, where `rebuildRanges` gives up and rebuilds
-// everything (which would pass these assertions without exercising anything).
+// document changed" threshold, above which `rebuildRanges` rebuilds everything
+// (which would pass without testing anything).
 const TAIL = Array.from({ length: 12 }, (_, i) => `\nparagraph ${i} of trailing prose.`).join("");
 
 const IN_LIST = [
@@ -105,10 +102,9 @@ describe("cursor-move rebuild matches a full rebuild", () => {
   }
 });
 
-// Deleting a whole call with Backspace collapses its pill (a zero-width
-// widget at the call's start) onto the end of the line, or onto a line left
-// empty. The rebuild must drop it rather than keep it on screen with no call
-// behind it.
+// Deleting a whole call with Backspace moves its pill (a zero-width widget at
+// the call start) to the end of the line, or onto an emptied line. The rebuild
+// must remove it.
 describe("document-edit rebuild drops the pill of a deleted call", () => {
   for (const line of ['#due("2026-10-01")', '- #due("2026-10-01")', 'Words #due("2026-10-01")']) {
     it(`deleting the call in \`${line}\``, () => {
@@ -124,11 +120,10 @@ describe("document-edit rebuild drops the pill of a deleted call", () => {
   }
 });
 
-// Closing an unterminated delimiter changes how everything after it parses:
-// the lines it had swallowed become list items and headings again. Those lines
-// sit outside the edit, so the rebuild must find them by comparing the parse
-// trees from before and after, or they keep their stale look until the caret
-// passes over each one.
+// Closing an unclosed delimiter changes how everything after it parses: the
+// lines it swallowed become list items and headings again. They are outside the
+// edit, so the rebuild must find them by comparing the parse trees before and
+// after.
 describe("document-edit rebuild follows a parse change below the edit", () => {
   const BELOW = "\n- a bullet\n=== A heading\n- another bullet" + TAIL;
 

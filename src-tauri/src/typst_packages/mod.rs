@@ -1,28 +1,22 @@
-//! Typst package management: install packages from the Typst Universe
-//! (<https://typst.app/universe>) or from a local `.tar.gz` archive.
+//! Typst package installation, from Typst Universe
+//! (<https://typst.app/universe>) or a local `.tar.gz`.
 //!
-//! Universe packages live at predictable URLs:
+//! Universe packages are downloaded from
 //!
 //!   https://packages.typst.org/<namespace>/<name>-<version>.tar.gz
 //!
-//! After extraction, InkyCap's package resolver looks them up at:
+//! and extracted to
 //!
 //!   <notebox>/.inkycap/packages/<namespace>/<name>/<version>/
 //!
-//! Tarball entries are sandboxed to the target directory at extraction time —
-//! any entry whose normalized path escapes the target is skipped (defense
-//! against path-traversal in a malicious archive). Size caps protect against
-//! decompression-bomb archives.
+//! where the package resolver finds them. Entries that would extract outside
+//! the target are skipped (path traversal), and size limits guard against
+//! decompression bombs. [`extract_tar_gz`] is also used by the Markdown
+//! importer for `.tar.gz` sources.
 //!
-//! This module is intentionally small. It exists because two separate
-//! features both need `.tar.gz` handling: Universe install (here) and the
-//! markdown notebox importer (which accepts `.tar.gz` as an alternate input
-//! shape alongside `.zip`). See [`extract_tar_gz`] for the shared path.
-//!
-//! Per CLAUDE.md's Typst-first principle: this module is unavoidable Rust
-//! glue. Typst itself has no package-fetching logic — every editor (Tinymist,
-//! typst-cli, etc.) ships its own. The Typst side here is just "lay files out
-//! where the existing world.rs resolver already looks."
+//! Per CLAUDE.md's Typst-first principle: Typst has no package fetching of its
+//! own (every tool ships its own), so this is Rust glue that lays files out
+//! where world.rs already looks.
 
 use std::fs;
 use std::io::{self, Read};
@@ -31,15 +25,12 @@ use std::path::{Component, Path, PathBuf};
 use flate2::read::GzDecoder;
 use serde::{Deserialize, Serialize};
 
-/// Cap individual extracted file size at 256 MiB. Universe packages are
-/// typically well under 1 MiB; anything larger is suspicious. We bail out
-/// on the file, not the whole archive, so a single bad entry doesn't lose
-/// the rest of a legitimate package.
+/// Largest extracted file (256 MiB); Universe packages are usually under 1 MiB.
+/// A file over the limit is skipped, not the whole archive.
 const MAX_ENTRY_SIZE: u64 = 256 * 1024 * 1024;
 
-/// Cap total extracted size per archive. Same threshold, applied
-/// cumulatively to catch decompression-bomb shapes where many small entries
-/// add up.
+/// Largest total extracted size per archive, against many small entries adding
+/// up.
 const MAX_TOTAL_SIZE: u64 = 1024 * 1024 * 1024;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -50,18 +41,15 @@ pub struct PackageSpec {
 }
 
 impl PackageSpec {
-    /// Parse a Typst-style spec, e.g. `@preview/cetz:0.2.0`.
-    /// Returns `None` for malformed input. Leading `@` is required (this is
-    /// the user-facing canonical form); the namespace defaults to `preview`
-    /// if no `@<ns>/` prefix is present.
+    /// Parse a spec like `@preview/cetz:0.2.0`, or `None` if malformed. The
+    /// namespace defaults to `preview` without an `@<ns>/` prefix.
     pub fn parse(input: &str) -> Option<Self> {
         Self::parse_with_default_ns(input, "preview")
     }
 
-    /// Like [`parse`] but defaults to `@local/` when no namespace is given,
-    /// and to `0.1.0` when no `:version` suffix is present. Used by the
-    /// local-package authoring path where bare names like `letter-layout`
-    /// expand to `@local/letter-layout:0.1.0`.
+    /// Like [`parse`], but defaulting to `@local/` and version `0.1.0`, so
+    /// `letter-layout` becomes `@local/letter-layout:0.1.0`. For local package
+    /// authoring.
     pub fn parse_local_default(input: &str) -> Option<Self> {
         let trimmed = input.trim();
         // Append default version if missing (only when there's no ':' at all).
@@ -112,9 +100,8 @@ impl PackageSpec {
     }
 
     pub fn download_url(&self) -> String {
-        // Universe convention. Non-preview namespaces would need a
-        // different host; in practice users install from @preview/* and
-        // the local-tarball path covers everything else.
+        // Universe's URL scheme; other namespaces are installed from local
+        // archives.
         format!(
             "https://packages.typst.org/{}/{}-{}.tar.gz",
             self.namespace, self.name, self.version
@@ -122,18 +109,16 @@ impl PackageSpec {
     }
 }
 
-/// The shared Typst package directories, matching the layout `typst-cli` and
-/// Tinymist use so InkyCap reads — and writes — the same on-disk store rather
-/// than a private copy. A package found here compiles identically in any Typst
-/// tool on the machine.
+/// The shared Typst package folders, as used by `typst-cli` and Tinymist, so
+/// InkyCap reads and writes the same store and a package works the same in any
+/// Typst tool.
 ///
-/// - data dir  (`dirs::data_dir()/typst/packages`): `@local` packages and
-///   manually-persisted installs.
-/// - cache dir (`dirs::cache_dir()/typst/packages`): where `@preview`
-///   downloads land (e.g. `~/.cache/typst/packages/preview/<name>/<ver>`).
+/// - data dir (`dirs::data_dir()/typst/packages`): `@local` and installed
+///   packages.
+/// - cache dir (`dirs::cache_dir()/typst/packages`): downloaded `@preview`
+///   packages (e.g. `~/.cache/typst/packages/preview/<name>/<ver>`).
 ///
-/// Each returns `None` when the platform directory can't be resolved (rare —
-/// headless environments without `HOME`/`XDG_*`).
+/// `None` when the platform folder can't be found (e.g. no `HOME`).
 pub fn typst_packages_data_dir() -> Option<PathBuf> {
     dirs::data_dir().map(|d| d.join("typst").join("packages"))
 }
@@ -144,15 +129,10 @@ pub fn typst_packages_cache_dir() -> Option<PathBuf> {
     dirs::cache_dir().map(|d| d.join("typst").join("packages"))
 }
 
-/// The package directories searched for a `<namespace>/<name>/<version>`
-/// triple, in priority order: notebox-vendored first (a notebox can pin its
-/// own copy), then the shared Typst data dir (`@local` + persisted installs),
-/// then the cache dir (`@preview` downloads).
-///
-/// Both the compile resolver ([`crate::typst_pipeline::world`]) and the
-/// collab-export vendoring pass ([`crate::typst_pipeline::package_vendor`])
-/// derive their candidate paths from here, so the "where does a package live"
-/// answer can never drift between the two.
+/// Package folders for a `<namespace>/<name>/<version>`, in order: the
+/// notebox's own (so it can pin a copy), the Typst data dir, then the cache
+/// dir. The compile resolver ([`crate::typst_pipeline::world`]) and bundling
+/// ([`crate::typst_pipeline::package_vendor`]) both use this, so they agree.
 pub fn package_search_dirs(
     notebox_root: &Path,
     namespace: &str,
@@ -184,9 +164,8 @@ pub fn locate_package_dir(
         .find(|d| d.is_dir())
 }
 
-/// Recursively copy a directory tree. Used to install a local-tarball package
-/// across a filesystem boundary and to vendor packages into a notebox for
-/// collaboration export.
+/// Copy a folder recursively, for installing a local package across filesystems
+/// and bundling packages into a notebox.
 pub fn copy_dir_all(src: &Path, dst: &Path) -> io::Result<()> {
     fs::create_dir_all(dst)?;
     for entry in fs::read_dir(src)? {
@@ -214,11 +193,8 @@ fn is_safe_version(s: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '+')
 }
 
-/// Extract a `.tar.gz` byte stream into `target_dir`. Sandboxed: entries
-/// whose normalized path escapes the target are skipped silently. Symlinks
-/// are skipped entirely (no symlink expansion = no symlink-traversal).
-///
-/// On success returns the number of entries written.
+/// Extract a `.tar.gz` stream into `target_dir`. Entries that would land
+/// outside it and symlinks are skipped. Returns the number of entries written.
 pub fn extract_tar_gz<R: Read>(reader: R, target_dir: &Path) -> io::Result<usize> {
     fs::create_dir_all(target_dir)?;
     let canonical_target = fs::canonicalize(target_dir)?;
@@ -282,9 +258,8 @@ pub fn extract_tar_gz<R: Read>(reader: R, target_dir: &Path) -> io::Result<usize
     Ok(written)
 }
 
-/// Normalize a tar entry path: reject absolute, parent-traversal, and
-/// drive-letter shapes. Returns the path stripped of leading "./" if safe,
-/// or None if the path is unsafe.
+/// A tar entry path without a leading "./", or None if absolute, climbing out
+/// with `..`, or a drive letter.
 fn sanitize_relative(p: &Path) -> Option<PathBuf> {
     if p.is_absolute() {
         return None;
@@ -304,16 +279,14 @@ fn sanitize_relative(p: &Path) -> Option<PathBuf> {
     Some(out)
 }
 
-/// Inspect an extracted package's typst.toml and return the declared
-/// package spec, if any. Used when the user installs a local tarball and
-/// we don't know the namespace/name/version up-front.
+/// The package spec declared in an extracted package's typst.toml, for local
+/// archives whose name and version aren't known in advance.
 pub fn read_package_manifest(dir: &Path) -> Option<PackageSpec> {
     let toml_path = dir.join("typst.toml");
     let content = fs::read_to_string(&toml_path).ok()?;
     let name = toml_string_field(&content, "name")?;
     let version = toml_string_field(&content, "version")?;
-    // Namespace isn't in typst.toml — Universe packages are all `preview`
-    // by convention. If the archive turns out to be from elsewhere, the
+    // typst.toml has no namespace; Universe packages are `preview`, and the
     // caller can override.
     if !is_safe_segment(&name) || !is_safe_version(&version) {
         return None;
@@ -325,13 +298,9 @@ pub fn read_package_manifest(dir: &Path) -> Option<PackageSpec> {
     })
 }
 
-/// Does `typst.toml` declare a `[template]` section?
-///
-/// Universe distinguishes "package" (library — provides functions, show
-/// rules) from "template" (project starter — a full document scaffold the
-/// user clones with `typst init`). The marker is a `[template]` table in
-/// the manifest; presence alone is enough to classify, we don't need to
-/// parse its contents.
+/// Whether `typst.toml` has a `[template]` section, which marks a template (a
+/// document starter for `typst init`) rather than a library package. Its
+/// presence is enough.
 pub fn manifest_declares_template(content: &str) -> bool {
     for line in content.lines() {
         let trimmed = line.trim();
@@ -355,9 +324,8 @@ pub fn read_package_meta(content: &str) -> (Option<String>, Option<String>) {
 }
 
 fn toml_string_field(content: &str, key: &str) -> Option<String> {
-    // Naive scanner — matches the same shape as helpers.rs's
-    // extract_toml_string_field. Adopt a real TOML parser if/when we need
-    // more than top-level `key = "value"` reads.
+    // Simple line scan, like `extract_toml_string_field` in helpers.rs; only
+    // top-level `key = "value"`.
     for line in content.lines() {
         let trimmed = line.trim();
         let prefix = format!("{} =", key);
@@ -371,10 +339,9 @@ fn toml_string_field(content: &str, key: &str) -> Option<String> {
     None
 }
 
-/// Read `field = "value"` from inside the `[template]` table of a `typst.toml`.
-/// [`toml_string_field`] only reads top-level keys, but a template's `path` and
-/// `entrypoint` live under `[template]`, so track the current section and match
-/// only while inside it. Best-effort, same naive shape as the sibling helper.
+/// `field = "value"` inside a typst.toml's `[template]` table, where `path` and
+/// `entrypoint` live (unlike [`toml_string_field`], which reads top-level
+/// keys).
 fn toml_template_section_field(content: &str, field: &str) -> Option<String> {
     let mut in_template = false;
     for line in content.lines() {
@@ -402,11 +369,8 @@ fn toml_template_section_field(content: &str, field: &str) -> Option<String> {
     None
 }
 
-/// Find the byte offset of the first "everywhere-form" show rule (`#show: …`)
-/// in a Typst source. The colon immediately after `show` distinguishes the
-/// everywhere form (applies a template to the whole document) from the selector
-/// form (`#show heading: …`), which we must not pick up. Only matches a rule
-/// that begins its (trimmed) line, to avoid hits inside content.
+/// Offset of the first `#show: …` rule (the whole-document form, not `#show
+/// heading: …`) that starts a line.
 fn find_everywhere_show(s: &str) -> Option<usize> {
     let mut offset = 0usize;
     for line in s.split_inclusive('\n') {
@@ -420,9 +384,8 @@ fn find_everywhere_show(s: &str) -> Option<usize> {
     None
 }
 
-/// Index just past the matching close of the bracket that opens `s` (which must
-/// start at an opening `(`/`[`/`{`). Balances all three bracket kinds together
-/// and skips `"…"` strings (with `\"` escapes). Returns `None` if unbalanced.
+/// Index after the bracket closing the one that starts `s` (`(`, `[` or `{`),
+/// balancing all three and skipping `"…"` strings. `None` if unbalanced.
 fn balanced_end(s: &str) -> Option<usize> {
     let mut depth = 0i32;
     let mut in_str = false;
@@ -453,10 +416,9 @@ fn balanced_end(s: &str) -> Option<usize> {
     None
 }
 
-/// Extract a template's "apply" show rule from its starter scaffold — the
-/// `#show: <fn>.with(…)` (or bare `#show: <fn>`) line that `typst init` would
-/// give the user. Best-effort string work; returns `None` when no everywhere-
-/// form show rule is present. Handles the call form spanning multiple lines.
+/// The `#show: <fn>.with(…)` (or `#show: <fn>`) line from a template's starter,
+/// which `typst init` would give the user, including when it spans lines.
+/// `None` if there is none.
 pub fn extract_show_rule(scaffold: &str) -> Option<String> {
     let start = find_everywhere_show(scaffold)?;
     let rest = &scaffold[start..];
@@ -492,10 +454,9 @@ fn find_close_quote(s: &str) -> Option<usize> {
     None
 }
 
-/// Rewrite the path argument of the first `bibliography("…")` call in `snippet`
-/// to `new_path`, so a template's starter points at InkyCap's auto-generated
-/// per-collection bibliography rather than the scaffold's example file (e.g.
-/// `refs.bib`). Returns the snippet unchanged if it has no such call.
+/// Point the first `bibliography("…")` in `snippet` at `new_path`, so a
+/// template uses the collection's generated bibliography instead of the
+/// starter's example (e.g. `refs.bib`). Unchanged if there is none.
 pub fn rewrite_show_rule_bibliography(snippet: &str, new_path: &str) -> String {
     const NEEDLE: &str = "bibliography(\"";
     let Some(start) = snippet.find(NEEDLE) else {
@@ -513,13 +474,11 @@ pub fn rewrite_show_rule_bibliography(snippet: &str, new_path: &str) -> String {
     out
 }
 
-/// Read an installed template package's starter scaffold and return its apply
-/// show rule (`#show: <fn>.with(…)`), ready to drop into a collection's Custom
-/// Typst override. Returns `None` for non-package templates (a `/notebox/path`),
-/// packages that aren't installed, non-template packages, or scaffolds without
-/// an everywhere-form show rule — every miss degrades gracefully (the caller
-/// just doesn't insert a starter). The `#import` is intentionally omitted: the
-/// collection's template field already emits it on export.
+/// The `#show: <fn>.with(…)` rule from an installed template package's starter,
+/// for a collection's Custom Typst. `None` for non-package templates, packages
+/// not installed, non-templates and starters without such a rule; the caller
+/// then adds nothing. The `#import` is left out because the collection's
+/// template setting already adds it.
 pub fn template_starter_snippet(notebox_root: &Path, spec: &str) -> Option<String> {
     let trimmed = spec.trim();
     // Notebox-path templates have no package scaffold to read.

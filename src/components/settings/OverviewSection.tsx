@@ -1,6 +1,5 @@
-// Overview tab: branding/version, a Help placeholder, and the embedded
-// notebox-management surface (add / clone / import / open / move / remove,
-// plus the per-notebox collaboration toggle).
+// Overview tab: version, Help, and notebox management (add, clone, import,
+// open, move, remove, and the collaboration toggle).
 import { createSignal, createResource, Show, For } from "solid-js";
 import * as ipc from "../../lib/ipc";
 import { openDocumentationWindow } from "../../lib/docs-window";
@@ -36,9 +35,8 @@ const SITE_URL = "https://inkycap.org";
 
 export function OverviewSection(props: { onClose: () => void }) {
   const t = useI18n();
-  // Version comes from the build (see scripts/version.mjs). The version is
-  // YY.MM.RELEASE; the last (RELEASE) component is odd for development builds,
-  // even for user-facing releases.
+  // The build's version (see scripts/version.mjs), YY.MM.RELEASE; RELEASE is
+  // odd for development builds and even for releases.
   const [version] = createResource(() => ipc.appVersion());
   const isDevChannel = () => {
     const v = version();
@@ -132,10 +130,9 @@ export function NoteboxManagementSection(props: { onClose: () => void }) {
   const [editingPath, setEditingPath] = createSignal<string | null>(null);
   const [editName, setEditName] = createSignal("");
 
-  // "Clone from git remote" — the collaborator-join path (joins a collaborative
-  // notebox entirely in-app, no command-line git). `cloneDest` is the exact
-  // folder the clone lands in (mirrors the New-notebox flow: the folder you
-  // pick is the notebox), not a parent the folder name is appended to.
+  // "Clone from git remote", for joining a collaborative notebox. `cloneDest`
+  // is the folder the clone goes into (the chosen folder is the notebox, as for
+  // New notebox).
   const [showCloneForm, setShowCloneForm] = createSignal(false);
   const [cloneRemote, setCloneRemote] = createSignal("");
   const [cloneBranch, setCloneBranch] = createSignal("main");
@@ -144,10 +141,8 @@ export function NoteboxManagementSection(props: { onClose: () => void }) {
   const [clonePassword, setClonePassword] = createSignal("");
   const [cloning, setCloning] = createSignal(false);
 
-  // "Import package" — the offline-handoff join path: a first-time recipient
-  // turns a received package (a notebox's `.git`, exported elsewhere) into a new
-  // notebox. `importDest` is the exact empty folder the notebox lands in, like
-  // the clone flow above.
+  // "Import package": a first-time recipient turns a received package into a new
+  // notebox. `importDest` is the empty folder it goes into.
   const [showImportForm, setShowImportForm] = createSignal(false);
   const [importArchive, setImportArchive] = createSignal("");
   const [importDest, setImportDest] = createSignal("");
@@ -191,10 +186,9 @@ export function NoteboxManagementSection(props: { onClose: () => void }) {
     if (!ok) return;
     try {
       await ipc.removeNoteboxFromRegistry(path);
-      // Removing the active notebox must also unload it — the user should never
-      // keep editing a notebox they've just removed (and may delete next). With
-      // it closed, the NoteboxRequiredOverlay takes over and walks them into a
-      // valid notebox. App.tsx closes this Settings panel in the same state.
+      // Removing the active notebox also unloads it, so it can't still be
+      // edited; NoteboxRequiredOverlay then takes over. App.tsx closes Settings
+      // at the same time.
       if (removingActive) {
         await closeActiveNotebox();
       }
@@ -212,9 +206,8 @@ export function NoteboxManagementSection(props: { onClose: () => void }) {
     }
   }
 
-  // Switch the app to a registered notebox and dismiss Settings so the user
-  // lands in the notebox they chose. New noteboxes are deliberately *not*
-  // opened on creation — this button is the explicit way in.
+  // Switch to a registered notebox and close Settings. New noteboxes aren't
+  // opened when created; this button opens them.
   async function handleOpen(entry: NoteboxRegistryEntry) {
     if (pathEquals(entry.path, noteboxInfo()?.path)) return;
     try {
@@ -225,18 +218,13 @@ export function NoteboxManagementSection(props: { onClose: () => void }) {
     }
   }
 
-  // Open the per-notebox Git Collaboration panel. Collaboration is a property
-  // of a *specific* notebox and its backend commands act on the open one, so
-  // switch to it first if it isn't already active, then route to the sidebar
-  // panel (which shows the setup form or the review surface as appropriate).
+  // Open the Git Collaboration panel. Its commands act on the open notebox, so
+  // switch to this one first.
   async function handleCollaboration(entry: NoteboxRegistryEntry) {
     if (!pathEquals(entry.path, noteboxInfo()?.path)) {
       try {
-        // `openNotebox` returns null when the notebox is already open in
-        // another window: it focuses that window rather than switching this
-        // one. The collaboration panel belongs in the window showing the
-        // notebox, so don't open it here against this window's (different)
-        // notebox — the user has been moved to the right window already.
+        // `null`: the notebox is open in another window, which has been
+        // focused; the panel belongs there.
         if ((await openNotebox(entry.path)) === null) return;
       } catch (err) {
         showToast("error", t("settings.notebox.openFailed", { error: errorText(err) }));
@@ -249,13 +237,11 @@ export function NoteboxManagementSection(props: { onClose: () => void }) {
     );
   }
 
-  // Flip a notebox's collaboration on or off from the toggle. Collaboration
-  // commands act on the *open* notebox, so we switch to it first. Turning ON
-  // needs the multi-field setup form, which lives in the Collaboration pane —
-  // we route there and leave the toggle reading its real (still-off) state
-  // until setup completes and flips `noteboxSettings.git`. Turning OFF stops
-  // collaborating after a confirm. `input` is reset to the true state on any
-  // early exit so the switch never claims a state that isn't real.
+  // Turn collaboration on or off from the toggle, switching to the notebox
+  // first. Turning on needs the setup form in the Collaboration pane, so go
+  // there; the toggle stays off until setup sets `noteboxSettings.git`. Turning
+  // off asks for confirmation. `input` is reset to the real state on any early
+  // exit.
   async function toggleCollaboration(
     entry: NoteboxRegistryEntry,
     wasOn: boolean,
@@ -263,10 +249,8 @@ export function NoteboxManagementSection(props: { onClose: () => void }) {
   ) {
     if (!pathEquals(entry.path, noteboxInfo()?.path)) {
       try {
-        // null = the notebox is open in another window and we focused that
-        // window instead of switching this one. Don't open the collaboration
-        // panel here — it would act on this window's old notebox. Reset the
-        // toggle since nothing changed in this window.
+        // `null`: another window was focused; nothing changed here, so reset
+        // the toggle.
         if ((await openNotebox(entry.path)) === null) {
           input.checked = wasOn;
           return;
@@ -312,10 +296,8 @@ export function NoteboxManagementSection(props: { onClose: () => void }) {
     if (!selected) return;
 
     const dirName = entry.path.split("/").pop() ?? entry.display_name;
-    // `selected` is the raw dialog path — native separators on Windows. Normalize
-    // before joining so the basename lands behind a single forward slash rather
-    // than producing a mixed-separator string (the backend tolerates either, but
-    // a consistent shape keeps display and any later comparison honest).
+    // The dialog path has native separators on Windows; normalize before joining
+    // so the result has one style.
     const base = normalizePath(selected).replace(/\/+$/, "");
     const newPath = `${base}/${dirName}`;
 
@@ -332,9 +314,7 @@ export function NoteboxManagementSection(props: { onClose: () => void }) {
   }
 
   async function browseForNewNotebox() {
-    // Default to the user's home directory regardless of OS — adding a
-    // notebox is a fresh task, not navigation from wherever InkyCap was
-    // launched.
+    // Start in the home folder; adding a notebox is a new task.
     const selected = await open({
       directory: true,
       multiple: false,
@@ -360,9 +340,8 @@ export function NoteboxManagementSection(props: { onClose: () => void }) {
     // The chosen folder failed validation (already listed, or nested) — Add is
     // disabled in this state, but guard here too against an Enter-key submit.
     if (addError()) return;
-    // Offer the seed-from-existing prompt before registering so the new
-    // notebox starts with the user's chosen base settings/rules. Skips
-    // silently when no source is available.
+    // Offer to copy settings and rules from another notebox before registering.
+    // Skipped when there is none.
     await maybeSeedNotebox(path, noteboxRegistry());
     try {
       await ipc.registerNotebox(path, name || undefined);
@@ -371,28 +350,21 @@ export function NoteboxManagementSection(props: { onClose: () => void }) {
       setAddPath("");
       setAddName("");
       setAddError(null);
-      // A new notebox appends to the bottom of the list, which can land below
-      // the fold in a long registry. Bring its row into view once Solid has
-      // rendered it (`register_notebox` stores the path verbatim, so the row's
-      // data attribute matches what we registered).
+      // Scroll the new row into view once rendered (`register_notebox` stores
+      // the path as given, so the row's data attribute matches).
       scrollNoteboxIntoView(path);
     } catch (err) {
       showToast("error", t("settings.notebox.addFailed", { error: errorText(err) }));
     }
   }
 
-  // A just-opened add/clone/import form renders at the bottom of the list,
-  // which can sit below the fold in a long registry. Bring it into view and
-  // focus its first field so the user can start typing (or reach its buttons)
-  // immediately. Used as a `ref` on each form's outer element, so it fires on
-  // mount.
+  // Scroll a just-opened add, clone or import form into view and focus its
+  // first field. Used as each form's `ref`.
   function revealForm(el: HTMLElement) {
     requestAnimationFrame(() => {
-      // Scroll the whole settings body to the bottom rather than just nudging
-      // the form's top edge in — the form is always the last element and the
-      // body's generous bottom padding then leaves the form (and its action
-      // buttons) fully clear of the bottom edge. `preventScroll` on focus keeps
-      // the input from fighting this scroll with its own partial adjustment.
+      // Scroll the settings body to the bottom: the form is last, and the
+      // bottom padding leaves its buttons clear. `preventScroll` stops the
+      // focus from scrolling as well.
       const body = el.closest<HTMLElement>(".settings__body");
       if (body) body.scrollTo({ top: body.scrollHeight, behavior: "smooth" });
       el.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true });
@@ -430,11 +402,9 @@ export function NoteboxManagementSection(props: { onClose: () => void }) {
       defaultPath: await homeDirDefault(),
     });
     if (!selected) return;
-    // The clone lands directly in the chosen folder, so it must be empty —
-    // cloning over an existing notebox would corrupt the user's notes. (An
-    // existing notebox always contains `.inkycap/`, so the emptiness check
-    // also rejects "clone into my other notebox".) Reject at selection time
-    // so the user gets immediate, clear feedback rather than a clone error.
+    // The clone goes directly into the chosen folder, so it must be empty (an
+    // existing notebox has `.inkycap/`, so it is refused). Checked when the
+    // folder is chosen, for immediate feedback.
     try {
       const empty = await ipc.dirIsEmpty(selected);
       if (!empty) {
@@ -470,19 +440,14 @@ export function NoteboxManagementSection(props: { onClose: () => void }) {
       showToast("error", t("settings.notebox.cloneFolderRequired"));
       return;
     }
-    // libgit2 picks the transport from the URL scheme, so a username/password
-    // is only honoured over HTTPS. When the user supplies credentials, normalize
-    // the address to HTTPS even if they typed an SSH-style URL (e.g.
-    // `git@host:owner/repo`) — otherwise the clone would silently fall back to
-    // SSH keys and the resulting notebox would read as SSH-mode, ignoring the
-    // sign-in they entered. With no credentials, keep the address as typed (an
-    // SSH URL stays SSH, using the machine's keys).
+    // A username and password only work over HTTPS (libgit2 picks the transport
+    // from the URL). With credentials, convert an SSH-style address
+    // (`git@host:owner/repo`) to HTTPS, or the clone would use SSH keys and
+    // ignore the sign-in. Without credentials, keep the address as typed.
     const hasCredentials = !!(cloneUsername().trim() || clonePassword().trim());
     const remote = hasCredentials ? toHttpsRemote(entered) : entered;
-    // Display name defaults to the destination folder's basename (the backend
-    // applies the same default when none is passed), matching New notebox.
-    // `dest` came from a folder dialog (native separators on Windows); normalize
-    // before extracting the basename so the default name isn't the full path.
+    // The name defaults to the destination folder's name (as the backend does).
+    // Normalize first so it isn't the whole path.
     const name = normalizePath(dest).split("/").pop() || "Notebox";
     setCloning(true);
     try {
@@ -498,14 +463,10 @@ export function NoteboxManagementSection(props: { onClose: () => void }) {
       await loadNoteboxRegistry();
       resetCloneForm();
       const opened = await openNotebox(path);
-      // A clone is inherently collaborative: the repo already carries the
-      // remote, and we just saved the sign-in to the keychain. Adopt that
-      // config automatically (deriving remote + branch from the freshly cloned
-      // repo) so the user lands collaborating rather than facing a blank setup
-      // form, then open the panel with Manage expanded so they can review the
-      // online settings. `opened === null` means the notebox got focused in
-      // another window — leave the collaboration UI to that window. If the
-      // auto-adopt fails, still open the panel so the manual setup form is there.
+      // A clone is collaborative: adopt its config (remote and branch from the
+      // repo) and open the panel with Manage expanded. `null` means another
+      // window was focused. If adopting fails, the panel still opens with the
+      // setup form.
       if (opened !== null) {
         try {
           await reconnectCollaboration();
@@ -544,9 +505,8 @@ export function NoteboxManagementSection(props: { onClose: () => void }) {
       defaultPath: await homeDirDefault(),
     });
     if (!selected) return;
-    // The package is cloned directly into the chosen folder, so it must be empty
-    // (same rule as the clone flow — importing over existing notes would corrupt
-    // them). Reject at selection time for immediate, clear feedback.
+    // The package is cloned into the chosen folder, which must be empty (as for
+    // cloning).
     try {
       const empty = await ipc.dirIsEmpty(selected);
       if (!empty) {
@@ -596,13 +556,9 @@ export function NoteboxManagementSection(props: { onClose: () => void }) {
       await loadNoteboxRegistry();
       resetImportForm();
       const opened = await openNotebox(path);
-      // An imported package is inherently collaborative by offline package
-      // handoff — it has full history but no remote. Enable package mode
-      // automatically so the user lands collaborating, then open the panel with
-      // Manage expanded so the Offline toggle shows the (package-handoff) mode
-      // and the identity/branch fields are ready to adjust. `opened === null`
-      // means another window was focused — leave its UI alone. A failed
-      // auto-enable still opens the panel so the manual setup form is there.
+      // An imported package collaborates through packages: turn package mode on
+      // and open the panel with Manage expanded. `null` means another window
+      // was focused. If that fails, the panel still opens with the setup form.
       if (opened !== null) {
         try {
           await setupPackageHandoff({});
@@ -834,9 +790,8 @@ export function NoteboxManagementSection(props: { onClose: () => void }) {
             <button
               class="settings__detect-btn"
               classList={{
-                // Once a name is typed and a valid location is chosen, nothing
-                // else is required — but it isn't obvious the user must still
-                // click Add. Draw the eye to it once both conditions are met.
+                // Once a name and valid location are set, highlight Add, since
+                // it isn't obvious it still needs clicking.
                 "settings__detect-btn--cta":
                   !!addName().trim() && !!addPath() && !addError(),
               }}

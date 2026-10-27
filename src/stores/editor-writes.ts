@@ -1,24 +1,18 @@
-// Module-level tracker of in-flight editor writes, keyed by file path,
-// plus the requests that make open editors save or follow a moved file.
+// Tracks editor writes in progress, by file path, and lets other code make open
+// editors save or follow a moved file.
 //
-// When an editor instance unmounts with a pending save, the flush kicks
-// off the write asynchronously. Two consumers need to coordinate with
-// it:
+// An editor that unmounts with unsaved changes starts its write asynchronously.
+// Two things must wait for it:
 //
-//   - The next mount of the same path must wait for the write to land
-//     before reading from disk — otherwise it sees stale content and a
-//     subsequent edit overwrites the just-written changes.
+//   - The next editor opened on the same path, which would otherwise read stale
+//     content and then overwrite the new changes.
+//   - A notebox switch, which must wait for all writes, since
+//     `write_file_content` goes to whichever notebox is active.
 //
-//   - A notebox-switch flow must wait for ALL in-flight writes to land
-//     before swapping the active notebox in the backend, because
-//     `write_file_content` routes through the currently-active notebox
-//     and would land in the wrong place after a switch.
-//
-// `trackWrite()` is the write-side registrar; `awaitPendingWrite()` is
-// the read-side gate for a single path; `awaitAllPendingWrites()` is
-// the global drain for the notebox-switch case. `flushEditorsAt()` makes
-// editors save now, before a rename, move or property rewrite touches the
-// file on disk.
+// `trackWrite()` registers a write; `awaitPendingWrite()` waits for one path;
+// `awaitAllPendingWrites()` waits for all (notebox switch). `flushEditorsAt()`
+// makes editors save now, before a rename, move or property rewrite touches the
+// file.
 
 import { normalizePath, pathStartsWith } from "../lib/paths";
 
@@ -26,11 +20,10 @@ import { normalizePath, pathStartsWith } from "../lib/paths";
 // (two panes showing the same note each save their own buffer).
 const pendingWrites = new Map<string, Set<Promise<void>>>();
 
-// Listeners notified when a user-initiated editor save begins. This is a clean
-// "the user is changing files" signal: it fires only for editor flushes, never
-// for backend-driven writes like a git checkout during sync (those bypass
-// `trackWrite`). The git store uses it to drop the transient post-sync review
-// notice once the user moves on to editing.
+// Listeners called when an editor save starts. Only editor saves, never backend
+// writes such as a git checkout during sync (those don't go through
+// `trackWrite`). The git store uses it to dismiss its post-sync notice once the
+// user starts editing.
 type WriteListener = (path: string) => void;
 const writeListeners = new Set<WriteListener>();
 
@@ -78,9 +71,10 @@ export async function awaitPendingWrite(path: string): Promise<void> {
   await awaitWritesUnder(path, false);
 }
 
-/** Wait for every in-flight editor write to settle. Used before a
- *  notebox switch so the backend's currently-active notebox is still
- *  the writes' intended destination when they land. */
+/**
+ * Wait for every editor write in progress, so they land before a notebox
+ * switch.
+ */
 export async function awaitAllPendingWrites(): Promise<void> {
   if (pendingWrites.size === 0) return;
   // Snapshot the values — new writes registered during the await will
@@ -88,11 +82,12 @@ export async function awaitAllPendingWrites(): Promise<void> {
   await Promise.allSettled([...pendingWrites.values()].flatMap((writes) => [...writes]));
 }
 
-/** Write every open editor's unsaved changes now, without waiting for the
- *  autosave delay, and wait for all writes to land. Used before anything
- *  that stops the app, such as installing an update. Each mounted editor
- *  answers the `inkycap:flush-all-editors` event by starting its write, which
- *  registers here synchronously, so the wait below covers it. */
+/**
+ * Save every open editor's changes now, without the autosave delay, and wait
+ * for the writes. Used before anything that stops the app, such as installing
+ * an update. Each editor answers the `inkycap:flush-all-editors` event by
+ * starting its write, which registers here at once, so the wait covers it.
+ */
 export async function flushAllEditors(): Promise<void> {
   document.dispatchEvent(new CustomEvent("inkycap:flush-all-editors"));
   await awaitAllPendingWrites();

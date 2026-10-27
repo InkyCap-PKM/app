@@ -1,31 +1,29 @@
-/* Right panel tabs and header overflow cue.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Right panel tabs and header overflow cue. Part of layout.css, whose import
+   order (see ../layout.css) keeps the cascade. */
 
 /* ── Right Panel Tabs ── */
 
 .right-panel__tabs {
   display: flex;
   align-items: center;
-  /* The bottom divider is drawn full-width by .right-panel::after — this
-     element is clipped 40px short of the right edge (clip-path below), so its
-     own border-bottom would stop short of the window edge. */
+  /* The bottom divider is drawn full width by .right-panel::after; this
+     element is clipped 40px short of the right edge (clip-path below), so
+     its own border would stop short. */
   min-height: 38px;
   gap: var(--space-1);
   padding: 0 40px 0 8px;
-  /* Must match .left-sidebar__mode-bar exactly so the section-headers below
-     each bar land on the same horizontal line. flex-shrink: 0 here is
-     load-bearing — see the comment on .left-sidebar__mode-bar. */
+  /* Must match .left-sidebar__mode-bar, so the section headers below both
+     bars line up. flex-shrink: 0 matters; see .left-sidebar__mode-bar. */
   flex-shrink: 0;
   box-sizing: border-box;
 }
 
 /* ── Overflow cue for the two header bars ──────────────────────────────────
-   When the left mode bar / right tab bar is narrowed past the point where all
-   its buttons fit, the extras are clipped at the trailing edge. A soft inward
-   shadow appears there — driven by `data-overflow` from createOverflowWatcher
-   — to signal there's more; the reveal gesture is widening the panel, so there
-   are deliberately no scroll buttons. Same shadow language as the tab strip. */
+   When the left mode bar or right tab bar is too narrow for all its buttons,
+   the extra ones are clipped at the end, and a soft inner shadow there (from
+   `data-overflow`, set by createOverflowWatcher) shows there's more.
+   Widening the panel reveals them, so there are no scroll buttons. Same
+   shadow as the tab strip. */
 .left-sidebar__mode-bar,
 .right-panel__tabs {
   position: relative;
@@ -46,12 +44,10 @@
   background: linear-gradient(to right, transparent, rgba(0, 0, 0, 0.16));
 }
 
-/* The right panel's collapse toggle occupies the trailing 40px (it's why the
-   tab bar reserves padding-right: 40px). clip-path cuts the tab content off at
-   that line so overflowing tabs can't render under the button — or, crucially,
-   in the gap beside it — and the cue sits just to its left where tabs actually
-   disappear. (overflow: hidden alone clips at the padding box, i.e. the window
-   edge, which let icons bleed past the button.) */
+/* The collapse toggle takes the last 40px (hence padding-right: 40px).
+   clip-path cuts the tabs off at that line, so they can't show under or
+   beside the button, and the cue sits just left of it. (overflow: hidden
+   alone clips at the window edge.) */
 .right-panel__tabs {
   clip-path: inset(0 40px 0 0);
 }
@@ -137,15 +133,13 @@
 }
 
 /* The fixed-size box a right-panel pane fills. Like `.left-sidebar__content`
-   it does not scroll itself: each pane pins its own header and scrolls only
-   the body beneath it (see `.right-panel__pane` in panel-header.css), so a
-   pane's title and controls stay on screen and the scrollbar starts below
-   them. Panes that manage their own layout (Annotations) fill this box the
-   same way.
-   The padding matches `.left-sidebar__content` so section-headers on both
-   sides align horizontally, and neither box insets its content from the top,
-   so a pane's leading row lands in the band the editor toolbar shares (see
-   panel-header.css). */
+   it doesn't scroll: each pane pins its header and scrolls only its body
+   (see `.right-panel__pane` in panel-header.css). Panes with their own
+   layout (Annotations) fill it the same way.
+
+   Padding matches `.left-sidebar__content`, so section headers on both sides
+   line up; neither box has top padding, so a pane's first row sits in the
+   band shared with the editor toolbar (see panel-header.css). */
 .right-panel__tab-content {
   flex: 1;
   min-height: 0;

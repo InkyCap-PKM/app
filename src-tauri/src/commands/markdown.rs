@@ -13,9 +13,8 @@ use crate::property_types::{is_system_property, PropertyType};
 use crate::state::AppState;
 use crate::storage::traits::NoteboxStorage;
 
-/// Read clipboard text and convert from markdown to Typst in one step.
-/// Bypasses webview clipboard restrictions by reading from the native
-/// GTK/Cocoa/Win32 clipboard directly.
+/// Read the clipboard and convert it from Markdown to Typst, reading the native
+/// clipboard directly to avoid webview clipboard restrictions.
 #[tauri::command]
 pub async fn paste_markdown_as_typst(
     app: tauri::AppHandle,
@@ -45,9 +44,8 @@ pub async fn paste_markdown_as_typst(
         .files
         .attachment_folder
         .clone();
-    // Paste-from-clipboard has no source notebox to inspect for dialect;
-    // default to Standard so prices like `$3000`, version refs like
-    // `#42`, and other literal hashes survive intact.
+    // A paste has no source notebox to detect a dialect from, so use Standard,
+    // which keeps literal `$3000`, `#42` and other hashes intact.
     let options = MarkdownToTypstOptions {
         convert_frontmatter: true,
         attachment_folder,
@@ -120,11 +118,10 @@ pub async fn convert_markdown_to_typst(
     }
 }
 
-/// One row of the user's confirmed YAML→property mapping from the import
-/// dialog. `target_key` is `None` when the user excluded the property.
-/// `target_type` is the type the value is formatted as (and, when `create`
-/// is set, the type registered for the new property). System properties are
-/// never re-typed regardless of `create`.
+/// One row of the YAML-to-property mapping the user confirmed in the import
+/// dialog. `target_key` is `None` when the property is excluded. `target_type`
+/// is the type the value is formatted as (and, with `create`, the type
+/// registered for the new property). System properties are never retyped.
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct PropertyMapping {
     pub source_key: String,
@@ -152,12 +149,10 @@ fn build_mapping_table(mappings: &[PropertyMapping]) -> FrontmatterMapping {
         .collect()
 }
 
-/// Scan every markdown file's YAML frontmatter in a source archive (or
-/// directory) and report the distinct keys with a suggested InkyCap
-/// property mapping for each. The frontend shows these in the mapping
-/// dialog before committing the import. Frontmatter is YAML regardless of
-/// dialect, so this needs no dialect argument. An open notebox supplies the
-/// existing property keys/types used to suggest matches.
+/// Report the distinct YAML frontmatter keys across the Markdown files in an
+/// archive or folder, each with a suggested property mapping, for the import
+/// dialog. Frontmatter is YAML in every dialect, so no dialect is needed. An
+/// open notebox's existing properties inform the suggestions.
 #[tauri::command]
 pub async fn scan_markdown_frontmatter(
     source_path: String,
@@ -195,12 +190,10 @@ pub async fn scan_markdown_frontmatter(
     ))
 }
 
-/// Import a markdown notebox from a zip file or directory into the target
-/// notebox. `dialect` selects the source-markdown flavor ("standard" or
-/// "obsidian"); pass `None` to let the importer auto-detect by looking
-/// for an `.obsidian/` folder in the source. `mappings`, when present,
-/// carries the user's confirmed YAML→property mapping from the dialog;
-/// when `None`, the importer falls back to its built-in alias defaults.
+/// Import a Markdown notebox from a zip file or folder into the target notebox.
+/// `dialect` is "standard" or "obsidian"; `None` detects it from an
+/// `.obsidian/` folder. `mappings` is the YAML-to-property mapping confirmed in
+/// the dialog; with `None`, the built-in defaults are used.
 #[tauri::command]
 pub async fn import_markdown_notebox(
     source_path: String,
@@ -269,11 +262,9 @@ pub async fn import_markdown_notebox(
         ),
     };
 
-    // Persist the declared type for any newly-created properties so the
-    // editor renders them with the right widget after the import. System
-    // properties have fixed types and are never touched; a "create" that
-    // collides with a property already in the notebox is treated as a plain
-    // mapping (no re-typing of the existing property).
+    // Register the types of newly created properties so they get the right
+    // editor. System properties are never touched, and a "create" matching an
+    // existing property is treated as a mapping (the existing type is kept).
     if let Some(mappings) = &mappings {
         let existing_keys: std::collections::HashSet<String> = {
             let index = session.property_index.read().await;
@@ -303,13 +294,11 @@ pub async fn import_markdown_notebox(
         }
     }
 
-    // The imported notes were written straight to disk by the importer, so the
-    // session's in-memory indexes (link graph, corpus stats, search index,
-    // property index) and the on-disk metadata cache still reflect the
-    // pre-import state. A bulk import of thousands of notes is exactly the case
-    // the per-file watcher path handles poorly, so rebuild explicitly rather
-    // than relying on it; without this, backlinks, search, and the Mycelial
-    // View show the new notes as unconnected.
+    // The importer wrote the notes straight to disk, so the in-memory indexes
+    // (links, corpus stats, search, properties) and the metadata cache are out
+    // of date. The file watcher handles bulk imports poorly, so rebuild here;
+    // otherwise backlinks, search and the Mycelial View don't see the new
+    // notes.
     crate::commands::notebox::spawn_index_rebuild(window.app_handle().clone(), session.clone());
 
     Ok(result)
@@ -321,9 +310,8 @@ enum ArchiveKind {
     TarGz,
 }
 
-/// Classify a source path as zip, tarball, or neither. Falls back to
-/// double-extension sniffing for `.tar.gz` since `Path::extension` only
-/// returns the trailing component.
+/// Classify a source path as zip, tarball or neither. `.tar.gz` is checked by
+/// name, since `Path::extension` gives only the last part.
 fn archive_kind_for(path: &Path) -> Option<ArchiveKind> {
     if !path.is_file() {
         return None;
@@ -338,10 +326,8 @@ fn archive_kind_for(path: &Path) -> Option<ArchiveKind> {
     }
 }
 
-/// Probe a source notebox (directory or .zip) and report which markdown
-/// dialect the importer would use by default. The frontend calls this
-/// after the user picks a file so the import dialog can preselect the
-/// toggle without committing the user to anything.
+/// Report which Markdown dialect the importer would use for a source notebox
+/// (folder or .zip), so the import dialog can preselect it.
 #[tauri::command]
 pub async fn detect_markdown_dialect(source_path: String) -> Result<String, String> {
     let source = PathBuf::from(&source_path);

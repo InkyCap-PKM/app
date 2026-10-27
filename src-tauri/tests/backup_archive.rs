@@ -1,10 +1,6 @@
-//! End-to-end smoke test for the notebox backup archive writer.
-//!
-//! Exercises both the unencrypted and AES-256 paths against a temp
-//! notebox tree, verifies the resulting zip is readable, that interior
-//! paths use forward slashes (the zip-spec convention CLAUDE.md calls
-//! out for cross-platform restore), and that the encrypted variant
-//! refuses to extract without the password.
+//! Backup archive writer test, unencrypted and AES-256, on a temporary notebox:
+//! the zip is readable, paths inside use forward slashes (needed to restore on
+//! any OS), and the encrypted one can't be extracted without the password.
 
 use std::fs;
 use std::io::Read;
@@ -102,12 +98,9 @@ fn writes_encrypted_archive_refuses_extraction_without_password() {
     let file = fs::File::open(&dest).unwrap();
     let mut zip = zip::ZipArchive::new(file).unwrap();
 
-    // The zip crate's `by_name` (no password) refuses to surface the
-    // entry at all when AES encryption is engaged — surfacing
-    // `UnsupportedArchive("Password required to decrypt file")` —
-    // which is the strongest possible signal that encryption is on.
-    // We don't actually need to attempt the read; the by_name failure
-    // is the assertion.
+    // Without a password the zip crate's `by_name` refuses an AES-encrypted
+    // entry (`UnsupportedArchive("Password required to decrypt file")`), which
+    // shows encryption is on; that failure is the check.
     let err = match zip.by_name("notebox/note one.typ") {
         Ok(_) => panic!("expected by_name to fail on AES-encrypted entry without password"),
         Err(e) => e,

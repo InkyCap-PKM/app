@@ -1,14 +1,11 @@
-//! Compile-validates the HTML-target branch of the `#callout(...)` and
-//! `#annotation(...)` primitives in the `inkycap-notebox` Typst package
-//! (`lib.typ`).
+//! Checks that the HTML branch of `#callout(...)` and `#annotation(...)` in the
+//! `inkycap-notebox` package (`lib.typ`) compiles.
 //!
-//! Typst's `typst-html` backend drops the paged `block(fill:/stroke:/…)` box
-//! styling these used to rely on, so they now branch on `target() == "html"`
-//! and emit a semantic `<div class="inkycap-callout …">` (with the resolved
-//! kind colour as a CSS custom property) for the reading-view / export
-//! stylesheet to paint. A syntax error in that branch only surfaces when a note
-//! using it is compiled to HTML, so this runs a real note through the actual
-//! Typst HTML compiler. Needs no external tooling, so it always runs.
+//! `typst-html` drops `block(fill:/stroke:/…)` styling, so on `target() ==
+//! "html"` they emit `<div class="inkycap-callout …">` (with the kind's colour
+//! as a CSS custom property) for the reading view and export stylesheet. An
+//! error there only shows when a note compiles to HTML, so this compiles one
+//! with the Typst HTML compiler. Needs no external tools, so it always runs.
 
 use inkycap_lib::storage::path::canonicalize_root;
 use inkycap_lib::typst_pipeline::compiler::TypstCompiler;

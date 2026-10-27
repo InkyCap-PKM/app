@@ -1,29 +1,22 @@
-//! Audit and repair foreign `.typ` files in the notebox.
+//! Audit and repair `.typ` files from other tools (Pandoc or typst.app
+//! conversions, files from other projects, downloads). They compile in Typst
+//! but lack what InkyCap expects:
 //!
-//! Users frequently bring `.typ` files into InkyCap from other tools
-//! (Pandoc/typst.app conversion of `.docx`, files copied from another
-//! project, tutorials downloaded from the web, etc.). These foreign files
-//! compile fine in stock Typst but are missing the small preamble that
-//! makes them first-class citizens in InkyCap:
+//! 1. The `inkycap-notebox` import, without which `#wikilink(...)`,
+//!    `#tag(...)`, `#callout(...)` and the other notebox functions won't
+//!    resolve when added later.
+//! 2. A top-level `#note(...)` call, without which collections show nothing for
+//!    the file and `<inkycap-note>` queries find nothing.
 //!
-//! 1. The `inkycap-notebox` package import — without it, `#wikilink(...)`,
-//!    `#tag(...)`, `#callout(...)`, and other notebox primitives would not
-//!    resolve when the user adds them later.
-//! 2. A top-level `#note(...)` metadata call — without it, the collection
-//!    table has nothing to display for the file (no title/author/date),
-//!    and `typst query` against `<inkycap-note>` returns no entries.
+//! Commands:
+//! - [`audit_typ_files`]: report which files lack either.
+//! - [`repair_typ_files`]: add the import and an empty `#note()` to the chosen
+//!   files.
+//! - [`note_missing_notebox_import`] / [`add_notebox_import`]: the single-file
+//!   check and fix run when a note opens.
 //!
-//! This module exposes these Tauri commands:
-//! - [`audit_typ_files`] — walk the notebox and report which files are
-//!   missing each preamble element.
-//! - [`repair_typ_files`] — apply non-destructive fixes (prepend the
-//!   import, insert a stub `#note()`) to a user-chosen subset.
-//! - [`note_missing_notebox_import`] / [`add_notebox_import`] — the
-//!   single-file check and fix the editor runs when a note is opened.
-//!
-//! The repairs never overwrite existing content: if a file already has a
-//! `#note(...)` call we leave it alone, even if the call is empty or
-//! missing fields the user might expect.
+//! Repairs never overwrite content; an existing `#note(...)` is left as is,
+//! even if empty.
 
 use std::path::PathBuf;
 
@@ -70,10 +63,8 @@ pub struct TypAuditReport {
     pub syntax_errors: Vec<FileSyntaxErrors>,
 }
 
-/// Walk the notebox for `.typ` files and report which ones are missing
-/// either the `inkycap-notebox` import line or a `#note(...)` metadata
-/// call. Files under `.inkycap/` (the notebox's internal package and
-/// scaffold storage) are skipped — they are not user notes.
+/// Report the notebox's `.typ` files that lack the `inkycap-notebox` import or
+/// a `#note(...)` call. Files under `.inkycap/` aren't notes and are skipped.
 #[tauri::command]
 pub async fn audit_typ_files(
     state: State<'_, AppState>,
@@ -83,9 +74,8 @@ pub async fn audit_typ_files(
     Ok(collect_audit(&session).await?.0)
 }
 
-/// The audit scan, shared by [`audit_typ_files`] and [`save_audit_report`].
-/// Returns the report plus the notebox root (the latter only needed when
-/// writing the report file).
+/// The scan shared by [`audit_typ_files`] and [`save_audit_report`], with the
+/// notebox root (needed for writing the report).
 async fn collect_audit(
     session: &NoteboxSession,
 ) -> Result<(TypAuditReport, PathBuf), InkyCapError> {
@@ -108,10 +98,9 @@ async fn collect_audit(
     };
 
     for abs in abs_paths {
-        // Resolve to a notebox-relative path for both display and skipping
-        // the notebox's internal `.inkycap/` tree. `list_files` skips most
-        // hidden dirs but defensively re-check here so the audit stays
-        // correct even if that policy changes.
+        // Notebox-relative path, for display and for skipping `.inkycap/`
+        // (checked again here even though `list_files` skips most hidden
+        // folders).
         let rel = match abs.strip_prefix(&notebox_root) {
             Ok(r) => r.to_path_buf(),
             Err(_) => continue,
@@ -165,10 +154,9 @@ async fn collect_audit(
 /// Filename of the audit report written at the notebox root.
 const REPORT_NAME: &str = "InkyCap Audit Report.typ";
 
-/// Write the audit results to a note at the notebox root and return its
-/// absolute (frontend-shaped) path, so the user can open it in a tab and work
-/// through the findings while editing files in other tabs — the full-screen
-/// audit dialog can't be open at the same time. Re-running regenerates it.
+/// Write the audit to a note at the notebox root and return its path, so the
+/// user can work through it in a tab (the audit dialog can't stay open).
+/// Re-running replaces it.
 #[tauri::command]
 pub async fn save_audit_report(
     state: State<'_, AppState>,
@@ -185,10 +173,9 @@ pub async fn save_audit_report(
     ))
 }
 
-/// Render the audit report as an InkyCap note. Paths go in inline-code spans so
-/// markup characters in filenames are inert; messages are plain text. Grouped
-/// by concern, with one `===` sub-heading per file in the detailed sections so
-/// the report's own outline doubles as a worklist.
+/// The audit report as a note. Paths are in inline code so markup characters
+/// stay literal. Grouped by concern, with one `===` heading per file, so the
+/// outline works as a checklist.
 fn format_audit_report(report: &TypAuditReport) -> String {
     use std::fmt::Write as _;
     let today = chrono::Local::now().date_naive().format("%Y-%m-%d");
@@ -291,9 +278,8 @@ fn note_stem(rel_path: &str) -> &str {
     file.strip_suffix(".typ").unwrap_or(file)
 }
 
-/// A `#wikilink("<note name>")` for the given path — clickable in the editor to
-/// open that note. Every scanned `.typ` is in the index (even ones that fail to
-/// compile), so these resolve rather than offering to create a new note.
+/// A `#wikilink("<note name>")` for `rel_path`. Every scanned `.typ` is
+/// indexed, even if it doesn't compile, so these resolve.
 pub(crate) fn wikilink(rel_path: &str) -> String {
     let stem = note_stem(rel_path)
         .replace('\\', "\\\\")
@@ -301,17 +287,15 @@ pub(crate) fn wikilink(rel_path: &str) -> String {
     format!("#wikilink(\"{stem}\")")
 }
 
-/// Wrap text in a Typst inline-code span, so paths/snippets with markup
-/// characters (`*`, `_`, `#`, `@`, …) render literally. A backtick in the text
-/// (vanishingly rare in a path) is dropped to keep the span well-formed.
+/// Text in inline code, so markup characters (`*`, `_`, `#`, `@`) are literal.
+/// Backticks are dropped to keep the span valid.
 pub(crate) fn code_span(text: &str) -> String {
     format!("`{}`", text.replace('`', ""))
 }
 
-/// Apply the non-destructive preamble fixes to the given files. Each
-/// repaired file is added to the returned list with its notebox-relative
-/// path. Files that turn out to already be in good shape (e.g. another
-/// process patched them between audit and repair) are silently skipped.
+/// Apply the preamble fixes to the given files and return the notebox-relative
+/// paths changed. Files already fixed (e.g. edited since the audit) are
+/// skipped.
 #[tauri::command]
 pub async fn repair_typ_files(
     paths: Vec<String>,
@@ -356,10 +340,9 @@ pub async fn repair_typ_files(
     Ok(summary)
 }
 
-/// The notebox-relative path of `path` when it is a user note that the
-/// single-file import check applies to: a `.typ` file inside the open notebox,
-/// outside the internal `.inkycap/` tree, in a notebox the user can edit (not
-/// the read-only documentation notebox). `None` otherwise.
+/// The notebox-relative path of `path` if the import check applies: a `.typ` in
+/// the open notebox, outside `.inkycap/`, not in the read-only documentation
+/// notebox. Otherwise `None`.
 async fn user_note_rel_path(
     session: &NoteboxSession,
     path: &str,
@@ -383,11 +366,9 @@ async fn user_note_rel_path(
     Ok(Some(rel))
 }
 
-/// True when the note at `path` is a user note in the open notebox (see
-/// [`user_note_rel_path`]) whose source lacks the `inkycap-notebox` import.
-/// The editor calls this before loading a note, so it can offer to add the
-/// import (or add it automatically, per the user's setting). Always `false`
-/// for files the check doesn't apply to.
+/// True when `path` is a user note (see [`user_note_rel_path`]) without the
+/// `inkycap-notebox` import. The editor calls this before loading a note, to
+/// add the import or ask first.
 #[tauri::command]
 pub async fn note_missing_notebox_import(
     path: String,
@@ -402,11 +383,9 @@ pub async fn note_missing_notebox_import(
     Ok(!has_notebox_import(&content))
 }
 
-/// Prepend the `inkycap-notebox` import line to the note at `path` if it is
-/// missing. Unlike [`repair_typ_files`] this adds only the import, never a
-/// `#note()` stub, so opening a file changes as little as possible. Returns
-/// `true` when the file was rewritten; `false` when it already had the import
-/// or the check doesn't apply to it.
+/// Add the `inkycap-notebox` import to the note at `path` if missing. Unlike
+/// [`repair_typ_files`], adds no `#note()`, so opening changes as little as
+/// possible. `true` if the file was rewritten.
 #[tauri::command]
 pub async fn add_notebox_import(
     path: String,
@@ -427,10 +406,8 @@ pub async fn add_notebox_import(
     Ok(true)
 }
 
-/// The Markdown fixes the user accepted for one file. A subset of the audit's
-/// `markdown_fixes[*]` for that path — rejected changes are simply left out, so
-/// the user can keep a line as-is if the tool misread it (or they want it that
-/// way).
+/// The Markdown fixes the user accepted for one file: a subset of the audit's
+/// `markdown_fixes[*]`, with rejected ones left out.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileMdEdits {
@@ -438,10 +415,9 @@ pub struct FileMdEdits {
     pub fixes: Vec<MdFix>,
 }
 
-/// Apply the user-accepted Markdown→Typst fixes. Content-changing, so it's a
-/// distinct action from the additive preamble repair — the caller opts in
-/// explicitly and chooses which fixes to apply per file. Files whose accepted
-/// set produces no change are silently skipped.
+/// Apply the accepted Markdown-to-Typst fixes. These change content, so unlike
+/// the preamble repair the user chooses each fix. Files with no resulting
+/// change are skipped.
 #[tauri::command]
 pub async fn repair_markdown_files(
     edits: Vec<FileMdEdits>,
@@ -487,10 +463,8 @@ pub async fn repair_markdown_files(
     Ok(summary)
 }
 
-/// Outcome of a repair run. `repaired` carries the files actually
-/// rewritten; `errors` carries human-readable messages for any failure
-/// (read, write, etc.). A successful run with zero changes returns both
-/// vectors empty.
+/// Result of a repair: `repaired` are the files rewritten, `errors` messages
+/// for failures. Both empty when nothing changed.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TypRepairSummary {
@@ -500,41 +474,31 @@ pub struct TypRepairSummary {
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
-/// Detect whether the file already pulls in the inkycap-notebox library.
-/// Accepts both the canonical version-less import path and the legacy
-/// versioned package path, including non-glob variants
-/// (`#import "...notebox.typ": tag, wikilink`).
+/// Whether the file imports the notebox library, by the current path or the
+/// older versioned package path, including non-glob imports (`#import
+/// "...notebox.typ": tag, wikilink`).
 fn has_notebox_import(content: &str) -> bool {
     content
         .lines()
         .any(crate::notebox_package::is_notebox_import_line)
 }
 
-/// Build the corrected source for a single file. Two independent
-/// fixes are applied; either or both may be needed:
-/// - prepend the inkycap-notebox `#import` line if missing,
-/// - insert an empty `#note()` stub directly after the import block if
-///   no `#note(...)` call is present anywhere in the file.
-///
-/// The function never deletes content. If the source already satisfies
-/// both invariants, it is returned unchanged.
+/// The fixed source for one file: add the `#import` line if missing, and an
+/// empty `#note()` after the imports if there is no `#note(...)`. Never removes
+/// content; unchanged when both are present.
 fn apply_preamble_fixes(source: &str) -> String {
     // 1. Ensure the notebox-package import is present, prepended if absent.
     let with_import = crate::notebox_package::ensure_import(source);
 
-    // 2. Ensure a `#note(...)` call exists. If not, insert `#note()`
-    //    right after the trailing newline of the inkycap-notebox import
-    //    line. We re-detect the import position from `with_import` so
-    //    this works whether we just prepended it or it was already
-    //    present higher up in the file.
+    // 2. Add `#note()` after the import line if there is no `#note(...)`,
+    //    finding the import in `with_import` whether it was just added or
+    //    already there.
     if note_call_span(&with_import).is_some() {
         return with_import;
     }
 
-    // Locate the notebox-library import line and insert `#note()` on the
-    // line directly below it. If the marker is absent for some reason
-    // (e.g. an unusual import variant we didn't match earlier), fall
-    // back to prepending the stub.
+    // Put `#note()` on the line after the import; if the import isn't found (an
+    // unusual form), put it at the top.
     let insert_at = {
         let mut cursor = 0usize;
         let mut found: Option<usize> = None;
@@ -561,9 +525,8 @@ mod tests {
 
     #[test]
     fn audit_report_is_valid_typst() {
-        // The generated report must itself be syntactically valid Typst — even
-        // when file names / fix snippets contain markup-active characters,
-        // which `code_span` neutralises by wrapping in inline code.
+        // The report must be valid Typst even with markup characters in names
+        // and snippets.
         let report = TypAuditReport {
             total_scanned: 3,
             missing_import: vec!["Notebox/foreign *star*.typ".into()],
@@ -658,9 +621,7 @@ mod tests {
 
     #[test]
     fn repair_preserves_unicode_body() {
-        // Multi-byte content must round-trip byte-identical through the
-        // repair. Same hazard category as the strip_bibliography_call
-        // bug — keep this test in lockstep.
+        // Multi-byte content must come through the repair byte for byte.
         let src = "= Café — résumé\nNaïve coöperate. 你好 شكرا 👨‍👩‍👧‍👦\n";
         let out = apply_preamble_fixes(src);
         assert!(out.contains("Café — résumé"));

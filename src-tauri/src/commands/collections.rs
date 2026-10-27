@@ -31,10 +31,8 @@ pub async fn list_collections(
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_default();
 
-        // A single unreadable or malformed .collection file must not wipe the
-        // entire Collections pane. Log the failure and fall back to a
-        // zero-view entry so the user can still see the file listed (and
-        // spot that it's broken) instead of getting a silently empty pane.
+        // One broken `.collection` file mustn't empty the Collections pane: log
+        // it and list it with no views, so it is visibly broken.
         let (view_count, icon) = match storage.read_file(path).await {
             Ok(content) => match parse_collection_file(&content) {
                 Ok(base) => (base.views.len(), base.icon),
@@ -67,11 +65,9 @@ pub async fn list_collections(
     Ok(collections)
 }
 
-/// Read (modified, created) Unix-epoch seconds for a `.collection` file.
-/// The path is resolved against the notebox root first so it works whether
-/// the caller passes a notebox-relative or absolute path. Either field
-/// falls back to zero when the filesystem doesn't track it, matching the
-/// convention used for [`crate::storage::traits::FileTreeNode`].
+/// Modified and created times (Unix seconds) of a `.collection` file, resolved
+/// against the notebox root so relative or absolute paths work. Zero when
+/// unavailable, as for [`crate::storage::traits::FileTreeNode`].
 fn collection_file_times(
     storage: &crate::storage::local::LocalNoteboxStorage,
     path: &std::path::Path,
@@ -91,12 +87,9 @@ fn collection_file_times(
     }
 }
 
-/// Resolve the notes belonging to a collection view — the single source of
-/// membership truth. A note belongs because it matches the collection's
-/// global `FilterGroup` *and* the view's own `FilterGroup` (each absent
-/// group is a pass-through). Shared by the table renderer
-/// ([`get_collection_data`]) and the Agenda view ([`get_collection_agenda`])
-/// so the two can never drift.
+/// The notes in a collection view: those matching the collection's
+/// `FilterGroup` and the view's (a missing group passes). Used by
+/// [`get_collection_data`] and [`get_collection_agenda`], so they agree.
 pub(crate) fn resolve_collection_members<'a>(
     base: &CollectionFile,
     view: &ViewDef,
@@ -122,18 +115,12 @@ pub(crate) fn resolve_collection_members<'a>(
         .collect()
 }
 
-/// Resolve the set of note paths belonging to the collection whose name (the
-/// `.collection` file stem, matched case-insensitively) equals `name`. This
-/// backs the `collection:` search filter. Membership is the union over the
-/// collection's views — every note that appears anywhere in the collection —
-/// falling back to the collection's base filter group when it defines no
-/// views. Returns an empty set when no collection matches, the file can't be
-/// read/parsed, or no notebox is open. Unreadable files are skipped (logged),
-/// never surfaced as an error, so a broken collection just scopes to nothing.
-///
-/// The returned paths are the same `PathBuf`s the search engine keys its
-/// documents on (both derive from the notebox scan), so the caller can
-/// intersect them directly with search hits.
+/// Paths of the notes in the collection named `name` (its `.collection` stem,
+/// ignoring case), for the `collection:` search filter: every note in any of
+/// its views, or its base filter group if it has no views. Empty if no
+/// collection matches, the file can't be read, or no notebox is open
+/// (unreadable files are logged, not errors). The paths are the same `PathBuf`s
+/// the search engine uses, so they can be intersected with hits directly.
 pub(crate) async fn collection_member_paths(
     session: &NoteboxSession,
     name: &str,
@@ -236,22 +223,18 @@ pub async fn get_collection_data(
         .clone()
         .unwrap_or_else(|| vec!["file.name".to_string()]);
 
-    // Filter notes — membership is resolved through the shared helper so
-    // the table and the Agenda view (`get_collection_agenda`) can never
-    // disagree about which notes belong to a collection view.
+    // Membership through the shared helper, so the table and the Agenda view
+    // agree.
     let members = resolve_collection_members(&base, view, &index, &ctx);
 
-    // Facet values are computed across the full member set, *before* this
-    // view's per-column quick filters narrow it — so a column's checklist still
-    // offers values the user can toggle back on (standard faceted-filter
-    // behaviour).
+    // Column values come from all members before this view's header filters, so
+    // a checklist still offers values that are switched off.
     let column_values = collect_column_values(&members, &columns, &ctx);
 
     let mut matching_rows: Vec<CollectionRow> = Vec::new();
     for note in members {
-        // Per-column header filters AND together (and with base/view filters).
-        // A separate scope from `view.filters` so they clear independently of
-        // the advanced FilterBuilder.
+        // Header filters are ANDed with each other and the base and view
+        // filters, kept apart from `view.filters`.
         if let Some(col_filters) = &view.column_filters {
             if !col_filters
                 .values()
@@ -281,9 +264,7 @@ pub async fn get_collection_data(
 
     // Apply sort rules
     if let Some(ref sort_rules) = view.sort {
-        // Precompute the descending flag for each rule once — the previous code
-        // re-uppercased `rule.direction` into a fresh String inside every
-        // comparison (O(rows·log rows·rules) allocations).
+        // Each rule's direction, computed once rather than in every comparison.
         let descending: Vec<bool> = sort_rules
             .iter()
             .map(|r| r.direction.eq_ignore_ascii_case("desc"))
@@ -321,13 +302,10 @@ pub async fn get_collection_data(
     })
 }
 
-/// Distinct scalar values per column across a view's member set, for the
-/// header filter's multi-select checklist. List cells contribute each element;
-/// scalar cells contribute their stringified value. A `BTreeSet` keeps the
-/// output sorted. Columns whose distinct set exceeds `CAP` are dropped (a
-/// checklist that long is no longer a useful affordance — the user filters such
-/// columns by text/number/date instead), and columns with no values never
-/// appear in the map.
+/// Distinct values per column across the members, for the header filter
+/// checklist (list cells add each element). Sorted. Columns with more than
+/// `CAP` values are left out (filter those by text, number or date), as are
+/// columns with none.
 fn collect_column_values(
     members: &[&crate::models::note::NoteMetadata],
     columns: &[String],
@@ -385,9 +363,8 @@ fn collect_column_values(
         .collect()
 }
 
-/// Create a new .collection file with a default table view. Collections
-/// always land in the reserved `.inkycap/collections/` directory — the
-/// location is not user-configurable.
+/// Create a `.collection` file with a default table view, always in
+/// `.inkycap/collections/`.
 #[tauri::command]
 pub async fn create_collection_file(
     name: String,
@@ -450,9 +427,8 @@ pub async fn save_collection_file(
     Ok(())
 }
 
-/// The contributor role vocabularies (CRediT + bibliographic) for the Book
-/// Metadata contributors editor. A frozen standard, served from the backend
-/// so the editor's dropdowns and the export renderer share one source.
+/// Contributor roles (CRediT and bibliographic) for the contributors editor,
+/// from the backend so the editor and the export share one list.
 #[tauri::command]
 pub fn contributor_catalogs() -> crate::typst_pipeline::contributors::ContributorCatalogs {
     crate::typst_pipeline::contributors::catalogs()
@@ -603,10 +579,8 @@ pub async fn update_view_columns(
     Ok(())
 }
 
-/// Update the per-column pixel widths for a specific view. The frontend sends
-/// the full map of columns the user has explicitly sized; columns absent from
-/// the map fall back to their natural (content) width at render time. An empty
-/// map clears the override entirely (back to all-natural widths).
+/// Set the column widths (pixels) for a view: the full map of columns the user
+/// sized; others use their natural width. An empty map clears it.
 #[tauri::command]
 pub async fn update_view_column_widths(
     collection_path: String,
@@ -663,10 +637,8 @@ pub async fn update_collection_filters(
     Ok(())
 }
 
-/// Set or clear the per-column quick filter for a view. Stored in the view's
-/// `columnFilters` map — a scope separate from the advanced FilterBuilder
-/// (`filters`) so header filters round-trip and clear independently.
-/// `filters: None` removes the column's entry (clearing that header filter).
+/// Set or clear (`filters: None`) a column's quick filter in the view's
+/// `columnFilters`, separate from `filters` (the FilterBuilder).
 #[tauri::command]
 pub async fn set_collection_column_filter(
     collection_path: String,
@@ -814,10 +786,8 @@ pub async fn rename_view(
     Ok(())
 }
 
-/// Reorder the views in a .collection file to match `ordered_names` (the view
-/// switcher's drag-and-drop order). Any view not present in the list keeps its
-/// relative position at the end — defensive against a stale client list, so a
-/// reorder never drops a view.
+/// Reorder the views to match `ordered_names` (the view switcher's order).
+/// Views missing from the list keep their order at the end, so none is dropped.
 #[tauri::command]
 pub async fn reorder_views(
     collection_path: String,
@@ -1000,9 +970,8 @@ pub async fn get_collection_data_internal(
         columns,
         rows: matching_rows,
         views,
-        // Export reflects the collection's defined membership (base + view
-        // filters), not the transient per-column header filters, so no facet
-        // values are needed here.
+        // Export uses the collection's membership (base and view filters), not
+        // the header filters, so no column values are needed.
         column_values: std::collections::HashMap::new(),
     })
 }
@@ -1031,9 +1000,8 @@ fn compare_property_values(
         (None | Some(PropertyValue::Null), _) => std::cmp::Ordering::Greater,
         (_, None | Some(PropertyValue::Null)) => std::cmp::Ordering::Less,
         (Some(PropertyValue::String(a)), Some(PropertyValue::String(b))) => {
-            // Natural ordering, matching every name sort in the frontend: a
-            // column of `Chapter 2` / `Chapter 10` reads in the order the
-            // user numbered it.
+            // Natural order, as in the frontend: `Chapter 2` before `Chapter
+            // 10`.
             crate::sort::compare_name(a, b)
         }
         (Some(PropertyValue::Number(a)), Some(PropertyValue::Number(b))) => {

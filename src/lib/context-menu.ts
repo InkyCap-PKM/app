@@ -1,13 +1,9 @@
-// Shared right-click menu drawn as plain DOM.
-//
-// Several surfaces need a context menu at a pointer position without owning a
-// Solid component tree: CodeMirror widgets (wikilink pills, embedded images and
-// media) and the odd Solid component that wants the same menu as a widget.
-// This module builds the menu once, from a list of entries, so every caller
-// gets the same markup (`.context-menu` / `.context-menu__item`, which is also
-// what gives it keyboard control via lib/menu-nav.ts and keeps it on screen via
-// lib/menu-placement.ts), and the same dismissal rules: outside click, Escape, scroll, or
-// running an item.
+// Right-click menu built as plain DOM, for places that show a menu at the pointer without
+// a Solid component tree: CodeMirror widgets (wikilink pills, embedded images and media)
+// and Solid components that want the same menu. Every caller gets the same markup
+// (`.context-menu` / `.context-menu__item`, which also gives keyboard control through
+// lib/menu-nav.ts and on-screen placement through lib/menu-placement.ts) and the same
+// closing rules: outside click, Escape, scroll, or running an item.
 
 /** An actionable row. `label` is already translated. */
 export interface ContextMenuItem {
@@ -30,10 +26,9 @@ export type ContextMenuEntry = ContextMenuItem | ContextMenuHint | "separator";
 let closeOpenMenu: (() => void) | null = null;
 
 /**
- * Show a context menu at viewport coordinates `(x, y)`. Only one menu built
- * here is open at a time — a second right-click moves it. Dismisses on outside
- * click, Escape, scroll, or after an item runs; `onDismiss` runs when it
- * closes without an item having run.
+ * Show a context menu at `(x, y)`. Only one is open at a time; another
+ * right-click moves it. Closes on outside click, Escape, scroll, or after an
+ * item runs; `onDismiss` runs when it closes without an item running.
  */
 export function showContextMenu(
   x: number,

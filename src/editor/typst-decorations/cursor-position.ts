@@ -1,7 +1,6 @@
-// CM6 cursor-position tracker — publishes the primary cursor's line:column to
-// a Solid signal for the status bar. Handy in Source Edit mode for jumping to a
-// reported error location (e.g. the audit's "L55:28"). Mirrors the
-// word-count tracker's pattern (a ViewPlugin updating a module-level signal).
+// Publishes the cursor's line:column to a Solid signal for the status bar,
+// useful in source mode for finding a reported position (e.g. the audit's
+// "L55:28"). Works like the word count tracker.
 
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import type { EditorState } from "@codemirror/state";

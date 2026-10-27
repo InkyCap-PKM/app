@@ -4,15 +4,12 @@ import { EditorView } from "@codemirror/view";
 import { markdownShortcuts } from "./markdown-shortcuts";
 import { expandFunc } from "./effects";
 
-// The task-checkbox shortcut (`- [ ] ` / `- [x] `) expands into a bulleted
-// `#task(...)` call: the list marker is preserved so the result is
-// `- #task("")`, a task that is itself a list item (issue #24 outliner
-// workflow). The regression these tests also guard (issue #23): the newly
-// inserted call must stay *expanded* (raw source visible) so the description the
-// user keeps typing flows into the string argument — `#task("Task text")` —
-// rather than landing after a collapsed widget as `#task("")Task text`. That
-// relies on the dispatch carrying an `expandFunc` effect targeting the call's
-// start (past the marker), and on the caret landing between the quotes.
+// The task shortcut (`- [ ] ` / `- [x] `) becomes a bulleted `#task(...)` call,
+// keeping the list marker: `- #task("")`, a task that is also a list item (issue
+// #24). The new call must stay expanded (issue #23), so the text typed next goes
+// into the string (`#task("Task text")`) rather than after a collapsed widget
+// (`#task("")Task text`). That needs an `expandFunc` effect on the call's start
+// (after the marker) and the caret between the quotes.
 
 function mk(doc = "", anchor?: number) {
   return new EditorView({
@@ -25,9 +22,11 @@ function mk(doc = "", anchor?: number) {
   });
 }
 
-/** Fire the shortcut input handler for a single character, capturing the
- *  transaction spec it dispatches (so we can inspect effects, not just the
- *  resulting doc). Falls back to a plain insert when no handler claims it. */
+/**
+ * Run the shortcut input handler for one character and capture the transaction
+ * it dispatches (to check effects, not just the text). Inserts plainly when no
+ * handler takes it.
+ */
 function typeChar(view: EditorView, ch: string) {
   const handlers = view.state.facet(EditorView.inputHandler);
   const { from, to } = view.state.selection.main;

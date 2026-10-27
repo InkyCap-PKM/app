@@ -16,9 +16,9 @@ use crate::storage::traits::NoteboxStorage;
 use crate::storage::validate_notebox_path;
 use crate::typst_pipeline::path_rebase::{rebase_relative_paths, rewrite_referenced_path};
 
-/// Copy a file (given as base64 data) into the notebox, placed per
-/// `placement` (see [`crate::commands::file_placement`]). Returns the saved notebox-relative path (renamed if needed to avoid
-/// overwriting an existing file).
+/// Copy a file, given as base64 data, into the notebox per `placement` (see
+/// [`crate::commands::file_placement`]). Returns the notebox-relative path, renamed if needed to
+/// avoid overwriting.
 #[tauri::command]
 pub async fn copy_bytes_into_notebox(
     filename: String,
@@ -42,31 +42,17 @@ pub async fn copy_bytes_into_notebox(
     write_incoming_file(&filename, &data, &placement, &app, &session).await
 }
 
-/// Read file paths from the system clipboard. Used by the paste
-/// handler when the user copies a file in the native file manager
-/// and pastes it into the editor — webviews block cross-origin
-/// reads of the clipboard's file targets, so we fetch them from
-/// the Rust side via the OS's native clipboard API.
+/// File paths on the system clipboard, read through the OS clipboard API
+/// because webviews can't read clipboard file targets. Used when pasting a file
+/// copied in the file manager.
 ///
-/// Per-platform:
+/// - **Linux**: GTK `Clipboard::wait_for_uris`, run on the main loop thread via
+///   `AppHandle::run_on_main_thread`, with the result sent back over a oneshot
+///   channel.
+/// - **macOS**: `NSPasteboard` read for `NSURL` objects, from a blocking task.
+/// - **Windows**: `CF_HDROP` read with `DragQueryFileW`, from a blocking task.
 ///
-/// - **Linux**: GTK3 `Clipboard::wait_for_uris` via the `gtk` crate
-///   (already a dep for webview integration). GTK calls must run
-///   on the main loop thread, so we marshal the call via
-///   `AppHandle::run_on_main_thread` and send the result back via
-///   a tokio oneshot channel.
-///
-/// - **macOS**: `NSPasteboard.readObjectsForClasses:[NSURL]` via
-///   the `cocoa` + `objc` crates. NSPasteboard reads are safe from
-///   any thread, so we call directly from a tokio blocking task.
-///
-/// - **Windows**: `OpenClipboard` + `GetClipboardData(CF_HDROP)` +
-///   `DragQueryFileW` via `windows-sys`. Thread-safe for reads.
-///
-/// All three implementations are bundled in the binary — no
-/// external tools, no shell-outs, nothing the end user needs to
-/// install. Returns an empty vector if the clipboard has no file
-/// entries, which the caller treats as "nothing special to do".
+/// Empty when the clipboard holds no files.
 #[tauri::command]
 pub async fn read_clipboard_file_paths(app: tauri::AppHandle) -> Result<Vec<String>, InkyCapError> {
     #[cfg(target_os = "linux")]
@@ -105,18 +91,13 @@ pub async fn read_clipboard_file_paths(app: tauri::AppHandle) -> Result<Vec<Stri
     }
 }
 
-/// Read whatever the native clipboard holds — file references or raw image
-/// bytes — copy it into the notebox (placed per `placement`, see
-/// [`crate::commands::file_placement`]), and return the
-/// notebox-relative paths the editor should insert. Backs the paste handler:
-/// WebKitGTK hides clipboard files from the webview (and, on Linux, hides
-/// pasted image data too), so a paste that the webview sees as empty is read
-/// here from the Rust side instead.
+/// Copy whatever the native clipboard holds (files or image data) into the
+/// notebox per `placement` and return the paths to insert. WebKitGTK hides
+/// clipboard files, and on Linux pasted images, from the webview.
 ///
-/// Unlike [`copy_path_into_notebox`], file references are *not* gated by
-/// the SEC-1 drop allowlist: the path set originates from the OS clipboard
-/// via a trusted native read, not from frontend-supplied input, so there is
-/// no untrusted path to validate against the allowlist.
+/// Unlike [`copy_path_into_notebox`], file paths aren't checked against the
+/// drop allowlist: they come from a native clipboard read, not from the
+/// frontend.
 #[tauri::command]
 pub async fn paste_clipboard_into_notebox(
     placement: Option<IncomingPlacement>,
@@ -152,10 +133,8 @@ pub async fn paste_clipboard_into_notebox(
         }
     }
 
-    // 2. Raw image bytes — screenshots / "Copy Image". Only needed on Linux:
-    //    macOS WKWebView and Windows WebView2 already hand pasted image data
-    //    to the webview's paste event, so the frontend resolves those before
-    //    ever reaching this command.
+    // 2. Raw image bytes (screenshots, "Copy Image"). Only on Linux; on macOS
+    //    and Windows the webview already receives them.
     #[cfg(target_os = "linux")]
     {
         let (tx, rx) = tokio::sync::oneshot::channel::<Option<Vec<u8>>>();
@@ -195,10 +174,8 @@ mod linux {
             }
         };
         let clipboard = gtk::Clipboard::for_display(&display, &gtk::gdk::SELECTION_CLIPBOARD);
-        // `wait_for_uris` returns `Vec<GString>` — empty if the
-        // clipboard doesn't offer a URI target. Each entry is a
-        // file:// URL; we convert to absolute paths via the same
-        // helper used by drag-drop.
+        // Empty when the clipboard has no URI target. Each entry is a `file://`
+        // URL.
         let uris = clipboard.wait_for_uris();
         log::debug!("[clipboard] wait_for_uris returned {} URIs", uris.len());
         uris.into_iter()
@@ -206,10 +183,8 @@ mod linux {
             .collect()
     }
 
-    /// Read raw image data from the GTK clipboard (e.g. a screenshot or
-    /// "Copy Image" from another app) and encode it as PNG bytes. Returns
-    /// `None` when the clipboard offers no image target. Runs on the main
-    /// GTK loop thread, like [`read_clipboard_uris_blocking`].
+    /// Image data on the GTK clipboard, encoded as PNG, or `None`. Runs on the
+    /// main GTK thread, like [`read_clipboard_uris_blocking`].
     pub fn read_clipboard_image_png_blocking() -> Option<Vec<u8>> {
         let display = gtk::gdk::Display::default()?;
         let clipboard = gtk::Clipboard::for_display(&display, &gtk::gdk::SELECTION_CLIPBOARD);
@@ -226,15 +201,8 @@ mod linux {
 
 #[cfg(target_os = "macos")]
 mod macos {
-    //! Read NSPasteboard via the Objective-C runtime. Asks the
-    //! general pasteboard for any `NSURL` objects — that covers
-    //! the standard "copy a file in Finder" case, whose pasteboard
-    //! items advertise `public.file-url` and are readable as
-    //! NSURL. Each URL's `.path` is a plain absolute path.
-    //!
-    //! NSPasteboard reads are safe from any thread, so the caller
-    //! can dispatch this onto a tokio blocking task without the
-    //! main-thread marshalling that the Linux/GTK path needs.
+    //! Reads `NSURL` objects from the general pasteboard, which covers files
+    //! copied in Finder. Safe from any thread.
 
     use objc2::ClassType;
     use objc2_app_kit::NSPasteboard;
@@ -268,19 +236,11 @@ mod macos {
 
 #[cfg(target_os = "windows")]
 mod win32 {
-    //! Read the Win32 clipboard's CF_HDROP format via windows-sys.
-    //! CF_HDROP carries a DROPFILES struct followed by a list of
-    //! null-terminated wide-character paths — exactly the format
-    //! populated when the user copies a file in Explorer. We use
-    //! `DragQueryFileW` to iterate over the entries.
+    //! Reads the clipboard's CF_HDROP format (the file list Explorer places on
+    //! copy) with `DragQueryFileW`. Safe from any thread once OpenClipboard
+    //! succeeds.
     //!
-    //! Module is named `win32` (not `windows`) so it doesn't shadow
-    //! the `windows_sys` crate's path inside this file.
-    //!
-    //! Win32 clipboard reads are safe from any thread once
-    //! OpenClipboard succeeds, so the caller can dispatch this
-    //! onto a tokio blocking task — no main-thread marshalling
-    //! needed.
+    //! Named `win32` so it doesn't shadow the `windows_sys` crate path.
 
     use windows_sys::Win32::Foundation::{HGLOBAL, HWND};
     use windows_sys::Win32::System::DataExchange::{
@@ -293,18 +253,14 @@ mod win32 {
 
     pub fn read_clipboard_uris_blocking() -> Vec<String> {
         unsafe {
-            // OpenClipboard with a null HWND associates the
-            // clipboard with the current task. Returns BOOL (i32);
-            // zero means failure.
+            // A null HWND ties the clipboard to the current task. Zero means
+            // failure.
             let null_hwnd: HWND = std::ptr::null_mut();
             if OpenClipboard(null_hwnd) == 0 {
                 log::debug!("[clipboard] OpenClipboard failed");
                 return Vec::new();
             }
-            // Wrap the body in a closure so we can guarantee
-            // CloseClipboard runs even if the inner code returns
-            // early. (We avoid a Drop guard struct because that
-            // would need its own unsafe wrapper.)
+            // A closure so CloseClipboard always runs, even on early return.
             let result: Vec<String> = (|| {
                 let handle = GetClipboardData(CF_HDROP);
                 if handle.is_null() {
@@ -321,9 +277,8 @@ mod win32 {
                 log::debug!("[clipboard] CF_HDROP contains {} files", count);
                 let mut out = Vec::with_capacity(count as usize);
                 for i in 0..count {
-                    // First pass: ask for the path length in chars
-                    // excluding the terminator. Second pass: a
-                    // buffer sized for length + 1.
+                    // First call gets the length without the terminator; the
+                    // second fills a buffer of length + 1.
                     let len = DragQueryFileW(hdrop, i, null_pwstr, 0);
                     if len == 0 {
                         continue;
@@ -347,13 +302,8 @@ mod win32 {
     }
 }
 
-/// Parse a single `file://...` line from a clipboard payload into
-/// an absolute filesystem path. Returns None for non-file URIs.
-///
-/// Linux-only: the GTK clipboard path ([`linux::read_clipboard_uris_blocking`])
-/// is the sole caller. macOS reads native `NSURL` objects and Windows reads
-/// `CF_HDROP` directly, so on those targets this (and its `percent_decode` /
-/// `hex_val` helpers) would be dead code.
+/// Parse one `file://...` line into an absolute path, or None for other URIs.
+/// Linux only: macOS and Windows read native types instead.
 #[cfg(target_os = "linux")]
 fn parse_file_uri_line(line: &str) -> Option<String> {
     let line = line.trim();
@@ -361,10 +311,8 @@ fn parse_file_uri_line(line: &str) -> Option<String> {
         return None;
     }
     let rest = line.strip_prefix("file://")?;
-    // Drop any authority component (host). For `file:///abs` the
-    // path starts with `/` already. For `file://host/abs` we keep
-    // everything after the host. This is simpler than a URL parser
-    // and covers the cases we actually see in the wild.
+    // Drop any host: `file:///abs` already starts with `/`; for
+    // `file://host/abs` keep what follows the host.
     let path_part = match rest.find('/') {
         Some(i) => &rest[i..],
         None => rest,
@@ -372,9 +320,7 @@ fn parse_file_uri_line(line: &str) -> Option<String> {
     Some(percent_decode(path_part))
 }
 
-/// Decode `%XX` escapes in a URI path. We don't pull in a URL
-/// library for this — the only characters we care about in practice
-/// are spaces (`%20`) and a handful of other ASCII punctuation.
+/// Decode `%XX` escapes in a URI path.
 #[cfg(target_os = "linux")]
 fn percent_decode(s: &str) -> String {
     let bytes = s.as_bytes();
@@ -406,21 +352,13 @@ fn hex_val(c: u8) -> Option<u8> {
     }
 }
 
-/// Copy a file from an absolute filesystem path into the notebox, placed per
-/// `placement` (see [`crate::commands::file_placement`]). Used by drag-drop and paste handlers when the browser
-/// gives us a `file://` URL or a `text/uri-list` entry instead of
-/// an in-memory File object (which happens on Linux/GNOME when the
-/// user drags from the native file manager). The file is read on
-/// the Rust side — the webview cannot load `file://` resources on
-/// its own due to its local-resource CSP.
+/// Copy a file, by absolute path, into the notebox per `placement`. Used for drops and pastes that
+/// give a `file://` URL instead of a File (common on Linux). Rust reads the file because the
+/// webview can't load `file://`.
 ///
-/// **Security.** The frontend cannot pass an arbitrary path here: the
-/// path must be on `AppState.drop_allowlist`, which is populated only
-/// by the Rust-side `on_drag_drop_event` listener (see `lib.rs`). The
-/// allowlist entry is consumed on success, so each OS drop authorizes
-/// exactly one copy. A compromised renderer or future plugin that
-/// calls this command with a path the user did not actually drop will
-/// see `InvalidPath`.
+/// **Security.** The path must be on `AppState.drop_allowlist`, which only the Rust drop listener
+/// in `lib.rs` fills. Each entry is used up on success, so one drop allows one copy; any other path
+/// gets `InvalidPath`.
 #[tauri::command]
 pub async fn copy_path_into_notebox(
     source_path: String,
@@ -434,11 +372,8 @@ pub async fn copy_path_into_notebox(
         return Err(InkyCapError::DocumentationReadOnly);
     }
     let src = PathBuf::from(&source_path);
-    // SEC-1 gate (audit 2026-05-10): the path must come from a recent OS
-    // drop event registered by the run-loop listener in `lib.rs` (which
-    // subscribes to `RunEvent::WindowEvent::DragDrop`). Frontend-supplied
-    // paths that bypass this (e.g. via XSS or a malicious plugin) are
-    // rejected here even if they exist on disk.
+    // The path must come from a recent OS drop (see `lib.rs`), so a path from
+    // the frontend alone is rejected even if it exists.
     if !state.consume_drop_path(&src) {
         return Err(InkyCapError::InvalidPath(format!(
             "path was not part of a recent drag-drop and cannot be copied: {}",
@@ -464,17 +399,11 @@ pub async fn copy_path_into_notebox(
     write_incoming_file(&filename, &data, &placement, &app, &session).await
 }
 
-/// Open a native file-picker and copy each selected file into the notebox's
-/// configured attachments folder. Returns the notebox-root-relative paths of
-/// each saved file.
+/// Pick files with the native dialog and copy them into the attachments folder.
+/// Returns their notebox-relative paths.
 ///
-/// **Security.** Unlike `copy_path_into_notebox`, the source paths here
-/// are not on `AppState.drop_allowlist`: they come from a Rust-mediated
-/// `tauri_plugin_dialog` picker that the user explicitly drove. The threat
-/// model the drop allowlist defends against — a compromised renderer
-/// calling the copy command with a path the user never authorized — is
-/// also defeated here because the renderer cannot forge the dialog: the
-/// path set is produced inside this command, not passed in.
+/// **Security.** No allowlist is needed: the paths come from a dialog run here,
+/// which the frontend can't forge.
 #[tauri::command]
 pub async fn pick_and_upload_to_attachments(
     app: tauri::AppHandle,
@@ -488,10 +417,8 @@ pub async fn pick_and_upload_to_attachments(
     use tauri_plugin_dialog::DialogExt;
 
     let app_for_picker = app.clone();
-    // Start the picker in the user's home directory rather than the process
-    // working directory (which, in `tauri dev`, is the build folder). The
-    // attachment source is an arbitrary file on the user's computer, so home
-    // is the sensible neutral default.
+    // Start in the home folder rather than the working directory (the build
+    // folder under `tauri dev`).
     let home_dir = app.path().home_dir().ok();
     let picked = tokio::task::spawn_blocking(move || {
         let mut builder = app_for_picker.dialog().file();
@@ -538,19 +465,12 @@ pub async fn pick_and_upload_to_attachments(
     Ok(saved)
 }
 
-/// Open a native `.csl` file-picker and bring the chosen citation style into
-/// the notebox, returning the notebox-root-absolute path (`/styles/<file>.csl`)
-/// to store in `citations.custom_csl_path`, or `None` if the user cancelled.
+/// Pick a `.csl` style and return its notebox-root path (`/styles/<file>.csl`)
+/// for `citations.custom_csl_path`, or `None` if cancelled.
 ///
-/// CSL styles must live inside the notebox: the Typst compile `World` only
-/// reads files under the notebox root, so a style referenced by an arbitrary
-/// OS path (e.g. `~/Downloads/foo.csl`) is rejected with `AccessDenied` and the
-/// export fails. A file already inside the notebox is referenced in place;
-/// anything outside is copied into the notebox's `styles/` folder so the style
-/// travels with the notebox (the self-contained-notebox principle). This
-/// mirrors how attachments funnel in via [`pick_and_upload_to_attachments`];
-/// running the picker in Rust means a compromised renderer can't forge the
-/// source path.
+/// The Typst compiler only reads files inside the notebox, so a style elsewhere
+/// is copied into `styles/`; one already inside is used in place. The dialog
+/// runs here, so the frontend can't forge the path.
 #[tauri::command]
 pub async fn import_csl_style(
     title: String,
@@ -623,9 +543,8 @@ pub async fn import_csl_style(
     Ok(Some(format!("/{rel}")))
 }
 
-/// One file offered by [`pick_files_for_import`]: its frontend path string and
-/// whether it's a markdown source (so the UI can ask "convert to Typst?" only
-/// for those). Non-markdown files are always copied in as attachments.
+/// A file chosen in [`pick_files_for_import`]: its path and whether it is
+/// Markdown (offered for conversion). Other files are copied as attachments.
 #[derive(serde::Serialize)]
 pub struct PickedImportFile {
     pub path: String,
@@ -643,17 +562,11 @@ fn is_markdown_file(path: &std::path::Path) -> bool {
     )
 }
 
-/// Open the native multi-file picker and return a manifest of the chosen files
-/// (frontend path + markdown flag) **without** copying anything. Each chosen
-/// path is registered on the drop allowlist so the follow-up per-file command
-/// the frontend issues — [`copy_path_into_notebox`] (keep) or
-/// [`import_markdown_file`] (convert) — is authorized for exactly that path.
-///
-/// This splits picking from acting so the frontend can ask the user, per
-/// operation, whether to convert markdown to Typst or keep it as-is. The pick
-/// is still Rust-mediated (the renderer can't forge the dialog), and the
-/// allowlist entry is single-use and TTL-bounded, so the two-step flow keeps
-/// the same trust model as the one-shot [`pick_and_upload_to_attachments`].
+/// Pick files with the native dialog and return them with a Markdown flag,
+/// without copying. Each path is put on the drop allowlist so the frontend's
+/// follow-up [`copy_path_into_notebox`] or [`import_markdown_file`] call is
+/// authorized for that path only. Splitting the steps lets the frontend ask
+/// whether to convert Markdown. Allowlist entries are single-use and expire.
 #[tauri::command]
 pub async fn pick_files_for_import(
     app: tauri::AppHandle,
@@ -694,12 +607,8 @@ pub async fn pick_files_for_import(
             )));
         }
         let is_markdown = is_markdown_file(&pb);
-        // The frontend round-trips the normalized string form back to the
-        // copy/convert command, so authorize *that* exact form on the allowlist
-        // (not the raw `pb`) — otherwise the Windows verbatim-prefix/separator
-        // normalization in `to_frontend_string` would make the consumed path
-        // unequal to the registered one and the follow-up call would be
-        // rejected. Both `consume_drop_path` and `fs::read` accept this form.
+        // Allow the normalized form the frontend will send back, not `pb`; on
+        // Windows the two differ.
         let frontend_path = to_frontend_string(&pb);
         state.register_drop_paths(std::iter::once(PathBuf::from(&frontend_path)));
         out.push(PickedImportFile {
@@ -710,16 +619,12 @@ pub async fn pick_files_for_import(
     Ok(out)
 }
 
-/// Convert a single markdown file (given by absolute path) into a `.typ` note
-/// at the notebox root, returning the note's notebox-relative path. The
-/// markdown→Typst conversion is the same one the archive importer runs
-/// (frontmatter → `#note(...)`, wikilinks, image rebasing); images referenced
-/// alongside the source are routed into the attachment folder.
+/// Convert a Markdown file, by absolute path, into a `.typ` note at the notebox
+/// root and return its notebox-relative path. Uses the same conversion as the
+/// archive importer; referenced images go to the attachments folder.
 ///
-/// **Security.** Like [`copy_path_into_notebox`], the path must be on the
-/// drop allowlist — populated either by an OS drag-drop (drag-drop import) or
-/// by [`pick_files_for_import`] (the "Copy into notebox" picker). A
-/// frontend-supplied path that wasn't recently authorized is rejected.
+/// **Security.** As with [`copy_path_into_notebox`], the path must be on the
+/// drop allowlist (from a drop or [`pick_files_for_import`]).
 #[tauri::command]
 pub async fn import_markdown_file(
     source_path: String,
@@ -754,13 +659,10 @@ pub async fn import_markdown_file(
     convert_markdown_into_notebox(&text, &stem, src.parent(), &placement, &app, &session).await
 }
 
-/// Convert markdown text (base64-encoded UTF-8) into a `.typ` note, placed per
-/// `placement` (see [`crate::commands::file_placement`]), returning its notebox-relative path. The bytes-only sibling of
-/// [`import_markdown_file`] for the HTML5 drag-drop path (Windows), where the
-/// webview hands us file *bytes* rather than a path. No drop allowlist applies
-/// — the content comes from the webview's own `dataTransfer`, not a path the
-/// renderer could forge. Referenced images can't be routed (no source
-/// directory); their rewritten paths are left for the user to fix.
+/// Convert Markdown text (base64 UTF-8) into a `.typ` note per `placement` and return its
+/// notebox-relative path. For drops on Windows, which give bytes rather than a path, so no
+/// allowlist applies. Referenced images can't be found without a source folder and are left for the
+/// user to fix.
 #[tauri::command]
 pub async fn import_markdown_text(
     filename: String,
@@ -788,10 +690,9 @@ pub async fn import_markdown_text(
     convert_markdown_into_notebox(&text, &stem, None, &placement, &app, &session).await
 }
 
-/// Shared core: convert markdown `text` into a `.typ` note named after `stem`
-/// in the folder `placement` picks, emit a tree-refresh event, and return the note's
-/// notebox-relative path. `sibling_dir`, when given, is the directory scanned
-/// for referenced images to route into the attachment folder.
+/// Convert Markdown `text` into a `.typ` note named `stem` in the folder `placement`
+/// picks, refresh the tree and return its notebox-relative path. `sibling_dir`, when
+/// given, is searched for referenced images.
 async fn convert_markdown_into_notebox(
     text: &str,
     stem: &str,
@@ -860,10 +761,9 @@ async fn write_incoming_file(
     write_into_notebox_subfolder(&folder, filename, data, app, session).await
 }
 
-/// Write `data` into `subfolder` (notebox-root-relative) under `filename`,
-/// resolving a collision-free name, and return the notebox-root-relative saved
-/// path with forward slashes. Backs both attachment imports (where `subfolder`
-/// is the configured attachment folder) and CSL-style imports (`styles`).
+/// Write `data` to `subfolder` under a collision-free version of `filename` and
+/// return the notebox-relative path with forward slashes. Used for attachments
+/// and CSL styles.
 async fn write_into_notebox_subfolder(
     subfolder: &str,
     filename: &str,
@@ -878,10 +778,7 @@ async fn write_into_notebox_subfolder(
         .clone();
     drop(notebox_root);
 
-    // Defense in depth: reject filenames that try to escape the target
-    // folder (e.g. `../../evil.png`). Basename-only enforcement is enough
-    // because the webview/drag-drop path only ever gives us a name, but
-    // validating explicitly means a future caller can't accidentally bypass.
+    // Reject file names that escape the folder (e.g. `../../evil.png`).
     let basename = std::path::Path::new(filename)
         .file_name()
         .ok_or_else(|| InkyCapError::InvalidPath(format!("invalid filename: {filename}")))?;
@@ -917,9 +814,7 @@ async fn write_into_notebox_subfolder(
     let target = validate_notebox_path(&root, &target)?;
     tokio::fs::write(&target, data).await?;
 
-    // The file watcher only tracks .typ/.collection files, so attachment
-    // writes (images, PDFs, etc.) won't trigger a tree refresh on their
-    // own. Emit the event directly so the frontend file tree updates.
+    // The watcher only tracks notes, so refresh the tree for attachments here.
     publish(
         app,
         Audience::Window(&session.owner_label),
@@ -928,12 +823,8 @@ async fn write_into_notebox_subfolder(
         },
     );
 
-    // Return the notebox-root-relative path (e.g. `assets/Screenshot.png`)
-    // rather than just the basename, so callers can build a Typst markup
-    // string that resolves in the compiler — `#image("/assets/foo.png")`
-    // works in both the visual editor (via the updated resolve_embed_path)
-    // and the reading-view / export pipeline (via Typst's own
-    // project-root-relative path semantics).
+    // Return the notebox-relative path (e.g. `assets/Screenshot.png`) so
+    // callers can write `#image("/assets/...")`.
     let saved_relative = target
         .strip_prefix(&root)
         .map(|p| p.to_string_lossy().replace('\\', "/"))
@@ -981,28 +872,16 @@ pub async fn create_folder(
     Ok(to_frontend_string(&folder_path))
 }
 
-/// True when the path is a Typst note (`.typ`). Note-specific rename steps —
-/// reading the file back as UTF-8 text, reindexing it, rewriting its own
-/// wikilinks/paths — apply only to notes. Attachments (images, PDFs, …) are
-/// binary: reading them via `read_file` (which is `read_to_string`) would fail
-/// with "stream did not contain valid UTF-8" *after* the on-disk rename already
-/// succeeded, surfacing a spurious error for a rename that actually worked.
+/// True for a Typst note (`.typ`). Rename steps that read the file as text,
+/// reindex it or rewrite its links apply only to notes; reading a binary
+/// attachment as text would fail after the rename succeeded.
 fn is_note_file(path: &std::path::Path) -> bool {
     path.extension().and_then(|e| e.to_str()) == Some("typ")
 }
 
-/// Resolve the on-disk file name for a rename while preserving the original
-/// extension.
-///
-/// The previous heuristic re-appended the old extension only when the new name
-/// contained no dot. That mis-fired for note names that legitimately carry a
-/// dot — renaming to "3.1 - Plan" looked like the user had typed their own
-/// extension, so `.typ` was dropped, the file became extensionless, and it
-/// vanished from the (`.typ`-filtered) tree. Re-append the original extension
-/// unless the new name already ends with that exact extension. A deliberate
-/// side effect: you can no longer change a file's extension by renaming, which
-/// is the right call for a notes app — the on-disk type must not silently
-/// change out from under the content.
+/// The new file name with the original extension, which is re-added unless the
+/// new name already ends with it. A name containing a dot ("3.1 - Plan") is not
+/// taken as a new extension. A rename can't change a file's type.
 fn preserve_extension(new_name: String, old: &std::path::Path, is_dir: bool) -> String {
     if is_dir {
         return new_name;
@@ -1021,12 +900,9 @@ fn preserve_extension(new_name: String, old: &std::path::Path, is_dir: bool) -> 
     }
 }
 
-/// After a file or folder is renamed or moved, rebase any bookmark that
-/// pointed at the old location onto the new one, persist the change, and tell
-/// the frontend to refresh its Bookmarks pane. Bookmarks are app-global and
-/// store paths in frontend string form, so `old`/`new` are normalized through
-/// `to_frontend_string` before matching. A no-op when nothing was bookmarked
-/// under the renamed path.
+/// After a rename or move, point bookmarks at the new location, save them and
+/// refresh the Bookmarks pane. Bookmarks store frontend-form paths, so `old`
+/// and `new` are normalized with `to_frontend_string` first.
 pub(crate) async fn rebase_bookmarks_for_rename(
     state: &AppState,
     window: &tauri::WebviewWindow,
@@ -1087,9 +963,7 @@ pub async fn rename_file(
     if is_dir {
         reindex_directory(&old, &new_path, &storage, &session).await;
     } else {
-        // Index updates are note-only. Reading a binary attachment back as
-        // text would fail post-rename (see `is_note_file`). Purge the old
-        // note entry if it was a note, and reindex the new path only if it is.
+        // Index updates apply to notes only (see `is_note_file`).
         if is_note_file(&old) {
             remove_from_indices(&old, &session).await;
         }
@@ -1134,19 +1008,15 @@ pub async fn rename_and_update_links(
         )));
     }
 
-    // Update references in other notes before the rename. (Doing it before —
-    // versus after, as the watcher path does — is arbitrary; the rewrite only
-    // touches files other than `old`/`new`, so either ordering converges.)
+    // Update references in other notes. Order relative to the rename doesn't
+    // matter, since only other files change.
     if !is_dir {
         if is_note_file(&old) {
             // A note is referenced by wikilinks. Rewrite those in referencing
-            // notes, then rebase this note's own path args (Phase B).
+            // notes, then rebase this note's own path arguments.
             rewrite_backlinks_for_rename(&old, &new_path, &storage, &session).await?;
-            // Phase B: rebase relative path arguments in this note's own
-            // source to notebox-root-absolute, anchored at the pre-rename
-            // parent. For a same-folder rename the anchor is unchanged so
-            // this is just canonicalization; for a follow-up move it makes
-            // the references survive.
+            // Make this note's relative path arguments notebox-root-absolute,
+            // anchored at its current folder, so they survive a later move.
             rebase_paths_for_note_move(&old, &storage).await?;
         } else {
             // An attachment is referenced by path-bearing calls
@@ -1213,12 +1083,9 @@ pub async fn move_file(
     // Ensure target directory exists
     storage.create_dir(&new_dir).await?;
 
-    // Phase B: rebase relative path arguments in the moved note's
-    // source to notebox-root-absolute paths anchored at the OLD parent,
-    // so `image("daisy.png")` etc. keep resolving after the folder
-    // change. Runs unconditionally on move — this is a correctness
-    // fix for the bug that prompted Phases A–D, not a discretionary
-    // link update gated by `auto_update_links_on_rename`.
+    // Make the note's relative path arguments notebox-root-absolute, anchored
+    // at its old folder, so `image("daisy.png")` keeps resolving. Always runs
+    // on a move, regardless of `auto_update_links_on_rename`.
     rebase_paths_for_note_move(&old, &storage).await?;
 
     storage.rename_file(&old, &new_path).await?;
@@ -1233,15 +1100,10 @@ pub async fn move_file(
     Ok(to_frontend_string(&new_path))
 }
 
-/// Move a folder (and everything inside it) to a different parent folder.
-///
-/// Wikilinks survive untouched: they resolve by note *stem*, which a
-/// folder move never changes. What does need fixing is each contained
-/// note's own relative `image()`/`read()`/`bibliography()`
-/// arguments — those are anchored at the note's parent directory, so
-/// every `.typ` file under the folder is rebased to notebox-root-absolute
-/// paths (Phase B) before the move, exactly as `move_file` does for a
-/// single note.
+/// Move a folder and its contents to another parent. Wikilinks resolve by note
+/// name, so they are unaffected. Each contained note's relative `image()` /
+/// `read()` / `bibliography()` paths are made notebox-root-absolute before the
+/// move, as `move_file` does for one note.
 #[tauri::command]
 pub async fn move_folder(
     old_path: String,
@@ -1277,9 +1139,7 @@ pub async fn move_folder(
     };
     let new_path = new_dir.join(folder_name);
 
-    // Reject moving a folder into itself or one of its own descendants —
-    // that would relocate the destination out from under the operation
-    // and corrupt the tree. `starts_with` covers the equal-path case too.
+    // Refuse to move a folder into itself or a descendant.
     if new_dir.starts_with(&old_abs) {
         return Err(InkyCapError::InvalidPath(
             "Cannot move a folder into itself".to_string(),
@@ -1296,10 +1156,7 @@ pub async fn move_folder(
     // Ensure the destination parent exists before the rename.
     storage.create_dir(&new_dir).await?;
 
-    // Phase B: rebase relative path arguments in every contained note
-    // while the notes are still at their old location (the anchor for
-    // resolution). Done before the move so each note's parent directory
-    // is still the pre-move one.
+    // Rebase paths while the notes are still in their old folder.
     let notes = storage.list_files(&old, "*.typ").await.unwrap_or_default();
     for note in &notes {
         rebase_paths_for_note_move(note, &storage).await?;
@@ -1367,25 +1224,16 @@ pub async fn delete_folder(
 
 // ── Helpers ──
 
-/// Replace wikilinks in content so they continue to resolve after a note
-/// has been renamed from `old_stem` to `new_stem`. Handles both forms that
-/// appear in notebox sources:
+/// Rewrite wikilinks so they still resolve after `old_stem` is renamed to
+/// `new_stem`. Handles both forms:
 ///
-///   - `[[old_stem]]`, `[[old_stem#heading]]`, `[[old_stem|alias]]` —
-///     the inline shortcut.
-///   - `#wikilink("old_stem")`, `#wikilink("old_stem", display: "...")`,
-///     `#wikilink("old_stem", label: "...")` — the Typst function form
-///     emitted by markdown import and the drag-drop / palette handlers.
+///   - `[[old_stem]]`, `[[old_stem#heading]]`, `[[old_stem|alias]]`
+///   - `#wikilink("old_stem")`, with or without `display:` / `label:`
 ///
-/// Per CLAUDE.md's Typst-first principle, the ideal rewrite would walk
-/// the `typst::syntax` AST and splice the call site by source range.
-/// We keep this string-based for two reasons: (1) the existing helper
-/// was already string-based and shipped under `rename_and_update_links`,
-/// so callers expect identical behaviour; (2) reparsing every backlinked
-/// note through Typst on each rename is meaningfully heavier than scanning
-/// for two well-known prefixes. The function-form regex below mirrors
-/// `WIKILINK_CALL_RE` in `src/editor/typst-decorations/wikilink-suggest.ts`
-/// so the two stay in lockstep.
+/// Per CLAUDE.md's Typst-first principle, an AST rewrite would be preferable,
+/// but reparsing every backlinking note on each rename is much heavier than
+/// scanning for two known prefixes. The call pattern matches `WIKILINK_CALL_RE`
+/// in `src/editor/typst-decorations/wikilink-suggest.ts`.
 pub(crate) fn update_wikilinks_in_content(content: &str, old_stem: &str, new_stem: &str) -> String {
     let after_brackets = rewrite_bracket_wikilinks(content, old_stem, new_stem);
     let after_calls = rewrite_first_arg_calls(&after_brackets, "#wikilink(\"", old_stem, new_stem);
@@ -1432,13 +1280,11 @@ fn rewrite_bracket_wikilinks(content: &str, old_stem: &str, new_stem: &str) -> S
     result
 }
 
-/// Rewrite the first string argument of calls starting with `prefix` (for
-/// example `#wikilink("`) when it matches `old_stem` (case-insensitive).
-/// Other arguments (`display:`, `label:`) are preserved untouched. For a
-/// code-mode prefix (no leading `#`), a match straight after a letter, digit,
-/// `-` or `_` is part of a longer name (`my-link-ref(`) and is left alone. A
-/// `#` prefix always starts a call, even straight after a word
-/// (`参见#wikilink("…")`), so it has no such check.
+/// Rewrite the first string argument of calls starting with `prefix` (e.g.
+/// `#wikilink("`) when it matches `old_stem` (case-insensitive), keeping other
+/// arguments. A prefix without `#` straight after a letter, digit, `-` or `_`
+/// is part of a longer name (`my-link-ref(`) and is skipped; a `#` prefix
+/// always starts a call (`参见#wikilink("…")`).
 fn rewrite_first_arg_calls(content: &str, prefix: &str, old_stem: &str, new_stem: &str) -> String {
     let old_lower = old_stem.to_lowercase();
     let escaped_new = typst_string_escape(new_stem);
@@ -1498,9 +1344,8 @@ fn rewrite_first_arg_calls(content: &str, prefix: &str, old_stem: &str, new_stem
     result
 }
 
-/// Escape a string for inclusion inside a Typst double-quoted literal.
-/// Mirrors `typstStringEscape` in [src/lib/typst.ts] — only `\\` and `"`
-/// need escaping inside a `"..."` literal.
+/// Escape a string for a Typst `"..."` literal (`\\` and `"`). Mirrors
+/// `typstStringEscape` in [src/lib/typst.ts].
 fn typst_string_escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
@@ -1530,22 +1375,12 @@ fn typst_string_unescape(s: &str) -> String {
     out
 }
 
-/// Read the note at `old_notebox_path` and rewrite any relative path
-/// arguments in `image`/`read`/`bibliography` calls to notebox-
-/// root-absolute paths anchored at the note's CURRENT (pre-move) parent
-/// directory. After this pass, the note's path references are stable
-/// across subsequent moves — see CLAUDE.md's portable-paths principle
-/// and Phase B of `.claude/plans/portable-paths-2026-05-12.md`.
+/// Rewrite relative paths in the note's `image` / `read` / `bibliography` calls
+/// to notebox-root-absolute paths, anchored at its current folder, so they
+/// survive the move. Called before the move, so the file is written once.
 ///
-/// Called *before* the filesystem move so the on-disk write happens
-/// once with the already-rewritten content. The asset targets stay
-/// where they are when only the single note moves; the rebased
-/// absolute path correctly points at them in their unchanged location.
-///
-/// A no-op if the note has no relative path arguments. Errors writing
-/// back are propagated; read errors are logged and the move continues
-/// (a missing source on a rename target is a pre-existing problem and
-/// not Phase B's to escalate).
+/// No-op without relative paths. Write errors are returned; read errors are
+/// logged and the move continues.
 pub(crate) async fn rebase_paths_for_note_move(
     old_path: &std::path::Path,
     storage: &std::sync::Arc<crate::storage::local::LocalNoteboxStorage>,
@@ -1562,12 +1397,8 @@ pub(crate) async fn rebase_paths_for_note_move(
         }
     };
 
-    // The frontend sends both absolute and notebox-relative paths through
-    // the various rename/move commands (see `sanitize_notebox_arg`'s
-    // docstring). `rebase_relative_paths` needs a notebox-RELATIVE parent
-    // — passing an absolute path makes the rewriter short-circuit on
-    // the `RootDir` component and produce no edits at all. Normalize
-    // here, defensively, against whichever shape the caller passed.
+    // Callers pass absolute or relative paths; `rebase_relative_paths` needs a
+    // notebox-relative parent and does nothing with an absolute one.
     let notebox_relative = notebox_relative_path(old_path, storage);
     let note_dir = notebox_relative
         .parent()
@@ -1583,10 +1414,9 @@ pub(crate) async fn rebase_paths_for_note_move(
     Ok(())
 }
 
-/// Best-effort conversion of an absolute-or-relative caller path to
-/// the notebox-relative form. Strips the storage root (canonical or
-/// declared) when the path is absolute; passes the input through when
-/// it's already relative.
+/// A caller path in notebox-relative form: the storage root (canonical or
+/// declared) is stripped from an absolute path; a relative one is returned as
+/// is.
 pub(crate) fn notebox_relative_path(
     path: &std::path::Path,
     storage: &crate::storage::local::LocalNoteboxStorage,
@@ -1603,21 +1433,18 @@ pub(crate) fn notebox_relative_path(
     path.to_path_buf()
 }
 
-/// Walk every note that links to `old_path`, rewrite its wikilinks so they
-/// point at `new_path`, and reindex it. Shared between the in-app rename
-/// command (which calls this *before* moving the file on disk) and the
-/// external-rename watcher path (which calls this *after* the move has
-/// already happened — order doesn't matter to this function because it
-/// only touches the *referencing* files, never the renamed one).
+/// Rewrite the wikilinks in every note linking to `old_path` to point at
+/// `new_path`, and reindex those notes. Used by the rename command (before the
+/// move) and the watcher (after an external rename); only the linking notes
+/// change, so order doesn't matter.
 pub(crate) async fn rewrite_backlinks_for_rename(
     old_path: &std::path::Path,
     new_path: &std::path::Path,
     storage: &std::sync::Arc<crate::storage::local::LocalNoteboxStorage>,
     session: &NoteboxSession,
 ) -> Result<(), InkyCapError> {
-    // `note_stem`, not `file_stem()`: the latter truncates "3.5 - Name.typ" at
-    // the first dot to "3", which both fails to match real backlinks and, when
-    // used as the replacement, rewrites every wikilink to a bogus "3".
+    // `note_stem`, not `file_stem()`, which cuts "3.5 - Name.typ" at the first
+    // dot.
     let old_stem = crate::link_index::note_stem(old_path);
     let new_stem = crate::link_index::note_stem(new_path);
     if old_stem.is_empty() || new_stem.is_empty() {
@@ -1646,12 +1473,8 @@ pub(crate) async fn rewrite_backlinks_for_rename(
     Ok(())
 }
 
-/// Notebox-relative path as a forward-slash string — the shape Typst path
-/// arguments use. Strips the storage root from absolute inputs (via
-/// `notebox_relative_path`), then joins only the `Normal` components with `/`
-/// so the result is identical on every OS (no Windows backslashes leaking into
-/// a path comparison). Returns an empty string for a root-level path with no
-/// components.
+/// Notebox-relative path joined with `/`, the form Typst path arguments use, on
+/// every OS. Empty for the root.
 fn notebox_rel_forward_slash(
     path: &std::path::Path,
     storage: &crate::storage::local::LocalNoteboxStorage,
@@ -1666,17 +1489,12 @@ fn notebox_rel_forward_slash(
         .join("/")
 }
 
-/// When an attachment file (image / data / bibliography source) is renamed,
-/// repoint every note that references it at the new name. Path-bearing calls —
-/// `#image`, `#read`, `#bibliography` — carry attachment paths; wikilinks
-/// (handled by `rewrite_backlinks_for_rename`) never point at attachments, so
-/// this is the attachment analogue of that note-to-note rewrite.
+/// When an attachment is renamed, update every note that references it through
+/// `#image`, `#read` or `#bibliography` (wikilinks never point at attachments).
 ///
-/// Scans every `.typ` note once. Rename is a rare, user-initiated action, so a
-/// streaming pass is preferable to maintaining a persistent attachment-reference
-/// index — and it mirrors the attachment-folder migration in
-/// `attachment_migration.rs`. A cheap basename pre-filter skips the AST parse
-/// for notes that can't reference the file.
+/// Scans every note once rather than keeping an attachment index, since renames
+/// are rare; a basename check skips notes that can't match. Like the folder
+/// migration in `attachment_migration.rs`.
 async fn rewrite_attachment_references_for_rename(
     old: &std::path::Path,
     new_path: &std::path::Path,
@@ -1704,15 +1522,10 @@ async fn rewrite_attachment_references_for_rename(
     Ok(())
 }
 
-/// Scan every `.typ` note for path-bearing calls (`#image`/`#read`/
-/// `#bibliography`) that reference the attachment at notebox-relative `old_rel`
-/// and compute the rewritten source pointing at `new_rel`. Returns the
-/// notebox-relative path and new content of each note that changed.
-///
-/// Separated from the session reindex so the matching logic is testable with
-/// just a storage. Only changed notes are retained — the scan reads each note
-/// transiently — so memory is bounded by the (typically small) number of notes
-/// that reference the renamed file, not by notebox size.
+/// Find notes whose `#image` / `#read` / `#bibliography` calls reference
+/// `old_rel` and compute their rewritten source pointing at `new_rel`. Returns
+/// each changed note's path and content; only changed notes are kept in memory.
+/// Separate from reindexing so it can be tested with just a storage.
 async fn collect_attachment_reference_rewrites(
     storage: &crate::storage::local::LocalNoteboxStorage,
     old_rel: &str,
@@ -1723,9 +1536,8 @@ async fn collect_attachment_reference_rewrites(
         .list_files(&std::path::PathBuf::from(""), "*.typ")
         .await
         .unwrap_or_default();
-    // `list_files` returns canonical absolute paths; feed the notebox-relative
-    // form into read/write so the storage sandbox validates consistently (same
-    // reasoning as attachment_migration.rs).
+    // `list_files` returns canonical absolute paths; use the notebox-relative
+    // form for reads and writes.
     let strip_root = storage.canonical_root();
     let mut changes = Vec::new();
 
@@ -1738,10 +1550,8 @@ async fn collect_attachment_reference_rewrites(
             Ok(c) => c,
             Err(_) => continue,
         };
-        // Every reference to the file — absolute (`/Assets/foo.png`) or relative
-        // (`foo.png`, `../Assets/foo.png`) — contains its basename, so a
-        // substring test is a sound (over-approximate) pre-filter that avoids
-        // parsing notes that can't match.
+        // Every reference to the file contains its basename, so skip notes that
+        // don't.
         if !basename.is_empty() && !content.contains(basename) {
             continue;
         }
@@ -1754,17 +1564,13 @@ async fn collect_attachment_reference_rewrites(
     changes
 }
 
-/// Local alias for the unified indexing helper on [`AppState`]. All note
-/// mutations in this module route through `session.reindex_note` — see
-/// `state::AppState::reindex_note` for the canonical implementation and the
-/// cache write-through invariant.
+/// Shorthand for `NoteboxSession::reindex_note`, which every note change in
+/// this module goes through.
 async fn reindex_note(path: &std::path::Path, content: &str, session: &NoteboxSession) {
     session.reindex_note(path, content).await;
 }
 
-/// Local alias for `AppState::remove_from_indices`. Kept so existing call
-/// sites read naturally; any new code should prefer calling the method on
-/// `state` directly.
+/// Shorthand for `remove_from_indices` on the session.
 async fn remove_from_indices(path: &std::path::Path, session: &NoteboxSession) {
     session.remove_from_indices(path).await;
 }
@@ -1820,12 +1626,9 @@ pub async fn show_in_explorer(path: String) -> Result<(), InkyCapError> {
     }
     #[cfg(target_os = "windows")]
     {
-        // `explorer.exe` only navigates to backslash-separated paths. Paths
-        // reaching this command have typically been round-tripped through
-        // `to_frontend_string`, which normalizes to forward slashes; handing
-        // those to Explorer makes it silently fall back to opening Documents.
-        // Flip back to native separators for the argv. (path-stringification-ok:
-        // subprocess argument, not an IPC payload.)
+        // Explorer only accepts backslash paths and otherwise opens Documents,
+        // so convert the separators. (path-stringification-ok: subprocess
+        // argument, not an IPC payload.)
         let native = dir.to_string_lossy().replace('/', "\\");
         std::process::Command::new("explorer")
             .arg(&native)
@@ -1834,14 +1637,11 @@ pub async fn show_in_explorer(path: String) -> Result<(), InkyCapError> {
     Ok(())
 }
 
-/// Open a file with the OS default application (image viewer, PDF reader, etc.).
-///
-/// Two kinds of file need the user's go-ahead first: program files (see
-/// [`crate::system_open::is_program_file`]), which would run instead of being
-/// viewed, and anything outside the open notebox, including symlinks that lead
-/// out of it. For those the command returns `OpenProgramFile` or
-/// `OpenOutsideNotebox` without opening anything; the frontend asks the user and
-/// calls again with `confirmed: true`.
+/// Open a file in the default application. Program files (see
+/// [`crate::system_open::is_program_file`]) and anything outside the notebox,
+/// including symlinks out of it, return `OpenProgramFile` or
+/// `OpenOutsideNotebox` without opening; the frontend asks and calls again with
+/// `confirmed: true`.
 #[tauri::command]
 pub async fn open_file_externally(
     path: String,
@@ -1872,19 +1672,14 @@ pub async fn open_file_externally(
     Ok(())
 }
 
-/// Open an external URL in the OS default handler. This intentionally
-/// supports custom application schemes (`zotero://`, `obsidian://`, etc.)
-/// in addition to `http(s)`/`mailto`/`tel` — handing a scheme to the OS
-/// opener is exactly what lets a note link into another desktop app, and
-/// preserving that interop is a first-class goal for a PKM tool.
+/// Open a URL in the OS default handler. App schemes (`zotero://`,
+/// `obsidian://`) are supported along with `http(s)`, `mailto` and `tel`, so
+/// notes can link into other apps.
 ///
-/// Schemes that carry an executable payload inline (rather than delegating
-/// to a registered handler) are refused, as are `file:` URLs — local files
-/// are opened through [`open_file_externally`] after notebox-root
-/// resolution, never via an unvalidated `file://` from note content.
-/// The URL is handed to the system as a single value (never through a shell),
-/// so there is no interpolation; a leading `-` is rejected so the target can't
-/// be mistaken for a flag.
+/// Schemes that carry executable content, and `file:` URLs, are refused; local
+/// files go through [`open_file_externally`]. The URL is passed as a single
+/// argument, never through a shell, and a leading `-` is rejected so it can't
+/// be read as a flag.
 #[tauri::command]
 pub async fn open_url_externally(url: String) -> Result<(), InkyCapError> {
     let trimmed = url.trim();
@@ -1924,11 +1719,8 @@ mod tests {
     use std::sync::Arc;
     use tempfile::TempDir;
 
-    /// Integration check for the Phase B helper: a note that lives in a
-    /// subfolder and references a sibling asset with a relative path
-    /// gets rewritten to a notebox-root-absolute reference anchored at
-    /// the note's pre-move parent. The on-disk file content is updated;
-    /// the asset is not touched.
+    /// A note in a subfolder with a relative path to a sibling asset is
+    /// rewritten to a notebox-root-absolute path; the asset is untouched.
     #[tokio::test]
     async fn rebase_paths_for_note_move_rewrites_relative_image() {
         let notebox = TempDir::new().unwrap();
@@ -1960,11 +1752,8 @@ mod tests {
         );
     }
 
-    /// Regression: the frontend sends absolute paths through `move_file`
-    /// (via `FileTreeNode.path`); the helper used to pass the absolute
-    /// parent dir straight into `rebase_relative_paths`, which short-
-    /// circuits on the `RootDir` component and produced no edits. The
-    /// fix normalizes to notebox-relative before rebasing.
+    /// `move_file` receives absolute paths from the frontend; they must still
+    /// be rebased.
     #[tokio::test]
     async fn rebase_paths_for_note_move_handles_absolute_path_input() {
         let notebox = TempDir::new().unwrap();
@@ -1987,9 +1776,7 @@ mod tests {
         );
     }
 
-    /// A note whose paths are already absolute (or where no path-bearing
-    /// call exists) must not be touched — the helper should be a no-op
-    /// to avoid churning the on-disk file's mtime/contents.
+    /// A note with no relative paths is left untouched.
     #[tokio::test]
     async fn rebase_paths_for_note_move_no_op_when_already_absolute() {
         let notebox = TempDir::new().unwrap();
@@ -2011,14 +1798,12 @@ mod tests {
         assert_eq!(after, original);
     }
 
-    /// Renaming an attachment repoints every note that references it. A note
-    /// in a subfolder referencing the absolute path InkyCap emits gets rewritten
-    /// to the new name; a note that doesn't reference it is left untouched.
+    /// Renaming an attachment updates notes that reference it and leaves others
+    /// alone.
     #[tokio::test]
     async fn attachment_rename_rewrites_referencing_notes() {
-        // Root the notebox at a non-hidden subdir: `tempfile` names the temp
-        // dir `.tmpXXXX`, and `list_files`' WalkDir prunes hidden directories
-        // (the root included) — a real notebox root is never hidden.
+        // Use a non-hidden subfolder as the root: the temp dir is named
+        // `.tmpXXXX`, and `list_files` skips hidden folders.
         let tmp = TempDir::new().unwrap();
         let root = tmp.path().join("vault");
         std::fs::create_dir_all(root.join("Assets")).unwrap();

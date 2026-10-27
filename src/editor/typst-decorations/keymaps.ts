@@ -20,9 +20,10 @@ export const autoPairBracketsFacet = Facet.define<boolean, boolean>({
   combine: (values) => (values.length ? values[0] : true),
 });
 
-/** Bracket pairing as one switchable unit: CodeMirror's close-brackets
- *  behaviour, plus the facet `autoPairBracketsKeymap` reads. Lives in a
- *  compartment so the setting takes effect in an open note. */
+/**
+ * CodeMirror's close-brackets behaviour plus the facet `autoPairBracketsKeymap`
+ * reads, in one compartment so the setting applies to an open note.
+ */
 export function autoPairBracketsExtension(enabled: boolean): Extension {
   return enabled
     ? [autoPairBracketsFacet.of(true), closeBrackets()]
@@ -30,12 +31,8 @@ export function autoPairBracketsExtension(enabled: boolean): Extension {
 }
 
 /**
- * Backspace between an empty pair deletes both halves — the other half of
- * bracket pairing, so it follows the same setting.
- *
- * Used in place of CodeMirror's `closeBracketsKeymap`, which would go on
- * working with pairing switched off: it looks at the characters around the
- * caret rather than at what was auto-inserted.
+ * Backspace between an empty pair deletes both halves. Replaces CodeMirror's
+ * `closeBracketsKeymap`, which would keep doing this with pairing switched off.
  */
 export const autoPairBracketsKeymap: KeyBinding[] = [
   {
@@ -45,47 +42,32 @@ export const autoPairBracketsKeymap: KeyBinding[] = [
 ];
 
 /**
- * When true, indent/outdent of a list item also moves any nested
- * children (subsequent lines indented deeper than the current line,
- * up to the next blank line or sibling/ancestor item).
+ * When true, indenting or outdenting a list item also moves its nested
+ * children.
  */
 export const smartIndentListsFacet = Facet.define<boolean, boolean>({
   combine: (values) => (values.length ? values[0] : false),
 });
 
 /**
- * When true, pressing Enter at the end of a paragraph line inserts a
- * Typst linebreak (`\`) before the newline, so that the next line wraps
- * as a new visual line in the rendered output instead of being collapsed
- * into a space. A second consecutive Enter still produces a paragraph
- * break — the dangling `\` from the first Enter is stripped automatically
- * before the blank line is inserted.
+ * When true, Enter at the end of a paragraph line inserts a Typst line break
+ * (`\`) before the newline, so the next line starts a new line in the output. A
+ * second Enter removes that `\` and makes a paragraph break. Not applied in
+ * lists, raw or code blocks, math or verse.
  *
- * Suppressed inside lists, raw/code blocks, math, and verse calls.
- *
- * This is a *visual-mode* affordance only: the editor host
- * (`createTypstEditor`) sets this facet to the user's setting while the visual
- * editor is active and to `false` in source mode. In the visual editor the
- * inserted `\` is rendered invisibly and managed as an atomic "soft break"
- * (see visual-plugin.ts), so the writer sees a real line break without ever
- * seeing or editing the `\`; in source mode Enter stays a plain newline and
- * any `\` already present shows as ordinary text.
+ * Visual editor only: `createTypstEditor` sets this from the user's setting in
+ * visual mode and to `false` in source mode. The visual editor hides the `\`
+ * and treats it as an atomic soft break (see visual-plugin.ts).
  */
 export const enterInsertsLineBreakFacet = Facet.define<boolean, boolean>({
   combine: (values) => (values.length ? values[0] : false),
 });
 
 /**
- * True when `pos` sits inside a context where a trailing `\` is literal or
- * carries its own meaning — raw/code blocks (`` `…` ``, ``` ```…``` ```),
- * math (`$…$`), or a `verse` call — so InkyCap's paragraph soft-break
- * handling must not apply. That handling is twofold and these two call sites
- * must agree on exactly which `\` count as managed paragraph breaks:
- *   - the Enter keymap here, deciding whether to auto-insert a `\`, and
- *   - the visual-mode decorations, deciding which trailing `\` to render
- *     invisibly and treat as atomic soft breaks.
- *
- * Pure tree inspection — no DOM, no doc mutation.
+ * True when `pos` is in raw or code, math, or a `verse` call, where a trailing
+ * `\` is literal or has its own meaning. Used by both the Enter keymap (whether
+ * to insert a `\`) and the visual decorations (which `\` to hide as soft
+ * breaks), so they agree.
  */
 export function inVerbatimLineContext(state: EditorState, pos: number): boolean {
   const tree = syntaxTree(state);
@@ -96,10 +78,7 @@ export function inVerbatimLineContext(state: EditorState, pos: number): boolean 
     const name = node.name;
     if (name === "Raw" || name === "Equation" || name === "Math") return true;
     if (name === "FuncCall") {
-      // Read the function identifier from the source (the first child of
-      // a FuncCall is the callee Ident / FieldAccess). Match the bare name
-      // "verse" — qualified imports like `notebox.verse` would still match
-      // on the trailing segment.
+      // Match the callee's last name segment, so `notebox.verse` counts too.
       const callee = state.doc.sliceString(node.from, Math.min(node.from + 32, node.to));
       if (/^#?(?:[\w.-]+\.)?verse\b/.test(callee)) return true;
     }
@@ -109,9 +88,10 @@ export function inVerbatimLineContext(state: EditorState, pos: number): boolean 
   return false;
 }
 
-/** Code-mode and control-flow node kinds that must never receive a managed
- *  paragraph soft break — a trailing `\` after any of these injects a stray
- *  line break into the compiled output. */
+/**
+ * Code-mode and control-flow nodes that must never get a soft break; a trailing
+ * `\` after them adds a stray line break to the output.
+ */
 const NON_PROSE_STATEMENT_NODES = new Set([
   "SetRule",
   "ShowRule",
@@ -124,21 +104,14 @@ const NON_PROSE_STATEMENT_NODES = new Set([
 ]);
 
 /**
- * True when `line` is a non-prose construct that should never carry a managed
- * paragraph soft break (`\`): a code statement (`#set`, `#show`, `#let`,
- * `#import`, `#include`, control flow), a heading, or a standalone block-level
- * function call (`#image(...)`, `#figure(...)`, `#pagebreak()`, …) that fills
- * the whole line. Appending `\` to any of these injects a stray line break into
- * the compiled output — the bug where a `/`-menu insert on its own line,
- * followed by Enter, silently broke reading/export rendering.
+ * True when `line` is a code statement (`#set`, `#show`, `#let`, `#import`,
+ * `#include`, control flow), a heading, or a block-level call filling the line
+ * (`#image(...)`, `#figure(...)`, `#pagebreak()`, …). A `\` after any of these
+ * adds a stray line break to the output.
  *
- * Shared by the Enter keymap (so it doesn't insert the `\`) and the visual-mode
- * soft-break renderer (so a pre-existing `\` on such a line shows visibly
- * instead of being hidden, surfacing already-broken source for the user to fix).
- *
- * The trailing `\` is ignored when locating the line's content bounds so the
- * rendering call site — which passes lines that still carry the `\` — inspects
- * the construct beneath it. Pure tree inspection: no DOM, no doc mutation.
+ * The Enter keymap doesn't insert `\` on these lines, and the visual editor
+ * shows an existing one instead of hiding it so it can be fixed. A trailing `\`
+ * is ignored when finding the line's content.
  */
 export function lineIsNonProse(state: EditorState, line: Line): boolean {
   const text = line.text;
@@ -178,14 +151,10 @@ export function lineIsNonProse(state: EditorState, line: Line): boolean {
 }
 
 /**
- * Decide whether the auto-`\` linebreak should be inserted before the
- * newline produced by an Enter keypress at `pos`. Returns `false` in lists
- * (`- `, `+ `) — the list-continuation keymap handles Enter — on non-prose
- * lines (code statements, headings, standalone block calls; see
- * `lineIsNonProse`), when the line already ends with an unescaped `\`, when the
- * cursor is mid-line (a deliberate split, not a soft wrap), or inside a
- * verbatim context where a literal `\` would be wrong (see
- * `inVerbatimLineContext`).
+ * Whether Enter at `pos` should insert a `\` line break. Not in lists (the list
+ * keymap handles Enter), on non-prose lines (see `lineIsNonProse`), when the
+ * line already ends with `\`, when the cursor is mid-line, or in verbatim
+ * contexts (see `inVerbatimLineContext`).
  */
 function shouldInsertAutoLineBreak(state: EditorState, pos: number): boolean {
   const line = state.doc.lineAt(pos);
@@ -196,19 +165,15 @@ function shouldInsertAutoLineBreak(state: EditorState, pos: number): boolean {
   // If the line already ends with an unescaped trailing `\`, don't double up.
   const trimmedEnd = line.text.replace(/\s+$/, "");
   if (trimmedEnd.endsWith("\\") && !trimmedEnd.endsWith("\\\\")) return false;
-  // Don't insert when the cursor is not at the end of the line content.
-  // Pressing Enter mid-line is a deliberate split; the user's intent there
-  // is "break this paragraph here", not "soft-wrap the rest as a new line".
+  // Enter mid-line splits the paragraph; only add `\` at the end of the line.
   const trailing = state.doc.sliceString(pos, line.to);
   if (trailing.trim().length > 0) return false;
   return !inVerbatimLineContext(state, pos);
 }
 
 /**
- * Document position where a line's meaningful content begins: just after a list
- * marker (`- `, `+ `, `1. `) when the line is a list item, otherwise after the
- * leading indentation. Used by smart Home so the caret lands on the text, not
- * before the bullet.
+ * Where a line's text begins: after a list marker (`- `, `+ `, `1. `),
+ * otherwise after the indentation. Used by smart Home.
  */
 export function listContentStart(line: Line): number {
   const listMatch = line.text.match(/^(\s*)(?:[-+]|\d+\.)\s+/);
@@ -218,31 +183,20 @@ export function listContentStart(line: Line): number {
 }
 
 /**
- * Smart Home. Moves the caret to the start of the line's content — for a list
- * item that means just after the bullet/number, so the writer can edit the text
- * immediately without stepping past the marker. Inside a block element the same
- * idea puts the caret after the hidden `#callout("note")[` opener, at the start
- * of the text being written, rather than in front of the whole element.
+ * Smart Home. Moves the caret to the start of the line's text: after the bullet of
+ * a list item, or after a block element's hidden opener (`#callout("note")[`).
  *
- * Pressing Home again (caret already at content start) jumps to the true line
- * start, before the marker — so a Home-then-Shift-End selection, or an
- * empty-selection line copy, still carries the marker and the item pastes back
- * as a complete bullet.
+ * Pressing Home again goes to the true line start, before the marker, so Home then
+ * Shift-End (or a whole-line copy) includes the bullet. On a wrapped row after the
+ * first, Home first goes to the start of that row, as End goes to its end.
  *
- * When a long paragraph wraps onto several rows on screen, Home on any row
- * after the first goes to the start of that row, the way End goes to the end
- * of it. A further press from there continues as above.
+ * In the visual editor, a caret before a hidden bullet would look the same as one
+ * after it, so the second press also reveals the marker as source (through
+ * `expandFunc`, keyed on the line start). Only the main cursor reveals, since one
+ * marker can be revealed at a time.
  *
- * In the visual editor the markup is hidden behind a widget, and the caret in
- * front of it would be drawn in the same spot as the caret after it. For a list
- * bullet the second press therefore also reveals the marker as source (through
- * `expandFunc`, keyed on the line start) so the caret visibly sits before it;
- * this is how the writer selects or deletes an item together with its bullet.
- * Other hidden markup (a block element's opener) keeps the caret on the content
- * start. Only the main cursor reveals, since one marker can be revealed at a time.
- *
- * `extend` mirrors the same toggle for Shift-Home, keeping the selection anchor
- * fixed. Operates on every cursor in a multi-selection.
+ * `extend` does the same for Shift-Home, keeping the anchor. Applies to every
+ * cursor.
  */
 function smartLineStart(view: EditorView, extend: boolean): boolean {
   const { state } = view;
@@ -258,9 +212,8 @@ function smartLineStart(view: EditorView, extend: boolean): boolean {
     );
     const cs = Math.max(listContentStart(line), pastMarkup);
     const markerHidden = pastMarkup !== line.from;
-    // On a wrapped row below the paragraph's first, Home goes to the start of
-    // that row, matching End. Pressed again there, it carries on to the
-    // paragraph's start below.
+    // On a wrapped row after the first, go to that row's start; pressing again
+    // continues to the paragraph start.
     const rowStart = view.moveToLineBoundary(range, false, true).head;
     let target = cs;
     if (rowStart > cs && range.head !== rowStart) {
@@ -280,10 +233,8 @@ function smartLineStart(view: EditorView, extend: boolean): boolean {
   dispatchVisible(view, {
     selection: EditorSelection.create(ranges, state.selection.mainIndex),
     effects: reveal === null ? [] : expandFunc.of(reveal),
-    // Tag it the way CodeMirror tags its own cursor/selection commands. Things
-    // that react to a deliberate selection gesture — the selection format
-    // toolbar above all — look for this, and an untagged dispatch reads as a
-    // programmatic jump (a search reveal, say) that should not summon them.
+    // Tag it like CodeMirror's own selection commands; the selection toolbar
+    // only responds to tagged selections.
     userEvent: "select",
   });
   return true;
@@ -306,9 +257,8 @@ function toggleHighlight(state: EditorState) {
 }
 
 function toggleLink(state: EditorState) {
-  // Caret lands in the empty URL slot (`#link("⎸")[…]`) so the address can be
-  // typed or pasted immediately; the selected text becomes the link label.
-  // Matches the toolbar link button.
+  // The caret lands in the empty URL (`#link("⎸")[…]`); the selected text
+  // becomes the label. Same as the toolbar link button.
   return toggleWrap(state, '#link("")[', "]", '#link("'.length);
 }
 
@@ -363,26 +313,21 @@ function insertListItem(state: EditorState, marker: string): { changes: ChangeSp
   };
 }
 
-/** The tail of a just-opened, still-empty code block, measured from the end of
- *  its opening fence: one empty body line, then the closing fence (which may be
- *  indented along with the block). Exactly what the ``` gesture produces. */
+/**
+ * The rest of a just-opened empty code block after its opening fence: one empty
+ * line, then the closing fence (possibly indented). What the ``` gesture
+ * produces.
+ */
 const EMPTY_FENCE_TAIL = /^\n\n[ \t]*```$/;
 
 /**
- * Move the caret from the end of a just-opened code fence down into the
- * block's empty body line, returning true when it did.
+ * Move the caret from the end of a just-opened code fence into the block's
+ * empty line; true if it did. Whether a ``` line opens or closes a block
+ * depends on the fences above, so per CLAUDE.md's Typst-first principle the
+ * syntax tree decides.
  *
- * Whether a ` ``` ` line *opens* a block or *closes* one depends on every
- * fence above it, so the question is put to the syntax tree rather than
- * answered by counting backticks here — per CLAUDE.md's Typst-first principle,
- * and because a hand-rolled version got it wrong: the caret at the end of a
- * block's *closing* fence, with a blank line and another fence below, looked
- * identical to an opener.
- *
- * Fires only on the exact shape the ``` gesture produces — the caret at the end
- * of the line the raw block starts on, one empty body line, closing fence.
- * A body with content, an unterminated block, or a caret mid-line all fall
- * through to normal Enter.
+ * Only fires on the exact shape the ``` gesture produces: caret at the end of
+ * the opening line, one empty line, closing fence.
  */
 function stepIntoOpenFence(view: EditorView): boolean {
   const sel = view.state.selection.main;
@@ -410,9 +355,8 @@ function continueList(state: EditorState): { changes: ChangeSpec; selection: { a
   const line = state.doc.lineAt(from);
   const text = line.text;
 
-  // Typst's three list markers: `-` (bullet), `+` (auto-numbered), and an
-  // explicit number `N.`. A trailing space (or end-of-line, for a marker the
-  // user just typed) confirms it is a list item rather than prose.
+  // Typst's list markers: `-`, `+` and `N.`, followed by a space or the line
+  // end.
   const listMatch = text.match(/^(\s*)([-+]|\d+\.)(?:\s|$)/);
   if (!listMatch) return null;
 
@@ -428,13 +372,10 @@ function continueList(state: EditorState): { changes: ChangeSpec; selection: { a
     };
   }
 
-  // Double-Enter exit, visual-mode tolerant. The first Enter on the last item
-  // inserts an empty `- ` bullet below; the second is meant to end the list.
-  // In the visual editor that new bullet renders as an atomic widget, and CM
-  // can leave the logical cursor back on this (non-empty) item rather than on
-  // the empty line — so the same-line check above never sees the empty marker.
-  // Detect it on the line *below* the cursor instead: clear that empty bullet
-  // and drop the caret onto the now-blank line as regular text.
+  // Second Enter on an empty new bullet ends the list. In the visual editor the
+  // new bullet is an atomic widget and the cursor can stay on the item above,
+  // so check the line below too: clear the empty bullet and put the caret on
+  // the blank line.
   if (from === line.to && line.number < state.doc.lines) {
     const below = state.doc.line(line.number + 1);
     const belowMatch = below.text.match(/^(\s*)([-+]|\d+\.)(?:\s|$)/);
@@ -451,21 +392,15 @@ function continueList(state: EditorState): { changes: ChangeSpec; selection: { a
   const numMatch = marker.match(/^(\d+)\.$/);
   const nextMarker = numMatch ? `${Number(numMatch[1]) + 1}.` : marker;
 
-  // The marker (`indent + marker + space`) must stay at the head of the line —
-  // never split ahead of it. The cursor can legitimately sit at `line.from`:
-  // the bullet's atomic replace range spans [line.from, afterMarker], so a
-  // click at the start of the item's text rounds the caret to the line start.
-  // Splitting there would insert the newline before the marker and leave a
-  // doubled/empty bullet. Clamp to the item's content start, which makes that
-  // case behave exactly like an Enter pressed at the start of the text.
+  // Never split before the marker. A click at the start of the item text can
+  // put the caret at `line.from` (the bullet's atomic range starts there), so
+  // clamp to the content start.
   const contentStart = line.from + listMatch[0].length;
   const pos = Math.max(from, contentStart);
 
-  // The new item's indent, marker and separator — everything before its text.
-  // Only the new line is written: the items already there keep the numbers
-  // the writer typed, so a deliberate restart survives and the Enter undo step
-  // stays small. Numbers are brought back into step when the list's shape
-  // changes, on Tab and Shift+Tab (see indentList).
+  // Only the new line is written: existing items keep their numbers, so a
+  // deliberate restart survives and the undo step stays small. Numbers are
+  // corrected on Tab and Shift+Tab (see indentList).
   const insert = `\n${indent}${nextMarker} `;
   return {
     changes: { from: pos, insert },
@@ -492,21 +427,17 @@ interface IndentPlan {
 const LIST_LINE_RE = /^([ \t]*)(?:[-+]|\d+\.)[ \t]/;
 
 /**
- * Character shift for a line at `indent` moving one level: two spaces in, or
- * back out by as much as its indentation allows (zero when already at the
- * margin, which is how an outdent of a top-level item becomes a no-op).
+ * Shift for a line at `indent` moving one level: two spaces in, or out by as
+ * much as its indentation allows (zero at the margin).
  */
 function shiftFor(indent: number, direction: 1 | -1): number {
   return direction === 1 ? INDENT_UNIT.length : -Math.min(INDENT_UNIT.length, indent);
 }
 
 /**
- * Lines to shift when the caret sits in a single item, keyed by line number.
- *
- * With smart indent on, the item's nested descendants ride along so the
- * subtree keeps its shape — the writer indented "Animals", not each child in
- * turn. Descendants are the following lines indented deeper than the item, up
- * to a blank line or a line at the item's level or shallower.
+ * Lines to shift when the caret is in one item, keyed by line number. With
+ * smart indent on, nested children move too: the following lines indented
+ * deeper than the item, up to a blank line or a line at its level or shallower.
  */
 function shiftsForItem(state: EditorState, lineNumber: number, direction: 1 | -1, smart: boolean): Map<number, number> {
   const shifts = new Map<number, number>();
@@ -528,16 +459,8 @@ function shiftsForItem(state: EditorState, lineNumber: number, direction: 1 | -1
 
 /**
  * Lines to shift when the selection spans several lines, keyed by line number.
- *
- * Only what the user selected moves. Selecting "Animals" and two of its three
- * children indents exactly those three lines; the child left out stays where
- * it is and so becomes a sibling of "Animals" — that is the point of taking
- * the trouble to select a partial range, and it is why descendants are not
- * dragged along here the way they are for a caret in a single item.
- *
- * The one thing that moves without being a list item is a wrapped
- * continuation line, which is indented under the item it belongs to and would
- * otherwise be left behind by its own text.
+ * Only selected lines move; an unselected child stays put and becomes a
+ * sibling. Wrapped continuation lines also move with their item.
  */
 function shiftsForSelectedLines(state: EditorState, firstNumber: number, lastNumber: number, direction: 1 | -1): Map<number, number> {
   const shifts = new Map<number, number>();
@@ -565,19 +488,11 @@ function shiftsForSelectedLines(state: EditorState, firstNumber: number, lastNum
 }
 
 /**
- * Plan a list indent or outdent for the current selection.
- *
- * Returns a single replacement spanning the first through last shifted line,
- * plus the selection to restore. One contiguous edit rather than one edit per
- * line is deliberate on three counts: undo takes the whole gesture back in a
- * single Ctrl+Z, the codemirror-lang-typst parser gets the ordinary
- * single-range edit its incremental API handles correctly (a transaction
- * carrying several shifted changes desynchronises its tree, which then
- * mis-places list-marker decorations), and unshifted lines in the middle of
- * the range are simply reproduced unchanged.
- *
- * Returns null when nothing would move, so Tab falls through to the editor's
- * generic indent command.
+ * Plan a list indent or outdent for the selection: one replacement covering the
+ * first to last shifted line, plus the selection to restore. A single edit
+ * means one undo step, and the Typst parser handles it correctly (several
+ * changes in one transaction desynchronize its tree). Null when nothing would
+ * move, so Tab falls through to the generic indent.
  */
 function indentList(state: EditorState, direction: 1 | -1): IndentPlan | null {
   const { anchor, head } = state.selection.main;
@@ -597,13 +512,10 @@ function indentList(state: EditorState, direction: 1 | -1): IndentPlan | null {
   const shiftedFirst = shiftedNumbers[0];
   const shiftedLast = shiftedNumbers[shiftedNumbers.length - 1];
 
-  // Moving an item between levels invalidates the explicit `N.` numbers of the
-  // level it left and the one it joined, so the rewrite covers the whole list
-  // block, not just the shifted lines. Lines outside the shift are reproduced
-  // unchanged unless their number moved (see list-renumber.ts). A selection
-  // can span more than one block, with prose between; the region then runs
-  // from the first block's start to the last block's end, and each block
-  // still counts on its own.
+  // Moving an item between levels changes the `N.` numbers of both levels, so
+  // the rewrite covers the whole list block (see list-renumber.ts). A selection
+  // spanning several blocks rewrites from the first block's start to the last
+  // one's end, each counted separately.
   const [blockFirst] = listBlockRange(state.doc, shiftedFirst);
   const [, blockLast] = listBlockRange(state.doc, shiftedLast);
   const first = Math.min(blockFirst, shiftedFirst);
@@ -618,10 +530,9 @@ function indentList(state: EditorState, direction: 1 | -1): IndentPlan | null {
   const startLine = state.doc.line(first);
   const endLine = state.doc.line(last);
 
-  // Where a position ends up: preceding lines in the region move its line
-  // start, and its own line's shift (plus any change in the width of its
-  // number) moves it within the line. A position inside removed indentation
-  // lands at the new line start.
+  // A position moves with the lines before it, plus its own line's shift and
+  // any change in its number's width. A position inside removed indentation
+  // goes to the new line start.
   const regionDelta = rewritten.join("\n").length - shifted.join("\n").length;
   const mapPos = (pos: number): number => {
     const line = state.doc.lineAt(pos);
@@ -638,9 +549,8 @@ function indentList(state: EditorState, direction: 1 | -1): IndentPlan | null {
     return lineStart + Math.max(0, column + shift + numberShift);
   };
 
-  // Replacing the region drops every fold that lies inside it, so those are
-  // put back where their lines end up. A fold that reaches outside the region
-  // is mapped by CodeMirror itself and needs no help.
+  // Replacing the region drops folds inside it, so re-add them at their new
+  // positions. CodeMirror maps folds that extend outside the region.
   const refolds: StateEffect<unknown>[] = [];
   foldedRanges(state).between(startLine.from, endLine.to, (from, to) => {
     if (from >= startLine.from && to <= endLine.to) {
@@ -696,10 +606,9 @@ function markerLenOf(firstLine: string): number {
 }
 
 /**
- * Start line (1-based) of the previous same-indent sibling of the item at
- * `curStart`, walking up over any blank lines and the sibling's own nested
- * subtree. Null when the item is the first child of its parent (nothing above
- * to swap with at this level).
+ * Start line (1-based) of the previous sibling at the same indent as the item
+ * at `curStart`, skipping blank lines and the sibling's children. Null for a
+ * first child.
  */
 function prevSiblingStart(doc: EditorState["doc"], curStart: number, indent: number): number | null {
   let n = curStart - 1;
@@ -718,22 +627,14 @@ function prevSiblingStart(doc: EditorState["doc"], curStart: number, indent: num
 }
 
 /**
- * Reorder a list item, carrying its whole nested subtree with it: a parent item
- * moves as a group, a leaf item moves alone. It swaps places with the adjacent
- * same-indent sibling's subtree (past any blank-line gap between them), keeping
- * the gap between the two blocks.
+ * Move a list item up or down with its nested children, swapping with the
+ * adjacent sibling's block and keeping any blank lines between them.
  *
- * Explicit `1. 2. 3.` numbering stays in document order — the number belongs to
- * the position, not the moved text — so only the two blocks' first-line numbers
- * are swapped back into place; `+`/`-` lists need no such fix. Nested numbering
- * inside a moved block is untouched.
- *
- * Self-contained and a single transaction: it does NOT delegate to the generic
- * move-line command, which interacted badly with the visual decoration layer
- * (the move would silently stop working after a few presses). At a list edge it
- * consumes the key without moving — never falling through to a page scroll.
- * Returns false when the cursor is not on a list item, so the caller can fall
- * back to plain line movement for ordinary prose.
+ * Explicit `1. 2. 3.` numbers stay in document order, so the two blocks'
+ * first-line numbers are swapped back. One self-contained transaction; the
+ * generic move-line command stopped working after a few presses with the visual
+ * layer. At a list edge the key is consumed without moving. Returns false when
+ * not on a list item.
  */
 function moveListItem(view: EditorView, dir: -1 | 1): boolean {
   const { state } = view;
@@ -796,12 +697,9 @@ function moveListItem(view: EditorView, dir: -1 | 1): boolean {
   const sibNewStart = curIsTop ? regionFrom + newTop.length + gap.length : regionFrom;
   const newHead = curNewStart + markerLenOf(currentNewText) + contentCol;
 
-  // Preserve folds across the move. The swap deletes and reinserts the blocks,
-  // which would drop any fold on them (a collapsed parent would spring open).
-  // Re-apply each fold that was inside the region at its new position: within a
-  // block the content is identical apart from a possibly-changed first-line
-  // number, so a fold shifts by the block's move distance plus that number's
-  // length delta.
+  // Swapping the blocks would drop their folds, so re-add each one shifted by
+  // its block's move distance plus any change in the first-line number's
+  // length.
   const curFrom = doc.line(curStart).from, curTo = doc.line(curEnd).to;
   const sibFrom = doc.line(sibStart).from, sibTo = doc.line(sibEnd).to;
   const curDelta = currentNewText.length - curText.length;
@@ -826,9 +724,8 @@ function moveListItem(view: EditorView, dir: -1 | 1): boolean {
 
 export const typstKeymap: KeyBinding[] = [
   {
-    // Smart Home: first press lands on the line's text (after a list marker);
-    // a second press goes to the true line start. Shift-Home extends the
-    // selection along the same toggle.
+    // Smart Home: the first press goes to the line's text, the second to the
+    // line start. Shift-Home extends the selection the same way.
     key: "Home",
     run: (view) => smartLineStart(view, false),
     shift: (view) => smartLineStart(view, true),
@@ -912,14 +809,9 @@ export const typstKeymap: KeyBinding[] = [
       if (pos < view.state.doc.length) {
         const charAfter = view.state.doc.sliceString(pos, pos + 1);
         if ("])*`$_".includes(charAfter)) {
-          // ContentBlock (the `[…]` body of any FuncCall) used to be in
-          // this list, originally for the wikilink "press Enter to leave
-          // the brackets" flow. With multi-line callouts and quotes now
-          // editable in the visual editor, stepping out of every
-          // ContentBlock on Enter breaks ordinary line breaks inside
-          // those bodies. Wikilinks still work because their Args (the
-          // `("name")` form) handles the step-out for the
-          // closing-paren case.
+          // ContentBlock (`[…]`) isn't listed: Enter must make ordinary line
+          // breaks inside callout and quote bodies. Wikilinks step out through
+          // `Args`.
           const STEP_OUT_NODES = ["Strong", "Emph", "Raw", "Equation", "Args"];
           const tree = syntaxTree(view.state);
           let cur = tree.resolveInner(pos, -1);
@@ -938,14 +830,9 @@ export const typstKeymap: KeyBinding[] = [
           }
         }
       }
-      // Enter at the end of a freshly-opened code fence steps *into* the
-      // block instead of inserting another blank line. The ``` gesture leaves
-      // the caret on the fence so the language can be typed (see
-      // auto-pair-typst.ts); Enter is then the natural way to start writing
-      // code, and without this it would push a second empty line into a block
-      // that already has one. Deliberately narrow — it only fires on the exact
-      // shape that gesture produces (fence line, one empty body line, closing
-      // fence), so an ordinary Enter before a blank line is untouched.
+      // Enter at the end of a just-opened code fence steps into the block
+      // instead of adding another empty line (the ``` gesture leaves the caret
+      // on the fence for the language; see auto-pair-typst.ts).
       if (stepIntoOpenFence(view)) return true;
 
       const listResult = continueList(view.state);
@@ -954,12 +841,9 @@ export const typstKeymap: KeyBinding[] = [
         return true;
       }
 
-      // Auto-linebreak: when enabled, transform Enter at the end of a
-      // paragraph line into `\␤` so the rendered output gets an actual
-      // line break. A second consecutive Enter is detected via the empty-
-      // current-line + previous-line-ends-with-`\` heuristic, in which
-      // case we strip the dangling `\` and insert a plain newline — the
-      // resulting blank line becomes Typst's paragraph break.
+      // Auto line break: Enter at the end of a paragraph line inserts `\␤`. A
+      // second Enter removes the `\`, leaving a blank line, which is a
+      // paragraph break.
       const enabled = view.state.facet(enterInsertsLineBreakFacet);
       if (!enabled) return false;
       const { from: selFrom, to: selTo } = view.state.selection.main;
@@ -969,10 +853,8 @@ export const typstKeymap: KeyBinding[] = [
 
       const curLine = view.state.doc.lineAt(cursor);
 
-      // Second-Enter detection: cursor sits on an empty line whose
-      // previous line ends with `\` (likely inserted by us on the
-      // previous Enter). Strip that `\` and let CM insert the newline
-      // normally — the now-blank line forms a paragraph break.
+      // Second Enter: the cursor is on an empty line after a line ending in
+      // `\`. Remove the `\` and let CM insert the newline.
       if (curLine.text.length === 0 && curLine.number > 1) {
         const prevLine = view.state.doc.line(curLine.number - 1);
         const prev = prevLine.text;
@@ -1015,31 +897,22 @@ export const typstKeymap: KeyBinding[] = [
       return true;
     },
   },
-  // Override the defaultKeymap's copyLineUp / copyLineDown bindings so that
-  // Shift-Alt-Up/Down moves lines instead of duplicating them — matching the
-  // behavior of plain Alt-Up/Down. Duplication is rarely the desired action
-  // when the user is reordering list items.
+  // Shift-Alt-Up/Down move lines like Alt-Up/Down, replacing the default
+  // copy-line bindings. List items move with their children (see moveListItem);
+  // other lines use the generic command.
   //
-  // Always consume the key (return true) even when the move is a no-op — e.g.
-  // the item is already at the top/bottom of the list or document — and even
-  // if the move command throws. Without this, an unhandled (or thrown) keydown
-  // falls through to the webview, which scrolls the page: to the user it looks
-  // like the shortcut works "for a few moves" and then suddenly starts
-  // scrolling instead of reordering. The try/catch makes that impossible.
-  // List items reorder via the self-contained content-swap (reliable + keeps
-  // numbering in order); ordinary lines fall back to the generic move-line
-  // command. Always consume the key so it can never scroll the page.
+  // The key is always consumed, even when nothing moves or the command throws,
+  // so it never falls through to the webview and scrolls the page.
   { key: "Shift-Alt-ArrowUp", run: (view) => { try { if (!moveListItem(view, -1)) moveLineUp(view); } catch { /* swallow: never fall through to page scroll */ } return true; } },
   { key: "Shift-Alt-ArrowDown", run: (view) => { try { if (!moveListItem(view, 1)) moveLineDown(view); } catch { /* swallow */ } return true; } },
 ];
 
 /**
- * Convert a CodeMirror keymap `key` string ("Mod-Shift-x") into the command
- * registry's canonical combo form ("Ctrl+Shift+X"), matching `formatKeyCombo`
- * in `lib/keybindings.ts`. `Mod`/`Cmd`/`Meta` fold into `Ctrl`; modifiers are
- * emitted in the canonical Ctrl→Shift→Alt order; arrow keys map to short
- * names. Returns null for a bare key (no modifier, not a function key) — those
- * never normalize to a bindable global shortcut, so they can't collide.
+ * Convert a CodeMirror key ("Mod-Shift-x") to the command registry's form
+ * ("Ctrl+Shift+X"), as `formatKeyCombo` in `lib/keybindings.ts` does:
+ * `Mod`/`Cmd`/`Meta` become `Ctrl`, modifiers are ordered Ctrl, Shift, Alt, and
+ * arrows get short names. Null for a bare key, which can't clash with a global
+ * shortcut.
  */
 function canonicalizeCmKey(key: string | undefined): string | null {
   if (!key) return null;
@@ -1069,11 +942,9 @@ function canonicalizeCmKey(key: string | undefined): string | null {
 }
 
 /**
- * The subset of in-editor `typstKeymap` bindings that could collide with a
- * global UI shortcut, expressed in the registry's canonical combo form. The
- * shortcut-customization conflict check consults this so a user can't rebind a
- * global shortcut onto an editor formatting key (e.g. Ctrl+B bold). Derived
- * from `typstKeymap` itself, so it stays in sync as editor bindings change.
+ * Editor key bindings that could clash with a global shortcut, in the
+ * registry's form. The shortcut settings use this to stop a global shortcut
+ * being bound to an editor key such as Ctrl+B. Derived from `typstKeymap`.
  */
 export function editorReservedCombos(): string[] {
   const out: string[] = [];

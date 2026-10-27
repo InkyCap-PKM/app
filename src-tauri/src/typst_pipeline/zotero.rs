@@ -1,9 +1,5 @@
-//! Read-only access to a Zotero SQLite database for citation data.
-//!
-//! Opens the database with `SQLITE_OPEN_READ_ONLY` — no writes are ever
-//! performed. The Zotero application may lock its database while running;
-//! SQLite in WAL mode allows concurrent readers, so this should work even
-//! when Zotero is open.
+//! Read-only access to a Zotero SQLite database for citation data. Nothing is
+//! ever written.
 
 use std::path::{Path, PathBuf};
 
@@ -11,11 +7,9 @@ use rusqlite::{Connection, OpenFlags};
 
 use super::bibliography::BibEntry;
 
-/// Open a Zotero (or Better BibTeX) database in read-only immutable mode. The
-/// `immutable=1` URI parameter tells SQLite to skip all locking, so reads
-/// succeed even while Zotero holds an exclusive lock on the database. The trade-off is that we
-/// may see slightly stale data if Zotero has uncommitted WAL transactions,
-/// which is acceptable for bibliography lookups.
+/// Open a Zotero (or Better BibTeX) database read-only with `immutable=1`, which skips
+/// locking, so reads work while Zotero holds its lock. Data may be slightly stale if Zotero
+/// has uncommitted changes, which is fine for bibliography lookups.
 fn open_sqlite_readonly(db_path: &Path) -> Result<Connection, String> {
     let uri = format!("file:{}?immutable=1", db_path.to_string_lossy());
     Connection::open_with_flags(
@@ -27,13 +21,9 @@ fn open_sqlite_readonly(db_path: &Path) -> Result<Connection, String> {
     .map_err(|e| format!("Failed to open Zotero database: {e}"))
 }
 
-/// Auto-detect the default Zotero database location.
-///
-/// On Windows the user-facing default is `%USERPROFILE%\Zotero\zotero.sqlite`
-/// (the Zotero installer's standard data-directory layout). Older `dirs`
-/// versions resolved `data_dir()` to `%APPDATA%\Zotero\Zotero\zotero.sqlite`
-/// which Zotero itself doesn't write to, so we now check the userprofile
-/// path first and fall back to the APPDATA layout for installs that diverge.
+/// Find the default Zotero database. On Windows that is
+/// `%USERPROFILE%\Zotero\zotero.sqlite`, checked before the
+/// `%APPDATA%\Zotero\Zotero\zotero.sqlite` layout some installs use.
 pub fn auto_detect_path() -> Option<PathBuf> {
     let candidates = if cfg!(target_os = "windows") {
         vec![
@@ -62,12 +52,10 @@ pub fn auto_detect_path() -> Option<PathBuf> {
         .find(|candidate| candidate.exists())
 }
 
-/// Single-slot, mtime+size-keyed cache of the parsed Zotero library, mirroring
-/// the `.bib`/`.yml` path in `bibliography.rs`. Reading the SQLite DB is the
-/// citation-injection step's cost, and it runs twice per compile on the hot
-/// reading-mode render path — for a large Zotero library that's two full DB
-/// scans every keystroke-debounced compile. Caching on (mtime, size) collapses
-/// repeated reads to one until the user changes the library in Zotero.
+/// One-entry cache of the parsed Zotero library, keyed by the database's mtime
+/// and size, like the `.bib`/`.yml` cache in `bibliography.rs`. Reading the
+/// database runs twice per reading-mode compile, which is slow for a large
+/// library.
 struct ZoteroCacheSlot {
     path: PathBuf,
     mtime: std::time::SystemTime,
@@ -162,10 +150,8 @@ fn read_entries_uncached(db_path: &Path) -> Result<Vec<BibEntry>, String> {
         .filter_map(|r| r.ok())
         .collect();
 
-    // One-shot lookup: parent IDs that have at least one non-deleted child
-    // note. Folding this into a single set query (rather than per-item) keeps
-    // `has_notes` O(1) per entry below — important because users with large
-    // Zotero libraries can have thousands of items.
+    // Parent ids with at least one non-deleted child note, found in one query
+    // so `has_notes` is a set lookup per item.
     let items_with_notes: std::collections::HashSet<i64> = {
         let mut stmt = conn
             .prepare(
@@ -298,11 +284,9 @@ fn read_entries_uncached(db_path: &Path) -> Result<Vec<BibEntry>, String> {
         });
     }
 
-    // Dedup by citation key. An item present in both "My Library" and a group
-    // library appears twice here with identical citation keys but distinct
-    // `zotero_item_key`s. Keep the
-    // first occurrence (ORDER BY itemID puts older entries first, which
-    // typically means the canonical/personal copy).
+    // Dedupe by citation key: an item in both "My Library" and a group library
+    // appears twice with the same key. Keep the first (ORDER BY itemID puts the
+    // older, usually personal, copy first).
     let mut seen = std::collections::HashSet::new();
     entries.retain(|e| seen.insert(e.key.clone()));
 

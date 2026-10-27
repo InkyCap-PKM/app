@@ -1,17 +1,11 @@
-// Git collaboration store (Phase 5: the Sync model).
+// Git collaboration store: the git status summary, the last sync outcome (what
+// landed and which notes took the incoming side) and a syncing flag. The two
+// actions are Sync (pull, merge, push) and Check for updates (a read-only fetch
+// that reports how far behind the remote is).
 //
-// Holds the reactive state for the per-notebox collaboration surface: the git
-// status summary, the last sync outcome (digest of what landed + any conflicts
-// awaiting resolution), and a syncing flag. The two user gestures are Sync
-// (pull + merge + push) and Check for updates (a read-only fetch that reports
-// how far behind the remote is, without pulling files in); when a Sync's merge
-// conflicts the outcome is `paused` and the conflicted notes are staged as
-// inline suggestions to resolve, then finalized.
-//
-// Deliberately does NOT import `./notebox` — `notebox.ts` imports this store to
-// reset it on a notebox switch, and a back-import would be a cycle.
-// "Collaborative" is derived from `noteboxSettings.git`, which `settings.ts`
-// owns; that module does not import this one.
+// Doesn't import `./notebox`, which imports this store to reset it on a notebox
+// switch. "Collaborative" comes from `noteboxSettings.git`, owned by
+// `settings.ts`.
 
 import { createSignal } from "solid-js";
 import type { UnlistenFn } from "@tauri-apps/api/event";

@@ -1,11 +1,10 @@
-// Per-pill options registry (R10). Each function name maps to a builder
-// that reads the current call source and returns the menu sections to
-// display for that pill. Mutations dispatch via applyCallTransform with
-// upsertNamedArg / replaceFirstPositionalString — keeping every change
-// to a single argument so source ↔ visual round-trip is preserved (R11).
+// Menu options for each pill. Each function name maps to a builder that reads
+// the call's source and returns the menu sections. Changes go through
+// applyCallTransform with upsertNamedArg / replaceFirstPositionalString,
+// touching one argument at a time so the rest of the source is unchanged.
 //
-// See documentation/developer/visual-editor/pill-system.md for the
-// canonical option set per pill.
+// See documentation/developer/visual-editor/pill-system.md for each pill's
+// options.
 
 import { type EditorView } from "@codemirror/view";
 import {
@@ -26,15 +25,13 @@ import {
   parseCalloutColorLiteral,
 } from "./callout-kinds";
 
-// Highlighter palette, listed in rainbow order. Each entry has a
-// Typst-source representation (used in `fill: rgb(...)`) and a label.
-// Keeping the rgb literal stable lets the round-trip detect "this is the
-// yellow preset" reliably across re-saves.
+// Highlighter colours in rainbow order: the Typst literal written to `fill:
+// rgb(...)` and a label. The literal stays fixed so a preset is recognized
+// after saving.
 //
-// The palette is only ever the *current* set of colours. A note keeps whatever
-// fill it was written with, so a value from an older palette still renders as
-// authored, but the menu shows no swatch as active for it; picking a colour
-// then writes the current literal, bringing the highlight up to date.
+// A note keeps the fill it was written with; a colour from an older palette
+// still renders, with no swatch shown as active, and picking one writes the
+// current literal.
 interface HighlightColor {
   /** i18n key for the user-visible colour name. */
   labelKey: string;
@@ -62,11 +59,9 @@ const LINE_STROKES: { labelKey: string; literal: string; defaultMatch: boolean }
   { labelKey: "pill.stroke.thick",  literal: "2pt",   defaultMatch: false },
 ];
 
-// Common `delimiter:` choices for `#csv(…)`. Each is the Typst string
-// literal (quotes included). Comma is Typst's own default. We always write
-// an explicit literal rather than dropping the arg, because the comma
-// literal `","` contains a comma that the shared drop-path regex in
-// `upsertNamedArg` can't safely excise.
+// Common `delimiter:` values for `#csv(…)`, as Typst literals; comma is Typst's
+// default. The literal is always written, since `upsertNamedArg`'s removal
+// can't safely remove `","`.
 const CSV_DELIMITERS: { labelKey: string; literal: string; isDefault: boolean }[] = [
   { labelKey: "pill.csv.delimiter.comma",     literal: '","',  isDefault: true  },
   { labelKey: "pill.csv.delimiter.semicolon", literal: '";"',  isDefault: false },
@@ -106,14 +101,12 @@ const REGISTRY: Record<string, PillOptionsBuilder> = {
   suggestion: suggestionOptions,
 };
 
-/** Returns option sections for the named pill. Functions with a curated
- *  builder (image, callout, …) get their hand-designed menu; every other
- *  function falls back to `genericArgsOptions`, which surfaces whatever
- *  named arguments the user typed in source mode as editable fields. That
- *  keeps advanced Typst usage editable from the pill without burdening
- *  beginners — a call with no named args shows no parameter section.
- *  Verse is intentionally absent here — its options live on the widget
- *  itself (see VerseWidget). */
+/**
+ * Option sections for a pill. Functions with their own builder (image, callout,
+ * …) get a designed menu; others fall back to `genericArgsOptions`, which
+ * offers the named arguments already in the source as fields. Verse's options
+ * live on its widget (see VerseWidget).
+ */
 export function getPillOptions(
   funcName: string,
   view: EditorView,
@@ -125,9 +118,10 @@ export function getPillOptions(
   return genericArgsOptions(view, callFrom, callTo);
 }
 
-/** Split a call's `(...)` arg-list inner text into top-level argument
- *  segments, respecting nested parens/brackets and string literals so a
- *  comma inside `rgb("a,b")` or `(1, 2)` doesn't split an argument. */
+/**
+ * Split an argument list into top-level arguments, so commas inside
+ * `rgb("a,b")` or `(1, 2)` don't split.
+ */
 function splitTopLevelArgs(argsText: string): string[] {
   const out: string[] = [];
   let depth = 0;
@@ -148,17 +142,17 @@ function splitTopLevelArgs(argsText: string): string[] {
   return out;
 }
 
-/** Parse the named arguments (`name: value`) from a call's source, in
- *  source order. Positional arguments are skipped — they have no stable
- *  label to show and stay editable via "Edit source". */
+/**
+ * Named arguments (`name: value`) in source order. Positional arguments are
+ * skipped; they stay editable through "Edit source".
+ */
 function parseNamedArgs(callSource: string): { name: string; value: string }[] {
   const argsText = findArgListInSource(callSource);
   if (argsText === null) return [];
   const named: { name: string; value: string }[] = [];
   for (const seg of splitTopLevelArgs(argsText)) {
-    // `name:` must be a bare identifier followed by a top-level colon. The
-    // colon check below the match guards against `:` inside a value (e.g.
-    // a dict) being mistaken for the arg separator.
+    // A bare identifier and a top-level colon, so a `:` inside a value isn't
+    // taken as the separator.
     const m = seg.match(/^\s*([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*([\s\S]+)$/);
     if (!m) continue;
     named.push({ name: m[1], value: m[2].trim() });
@@ -166,10 +160,11 @@ function parseNamedArgs(callSource: string): { name: string; value: string }[] {
   return named;
 }
 
-/** Fallback options for any function without a curated builder: one text
- *  input per named argument the user already wrote, committing the raw
- *  Typst literal back via `upsertNamedArg`. Clearing a field drops the
- *  argument. Returns no section when the call has no named arguments. */
+/**
+ * Fallback options: a text field per named argument already written, committing
+ * the Typst literal through `upsertNamedArg`. Clearing a field removes the
+ * argument. No section if there are none.
+ */
 function genericArgsOptions(view: EditorView, from: number, to: number): PillMenuSection[] {
   const src = readCallSource(view, from, to);
   const named = parseNamedArgs(src);
@@ -202,9 +197,10 @@ function readCallSource(view: EditorView, from: number, to: number): string {
   );
 }
 
-/** Strip the surrounding double-quotes from a Typst string-literal source
- *  fragment (e.g. `"hello"` → `hello`). Returns null if the input isn't
- *  a quoted string. Unescapes `\"` and `\\`. */
+/**
+ * The content of a quoted Typst string (`"hello"` → `hello`), unescaping `\"`
+ * and `\\`, or null.
+ */
 function unquote(literal: string | null): string | null {
   if (literal == null) return null;
   const t = literal.trim();
@@ -217,9 +213,10 @@ function quote(value: string): string {
   return '"' + value.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
 }
 
-/** Return the inner text of the call's `(...)` arg list, or null if the
- *  call has no parens. Used by option builders that read positional
- *  non-string values (e.g. `#align(center)`). */
+/**
+ * The text inside the call's `(...)`, or null without parens. For positional
+ * non-string values like `#align(center)`.
+ */
 function findArgListInSource(callSource: string): string | null {
   const open = callSource.indexOf("(");
   if (open < 0) return null;
@@ -240,9 +237,10 @@ function findArgListInSource(callSource: string): string | null {
   return null;
 }
 
-/** Replace the first positional keyword (unquoted identifier) inside a
- *  call's arg list. If the call has no arg list, inserts `(keyword)`
- *  before the body bracket. Used for `#align(center)`-style calls. */
+/**
+ * Replace the first positional keyword in the argument list, adding `(keyword)`
+ * before the body if there is none. For `#align(center)`-style calls.
+ */
 function replaceFirstPositionalKeyword(callSource: string, keyword: string): string {
   const openIdx = callSource.indexOf("(");
   const firstBracket = callSource.indexOf("[");
@@ -268,10 +266,8 @@ function replaceFirstPositionalKeyword(callSource: string, keyword: string): str
   }
   if (close < 0) return callSource;
   const argsText = callSource.substring(openIdx + 1, close);
-  // Match leading whitespace + bare identifier (alignment keywords are
-  // simple lowercase ids). Falls through if first arg is e.g. `center +
-  // horizon` or a named arg — in those cases we replace just the leading
-  // bare ident, preserving the rest.
+  // Replace only a leading bare identifier, keeping the rest (`center +
+  // horizon`, named arguments).
   const m = argsText.match(/^(\s*)([a-z][a-z0-9_-]*)/);
   if (m) {
     const newArgs = m[1] + keyword + argsText.substring(m[0].length);
@@ -285,14 +281,10 @@ function replaceFirstPositionalKeyword(callSource: string, keyword: string): str
 // ── Option builders ─────────────────────────────────────────────────
 
 /**
- * Kind, then the two things that override what the kind decides: the heading
- * word (`title:`) and the accent colour (`color:`).
- *
- * Both overrides sit alongside the kind rather than replacing it, so the kind
- * keeps travelling with the note: emptying the title, or choosing "Match the
- * kind", returns the callout to its kind's wording and colour. Choosing a
- * different kind leaves an override in place — it was an explicit choice, and
- * undoing it is one click away.
+ * Kind, then its two overrides: the heading word (`title:`) and the colour
+ * (`color:`). The kind stays in the source, so clearing the title or choosing
+ * "Match the kind" returns to its defaults. Changing the kind keeps an
+ * override, which was an explicit choice.
  */
 function calloutOptions(view: EditorView, from: number, to: number): PillMenuSection[] {
   const src = readCallSource(view, from, to);
@@ -350,16 +342,12 @@ function calloutOptions(view: EditorView, from: number, to: number): PillMenuSec
 function quoteOptions(view: EditorView, from: number, to: number): PillMenuSection[] {
   const src = readCallSource(view, from, to);
   const blockArg = readNamedArg(src, "block");
-  // Typst's quote defaults to inline (block: false). We mirror Typst's
-  // own default here so the pill's active state matches what the source
-  // actually compiles to — `/quote` inserts inline, `/blockquote` inserts
-  // explicit block:true.
+  // Typst quotes are inline by default; `/quote` inserts inline and
+  // `/blockquote` adds `block: true`.
   const isBlock = blockArg === "true";
   const attr = parseAttribution(readNamedArg(src, "attribution"));
-  // URL field only applies to plain-text attribution. If the current
-  // attribution is a bibkey label, linking is meaningless (the citation
-  // already carries the bib entry). Disable the field so the user sees
-  // the precedence rather than typing into a no-op input.
+  // A URL only applies to text attribution; a bibkey attribution already links
+  // to its entry, so the field is disabled.
   const urlDisabled = attr.kind === "bibkey";
   return [{
     heading: t("pill.quote.style"),
@@ -388,9 +376,8 @@ function quoteOptions(view: EditorView, from: number, to: number): PillMenuSecti
         value: attr.text,
         placeholder: t("pill.quote.attribution.placeholder"),
         onCommit: (v) => applyCallTransform(view, from, (s) => {
-          // Re-read URL from the *just-edited* source so we don't clobber
-          // a URL the user set in the same menu session. Reading from the
-          // closed-over `attr` would race against rapid edits.
+          // Read the URL from the current source, not `attr`, so a URL set
+          // earlier in this menu isn't lost.
           const cur = parseAttribution(readNamedArg(s, "attribution"));
           const urlNow = cur.kind === "link" ? cur.url : "";
           return upsertNamedArg(s, "attribution", buildAttributionExpr(v, urlNow));
@@ -416,13 +403,11 @@ function quoteOptions(view: EditorView, from: number, to: number): PillMenuSecti
 }
 
 // ── Attribution value helpers ───────────────────────────────────────
-//
-// Typst's `attribution` accepts three meaningful shapes for our pill:
-//   1. string literal:   attribution: "Albert Camus"
-//   2. label (bibkey):   attribution: <camus1942>
-//   3. link content:     attribution: link("https://…")[CC BY-SA]
-// The pill exposes a text field and an optional URL field; the helpers
-// below translate between the source form and that two-field UI.
+// The `attribution` forms the pill handles:
+//   1. string:     attribution: "Albert Camus"
+//   2. bibkey:     attribution: <camus1942>
+//   3. link:       attribution: link("https://…")[CC BY-SA]
+// These helpers convert between the source and the pill's text and URL fields.
 
 interface AttributionParts {
   /** User-visible text (input value). For bibkey, the literal `<key>`
@@ -446,17 +431,14 @@ function parseAttribution(src: string | null): AttributionParts {
   if (/^<[^\s<>]+>$/.test(t)) {
     return { text: t, url: "", kind: "bibkey" };
   }
-  // link("url")[content] — capture the URL and the inner content as the
-  // editable text. The inner content is treated as raw Typst markup so
-  // round-trip preserves any inline formatting the user pasted in.
+  // `link("url")[content]`: the URL and the content, kept as Typst markup so
+  // its formatting survives.
   const m = t.match(/^link\(\s*"((?:\\.|[^"\\])*)"\s*\)\s*\[([\s\S]*)\]$/);
   if (m) {
     const url = m[1].replace(/\\"/g, '"').replace(/\\\\/g, "\\");
     return { text: m[2], url, kind: "link" };
   }
-  // Anything else (raw content like `[…]`, function calls, complex
-  // expressions) — surface verbatim so the user can still see and edit
-  // it. The URL field stays empty/inert for this case.
+  // Anything else is shown as is, with the URL field inactive.
   return { text: t, url: "", kind: "raw" };
 }
 
@@ -487,10 +469,11 @@ function sliceImageCallSource(src: string, start: number): string {
   return src.slice(start);
 }
 
-/** Add, rewrite, or remove the `#align(...)` wrapper to place an image
- *  left / centre / right. `callFrom` is the pill anchor — the wrapper's `#`
- *  when already wrapped, else the image's `#`. Left is the natural default
- *  so it unwraps to a bare image; centre/right add or rewrite the wrapper. */
+/**
+ * Add, change or remove the `#align(...)` wrapper to place an image left,
+ * centre or right. `callFrom` is the pill's anchor (the wrapper's `#`, or the
+ * image's). Left unwraps to a bare image.
+ */
 function applyImageAlignment(
   view: EditorView,
   callFrom: number,
@@ -520,10 +503,8 @@ function applyImageAlignment(
 
 function imageOptions(view: EditorView, from: number, to: number): PillMenuSection[] {
   const src = readCallSource(view, from, to);
-  // The pill may represent a bare `#image(...)` or an alignment-wrapped
-  // `#align(kw)[#image(...)]`. When wrapped, the File/Alt/Width fields must
-  // edit the inner image (at `imgFrom`), while the Alignment radio edits the
-  // wrapper — so locate the inner image first.
+  // For an aligned image, File, Alt and Width edit the inner image (at
+  // `imgFrom`) and Alignment edits the wrapper.
   const wrapped = /^\s*#align\b/.test(src);
   let imgFrom = from;
   let imgSrc = src;
@@ -540,10 +521,8 @@ function imageOptions(view: EditorView, from: number, to: number): PillMenuSecti
   const path = readFirstPositionalString(imgSrc) ?? "";
   const alt = unquote(readNamedArg(imgSrc, "alt")) ?? "";
   const width = readNamedArg(imgSrc, "width") ?? "";
-  // R12: image is a call-only form (no body bracket), so every meaningful
-  // argument must surface in the menu — including the positional path,
-  // which would otherwise force the user into "Edit source" for a
-  // routine swap. Path is first so it's the auto-focused input.
+  // An image has no body, so every argument is in the menu, including the path,
+  // which comes first and gets focus.
   return [{
     items: [{
       label: t("pill.image.file"),
@@ -582,9 +561,8 @@ function imageOptions(view: EditorView, from: number, to: number): PillMenuSecti
     }],
   }, {
     heading: t("pill.align.heading"),
-    // Typst has no alignment argument on `image`; horizontal placement is
-    // `#align(left|center|right)[…]` (CLAUDE.md Typst-first). The visual
-    // editor mirrors the wrapper so the choice is reflected while authoring.
+    // Typst's `image` has no alignment argument; placement is
+    // `#align(left|center|right)[…]`.
     items: ALIGNMENTS.map((a) => ({
       label: t(a.labelKey),
       isActive: currentAlign === a.keyword,
@@ -598,10 +576,8 @@ function csvOptions(view: EditorView, from: number, to: number): PillMenuSection
   const path = readFirstPositionalString(src) ?? "";
   const delimiter = readNamedArg(src, "delimiter");
   const rowType = readNamedArg(src, "row-type");
-  // `#csv(…)` is a call-only data form with no body bracket, so — like image
-  // — every meaningful argument has to surface in the pill menu or the user
-  // is forced into "Edit source" for routine tweaks. File is first so it's
-  // the auto-focused input.
+  // `#csv(…)` has no body, so every argument is in the menu; the file comes
+  // first and gets focus.
   return [{
     items: [{
       label: t("pill.csv.file"),
@@ -666,12 +642,8 @@ function lineOptions(view: EditorView, from: number, to: number): PillMenuSectio
   }];
 }
 
-// Typst's #align() takes horizontal or 2-axis alignment keywords.
-// Justification isn't an alignment value — that's `#set par(justify: true)`
-// and the spec's "Justify" entry was mistaken. The radio covers the
-// three horizontal options; vertical / combined alignments (e.g.
-// `center + horizon`) fall back to "Edit source" via the simple/complex
-// classifier.
+// Horizontal alignments. Combined ones (`center + horizon`) are edited through
+// "Edit source". Justification is `#set par(justify: true)`, not an alignment.
 const ALIGNMENTS = [
   { labelKey: "pill.align.left",   keyword: "left"   },
   { labelKey: "pill.align.center", keyword: "center" },
@@ -680,11 +652,8 @@ const ALIGNMENTS = [
 
 function alignOptions(view: EditorView, from: number, to: number): PillMenuSection[] {
   const src = readCallSource(view, from, to);
-  // Read the first positional alignment keyword from the arg list.
-  // align() accepts alignments like `left`, `center`, `right`, `top`,
-  // `horizon`, `bottom`, plus `+`-combinations. Matching just the
-  // leading bare keyword is sufficient for the radio UI; anything more
-  // complex falls back to "Edit source" via R5.
+  // The leading keyword is enough for the radio; anything more complex is
+  // edited through "Edit source".
   const argList = findArgListInSource(src);
   const current = argList ? (argList.match(/^\s*([a-z]+)/)?.[1] ?? null) : null;
   return [{
@@ -775,12 +744,8 @@ function highlightOptions(view: EditorView, from: number, to: number): PillMenuS
 }
 
 // ── #task ───────────────────────────────────────────────────────────
-//
-// Body input + due-date input + Done toggle. Dates are written as quoted
-// ISO strings (`due: "2026-06-23"`) — lib.typ's `_fmt-date` accepts both
-// quoted strings and `datetime(...)` calls, and the quoted form is what
-// any editing UI (this menu, a future date picker) writes back, keeping
-// hand-edited source and pill-edited source visually identical.
+// Body, due date and Done. Dates are written as quoted ISO strings (`due:
+// "2026-06-23"`); lib.typ's `_fmt-date` also accepts `datetime(...)`.
 
 /** Read a date from a Typst-source literal, returning `YYYY-MM-DD`. Handles
  *  both `datetime(year: ..., month: ..., day: ...)` and `"YYYY-MM-DD"`. */
@@ -866,15 +831,12 @@ function taskOptions(view: EditorView, from: number, to: number): PillMenuSectio
 }
 
 // ── #due ────────────────────────────────────────────────────────────
-//
-// Date input (positional) + label input (named string). Same date-string
-// convention as `#task`.
+// Date (positional) and label. Dates as in `#task`.
 
 function dueOptions(view: EditorView, from: number, to: number): PillMenuSection[] {
   const src = readCallSource(view, from, to);
-  // The date is the first positional. It can be either a string or a
-  // `datetime(...)` expression — read the raw arg-list snippet and run
-  // `readDateLiteral` against it.
+  // The date may be a string or a `datetime(...)`; read it with
+  // `readDateLiteral`.
   const args = findArgListInSource(src) ?? "";
   // First arg up to the first top-level comma (skipping commas inside
   // nested parens — datetime(...)'s commas would otherwise trip us up).
@@ -930,26 +892,17 @@ function dueOptions(view: EditorView, from: number, to: number): PillMenuSection
 }
 
 // ── #suggestion(...) ────────────────────────────────────────────────
-//
-// The inline tracked-change pill has NO curated parameters: its kind and date
-// are already shown in the Annotations/Changes sidebar, the proposed/old text
-// is edited via the standard "Edit source" / "Open in source editor" actions,
-// and Accept/Reject/Comment live on the widget's own click dialogue. An empty
-// section list keeps the pill menu to the standard actions and — crucially —
-// suppresses `genericArgsOptions`, which would otherwise expose the raw `kind`
-// keyword as an error-prone editable field.
+// No options of its own: kind and date show in the sidebar, the text is edited
+// through "Edit source", and Accept/Reject/Comment are on the widget. The empty
+// list also keeps `genericArgsOptions` from offering `kind` as a field.
 
 function suggestionOptions(): PillMenuSection[] {
   return [];
 }
 
 // ── #sym.* ──────────────────────────────────────────────────────────
-//
-// A `#sym.<path>` reference isn't a parenthesized call, so it doesn't use the
-// upsertNamedArg machinery — the option is a single name input that rewrites
-// the whole reference. The input accepts any symbol path (e.g. `arrow.r`,
-// `cc.by`), so the pill covers Typst's entire `sym` module, not just the
-// curated quick-picks in the `/` menu.
+// `#sym.<path>` isn't a call with arguments, so the option is a name field that
+// rewrites the whole reference. Any symbol path works (`arrow.r`, `cc.by`).
 
 function symOptions(view: EditorView, from: number, to: number): PillMenuSection[] {
   const src = readCallSource(view, from, to);
@@ -977,10 +930,11 @@ function symOptions(view: EditorView, from: number, to: number): PillMenuSection
   ];
 }
 
-/** Replace (or insert) the first positional argument inside a call's
- *  `(...)` list with `literal`. Used for non-string positionals like
- *  `#due("2026-07-01")` where `replaceFirstPositionalString` would
- *  double-quote the already-quoted input. */
+/**
+ * Replace or insert the first positional argument with `literal`, for
+ * non-string values like `#due("2026-07-01")` where
+ * `replaceFirstPositionalString` would add a second pair of quotes.
+ */
 function replaceFirstPositional(callSource: string, literal: string): string {
   const open = callSource.indexOf("(");
   const firstBracket = callSource.indexOf("[");

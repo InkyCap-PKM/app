@@ -1,26 +1,23 @@
-// Typewriter mode: keep the line the cursor is on pinned to the vertical
-// middle of the editor while the writer types, so the text scrolls up under a
-// fixed caret line instead of the caret marching down the page. Manual
-// scrolling (wheel, scrollbar, PageUp/Down) is left alone — only edits and
-// cursor moves re-centre — so the reader can still look elsewhere and the
-// scroll position only snaps back when they resume typing.
+// Typewriter mode: keeps the cursor's line in the vertical middle of the editor
+// while typing, so the text scrolls up under a fixed line. Scrolling by hand
+// (wheel, scrollbar, PageUp/Down) is left alone; only edits and cursor moves
+// recentre, so the reader can look elsewhere until they type again.
 //
-// Two pieces:
-//   1. A symmetric top/bottom padding so *any* line — including the first and
-//      last — can actually reach the centre (there has to be blank space above
-//      line 1 and below the last line for them to sit mid-viewport). The
-//      bottom half mirrors the base editor's `scrollPastEndHalf`; we add the
-//      matching top half here, scoped to typewriter mode only.
-//   2. A view plugin that re-centres the cursor on every doc change / cursor
-//      move, deferred to an animation frame so it never dispatches re-entrantly
-//      from inside `update` (CodeMirror forbids that).
+// Two parts:
+//
+//   1. Equal top and bottom padding, so every line, including the first and
+//      last, can reach the middle. The bottom half is the base editor's
+//      `scrollPastEndHalf`; the top half is added here, for typewriter mode
+//      only.
+//   2. A view plugin that recentres the cursor on every document change or
+//      cursor move, in an animation frame, since CodeMirror forbids dispatching
+//      from inside `update`.
 
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
 
-// Top padding that lets the opening lines rise to the middle of the viewport.
-// Mirrors the half-height reach of the base `scrollPastEndHalf` bottom padding
-// (typst-editor.ts) so the centred band is symmetric top and bottom.
+// Top padding that lets the first lines rise to the middle, matching the base
+// `scrollPastEndHalf` bottom padding (typst-editor.ts).
 const topPad = (() => {
   const plugin = ViewPlugin.fromClass(
     class {
@@ -49,9 +46,8 @@ const topPad = (() => {
   ];
 })();
 
-// Re-centre the caret line whenever the document or selection changes. We
-// deliberately ignore pure geometry/scroll updates so a user's manual scroll
-// isn't yanked back; typing or moving the cursor re-anchors to centre.
+// Recentre on document or selection changes. Geometry and scroll updates are
+// ignored, so a manual scroll isn't pulled back.
 const centreCursor = ViewPlugin.fromClass(
   class {
     private frame: number | null = null;

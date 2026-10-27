@@ -1,17 +1,12 @@
-// Scans the current document for Typst `<label>` *definitions* and classifies
-// each by the element it tags (heading / figure / equation / table). Drives the
-// reference (`@`) suggestion popup's non-citation entries.
-//
-// Phase 1 of the reference system is deliberately *manual-labelling*: InkyCap
-// never auto-creates labels, so the only referenceable targets are the ones the
-// user has already tagged. This scanner therefore reports exactly what exists in
-// the source — nothing is synthesized.
+// Finds Typst `<label>` definitions in the document and classifies each by what
+// it labels (heading, figure, equation, table), for the non-citation entries of
+// the `@` reference popup. InkyCap never creates labels, so these are exactly
+// the user's own.
 //
 // Per CLAUDE.md's Typst-first principle this reads the `codemirror-lang-typst`
-// syntax tree (the same parse the visual editor decorates), not a bespoke regex
-// parser. Classification of the tagged element falls back to lightweight source
-// inspection where the grammar doesn't make the relationship trivial — that only
-// affects which *group* a label lands in, never the label name itself.
+// syntax tree, not a separate parser. Where the tree doesn't make it obvious
+// what a label tags, the source is inspected; that only affects a label's group,
+// never its name.
 
 import { syntaxTree } from "@codemirror/language";
 import type { EditorState } from "@codemirror/state";
@@ -28,10 +23,9 @@ export interface DocLabel {
 }
 
 /**
- * Collect every label *definition* in the document. Labels used as function
- * arguments (`#cite(<key>)`, `#ref(<key>)`, `#link(<key>)`) are references, not
- * definitions, and are skipped — they don't introduce a new referenceable
- * target. Results are de-duplicated by name, first occurrence wins.
+ * Every label definition in the document. Labels passed as arguments
+ * (`#cite(<key>)`, `#ref(<key>)`, `#link(<key>)`) are references and are
+ * skipped. Duplicates are dropped; the first wins.
  */
 export function scanDocumentLabels(state: EditorState): DocLabel[] {
   const out: DocLabel[] = [];
@@ -56,10 +50,9 @@ export function scanDocumentLabels(state: EditorState): DocLabel[] {
 }
 
 /**
- * True when the `<` at `labelFrom` is preceded (ignoring inline spaces) by `(`
- * or `,` — i.e. the label sits in a function call's argument list and is a
- * *reference*, not a definition. Mirrors the heuristic in
- * [`findLabelDefinition`](./label-nav.ts).
+ * True when the `<` at `labelFrom` follows `(` or `,` (ignoring spaces), so the
+ * label is a function argument, a reference rather than a definition. Same rule
+ * as [`findLabelDefinition`](./label-nav.ts).
  */
 function isReferenceArgument(state: EditorState, labelFrom: number): boolean {
   let i = labelFrom - 1;
@@ -78,10 +71,9 @@ function classify(
   name: string,
   labelFrom: number,
 ): { kind: LabelKind; display: string } {
-  // `= Heading <intro>` — the parser makes the label the heading's *sibling*,
-  // not its child, so the heading is found by stepping back over the separating
-  // space rather than by looking up. (The backend asks the same question the
-  // same way, in `source_structure::trailing_label`.)
+  // `= Heading <intro>`: the parser makes the label the heading's sibling, so
+  // the heading is found by stepping back over the space (as
+  // `source_structure::trailing_label` does in the backend).
   const heading = precedingHeadingOnSameLine(state, node, labelFrom);
   if (heading) {
     const headingText = state.doc
@@ -91,9 +83,9 @@ function classify(
     return { kind: "heading", display: headingText || name };
   }
 
-  // Otherwise the label tags the element immediately before it. Inspect the
-  // source rather than the grammar's sibling structure so multi-line figure
-  // calls and block equations classify reliably.
+  // Otherwise the label tags the element just before it. The source is read
+  // rather than the tree so multi-line figures and block equations classify
+  // reliably.
   let i = labelFrom - 1;
   while (i >= 0 && /\s/.test(state.doc.sliceString(i, i + 1))) i--;
   const prevChar = i >= 0 ? state.doc.sliceString(i, i + 1) : "";
@@ -112,9 +104,8 @@ function classify(
 }
 
 /**
- * The heading this label tags, or null. A label belongs to a heading only when
- * it sits on the same line as one — a label further down the document is
- * tagging its own content, not the heading above it.
+ * The heading this label tags, or null. Only a label on the heading's own line
+ * belongs to it.
  */
 function precedingHeadingOnSameLine(
   state: EditorState,

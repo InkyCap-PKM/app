@@ -1,24 +1,20 @@
 // Design-token enforcement for component stylesheets and editor themes.
 //
-// Scans every file in `src/styles/layout/`, and every TypeScript file that
-// defines a CodeMirror theme (`EditorView.theme` / `EditorView.baseTheme`,
-// whose style objects use camelCase keys), and fails if a rule carries a raw
-// hex colour, a raw stacking z-index, a raw px corner radius, or a box-shadow
-// with a colour written into it. Colours belong in `src/styles/themes.css`
-// as named tokens (so every theme and palette resolves them correctly), and
-// stacking uses the `--z-menu` < `--z-modal` < `--z-toast` scale. This mirrors
-// the source-scanning enforcement used elsewhere (i18n-coverage.test.ts on the
-// frontend; utf8_safety.rs and path_safety.rs on the Rust side).
+// Scans every file in `src/styles/layout/`, and every TypeScript file defining
+// a CodeMirror theme (`EditorView.theme` / `EditorView.baseTheme`, with
+// camelCase keys), and fails on a raw hex colour, a raw stacking z-index, a raw
+// px corner radius, or a box-shadow containing a colour. Colours belong in
+// `src/styles/themes.css` as tokens (so every theme and palette resolves them),
+// and stacking uses the `--z-menu` < `--z-modal` < `--z-toast` scale. Like
+// i18n-coverage.test.ts, utf8_safety.rs and path_safety.rs.
 //
-// The box-shadow rule exists because floating surfaces drifted: several menus
-// and toasts had hand-rolled shadows that a retune of `--popup-shadow` would
-// silently skip. It only rejects a colour *literal* inside the value, so the
-// many legitimate shadows built from tokens — accent bars, focus rings,
-// keyframe pulses — pass untouched.
+// The box-shadow rule keeps shadows tied to tokens like `--popup-shadow`; it
+// only rejects a colour written into the value, so shadows built from tokens
+// (accent bars, focus rings, pulses) pass.
 //
-// A genuinely theme-independent value (e.g. the reading view's white "paper"
-// page) gets a `/* token-exempt: <reason> */` (or `// token-exempt: <reason>`
-// in TypeScript) comment on its line or the line above. See
+// A value that really is theme-independent (e.g. the reading view's white page)
+// gets a `/* token-exempt: <reason> */` (or `// token-exempt: <reason>` in
+// TypeScript) comment on its line or the line above. See
 // documentation/developer/ui-styling.md.
 
 /// <reference types="node" />
@@ -45,9 +41,10 @@ const RAW_RADIUS_TS = /borderRadius:\s*"[^"]*?\b\d+(?:\.\d+)?px/;
 const RAW_SHADOW_TS = /boxShadow:\s*"[^"]*\brgba?\(/;
 const DEFINES_EDITOR_THEME = /EditorView\.(?:base)?[Tt]heme\(/;
 
-/** Lines of the file with comment text blanked out (so a hex code mentioned
- *  inside a comment doesn't trip the check), plus the raw lines for the
- *  exemption-marker lookup. */
+/**
+ * The file's lines with comments blanked (so a hex code in a comment doesn't
+ * count), plus the raw lines for finding the exemption marker.
+ */
 function codeLines(source: string): { code: string[]; raw: string[] } {
   const raw = source.split("\n");
   const code: string[] = [];
@@ -81,10 +78,11 @@ function codeLines(source: string): { code: string[]; raw: string[] } {
   return { code, raw };
 }
 
-/** Indices of every line that forms part of a `box-shadow:` declaration. A
- *  shadow value is often spread over several lines, so the colour check can't
- *  look at one line in isolation. Matching on `box-shadow:` with the colon
- *  keeps `transition: box-shadow …` out of the set. */
+/**
+ * Indices of the lines that are part of a `box-shadow:` declaration, which
+ * often spans several lines. Matching `box-shadow:` with the colon leaves out
+ * `transition: box-shadow …`.
+ */
 function shadowDeclarationLines(code: string[]): Set<number> {
   const lines = new Set<number>();
   let open = false;

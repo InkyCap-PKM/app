@@ -1,13 +1,8 @@
-// Settings field for `files.attachment_folder`. Unlike the other path
-// settings, changing this one is destructive: every file under the old
-// folder must move, and every `image`/`read`/`embed`/`bibliography`
-// call across the notebox that references `/<old>/...` must be rewritten
-// to `/<new>/...`. This component drives that migration explicitly:
-// the current folder is displayed read-only; a "Rename folder…" button
-// opens a confirmation modal with a live preview of "<n> files will
-// move, <m> notes will update" before the user can apply.
-//
-// See Phase C of .claude/plans/portable-paths-2026-05-12.md.
+// Settings field for `files.attachment_folder`. Changing it moves every file in
+// the old folder and rewrites every `image`/`read`/`embed`/`bibliography` call
+// referencing `/<old>/...` to `/<new>/...`. So the folder is shown read-only,
+// and "Rename folder…" opens a confirmation with a preview ("<n> files will
+// move, <m> notes will update") before applying.
 
 import { errorText } from "../lib/errors";
 import {

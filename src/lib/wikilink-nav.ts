@@ -1,11 +1,8 @@
-// Shared wikilink navigation + right-click context menu.
-//
-// Wikilinks are rendered in several unrelated surfaces — CodeMirror visual
-// widgets, callout/quote bodies, the property editor, the journal scroll —
-// each previously hand-rolling its own "open" behaviour. This module is the
-// single place that resolves a wikilink target to a note and opens it, so
-// every surface routes a right-click through the same context menu and the
-// same set of destinations (new tab, Journal Scroll tab, Mycelial View tab).
+// Wikilink navigation and right-click menu. Wikilinks appear in several places
+// (visual editor widgets, callout and quote bodies, the property editor, the
+// journal scroll); this is the one place that resolves a target to a note and
+// opens it, so every right-click gets the same menu and destinations (new tab,
+// Journal Scroll tab, Mycelial View tab).
 
 import * as ipc from "./ipc";
 import { t } from "./i18n";
@@ -20,13 +17,11 @@ interface ResolvedWikilink {
 }
 
 /**
- * Create a brand-new note for an unresolved wikilink/link target, named after
- * the target. Runs the built-in "New Note" creation rule rather than writing a
- * blank file, so a note born from a wikilink gets the same scaffold — title,
- * date, zid, heading — and folder placement as one made from Ctrl+N or the New
- * Note button. The target is forced as the filename so `[[target]]` resolves
- * to it afterwards (the rule's own filename pattern / ZID auto-title is
- * bypassed). Returns the created note's path.
+ * Create a note for an unresolved link target, named after it. Runs the
+ * built-in "New Note" creation rule rather than writing an empty file, so it
+ * gets the same scaffold (title, date, zid, heading) and folder as Ctrl+N. The
+ * target is used as the file name (overriding the rule's pattern) so
+ * `[[target]]` then resolves to it. Returns the new note's path.
  */
 export async function createNoteForTarget(target: string): Promise<string> {
   const result = await ipc.executeCreationRule(
@@ -39,9 +34,10 @@ export async function createNoteForTarget(target: string): Promise<string> {
   return result.path;
 }
 
-/** Resolve a wikilink target to a note path, creating the note if it does
- *  not yet exist. Mirrors the resolution the editor performs on plain
- *  left-click so every entry point behaves identically. */
+/**
+ * Resolve a wikilink target to a note, creating it if needed, as a plain
+ * left-click in the editor does.
+ */
 async function resolveOrCreateWikilink(target: string): Promise<ResolvedWikilink> {
   const resolved = await ipc.resolveWikilink(target);
   const path = resolved ?? (await createNoteForTarget(target));
@@ -50,9 +46,8 @@ async function resolveOrCreateWikilink(target: string): Promise<ResolvedWikilink
 }
 
 /**
- * Open a wikilink in the active tab (or a new tab when `newTab` is set).
- * This is the plain left-click / middle-click path; right-click goes through
- * {@link showWikilinkContextMenu} instead.
+ * Open a wikilink in the active tab (or a new tab with `newTab`). For left and
+ * middle clicks; right-click uses {@link showWikilinkContextMenu}.
  */
 export async function navigateWikilink(
   target: string,
@@ -111,10 +106,9 @@ async function openInMycelialView(target: string): Promise<void> {
 }
 
 /**
- * Show the right-click context menu for a wikilink at viewport coordinates
- * `(x, y)`. Offers the three "open as…" destinations. Built on the shared
- * plain-DOM menu (lib/context-menu.ts) so it can be summoned identically from
- * CodeMirror widgets and Solid components.
+ * Show the right-click menu for a wikilink at `(x, y)`, with the three "open
+ * as…" destinations. Uses the plain-DOM menu (lib/context-menu.ts), so it works
+ * from CodeMirror widgets and Solid components alike.
  */
 export function showWikilinkContextMenu(
   x: number,

@@ -44,10 +44,9 @@ const BookmarksPanel: Component<BookmarksPanelProps> = (props) => {
     }
   });
 
-  // Hide saved Agenda views from other noteboxes — their tag/task-list
-  // selections don't apply here. Every other kind is global. Reorder math still
-  // runs against the full `bookmarks()` list, so hidden rows keep stable
-  // backend indices.
+  // Hide saved Agenda views from other noteboxes, whose tags and task lists
+  // don't apply here; other kinds are global. Reordering still uses the full
+  // `bookmarks()` list, so indices match the backend.
   const visibleBookmarks = createMemo(() => {
     const path = noteboxInfo()?.path;
     return (bookmarks() ?? []).filter(

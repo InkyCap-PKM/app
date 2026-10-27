@@ -1,9 +1,6 @@
-//! Round-trip test for the backup browse + restore path.
-//!
-//! Writes an archive of a tiny notebox, lists its contents, then
-//! extracts one entry back to a fresh target directory and asserts
-//! the bytes round-trip cleanly. Covers both the encrypted and
-//! unencrypted paths, plus the three conflict-resolution policies.
+//! Backup browse and restore round trip: write an archive of a small notebox,
+//! list it, extract one entry into a new folder and check the bytes match,
+//! encrypted and not, with each of the three conflict policies.
 
 use std::fs;
 
@@ -221,9 +218,8 @@ fn restore_rejects_unsafe_paths() {
     })
     .unwrap();
 
-    // Note: this entry doesn't exist in the archive — but the
-    // `..` in the path should be rejected by the safety check
-    // *before* the zip lookup runs.
+    // This entry isn't in the archive; the `..` must be rejected by the safety
+    // check before the zip lookup.
     let err = restore::extract_files(
         &archive_path,
         tmp_restore.path(),

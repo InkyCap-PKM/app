@@ -29,9 +29,9 @@ const TabBarMenu: Component<{ leaf: LeafPane }> = (props) => {
   const [open, setOpen] = createSignal(false);
   let wrapRef: HTMLDivElement | undefined;
 
-  // "Split with preview" only applies to a note (it opens a reading-mode
-  // render of the file); hide it for empty/collection/mycelial/diff tabs, and
-  // for a note that already has a synced preview open — one per note.
+  // "Split with preview" applies only to a note (it opens a reading-mode view
+  // of the file), and only one per note, so it's hidden for other tabs and when
+  // a synced preview is already open.
   const canSplitWithPreview = () => {
     const active = props.leaf.activeTabId
       ? tabs.find((x) => x.id === props.leaf.activeTabId)

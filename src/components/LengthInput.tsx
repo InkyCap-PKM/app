@@ -1,13 +1,11 @@
 /**
- * LengthInput — a number field paired with a unit dropdown, for entering
- * Typst lengths (font size, line spacing, indents, …) without making the user
- * remember to type the unit.
+ * LengthInput: a number field with a unit dropdown for Typst lengths (font
+ * size, line spacing, indents, …), so the user needn't type the unit.
  *
- * The control owns no canonical state of its own: it parses the incoming
- * string value into a number + unit for display, and emits a recombined
- * `"<number><unit>"` string on every edit. An empty number emits `""`, which
- * the style editor treats as "inherit" (the override is removed). The chosen
- * unit is remembered locally so clearing the number doesn't lose it.
+ * It parses the incoming string into number and unit for display, and emits
+ * `"<number><unit>"` on every edit. An empty number emits `""`, which the style
+ * editor treats as inherit (override removed). The unit is remembered locally,
+ * so clearing the number keeps it.
  */
 
 import { Component, createSignal, createEffect } from "solid-js";

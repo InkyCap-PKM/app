@@ -1,19 +1,15 @@
-// Settings stores.
+// Settings stores, matching the Rust split:
 //
-// Two parallel reactive stores, mirroring the Rust split:
+//   - `settings`: user preferences, in `$CONFIG_DIR/inkycap/settings.json`.
+//     Loaded at startup by `initSettings()`, saved (debounced) with
+//     `update_settings`.
+//   - `noteboxSettings`: per-notebox preferences, in
+//     `<notebox>/.inkycap/settings.json`. Loaded when a notebox opens by
+//     `loadNoteboxSettings()`, saved (debounced) with
+//     `update_notebox_settings`.
 //
-//   - `settings` — user-global preferences, backed by
-//     `$CONFIG_DIR/inkycap/settings.json`. Loaded on app init via
-//     `initSettings()`, persisted via `update_settings` with debounce.
-//   - `noteboxSettings` — per-notebox preferences, backed by
-//     `<notebox>/.inkycap/settings.json`. Loaded on notebox open via
-//     `loadNoteboxSettings()`, persisted via `update_notebox_settings`
-//     with debounce.
-//
-// The split is by what the field describes — the user's environment vs.
-// the structure of one specific notebox. Components should read from the
-// store that matches the field's scope; this file groups the helpers so
-// the routing is obvious at the call site.
+// The split is by what a field describes: the user's setup or one notebox. Read
+// from the store that matches the field.
 
 import { createStore, produce } from "solid-js/store";
 import type { UserSettings, NoteboxSettings } from "../lib/types";
@@ -309,9 +305,10 @@ function notifyNoteboxListeners() {
   }
 }
 
-/** Update a nested per-notebox settings value. Operates on the object-valued
- *  groups only; the nullable `git` group is set wholesale (Phase 4 setup),
- *  not field-by-field, so it is excluded here. */
+/**
+ * Update a nested notebox setting, for the object groups only; the nullable
+ * `git` group is set as a whole, not field by field.
+ */
 export function updateNoteboxSetting<
   G extends Exclude<keyof NoteboxSettings, "git">,
   K extends keyof NoteboxSettings[G],

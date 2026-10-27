@@ -18,13 +18,11 @@ export const documentUriFacet = Facet.define<string, string>({
 });
 
 /**
- * True when the editor is in visual mode. The visual editor is a WYSIWYM
- * authoring surface, not a code editor, so the Tinymist code-completion popup
- * (function names, package symbols, the notebox internals) is noise there —
- * the user asked to keep it in source mode only. The visual compartment
- * provides `visualModeFacet.of(true)`; the LSP completion source and its
- * trigger short-circuit when it's set. InkyCap's own `[[wikilink]]` and `@`
- * citation suggesters are separate sources and stay active.
+ * True in visual mode, where Tinymist's code completion (function names,
+ * package symbols, notebox internals) is noise, so it only runs in source mode.
+ * The visual compartment provides `visualModeFacet.of(true)`, and the LSP
+ * completion source checks it. InkyCap's own wikilink and `@` suggestions are
+ * separate and stay on.
  */
 export const visualModeFacet = Facet.define<boolean, boolean>({
   combine: (values) => values.some((v) => v),
@@ -34,10 +32,9 @@ export const visualModeFacet = Facet.define<boolean, boolean>({
 const lspDiagnosticsEffect = StateEffect.define<Diagnostic[]>();
 
 /**
- * The latest diagnostics the server reported for this note, whether or not
- * they're on screen. Kept apart from what the lint layer shows so switching
- * back from visual mode can bring them back without waiting for the server.
- * Positions follow edits so they stay valid until the next report.
+ * The latest diagnostics from the server, shown or not, so switching back from
+ * visual mode can show them without waiting. Positions follow edits until the
+ * next report.
  */
 const lspDiagnosticsField = StateField.define<Diagnostic[]>({
   create: () => [],
@@ -68,11 +65,10 @@ function diagnosticsKey(diagnostics: Diagnostic[]): string {
 }
 
 /**
- * Hands the stored diagnostics to the lint layer when a new report differs
- * from what's on screen, or when the editor switches between visual and
- * source mode. The server sends the same report again on every hover, and
- * handing an unchanged set to the lint layer would close the message the
- * mouse just opened.
+ * Passes the stored diagnostics to the lint layer when a report differs from
+ * what is shown, or when the mode changes. The server resends the same report
+ * on every hover, and an unchanged update would close the message the mouse
+ * just opened.
  */
 const diagnosticsDisplay = ViewPlugin.fromClass(
   class {
@@ -150,9 +146,7 @@ function lspCompletionSource(ctx: CompletionContext): Promise<CompletionResult |
   const word = ctx.matchBefore(/[\w\-.]+/);
   if (!ctx.explicit && !trigger && !word) return Promise.resolve(null);
 
-  // The typing-time sync is debounced per view; push the current doc now so
-  // the server completes against the latest text instead of waiting out the
-  // debounce (which would complete against stale text or miss the trigger).
+  // Sync is debounced; send the current text now so completion uses it.
   client.changeDocument(uri, ctx.state.doc.toString());
 
   const pos = offsetToLspPosition(ctx.state.doc, ctx.pos);
@@ -312,42 +306,35 @@ function renderMarkdownSimple(container: HTMLElement, md: string): void {
   }
 }
 
-// Tinymist's unresolved-reference diagnostic. In Typst `@key` is the generic
-// reference operator and a bibliography entry is just another label, so an
-// `@cite` to a key with no `#bibliography(...)` in scope reports the same
-// "label `<key>` does not exist" error as a genuinely broken `@fig:foo`
-// cross-reference. The captured group is the bare label name.
+// Tinymist's unresolved-reference error. A bibliography entry is just another
+// label to `@`, so an `@cite` with no `#bibliography(...)` in scope gives the
+// same "label `<key>` does not exist" as a broken `@fig:foo`. The group is the
+// label name.
 const UNRESOLVED_LABEL_RE = /^label `<([^>]+)>` does not exist in the document/;
 
-// Typst markup delimiters whose closing marker is subject to the word-boundary
-// rule (it can't be directly followed by a letter or number). Used to attach a
-// friendly hint to "unclosed delimiter" diagnostics for `*`/`_`. Other unclosed
-// delimiters ($, `, brackets) don't have this rule, so they keep the bare message.
+// Delimiters whose closing marker must be at a word boundary (not followed by a
+// letter or digit), used to add a hint to "unclosed delimiter" errors for `*` and
+// `_`.
 const EMPHASIS_DELIMITERS = new Set(["*", "_"]);
 
 // Typst's "unknown variable: <name>" error. Suppressed on scaffold fragment
 // files — see `isScaffoldFragmentUri`.
 const UNKNOWN_VARIABLE_RE = /^unknown variable\b/i;
 
-// Scaffold files (`.inkycap/scaffolds/*.typ`) are template FRAGMENTS, not
-// standalone documents: they call notebox primitives (`#note`, `#tag`,
-// `#wikilink`, …) but omit the `#import` that defines them, because the host
-// note they're merged into already has it. Tinymist compiles each open file on
-// its own, so it flags every such call as "unknown variable" — pure noise for a
-// fragment, whose free symbols are resolved by its host context. We drop the
-// unknown-variable family for these files while keeping syntax errors and every
-// other diagnostic. (Templates under `.inkycap/templates/` are self-contained
-// packages, so they're intentionally not included.)
+// Scaffolds (`.inkycap/scaffolds/*.typ`) are fragments: they use notebox
+// functions (`#note`, `#tag`, `#wikilink`, …) without the `#import`, which the
+// note they are merged into has. Tinymist compiles them alone and reports
+// "unknown variable" for each, so those are dropped for scaffolds while syntax
+// and other errors stay. `.inkycap/templates/` holds complete packages and
+// isn't included.
 function isScaffoldFragmentUri(uri: string): boolean {
   return decodeURIComponent(uri).includes("/.inkycap/scaffolds/");
 }
 
-// Bibliography keys, cached so the synchronous diagnostic conversion can decide
-// whether an unresolved label is actually a citation. The set is the exact
-// discriminator the backend uses: `maybe_inject_preview_bibliography` only
-// injects the bibliography (resolving the citation) when the key exists in the
-// notebox bibliography — so a match here means the reading/preview compile will
-// resolve it, and the appended hint is truthful.
+// Bibliography keys, cached so the synchronous conversion can tell whether an
+// unresolved label is a citation. Uses the same test as the backend's
+// `maybe_inject_preview_bibliography`, so a match means the preview resolves it
+// and the hint is accurate.
 const BIB_KEY_TTL = 5000;
 let cachedBibKeys = new Set<string>();
 let bibKeyCacheTime = 0;
@@ -366,10 +353,9 @@ async function refreshBibKeys(): Promise<Set<string>> {
 }
 
 /**
- * Whether `d` is Typst's unresolved-label error for the `@domain` of an email
- * address such as `athena@inkycap.org`. InkyCap reads that shape as an address
- * (see `isEmailLikeAt`) and its own compile escapes the `@`, so the error the
- * language server reports from the raw source does not apply.
+ * Whether `d` is the unresolved-label error for the `@domain` of an email
+ * address like `athena@inkycap.org`. InkyCap treats that as an address (see
+ * `isEmailLikeAt`) and escapes it when compiling, so the error doesn't apply.
  */
 export function isEmailAddressDiagnostic(
   doc: EditorView["state"]["doc"],
@@ -399,9 +385,8 @@ function convertDiagnostics(
       : d.severity === 2 ? "warning"
       : "info";
 
-    // When the unresolved label is a known bibliography key, the source-mode
-    // compile simply lacks the auto-injected bibliography that the preview adds.
-    // Reassure the user instead of leaving a bare "does not exist" error.
+    // A known bibliography key: source mode just lacks the bibliography the
+    // preview adds, so say so.
     let message = d.message;
     const labelMatch = UNRESOLVED_LABEL_RE.exec(d.message);
     if (labelMatch && bibKeys.has(labelMatch[1])) {
@@ -410,19 +395,15 @@ function convertDiagnostics(
       /unclosed delimiter/i.test(d.message) &&
       EMPHASIS_DELIMITERS.has(doc.sliceString(from, Math.min(from + 1, doc.length)))
     ) {
-      // Typst's `*` (strong) and `_` (emph) only *close* at a word boundary —
-      // a closing marker directly followed by a letter or number is not
-      // recognized, so the emphasis is left unterminated (e.g. `*testi*ng`).
-      // This trips up users with a Markdown mental model, where intraword
-      // emphasis is allowed. Explain the rule instead of leaving a bare
-      // "unclosed delimiter". (The diagnostic range starts on the opening
-      // marker, so the char at `from` is the `*` or `_`.)
+      // `*` and `_` only close at a word boundary, so `*testi*ng` leaves the
+      // emphasis open (unlike Markdown). Explain the rule. The range starts on
+      // the opening marker, so the character at `from` is `*` or `_`.
       message = `${d.message} — ${t("diagnostic.unclosedEmphasis")}`;
     }
 
-    // Offer one-click fixes for a failed `@reference`: enable numbering where
-    // that is the missing piece, or switch to a `#link(<label>)` text link,
-    // which is the only route when the target can't be numbered at all.
+    // Quick fixes for a failed `@reference`: turn on numbering where that is
+    // missing, or switch to a `#link(<label>)`, the only option when the target
+    // can't be numbered.
     const actions = referenceActions(d.message);
 
     return {
@@ -446,9 +427,8 @@ export function createLspDiagnosticsUpdater(view: EditorView) {
 
   let disposed = false;
   const unsubscribe = client.subscribeDiagnostics(uri, (diagnostics) => {
-    // Fetch (cached) bibliography keys first so unresolved-citation errors can be
-    // annotated. The await is a no-op on cache hits; on a miss the diagnostics
-    // land a few ms later, which is imperceptible for a transient lint underline.
+    // Get the (cached) bibliography keys first; on a cache miss the diagnostics
+    // arrive a few ms later.
     void refreshBibKeys().then((bibKeys) => {
       if (disposed) return;
       const converted = convertDiagnostics(view.state.doc, diagnostics, bibKeys, suppressUnknownVars);
@@ -462,12 +442,9 @@ export function createLspDiagnosticsUpdater(view: EditorView) {
   };
 }
 
-// Debounced document sync, scoped *per view*. A module-global timer would be
-// shared across split panes editing different documents, so the second pane's
-// pending sync would overwrite the first's and one document's change would
-// never reach the language server. Holding the timer in the plugin instance
-// (and clearing it in `destroy`) keeps each editor's sync independent and
-// leak-free.
+// Debounced sync, per view: a shared timer would let one split pane's pending
+// sync replace another's, losing a change. The timer lives in the plugin
+// instance and is cleared in `destroy`.
 const lspSyncExtension = ViewPlugin.fromClass(
   class {
     private timer: ReturnType<typeof setTimeout> | null = null;

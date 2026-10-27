@@ -1,15 +1,13 @@
-// Scaffolds / Document Templates / Packages — rendered as an inline pane
-// in the left sidebar (LeftSidebar mode = "templates"). Entry point is the
-// LayoutTemplate button on the vertical toolbar, which sets the sidebar
-// mode (it does not open a modal).
+// Scaffolds, document templates and packages, shown as a left-sidebar pane
+// (mode "templates") opened by the LayoutTemplate toolbar button.
 //
-// What lives where:
-//   .inkycap/scaffolds/             — user-authored note-body scaffolds
-//   .inkycap/packages/<ns>/<n>/<v>/ — Typst packages (templates + libs)
+// Locations:
+//   .inkycap/scaffolds/             note body scaffolds
+//   .inkycap/packages/<ns>/<n>/<v>/ Typst packages (templates and libraries)
 //
-// The Typst compiler requires the `<namespace>/<name>/<version>/` layout
-// to resolve `@preview/name:version` imports. The `@preview` namespace is
-// the Typst Universe public registry; `@local/` is user-authored content.
+// Typst needs the `<namespace>/<name>/<version>/` layout to resolve
+// `@preview/name:version`. `@preview` is the Typst Universe registry; `@local/`
+// is the user's own.
 
 import { Component, For, Show, createResource, createSignal } from "solid-js";
 import { attachListNav } from "../lib/list-nav";
@@ -43,13 +41,10 @@ const TemplatesPanel: Component = () => {
   const [tab, setTab] = createSignal<SubTab>("scaffolds");
   const [showHelp, setShowHelp] = createSignal(false);
 
-  // Notebox-scoped: opening or switching noteboxes refetches via the
-  // noteboxInfo() source. Mutations (new/delete a scaffold, install/uninstall a
-  // package) call refresh(), which invokes each resource's explicit refetch() —
-  // the reliable, idiomatic trigger, mirroring LeftSidebar's
-  // refetchCollections/refetchFileTree. (An earlier bump-a-key-in-the-source
-  // trick left a deleted scaffold lingering in the list until the panel
-  // remounted.)
+  // Tied to the notebox: opening or switching one refetches through
+  // noteboxInfo(). Changes (adding or deleting a scaffold, installing or
+  // removing a package) call refresh(), which calls each resource's refetch(),
+  // as LeftSidebar does.
   const [scaffolds, { refetch: refetchScaffolds }] = createResource(
     () => noteboxInfo(),
     async () => ipc.listScaffoldEntries(),
@@ -132,9 +127,8 @@ const TemplatesPanel: Component = () => {
   async function installFromFile() {
     const { open: openDialog } = await import("@tauri-apps/plugin-dialog");
     const { homeDirDefault } = await import("../lib/dialog-defaults");
-    // This dialog only chooses which tarball on disk to read; the install
-    // destination is fixed by the backend (the notebox's package dir). The
-    // source archive lives on the user's computer, so default to home.
+    // This only picks the archive to read; the backend decides where it's
+    // installed. The archive is somewhere on the computer, so start at home.
     const path = await openDialog({
       title: t("templates.prompt.installFromFile.title"),
       defaultPath: await homeDirDefault(),
@@ -193,9 +187,8 @@ const TemplatesPanel: Component = () => {
     return `@${namespace}`;
   }
 
-  // A heading + bulleted list, with an "…and N more" tail when `total`
-  // exceeds the shown items. `promptConfirm` renders message newlines verbatim
-  // (white-space: pre-wrap), so this composes directly into the confirm body.
+  // A heading and bulleted list, ending "…and N more" when `total` is larger.
+  // `promptConfirm` keeps newlines, so this goes straight into the message.
   function depsBlock(heading: string, items: string[], total: number): string {
     const lines = items.map((i) => `• ${i}`);
     if (total > items.length) {
@@ -209,10 +202,9 @@ const TemplatesPanel: Component = () => {
     // backend refuses them too.
     if (entry.builtin) return;
 
-    // The only thing that depends on a scaffold is a creation rule's
-    // scaffold_path (notes don't, post-creation). The list is always short, so
-    // it's shown in full. A missing scaffold degrades a rule gracefully, hence
-    // warn-and-allow rather than block.
+    // Only creation rules use a scaffold (`scaffold_path`); notes don't after
+    // creation. The list is short, so all are shown. A rule copes with a
+    // missing scaffold, so this warns rather than blocks.
     let dependentRules: string[] = [];
     try {
       const rules = await ipc.listCreationRules();

@@ -1,14 +1,13 @@
-// A date-filter value editor that toggles between a fixed calendar date and a
-// relative "today ± N days" offset.
+// Date filter value editor that switches between a fixed date and "today ± N
+// days".
 //
 // The relative form is stored as an `@today±N` token (see the relative-date
-// helpers in column-filter.ts) and resolved to a concrete date only at
-// evaluation time, so a saved filter such as "within the next 7 days" stays
-// relative to the current day rather than freezing to the day it was created.
+// helpers in column-filter.ts) and turned into a date only when evaluated, so
+// "within the next 7 days" keeps meaning that.
 //
-// It shares DatePicker's `value` / `withTime` / `onSave` shape, so it is a
-// drop-in replacement everywhere a date *filter* value is edited (the Agenda
-// date menu and the collection column-header popover).
+// Takes the same `value` / `withTime` / `onSave` as DatePicker, so it replaces
+// it wherever a date filter value is edited (the Agenda date menu, the
+// collection column header filter).
 
 import { Component, Show, createMemo } from "solid-js";
 import { CalendarDays, CalendarRange } from "lucide-solid";

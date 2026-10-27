@@ -1,7 +1,7 @@
 // Email addresses and fediverse handles in Typst markup.
 //
 // Typst reads every `@` followed by a label character as a reference: it parses
-// `joshua@phydeau.org` as text plus a reference to `<phydeau.org>`, and
+// `athena@inkycap.org` as text plus a reference to `<inkycap.org>`, and
 // `@person@mastodon.social` as two references. Neither is meant as one, so the
 // visual editor rewrites them once they are finished: an email address becomes
 // a `#link("mailto:…")` call, and a handle becomes plain text with each `@`
@@ -29,7 +29,7 @@ const TRAILING_PUNCTUATION = /^[.,;:!?)\]"'”’>]*$/;
 
 /** A finished address just before a position. */
 export type Address =
-  /** `joshua@phydeau.org`, spanning `from..to`, with its `@` at `at`. */
+  /** `athena@inkycap.org`, spanning `from..to`, with its `@` at `at`. */
   | { kind: "email"; from: number; to: number; at: number }
   /** `@person@mastodon.social`, with its two `@`s at `ats`. */
   | { kind: "handle"; ats: [number, number] };
@@ -110,7 +110,7 @@ export function replaceWithLink(
 /**
  * Turn the email address at `from..to`, whose `@` is at `at`, into a `mailto:`
  * link. The `@` is escaped first, as its own edit, so undoing the link leaves
- * `joshua\@phydeau.org`, Typst's plain-text form of an address. `extra` is
+ * `athena\@inkycap.org`, Typst's plain-text form of an address. `extra` is
  * applied with that first edit (the keystroke that finished the address).
  */
 export function linkEmail(

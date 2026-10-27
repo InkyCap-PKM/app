@@ -49,12 +49,9 @@ export function buildFileList(tree: FileTreeNode[], basePath = "") {
 }
 
 /**
- * Every folder the notebox's notes live in, notebox-root-relative with `/`
- * separators and each intermediate level included, in natural name order.
- *
- * Derived from the same flat list rather than re-walking the tree, so it stays
- * in step with it for free. Used by the search box to complete a `path:`
- * filter — the folder a note is in is what people actually want to scope to.
+ * Every folder holding the notebox's notes, root-relative with `/`, including
+ * each level, in natural name order. Derived from the same flat list, so it
+ * always matches. Used by the search box to complete `path:` filters.
  */
 export function folderPaths(entries: FileEntry[]): string[] {
   const seen = new Set<string>();

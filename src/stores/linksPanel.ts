@@ -1,19 +1,14 @@
-// Persisted UI state for the right-panel Links tab.
-//
-// Section expansion (Inbound / Outbound / Potential), sort mode, "more
-// context" toggle, and filter visibility survive across sessions and across
-// note switches — these are user preferences for *how* the Links tab is
-// displayed, not data about any one note. The transient filter text is
-// kept here too so the user can step over to another tab and come back
-// without retyping; it resets only when the user clears the field.
+// Saved display state for the right panel's Links tab: open sections (Inbound /
+// Outbound / Potential), sort, "more context" and filter visibility, kept
+// across sessions and notes. The filter text is kept too, so switching tabs and
+// back doesn't lose it; it clears only when the user clears it.
 
 import { createSignal } from "solid-js";
 
 const STORAGE_KEY = "inkycap.linksPanel";
 
-/// Mirrors the file-tree's sort options exactly. The Links pane is a list
-/// of files, so it uses the same vocabulary the user already learned from
-/// the left sidebar — Name / Modified / Created in both directions.
+/// The same sort options as the file tree (Name / Modified / Created, both
+/// directions), since the Links pane is also a list of files.
 export type LinksSortMode =
   | "name-asc"
   | "name-desc"
@@ -24,9 +19,8 @@ export type LinksSortMode =
   | "zid-asc"
   | "zid-desc";
 
-// `labelKey` (not a resolved string) so the label is translated at the render
-// site and these modes share one vocabulary with the file-tree sort menu —
-// see the `sort.*` keys in en.json.
+// `labelKey` rather than text, so the label is translated where shown and
+// shares the `sort.*` keys in en.json with the file tree menu.
 export const LINKS_SORT_OPTIONS: { value: LinksSortMode; labelKey: string }[] = [
   { value: "name-asc", labelKey: "sort.name.asc" },
   { value: "name-desc", labelKey: "sort.name.desc" },
@@ -42,11 +36,9 @@ export type LinksSection = "inbound" | "outbound" | "potential";
 
 interface LinksPanelState {
   sortMode: LinksSortMode;
-  /// Default visibility of each link row's context preview, mirroring
-  /// the Search panel's `collapseResults`. Per-item overrides
-  /// (`expandOverrides`) live in-memory only — they're scoped to a
-  /// single session because they describe what the user is currently
-  /// looking at, not how they like the pane configured.
+  /// Whether each link's context preview is collapsed by default, like the
+  /// Search panel's `collapseResults`. Per-item overrides (`expandOverrides`)
+  /// aren't saved.
   collapsePreviews: boolean;
   /// Widen previews: an inbound passage gains the paragraph before and after
   /// it, and search and potential-link lines gain the lines around them.
@@ -104,12 +96,8 @@ const [expanded, setExpandedInternal] = createSignal<Record<LinksSection, boolea
   initial.expanded,
 );
 
-/// Per-item overrides on top of the global `collapsePreviews` setting.
-/// Keys are `${section}::${path}` so the same path appearing in multiple
-/// sections (rare but possible) can be flipped independently. This set
-/// is intentionally *not* persisted — like SearchPanel's `expandOverrides`,
-/// it's a short-lived "I want to peek at this one" state that resets
-/// between sessions.
+/// Per-item overrides of `collapsePreviews`, keyed `${section}::${path}` so a
+/// path in two sections can differ. Not saved, as in SearchPanel.
 const [expandOverrides, setExpandOverridesInternal] = createSignal<Set<string>>(
   new Set<string>(),
 );
@@ -139,10 +127,8 @@ export function setLinksSortMode(mode: LinksSortMode) {
 
 export function setLinksCollapsePreviews(v: boolean) {
   setCollapsePreviewsInternal(v);
-  // Flipping the global default invalidates any per-item overrides — same
-  // logic the SearchPanel uses for `expandOverrides`. Without this, items
-  // the user explicitly inverted would suddenly behave opposite to what
-  // they expected.
+  // Changing the default clears the overrides (as SearchPanel does); otherwise
+  // inverted items would flip to the opposite of what the user set.
   setExpandOverridesInternal(new Set<string>());
   persist();
 }

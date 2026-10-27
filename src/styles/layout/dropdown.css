@@ -1,10 +1,9 @@
-/* Themed Dropdown component (select replacement).
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Dropdown component (in place of <select>). Part of layout.css, whose
+   import order (see ../layout.css) keeps the cascade. */
 
 /* ─── Dropdown (themed <select> replacement, see Dropdown.tsx) ───
-   The trigger looks like a text input; the popup reuses `.context-menu`.
-   Native <select> popups can't be themed under WebKitGTK — this can. */
+   The trigger looks like a text input; the popup uses `.context-menu`.
+   WebKitGTK can't theme native <select> popups. */
 .dropdown {
   display: inline-flex;
   min-width: 0;
@@ -118,9 +117,8 @@
   padding-top: var(--space-3);
 }
 
-/* Clear-X button inside the search input. Only visible when the input
-   has content. The wrap is `position: relative` so the absolute X sits
-   at the right edge inside the field. */
+/* Clear (X) button in the search input, shown only when it has text. The
+   wrapper is `position: relative` so the X sits at the field's right edge. */
 .search-panel__input-wrap {
   flex: 1;
   position: relative;

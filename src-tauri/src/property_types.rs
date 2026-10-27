@@ -1,11 +1,7 @@
-// Global property type registry.
-//
-// Users can assign each property key a type (Text, Number, Date,
-// Checkbox, etc.) that controls how the editor renders and writes
-// values for that key. Types are global — one entry per key, shared
-// across every note in the notebox. Storage lives at
-// `<notebox>/.inkycap/property-types.json` so the registry round-trips
-// across restarts.
+// Property type registry. Each property key can be given a type (Text, Number,
+// Date, Checkbox, …) that decides how the editor shows and writes its values.
+// One type per key for the whole notebox, saved in
+// `<notebox>/.inkycap/property-types.json`.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -28,19 +24,16 @@ pub enum PropertyType {
     #[serde(rename = "datetime")]
     DateTime,
     List,
-    /// Like List on disk, but the editor presents a comma-separated
-    /// single-line text input instead of a value-picker chip UI — used
-    /// for fields where users author free-form strings rather than
-    /// reusing a controlled vocabulary (e.g. note `aliases`).
+    /// Stored like List, but edited as a single comma-separated text field
+    /// instead of chips, for free-form values (e.g. note `aliases`).
     #[serde(rename = "commalist")]
     CommaList,
     Number,
     Text,
 }
 
-/// Built-in property keys whose declared type is fixed by the system.
-/// Users may not reassign these — they have specific semantics elsewhere
-/// in the app (rendering, indexing, the `inkycap-notebox` Typst package).
+/// Built-in keys whose type is fixed, because other parts of the app
+/// (rendering, indexing, the `inkycap-notebox` package) rely on it.
 pub const SYSTEM_PROPERTY_KEYS: &[&str] = &[
     "title",
     "date",
@@ -59,9 +52,7 @@ pub fn is_system_property(key: &str) -> bool {
     SYSTEM_PROPERTY_KEYS.contains(&key)
 }
 
-/// Built-in standard property types that are always available.
-/// These cannot be deleted by users and provide correct defaults
-/// even in a fresh notebox.
+/// Default types for built-in keys, available even in a new notebox.
 pub fn builtin_property_type(key: &str) -> PropertyType {
     match key {
         "title" => PropertyType::Text,
@@ -123,9 +114,8 @@ impl PropertyTypeRegistry {
         notebox_root.join(".inkycap").join("property-types.json")
     }
 
-    /// Load the registry from disk for the given notebox. A missing file
-    /// yields an empty registry — this is the expected state for a fresh
-    /// notebox, not an error.
+    /// Load the notebox's registry. A missing file (normal for a new notebox)
+    /// gives an empty registry.
     pub fn load(notebox_root: &Path) -> Self {
         let path = Self::path_for(notebox_root);
         let mut types = match std::fs::read_to_string(&path) {
@@ -134,10 +124,8 @@ impl PropertyTypeRegistry {
                 .unwrap_or_default(),
             Err(_) => HashMap::new(),
         };
-        // System property keys have fixed types — discard any saved
-        // override so an older registry can't pin a system key to the
-        // wrong type. `get()` falls back to `builtin_property_type()`
-        // for missing entries.
+        // System keys have fixed types, so drop any saved type for them.
+        // `get()` uses `builtin_property_type()` for missing entries.
         types.retain(|k, _| !is_system_property(k));
         Self {
             types,
@@ -145,9 +133,8 @@ impl PropertyTypeRegistry {
         }
     }
 
-    /// Persist the registry to disk. Best-effort: errors are logged but
-    /// not returned — a missing type file just means the next session
-    /// falls back to Auto, which is acceptable degradation.
+    /// Save the registry. Errors are logged, not returned: without the file,
+    /// the next session uses Auto.
     pub fn save(&self) {
         let Some(root) = &self.notebox_root else {
             return;
@@ -191,9 +178,8 @@ impl PropertyTypeRegistry {
         merged
     }
 
-    /// Set the type for a key. Auto is stored explicitly so the user's
-    /// choice is remembered even when it matches the default — callers
-    /// can still remove an entry with [`clear`] if they want it gone.
+    /// Set a key's type. Auto is stored too, so the choice is remembered even
+    /// when it is the default; [`clear`] removes an entry.
     pub fn set(&mut self, key: String, ty: PropertyType) {
         self.types.insert(key, ty);
     }
@@ -215,16 +201,15 @@ impl PropertyTypeRegistry {
     }
 }
 
-/// Coerce a property value into the shape demanded by the given type.
-/// Best-effort: unparseable values fall back to type-appropriate empty
-/// defaults so the #note(...) call stays well-formed after a type change.
+/// Convert a value to the form a type needs. Values that can't be converted
+/// become the type's empty value, so `#note(...)` stays valid after a type
+/// change.
 pub fn coerce_value(value: &PropertyValue, ty: PropertyType) -> PropertyValue {
     match ty {
         PropertyType::Auto => value.clone(),
         PropertyType::Text | PropertyType::Date | PropertyType::DateTime => {
-            // Date and DateTime are stored as strings — we don't parse
-            // them into a richer type. The UI
-            // picks a specialized editor based on the declared type.
+            // Dates and date-times are stored as strings; the UI picks an
+            // editor from the declared type.
             match value {
                 PropertyValue::String(s) => PropertyValue::String(s.clone()),
                 PropertyValue::Number(n) => PropertyValue::String(format_number(*n)),
@@ -269,9 +254,7 @@ pub fn coerce_value(value: &PropertyValue, ty: PropertyType) -> PropertyValue {
                 if s.trim().is_empty() {
                     PropertyValue::List(Vec::new())
                 } else {
-                    // Split on commas so "a, b, c" becomes a proper list
-                    // — the most common human input for a
-                    // comma-separated tag-style field.
+                    // Split on commas, so "a, b, c" becomes a list.
                     let items = s
                         .split(',')
                         .map(|item| PropertyValue::String(item.trim().to_string()))

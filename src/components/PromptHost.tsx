@@ -1,6 +1,5 @@
-// Renders the active text-input prompt (if any) as a styled modal.
-// Mounted once at the app root; driven by the activePrompt signal in
-// stores/prompt.ts. See that file for the call-site contract.
+// Renders the active text prompt as a dialog. Mounted once at the app root and
+// driven by activePrompt in stores/prompt.ts (see there for usage).
 
 import { Component, Show, For, createSignal, createEffect } from "solid-js";
 import { X } from "lucide-solid";
@@ -201,9 +200,9 @@ const PromptHost: Component = () => {
         <div
           class="app-modal__backdrop"
           onMouseDown={(e) => {
-            // Click outside the modal body dismisses. Use mousedown rather
-            // than click so the dismissal happens before any focus juggling
-            // an input click would trigger.
+            // A click outside the dialog cancels. Mousedown rather than click,
+            // so it happens before the focus changes a click on an input would
+            // cause.
             if (e.target === e.currentTarget) cancel();
           }}
         >

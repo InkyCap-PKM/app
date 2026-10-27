@@ -1,21 +1,17 @@
-//! Spellcheck dictionary management.
+//! Spellcheck dictionaries. Checking itself happens in the frontend (nspell,
+//! over the editor's syntax tree); these commands list the dictionaries and give
+//! the webview a dictionary's Hunspell `.aff`/`.dic` text.
 //!
-//! The actual spell checking happens in the frontend (nspell, over the editor's
-//! Typst syntax tree). These commands only *manage dictionaries*: they enumerate
-//! what's available and hand a dictionary's Hunspell `.aff`/`.dic` text to the
-//! webview to load.
+//! Two sources:
+//! - **Bundled** dictionaries, embedded with `include_bytes!`.
+//! - **User-installed** dictionaries in `config_dir()/dictionaries/` as
+//!   `<code>.dic` + `<code>.aff` pairs, read at runtime, for languages not
+//!   bundled ("Open dictionary folder").
 //!
-//! Two sources, mirroring the rest of the app:
-//! - **Bundled** dictionaries are embedded with `include_bytes!` (the same idiom
-//!   the bundled fonts and `lib.typ` use) so they ship inside the binary.
-//! - **User-installed** dictionaries live in `config_dir()/dictionaries/` as
-//!   matching `<code>.dic` + `<code>.aff` pairs and are read at runtime, so a
-//!   user can add languages we don't bundle (the "Open dictionary folder" flow).
-//!
-//! Dictionaries are LibreOffice/Hunspell format: English from the LibreOffice
-//! `dict-en` pack (LGPL), French from Olivier R.'s Dicollecte/Grammalecte
-//! dictionary (MPL-2.0, `fr-toutesvariantes` — the most permissive variant, for
-//! the fewest false positives). Licences ship alongside under `assets/`.
+//! Bundled dictionaries: English from LibreOffice's `dict-en` (LGPL), French
+//! from Olivier R.'s Dicollecte/Grammalecte dictionary (MPL-2.0,
+//! `fr-toutesvariantes`, the variant with the fewest false positives). Licences
+//! are under `assets/`.
 
 use serde::Serialize;
 use std::path::PathBuf;
@@ -121,9 +117,9 @@ pub async fn list_spellcheck_dictionaries() -> Result<Vec<DictionaryInfo>, InkyC
     Ok(out)
 }
 
-/// Return the Hunspell `.aff`/`.dic` text for a dictionary code, from the
-/// embedded set or the user folder. Rejects codes containing path separators so
-/// a code can't escape the dictionaries directory.
+/// The Hunspell `.aff`/`.dic` text for a dictionary code, bundled or from the
+/// user folder. Codes with path separators are rejected, so they can't leave
+/// the dictionaries folder.
 #[tauri::command]
 pub async fn read_spellcheck_dictionary(code: String) -> Result<DictionaryData, InkyCapError> {
     if let Some(d) = BUNDLED.iter().find(|d| d.code == code) {
@@ -167,11 +163,10 @@ pub async fn spellcheck_dictionary_folder() -> Result<String, InkyCapError> {
     Ok(crate::storage::to_frontend_string(&dir))
 }
 
-/// Add a word to the notebox user dictionary (`.inkycap/dictionary.txt`) — the
-/// personal allow-list shared with the Mycelial rescue. Reloads the corpus
-/// stopwords so the word is force-included there too. The frontend should
-/// dispatch `inkycap:dictionary-changed` after this so open editors rebuild
-/// their checker.
+/// Add a word to the notebox dictionary (`.inkycap/dictionary.txt`), the word
+/// list shared with the Mycelial rescue, and reload the corpus stopwords so
+/// it's included there. The frontend should then send
+/// `inkycap:dictionary-changed` so open editors rebuild their checker.
 #[tauri::command]
 pub async fn add_user_dictionary_word(
     word: String,
@@ -187,9 +182,9 @@ pub async fn add_user_dictionary_word(
     Ok(())
 }
 
-/// Remove a word from the notebox user dictionary. Preserves comments and blank
-/// lines; reloads corpus stopwords so the Mycelial view reflects the change. The
-/// frontend should dispatch `inkycap:dictionary-changed` afterwards.
+/// Remove a word from the notebox dictionary, keeping comments and blank lines,
+/// and reload the corpus stopwords for the Mycelial view. The frontend should
+/// then send `inkycap:dictionary-changed`.
 #[tauri::command]
 pub async fn remove_user_dictionary_word(
     word: String,
@@ -222,9 +217,9 @@ pub async fn remove_user_dictionary_word(
     Ok(())
 }
 
-/// The notebox's user dictionary (`.inkycap/dictionary.txt`) — the personal
-/// allow-list shared by the spellchecker and the Mycelial "rescue". One word per
-/// line; `#` comments and blank lines are skipped.
+/// The notebox's dictionary (`.inkycap/dictionary.txt`), shared by the
+/// spellchecker and the Mycelial rescue. One word per line; `#` comments and
+/// blank lines are skipped.
 #[tauri::command]
 pub async fn list_user_dictionary(
     state: State<'_, AppState>,

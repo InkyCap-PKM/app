@@ -1,14 +1,14 @@
-// Help panel shown in the left sidebar "help" mode. Opened by the toolbar Info
-// button or F1 (the `view:toggle-help` command).
+// Help panel in the left sidebar's "help" mode, opened by the toolbar Info
+// button or F1 (`view:toggle-help`).
 //
-// Three switchable views:
-//   - "ui"     — every global keyboard shortcut, generated from the command
-//                registry so it never drifts from the real bindings.
-//   - "visual" — formatting keys + inline-typing shortcuts that act inside note
-//                content (the registry's markup shortcuts + the curated CM6
-//                keymap from help-content.ts).
-//   - "markup" — a Typst markup cheat-sheet with Markdown equivalents, InkyCap
-//                shortcuts, and the notebox primitives (help-content.ts).
+// Three views:
+//
+//   - "ui": every global keyboard shortcut, from the command registry, so it
+//     always matches.
+//   - "visual": formatting keys and typing shortcuts inside notes (the
+//     registry's markup shortcuts and the editor keymap from help-content.ts).
+//   - "markup": a Typst markup cheat sheet with Markdown equivalents, InkyCap
+//     shortcuts and the notebox functions (help-content.ts).
 
 import { Component, createMemo, createSignal, For, Show } from "solid-js";
 import { X, RotateCcw } from "lucide-solid";
@@ -41,9 +41,8 @@ import { VISUAL_EDITOR_KEYS, MARKUP_REFERENCE } from "../lib/help-content";
 import { helpView as view, setHelpView as setView } from "../stores/help";
 import { openDocumentationWindow } from "../lib/docs-window";
 
-// macOS uses different modifier glyphs. The dispatcher folds Cmd into "Ctrl"
-// (see keyboard.ts), so the binding a Mac user actually presses is ⌘; map the
-// stored tokens to the conventional glyphs for display only.
+// macOS modifier symbols. The dispatcher treats Cmd as "Ctrl" (see
+// keyboard.ts), so a Mac user presses ⌘; this changes only the display.
 const MAC_KEY_LABELS: Record<string, string> = { Ctrl: "⌘", Shift: "⇧", Alt: "⌥" };
 const keyLabel = (k: string): string => (isMac() ? MAC_KEY_LABELS[k] ?? k : k);
 
@@ -73,9 +72,8 @@ const HelpPanel: Component = () => {
     return parts.some((p) => !!p && p.toLowerCase().includes(query));
   };
 
-  // Reactive command list: searchCommands("") reads the registry's version
-  // signal, so the panel re-renders after a UI-language switch re-registers
-  // commands with fresh translated titles.
+  // searchCommands("") reads the registry's version signal, so the list updates
+  // when a language switch re-registers commands with new titles.
   const allCommands = createMemo(() => searchCommands("").map((s) => s.command));
 
   // Canonical category display order = the key order of CATEGORY_LABEL_KEYS.
@@ -90,9 +88,10 @@ const HelpPanel: Component = () => {
     title: string;
     /** Effective binding (undefined when the user has unbound it). */
     combo: string | undefined;
-    /** Whether this row can be rebound in place. Creation-rule commands and the
-     *  parametric tab-switch row are shown read-only (edited elsewhere / not a
-     *  registry command). */
+    /**
+     * Whether the row can be rebound here. Creation rule commands (edited
+     * elsewhere) and the tab-switch row (not a command) are read-only.
+     */
     editable: boolean;
     /** Whether the user has customized this binding (drives the reset button). */
     customized: boolean;
@@ -100,10 +99,9 @@ const HelpPanel: Component = () => {
     defaultCombo: string | undefined;
   }
 
-  // View "ui": every command that has (or ever had) a global keybinding,
-  // grouped by category (canonical order) and sorted alphabetically by title.
-  // A command the user has explicitly unbound stays listed — with no combo and
-  // a reset control — so it can be rebound.
+  // "ui" view: every command with a global keybinding (now or by default),
+  // grouped by category and sorted by title. A command the user unbound stays
+  // listed, with no combo and a reset button, so it can be bound again.
   const uiGroups = createMemo(() => {
     const byCat = new Map<string, UiRow[]>();
     const push = (cat: string, row: UiRow) => {
@@ -198,9 +196,9 @@ const HelpPanel: Component = () => {
     if (ok) resetAllShortcuts();
   }
 
-  // Typst docs open in the OS browser (external). InkyCap docs open the bundled
-  // system documentation notebox in its own window (the backend seeds it on
-  // first use and returns its path).
+  // Typst docs open in the browser. InkyCap docs open the bundled manual
+  // notebox in its own window (the backend creates it on first use and returns
+  // its path).
   async function openTypstDocs() {
     try {
       await ipc.openUrlExternally("https://typst.app/docs/");

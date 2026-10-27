@@ -19,9 +19,8 @@ const MIME: Record<string, string> = {
   opus: "audio/ogg",
 };
 
-/// Image MIME types. Unlike raster formats (which `<img>` content-sniffs), SVG
-/// will NOT render from a blob unless tagged `image/svg+xml`, so an accurate
-/// map matters here — an empty type silently breaks SVG embeds.
+/// Image MIME types. Raster images render from a blob without one (`<img>`
+/// sniffs the type), but SVG renders only when typed `image/svg+xml`.
 const IMAGE_MIME: Record<string, string> = {
   svg: "image/svg+xml",
   png: "image/png",
@@ -73,20 +72,17 @@ function imageMimeForPath(path: string): string {
 }
 
 /**
- * Load a notebox media file as a `blob:` object URL, or `null` on failure.
+ * Load a notebox media file as a `blob:` URL, or `null` on failure.
  *
- * WebKitGTK (the Linux webview) renders `<video>`/`<audio>` but won't reliably
- * stream them from Tauri's custom asset protocol — the element silently fails
- * to load (no console error), even though images served the same way work.
- * Reading the bytes over IPC and wrapping them in a blob sidesteps the asset
- * protocol entirely and plays on every platform.
+ * WebKitGTK plays `<video>`/`<audio>` but can't reliably stream them from
+ * Tauri's asset protocol (they silently fail to load), so the bytes are read
+ * over IPC and wrapped in a blob, which works everywhere.
  *
- * The whole file is held in memory, several times over while it loads, so the
- * backend refuses files above a size limit (`WEBVIEW_FILE_LIMIT_BYTES` in
- * commands/files.rs); those open in the system's default application.
+ * The whole file is held in memory (several copies while loading), so the
+ * backend refuses files over a size limit (`WEBVIEW_FILE_LIMIT_BYTES` in
+ * commands/files.rs); those open in the default application.
  *
- * The caller owns the returned URL and must `URL.revokeObjectURL` it when the
- * player is torn down.
+ * The caller must `URL.revokeObjectURL` the URL when the player is removed.
  */
 export async function loadMediaObjectUrl(noteboxPath: string): Promise<string | null> {
   try {
@@ -105,25 +101,26 @@ export async function fetchMediaObjectUrl(noteboxPath: string): Promise<string> 
 }
 
 /**
- * Load a notebox image as a `blob:` object URL, rejecting with the backend's
- * error (for example `file-too-large-to-show`) so the caller can say why.
+ * Load a notebox image as a `blob:` URL, rejecting with the backend's error (e.g.
+ * `file-too-large-to-show`) so the caller can say why.
  *
- * Tauri's asset protocol is switched off, so notebox images reach the webview
- * only as bytes over IPC, wrapped here in a correctly-typed blob, the same way
- * as `#video`/`#audio`. `noteboxPath` accepts the embed forms `resolve_embed_path`
- * understands (root-absolute, relative, or bare filename).
+ * Tauri's asset protocol is off, so images reach the webview as bytes over IPC,
+ * wrapped here in a blob of the right type, like `#video`/`#audio`. `noteboxPath`
+ * can be any form `resolve_embed_path` accepts (root-absolute, relative or bare
+ * file name).
  *
- * The caller owns the returned URL and must `URL.revokeObjectURL` it (directly
- * or via {@link revokeBlobUrls}) when the element is torn down.
+ * The caller must `URL.revokeObjectURL` the URL (directly or with {@link
+ * revokeBlobUrls}) when the element is removed.
  */
 export async function fetchImageObjectUrl(noteboxPath: string): Promise<string> {
   const buf = await ipc.readEmbedBytes(noteboxPath);
   return URL.createObjectURL(new Blob([buf], { type: imageMimeForPath(noteboxPath) }));
 }
 
-/** Revoke any `blob:` URLs on `<img>`/`<video>`/`<audio>` elements under `root`
- *  (call before tearing down/replacing embedded elements to avoid leaking object
- *  URLs). Safe to call on subtrees with no blob-backed elements — a no-op. */
+/**
+ * Revoke the `blob:` URLs of `<img>`/`<video>`/`<audio>` elements under `root`.
+ * Call before removing or replacing them, so the URLs aren't leaked.
+ */
 export function revokeBlobUrls(root: HTMLElement): void {
   root
     .querySelectorAll<HTMLImageElement | HTMLMediaElement>("img, video, audio")

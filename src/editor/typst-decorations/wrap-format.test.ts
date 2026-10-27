@@ -2,14 +2,13 @@ import { describe, it, expect } from "vitest";
 import { EditorState } from "@codemirror/state";
 import { toggleEmphasis, toggleWrap } from "./wrap-format";
 
-// `toggleWrap` is the single source of truth for the inline-format toggle rule
-// shared by the keyboard shortcuts and the selection toolbar. The load-bearing
-// invariant: invoking a format a SECOND time removes it rather than nesting
-// another wrapper. The subtle case (Bug repro) is the visual editor, where the
-// markup is decorated away so the user's selection covers only the inner text
-// and the delimiters live just OUTSIDE the selection.
+// `toggleWrap` decides inline format toggling for both the keyboard shortcuts
+// and the selection toolbar. Applying a format a second time must remove it,
+// not nest another. The tricky case is the visual editor, where the markup is
+// hidden, so the selection covers only the inner text and the delimiters sit
+// just outside it.
 //
-// Pure state transform — runs without the WASM Typst parser.
+// Pure state changes, so no Typst parser is needed.
 function apply(
   doc: string,
   anchor: number,
@@ -72,9 +71,9 @@ describe("toggleWrap", () => {
     expect(r.doc).toBe("foo **bar* baz");
   });
 
-  // The link wrapper has an inner slot (the URL quotes) distinct from the
-  // wrapped label, so `caretInWrapper` drops the caret there instead of
-  // leaving the label selected. Mirrors the toolbar/Mod-k link action.
+  // A link has an inner slot (inside the URL quotes) apart from its label, so
+  // `caretInWrapper` puts the caret there instead of leaving the label
+  // selected, like the toolbar and Mod-k link action.
   const LINK_BEFORE = '#link("")[';
   const LINK_SLOT = '#link("'.length; // caret position between the quotes
 

@@ -1,10 +1,9 @@
-// Renders the active folder picker (if any) as a styled modal.
-// Mounted once at the app root; driven by the activeFolderPicker signal
-// in stores/folderPicker.ts. See that file for the call-site contract.
+// Renders the active folder picker as a dialog. Mounted once at the app root
+// and driven by activeFolderPicker in stores/folderPicker.ts (see there for
+// usage).
 //
-// The list is built from the live notebox file tree each time the picker
-// opens, so it always reflects folders that currently exist. Reuses the
-// .quick-open__* styles for visual consistency with the Ctrl+O switcher.
+// The list is built from the file tree each time it opens, so it shows the
+// folders that exist now. Uses the .quick-open__* styles, like Ctrl+O.
 
 import {
   Component,
@@ -54,10 +53,9 @@ const FolderPickerHost: Component = () => {
       const walk = (nodes: FileTreeNode[]) => {
         for (const n of nodes) {
           if (!n.is_dir || n.name === ".inkycap") continue;
-          // Derive the notebox-relative path via canonical-shape comparison
-          // so a stray separator difference between root and node.path
-          // doesn't silently strand every folder under "<top-level name>"
-          // (the `n.name` fallback).
+          // Compare canonical forms when deriving the notebox-relative path, so
+          // a separator difference between root and node.path doesn't leave
+          // every folder under its top-level name (the `n.name` fallback).
           const nodeNorm = normalizePath(n.path);
           const rel =
             nodeNorm.startsWith(rootNorm + "/")
@@ -69,9 +67,8 @@ const FolderPickerHost: Component = () => {
       };
       walk(tree);
 
-      // Drop folders the caller forbade: the dragged folder itself plus
-      // its descendants (can't move into self), and the current parent
-      // (moving there would be a no-op).
+      // Leave out what the caller excluded: the folder being moved and its
+      // subfolders, and the current folder (moving there does nothing).
       const filtered = entries.filter((e) => {
         if (p.disallowPrefix && pathStartsWith(e.abs, p.disallowPrefix)) {
           return false;
@@ -81,9 +78,8 @@ const FolderPickerHost: Component = () => {
       });
       filtered.sort((a, b) => compareName(a.label, b.label));
 
-      // Pin the notebox root as the first entry so the user can always
-      // move an item to the top of the notebox, unless the root itself is
-      // the item's current parent (moving there would be a no-op).
+      // The notebox root comes first, so an item can always be moved to the
+      // top, unless the root is already its folder.
       const rootEntry: FolderEntry = { abs: root, rel: "", label: t("folderPicker.noteboxRoot") };
       const showRoot = !pathEquals(p.currentParent, root);
       setFolders(showRoot ? [rootEntry, ...filtered] : filtered);

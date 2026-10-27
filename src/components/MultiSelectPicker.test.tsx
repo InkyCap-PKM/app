@@ -3,9 +3,9 @@ import { createRoot, createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import MultiSelectPicker from "./MultiSelectPicker";
 
-// Keyboard control of the Properties panel's value pickers. These drive the
-// real DOM the component renders (jsdom, no testing library), because what is
-// under test is exactly which element has focus and which row the keys move.
+// Keyboard control of the Properties panel's value pickers. These use the real
+// DOM the component renders (jsdom, no testing library), since what's tested is
+// which element has focus and which row the keys move.
 
 let dispose: (() => void) | undefined;
 let host: HTMLDivElement | undefined;
@@ -197,9 +197,8 @@ describe("MultiSelectPicker keyboard control", () => {
 });
 
 describe("MultiSelectPicker roles for assistive tech", () => {
-  // Whichever element holds the focus while the list is open must be the one
-  // that describes the list and names the highlighted row; a role on an
-  // element that has lost focus is never read out.
+  // The focused element must be the one that describes the open list and names
+  // the highlighted row; a role on an unfocused element is never read out.
   it("makes the focused filter box the combobox that names the highlight", async () => {
     const h = mount(["alpha", "beta"]);
     expect(h.trigger.getAttribute("role")).toBe("button");

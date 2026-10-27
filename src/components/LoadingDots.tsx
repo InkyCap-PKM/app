@@ -1,11 +1,12 @@
 import { Component } from "solid-js";
 
-/** Reusable animated "…" — three staggered pulsing dots, sharing the app-wide
- *  `dot-pulse` timing (see `.loading-dots` in styles/layout/search-results.css,
- *  where the animation was first authored). Drop-in for any
- *  in-progress label whose static trailing ellipsis you've removed: render the
- *  text (e.g. "Syncing") and append `<LoadingDots />`. Decorative, so it's
- *  hidden from assistive tech — the surrounding label already conveys state. */
+/**
+ * Animated "…": three pulsing dots with the shared `dot-pulse` timing (see
+ * `.loading-dots` in styles/layout/search-results.css). For an in-progress
+ * label: write the text without the ellipsis (e.g. "Syncing") and add
+ * `<LoadingDots />`. Hidden from screen readers, since the label already says
+ * what's happening.
+ */
 const LoadingDots: Component = () => (
   <span class="loading-dots" aria-hidden="true">
     <span class="loading-dots__dot loading-dots__dot--1">.</span>

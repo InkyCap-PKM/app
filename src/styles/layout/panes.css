@@ -1,13 +1,12 @@
-/* Split-pane editor tree: pane containers, split drag handles, active-pane cue.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Split editor panes: pane containers, split handles, active pane cue. Part
+   of layout.css, whose import order (see ../layout.css) keeps the cascade. */
 
 /* ─── Pane tree (split editor) ─────────────────────────────────────────
    The editor area holds one PaneView. A leaf pane (.pane--leaf) stacks its
    tab strip over its body; a split (.pane-split) lays leaves out in a row
-   (side-by-side) or column (stacked) with a resizer between each pair. */
-/* A pane or split fills its container — the editor area at the top level,
-   or a parent split's slot when nested. */
+   (side by side) or column (stacked) with a resizer between each pair. */
+/* A pane or split fills its container: the editor area at the top level, or
+   its parent split's slot. */
 .pane,
 .pane-split {
   display: flex;
@@ -32,9 +31,9 @@
   flex-direction: column;
 }
 
-/* Each child occupies a flex slot; flex-grow is set inline from the node's
-   stored size fraction. flex-basis:0 makes the fractions the sole sizing
-   input, so two 0.5 slots are equal regardless of content width. */
+/* Each child takes a flex slot, with flex-grow set inline from its stored
+   size. flex-basis:0 makes that the only sizing input, so two 0.5 slots are
+   equal whatever their content. */
 .pane-split__slot {
   display: flex;
   flex-basis: 0;
@@ -44,12 +43,11 @@
   overflow: hidden;
 }
 
-/* A pane's writing surface draws a quiet hairline down each side (see
-   .main-content__body). Where that side faces a split handle, the handle is
-   already the seam, so the hairline is dropped; otherwise the two neighbours'
-   hairlines flank the handle and widen it to a 3px band below the tab strip.
-   Every pane inside a later slot has a handle on its left (this split's, or a
-   nested one's), and every pane inside an earlier slot has one on its right. */
+/* A pane's writing surface has a faint line down each side (see
+   .main-content__body). Where a side faces a split handle, the handle is the
+   seam, so the line is dropped (otherwise the two lines and the handle make
+   a 3px band). Panes in a later slot have a handle on their left (this
+   split's or a nested one's), and panes in an earlier slot on their right. */
 .pane-split--row > .pane-split__slot:not(:first-child) .main-content__body {
   border-left: 0;
 }
@@ -99,10 +97,9 @@ body.is-resizing-pane .pane-resizer {
   background: var(--accent);
 }
 
-/* Quiet cue for the active pane: non-focused panes render their active tab
-   like an ordinary tab, so the focused pane's active tab is the only one
-   highlighted. In a single-pane workspace the sole pane is always focused,
-   so this leaves today's appearance unchanged. */
+/* Active pane cue: panes without focus show their active tab like any other,
+   so only the focused pane's active tab is highlighted. With one pane, it's
+   always focused. */
 .pane:not(.pane--focused) .tab--active {
   background: transparent;
   border-color: transparent;

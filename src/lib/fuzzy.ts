@@ -2,11 +2,10 @@
 // reference and citation lists, the command palette.
 
 /**
- * How the query matched, independent of where in the target it landed. A
- * better kind always outranks a worse one, so ordering is decided by shape
- * first and points second: someone who types "PDA" means the note called
+ * How the query matched, wherever it landed. A better kind always outranks a
+ * worse one, so matches are ordered by kind first and score second: "PDA" means
  * "PDA notes" before "Update Release Page and Downloads", however many word
- * boundaries the scattered letters happen to land on.
+ * starts the scattered letters hit.
  */
 export type MatchKind =
   /** The target is the query. */
@@ -31,30 +30,28 @@ export interface FuzzyMatch {
 }
 
 /**
- * Order two matches, best first. Every picker sorts through this so they all
- * rank the same way and none of them has to remember that kind comes before
- * score. Callers add their own tiebreak (recency, name) after it.
+ * Order two matches, best first. Every picker sorts with this, so they all rank
+ * alike; callers add their own tiebreak (recency, name).
  */
 export function compareMatches(a: FuzzyMatch, b: FuzzyMatch): number {
   return compareMatchKinds(a, b) || b.score - a.score;
 }
 
 /**
- * Order two matches by {@link MatchKind} alone, best first. For pickers that
- * rank on something of their own between kind and score, such as which field
- * of an entry matched.
+ * Order two matches by {@link MatchKind} only, best first, for pickers that
+ * rank on something of their own between kind and score (such as which field
+ * matched).
  */
 export function compareMatchKinds(a: FuzzyMatch, b: FuzzyMatch): number {
   return KIND_RANK[b.kind] - KIND_RANK[a.kind];
 }
 
 /**
- * Substring ("contains") match — the behaviour of the app's plain text
- * filters (agenda, sidebar, references, etc.). Returns null when `query` does
- * not appear in `target` as a contiguous, case-insensitive substring;
- * otherwise a score (higher = better) and the single matched range for
- * highlighting. Unlike {@link fuzzyMatch} this does NOT match characters
- * scattered across the string — "exp" matches "Export" but not "edit panel".
+ * Substring match, as used by the plain text filters (agenda, sidebar,
+ * references…). Null unless `query` appears in `target` as one case-insensitive
+ * run; otherwise a score (higher is better) and the matched range. Unlike
+ * {@link fuzzyMatch}, letters aren't matched apart: "exp" matches "Export" but
+ * not "edit panel".
  */
 export function substringMatch(query: string, target: string): FuzzyMatch | null {
   const q = query.toLowerCase();
@@ -78,12 +75,11 @@ export function substringMatch(query: string, target: string): FuzzyMatch | null
 }
 
 /**
- * Score how well `query` matches `target`, preferring an unbroken run of
- * characters and falling back to the query's letters in order with gaps
- * between them, so "inkbuild" still finds "InkyCap - Build Binaries".
- * Case-insensitive. Sort results with {@link compareMatches}, not by `score`
- * alone — a scattered match can otherwise out-point a contiguous one by
- * collecting word-boundary bonuses across a long name.
+ * Score how well `query` matches `target`, preferring an unbroken run and
+ * otherwise the query's letters in order with gaps, so "inkbuild" finds
+ * "InkyCap - Build Binaries". Case-insensitive. Sort with {@link
+ * compareMatches}, not `score` alone: a scattered match can collect enough
+ * word-start points across a long name to beat a contiguous one.
  */
 export function fuzzyMatch(query: string, target: string): FuzzyMatch | null {
   if (query.length === 0) return { score: 0, ranges: [], kind: "substring" };

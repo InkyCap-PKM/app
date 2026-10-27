@@ -5,15 +5,13 @@ import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { defaultKeymap } from "@codemirror/commands";
 import { autoPairTypstInput } from "./auto-pair-typst";
 
-// These tests rely on the default `settings.editor.auto_pair_typst === true`
-// (see stores/settings.ts DEFAULTS); the store isn't mutated elsewhere in the
-// test process.
+// These rely on the default `settings.editor.auto_pair_typst === true` (see
+// DEFAULTS in stores/settings.ts); nothing else in the test run changes it.
 //
-// The handler under test does not auto-close the markup delimiters * _ $ on a
-// bare keystroke — typing one after a word adds a single delimiter, not two.
-// Backtick is the exception: it auto-closes into a pair like a bracket (with
-// type-over and delete-both), because an unclosed backtick otherwise swallows
-// the rest of the line as raw. Typing any delimiter with a selection wraps it.
+// The delimiters * _ $ don't auto-close: typing one after a word adds a single
+// delimiter. The backtick does, like a bracket (with type-over and
+// delete-both), because an unclosed backtick turns the rest of the line into
+// raw text. Typing any delimiter with a selection wraps it.
 
 function mk(doc = "", anchor?: number, head?: number) {
   return new EditorView({
@@ -22,9 +20,9 @@ function mk(doc = "", anchor?: number, head?: number) {
       selection: anchor !== undefined
         ? { anchor, head: head ?? anchor }
         : undefined,
-      // Mirror real precedence: closeBrackets first (as in baseExtensions),
-      // autoPairTypstInput after, then the shared keymaps. autoPairTypstInput
-      // carries both the input handler and its own Backspace binding.
+      // Same order as the real editor: closeBrackets first (as in
+      // baseExtensions), then autoPairTypstInput (input handler and its own
+      // Backspace), then the shared keymaps.
       extensions: [
         closeBrackets(),
         autoPairTypstInput,
@@ -158,10 +156,8 @@ describe("auto-pair-typst: triple backtick still expands a code block", () => {
   });
 
   it("leaves the caret on the fence so the language can be typed", () => {
-    // Regression: the caret used to land on the body line (offset 4), so
-    // naming the language meant backspacing back up to the fence — defeating
-    // the point of opening a fenced block. It now sits just past the third
-    // backtick.
+    // The caret goes just after the third backtick, where the language is
+    // typed, not onto the body line (offset 4).
     const v = mk();
     typeChar(v, "`");
     typeChar(v, "`");

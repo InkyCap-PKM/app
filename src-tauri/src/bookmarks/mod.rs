@@ -18,9 +18,9 @@ pub struct Bookmark {
 }
 
 impl BookmarkKind {
-    /// The stored notebox path for path-bearing kinds (`Note`, `Heading`,
-    /// `Collection`), or `None` for kinds that carry no path (`Search`,
-    /// `AgendaView`). Returned mutably so a rename/move can rebase it in place.
+    /// The stored path for kinds that have one (`Note`, `Heading`,
+    /// `Collection`), or `None` (`Search`, `AgendaView`). Mutable so a rename
+    /// or move can update it.
     fn path_mut(&mut self) -> Option<&mut String> {
         match self {
             BookmarkKind::Note { path, .. }
@@ -30,11 +30,10 @@ impl BookmarkKind {
         }
     }
 
-    /// A stable identity used to keep bookmarks unique: two kinds with the
-    /// same key point at the same target, so only one should ever be stored.
-    /// Display-only fields (e.g. a note's `name`) are excluded — re-bookmarking
-    /// the same file is the same bookmark even if the label differs. `\u{1}`
-    /// separates fields so distinct values can't run together into one key.
+    /// Identity for keeping bookmarks unique: kinds with the same key point at
+    /// the same target. Display fields (e.g. a note's `name`) are left out, so
+    /// bookmarking the same file again is the same bookmark. `\u{1}` separates
+    /// fields so values can't run together.
     fn dedupe_key(&self) -> String {
         match self {
             BookmarkKind::Note { path, .. } => format!("note\u{1}{path}"),
@@ -68,9 +67,9 @@ pub enum BookmarkKind {
     },
     /// A bookmarked collection (.collection file).
     Collection { path: String, name: String },
-    /// A saved Agenda view: a named filter snapshot, scoped to the notebox it
-    /// was created in. `filter` is a JSON-serialized `AgendaFilterSnapshot`
-    /// (opaque to the backend — the frontend owns its shape).
+    /// A saved Agenda view: a named filter for the notebox it was made in.
+    /// `filter` is a JSON `AgendaFilterSnapshot`, whose shape is up to the
+    /// frontend.
     AgendaView {
         name: String,
         notebox: String,
@@ -100,12 +99,9 @@ pub fn save_bookmarks(bookmarks: &[Bookmark]) -> Result<()> {
     Ok(())
 }
 
-/// Add a bookmark. Returns the new bookmark's id.
-///
-/// One bookmark per target: if an equivalent bookmark already exists (same
-/// path for a note/collection, same query for a search, etc.), no duplicate
-/// is created and the existing bookmark's id is returned. Re-bookmarking the
-/// same file is a silent no-op from the user's perspective.
+/// Add a bookmark and return its id. If an equivalent one exists (same path for
+/// a note or collection, same query for a search, …), its id is returned and
+/// nothing is added.
 pub fn add_bookmark(bookmarks: &mut Vec<Bookmark>, kind: BookmarkKind) -> String {
     let key = kind.dedupe_key();
     if let Some(existing) = bookmarks.iter().find(|b| b.kind.dedupe_key() == key) {
@@ -119,12 +115,10 @@ pub fn add_bookmark(bookmarks: &mut Vec<Bookmark>, kind: BookmarkKind) -> String
     id
 }
 
-/// Rebase every bookmark that points at `old` onto `new` after a file or
-/// folder is renamed or moved. Handles both an exact match (the bookmarked
-/// file itself was renamed) and the directory case (a bookmarked note living
-/// under a folder that was renamed/moved). Paths are compared in the same
-/// frontend string form bookmarks are stored in (absolute, forward slashes).
-/// Returns true if any bookmark changed.
+/// Update bookmarks pointing at `old` to `new` after a file or folder is
+/// renamed or moved: the file itself, or notes inside a moved folder. Paths are
+/// compared in the stored form (absolute, forward slashes). Returns true if any
+/// changed.
 pub fn rewrite_paths_for_rename(bookmarks: &mut [Bookmark], old: &str, new: &str) -> bool {
     let mut changed = false;
     for bookmark in bookmarks.iter_mut() {
@@ -138,9 +132,8 @@ pub fn rewrite_paths_for_rename(bookmarks: &mut [Bookmark], old: &str, new: &str
     changed
 }
 
-/// If `path` equals `old`, or lives under the `old/` directory prefix, return
-/// it rebased onto `new`; otherwise `None`. Trailing slashes on `old`/`new`
-/// are ignored so directory arguments compare cleanly.
+/// `path` moved onto `new` if it equals `old` or is inside the `old/` folder,
+/// otherwise `None`. Trailing slashes are ignored.
 fn rebase_path(path: &str, old: &str, new: &str) -> Option<String> {
     let old = old.trim_end_matches('/');
     let new = new.trim_end_matches('/');

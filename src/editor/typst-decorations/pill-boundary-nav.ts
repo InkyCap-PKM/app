@@ -1,38 +1,25 @@
-// Arrow-key navigation across inline pill content boundaries.
+// Arrow keys across the edges of inline pills.
 //
 // Inline content-bracket pills (`#highlight[…]`, `#strike[…]`, `#emph[…]`,
-// `#strong[…]`, `#underline[…]`, `#overline[…]`, `#sub[…]`, `#super[…]`, and
-// the inline `#quote[…]`) hide their wrapping markup (`#highlight[` … `]`) in
-// the visual editor. Plain CodeMirror cursor motion steps through those hidden
-// characters one position at a time, so crossing into a pill's content takes
-// several presses with no visible movement — it feels like the arrow key is
-// stuck. And once the cursor is inside a highlighted run, there's no obvious
-// signal for how to step back out without overshooting.
-//
-// This module makes the boundary deliberate and legible:
-//   • ENTERING — at the call's outer edge, one press jumps the whole hidden
-//     opener/closer straight to the content edge (no more per-character
-//     stepping), with a brief pulse on the content so the move registers.
-//   • EXITING — at a content edge, the first press is absorbed and pulses the
-//     region ("you're at the edge — press again to leave"); a second press in
-//     the same direction crosses out. This keeps the writer from accidentally
-//     typing outside a highlight they meant to stay in.
-//
-//   • LANDING — motion that arrives from outside a block element (callout,
-//     block quote) puts the caret in its body rather than on the hidden
-//     markup that draws its frame, which paints in the same place.
-//
-// Scope: inline content-bracket pills, plus the one block-element rule above.
-// Block elements otherwise manage their own editing affordances.
+// `#strong[…]`, `#underline[…]`, `#overline[…]`, `#sub[…]`, `#super[…]`, inline
+// `#quote[…]`) hide their markup in the visual editor. Plain cursor motion
+// would step through the hidden characters one at a time with nothing visibly
+// moving. Here:
+//   • entering: one press at the call's outer edge jumps to the content edge, with a brief pulse on the content;
+//   • leaving: one press at a content edge jumps out the same way;
+//   • landing: motion from outside a block element (callout, block quote) puts the caret in its body, not on its hidden markup.
+// Block elements otherwise handle their own editing.
 
 import { EditorView, Decoration, ViewPlugin, type DecorationSet, type ViewUpdate, keymap } from "@codemirror/view";
 import { EditorState, Prec, StateField, StateEffect, type Extension } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
 import { BlockBodyElementWidget } from "./widgets";
 
-/** Pills whose `[…]` body is live-editable text behind hidden markup — inline
- *  content-bracket pills plus the block forms (callout, block quote) which, in
- *  editing mode, present the same from/content/closing-bracket boundary shape. */
+/**
+ * Functions whose `[…]` body is editable text behind hidden markup: the inline
+ * pills plus the block forms (callout, block quote), which have the same
+ * boundaries while editing.
+ */
 const PILL_FUNCS = new Set([
   "strike", "highlight", "emph", "strong",
   "underline", "overline", "sub", "super", "quote", "callout",
@@ -50,10 +37,10 @@ function callFuncName(text: string): string | null {
   return m ? m[1] : null;
 }
 
-/** Inner range of the body content bracket — the `[…]` after the call's
- *  argument list `(…)`. Skipping the args (quote- and depth-aware) means a
- *  bracket-form named argument like `attribution: [Smith]` isn't mistaken for
- *  the body; for inline pills with no args it simply finds the first `[`. */
+/**
+ * Inner range of the `[…]` body after the argument list, so a bracket argument
+ * like `attribution: [Smith]` isn't taken for the body.
+ */
 function contentBracketRange(text: string, base: number): { from: number; to: number } | null {
   let scanFrom = 0;
   const lp = text.indexOf("(");
@@ -81,10 +68,8 @@ function contentBracketRange(text: string, base: number): { from: number; to: nu
 }
 
 /**
- * If `pos` sits on a boundary of an inline content-bracket pill — its outer
- * edge (`from`/`to`) or a content edge (`contentFrom`/`contentTo`) — return
- * that pill's region. Resolves from both sides so a cursor exactly at a
- * boundary (which belongs to two nodes) is recognised either way.
+ * If `pos` is on an inline pill's outer or content edge, that pill's region.
+ * Checks both sides, since a boundary belongs to two nodes.
  */
 function inlinePillRegionAt(state: EditorState, pos: number): PillRegion | null {
   const tree = syntaxTree(state);
@@ -94,10 +79,8 @@ function inlinePillRegionAt(state: EditorState, pos: number): PillRegion | null 
       if (node.name === "FuncCall") {
         const text = state.doc.sliceString(node.from, node.to);
         const fn = callFuncName(text);
-        // Block callout/quote present the same boundary shape in editing mode
-        // (pill · body · hidden `]`); when the cursor sits on a boundary the
-        // element is necessarily in editing mode (the cursor is on its line),
-        // so the body is editable text and the same crossing logic applies.
+        // A block callout or quote has the same boundaries while editing, and a
+        // cursor on one means it is being edited.
         if (fn && PILL_FUNCS.has(fn)) {
           const content = contentBracketRange(text, node.from);
           if (content
@@ -117,15 +100,10 @@ function inlinePillRegionAt(state: EditorState, pos: number): PillRegion | null 
 // ── Landing inside a block element ──────────────────────────────────
 
 /**
- * The block element covering `pos`, read from what is actually drawn.
- *
- * While the caret is elsewhere a block element is one replaced range holding a
- * `BlockBodyElementWidget`, so any element built that way is recognised here —
- * no list of function names, and no dependence on the syntax tree, whose
- * FuncCall nodes stop short on a call that spans lines or contains another
- * call. The body is located by matching the element's own content brackets in
- * the source it covers, so it is right for a one-line quote and for a callout
- * with several paragraphs and links inside it alike.
+ * The block element covering `pos`, from what is drawn: a replaced range
+ * holding a `BlockBodyElementWidget`. No function list and no syntax tree
+ * (whose nodes stop short on multi-line calls). The body is found by matching
+ * the element's own content brackets in its source.
  */
 function blockElementRegionAt(
   state: EditorState,
@@ -156,19 +134,14 @@ function cameFromInside(head: number, region: PillRegion): boolean {
  * Coming from outside, the caret lands in the block's body rather than on its
  * hidden markup.
  *
- * Cursor motion treats a rendered block as one unit, so arriving from outside
- * puts the caret at the call's outer edge — and skipping the block backwards
- * lands it at the very start, ahead of the whole `#callout("note")[` opener.
- * Nothing of that markup is drawn, so the caret looks like it is in the
- * block's text while typing writes outside the frame, which reads as the text
- * jumping to the beginning of the block. Landing in the body puts the caret
- * where it appears to be, and the body edge follows the direction of travel,
- * not whichever outer edge the motion picked: arriving from below or after the
- * block lands at the end of its text, from above or before it at the start.
+ * Cursor motion treats a rendered block as one unit, so arriving puts the caret
+ * at the call's outer edge, ahead of the hidden `#callout("note")[` when moving
+ * backwards. It would look as if it were in the text while typing went outside
+ * the frame. Landing in the body puts it where it appears, at the end of the
+ * text when arriving from below or after, at the start from above or before.
  *
- * Leaving is left alone: a caret that was already inside the call may step onto
- * an outer edge, which is how the arrow handling above walks out of a block. A
- * click is not a step, so it lands in the body wherever the caret was before.
+ * Leaving isn't changed: a caret inside may step to an outer edge, which is how
+ * the arrow handling walks out. A click lands in the body too.
  */
 export function createBlockBodyCaretEntry(decoField: StateField<DecorationSet>): Extension {
   return EditorState.transactionFilter.of((tr) => {
@@ -218,10 +191,10 @@ const pulseField = StateField.define<DecorationSet>({
 
 const PULSE_MS = 500;
 
-/** Clears a pulse once it has been seen, whoever set it — the arrow handling
- *  below or the caret-landing rule above. Keeping the timer here means setting
- *  a pulse is a plain effect anywhere, including from a transaction filter,
- *  which has no view to schedule on. */
+/**
+ * Clears a pulse after it has shown, whoever set it, so setting one is a plain
+ * effect, even from a transaction filter.
+ */
 const pulseTimeout = ViewPlugin.fromClass(
   class {
     private timer: ReturnType<typeof setTimeout> | null = null;
@@ -261,10 +234,7 @@ function handleArrow(view: EditorView, dir: -1 | 1): boolean {
   const region = inlinePillRegionAt(view.state, head);
   if (!region) return false;
 
-  // A single press jumps the whole hidden markup, so crossing a pill boundary
-  // is one deterministic step instead of several invisible ones — and the
-  // pulse makes the region change obvious. (An earlier draft required a second
-  // press to exit; the pulse turned out to make that ceremony unnecessary.)
+  // One press jumps all the hidden markup, and the pulse shows the change.
   if (dir < 0) {
     if (head === region.to) { pulse(view, region, region.contentTo); return true; }   // enter from right
     if (head === region.contentFrom) { pulse(view, region, region.from); return true; } // exit left
@@ -275,10 +245,11 @@ function handleArrow(view: EditorView, dir: -1 | 1): boolean {
   return false; // not on a crossing boundary — let default motion run
 }
 
-/** Extension: pill-boundary arrow navigation + region pulse. Add to the
- *  visual-mode extension set. High precedence so it intercepts ArrowLeft/Right
- *  before the default cursor-motion commands, but it returns false (yielding to
- *  the default) whenever the cursor isn't on a pill boundary. */
+/**
+ * Pill-edge arrow navigation and pulse, for the visual mode extensions. High
+ * precedence to run before the default motion; returns false when the cursor
+ * isn't on a pill edge.
+ */
 export const pillBoundaryNav = [
   pulseField,
   pulseTimeout,

@@ -1,27 +1,16 @@
-//! Static-analysis guards that fail CI if forbidden UTF-8-unsafe patterns
-//! reappear in the source tree. The motivating bug:
-//! [`book_wrapper::strip_bibliography_call`] used to do `out.push(bytes[i]
-//! as char)`, which casts a UTF-8 continuation byte to a Latin-1 codepoint,
-//! shredding any multi-byte character (em-dashes, smart quotes, CJK,
-//! accented Latin, RTL scripts, etc.) into garbage. The garbage then
-//! produced spurious "unclosed delimiter" errors when the corrupted output
-//! was fed back to the Typst compiler.
+//! Fails CI if UTF-8-unsafe patterns appear in the source. `u8 as char` casts a
+//! byte to a Latin-1 character, which breaks every multi-byte character
+//! (dashes, smart quotes, accents, CJK, …); Clippy doesn't flag it, so this
+//! searches for it. Add other unsafe patterns here.
 //!
-//! Clippy doesn't lint `u8 as char` (it's a legal Rust cast — just usually
-//! wrong when the byte came out of a UTF-8 string), so we enforce the rule
-//! ourselves by grep. Add new patterns here as we identify other UTF-8
-//! footguns.
-//!
-//! The check runs against `src-tauri/src/`; this integration-test file is
-//! itself excluded so the rule descriptions can mention the patterns
-//! without tripping their own check.
+//! Scans `src-tauri/src/`; this file isn't scanned, so it can name the
+//! patterns.
 
 use std::path::Path;
 
-/// (description, regex pattern, allowlist of substrings that, if present
-/// on the matching line, exempt it). Keep the patterns conservative: false
-/// positives here block the build, so any legitimate exception belongs in
-/// the allowlist with a comment explaining the rationale.
+/// (description, pattern, allowlist of substrings that exempt a matching line).
+/// Keep patterns conservative, since a false positive blocks the build; real
+/// exceptions go in the allowlist with a reason.
 struct ForbiddenPattern {
     description: &'static str,
     needle: &'static str,
@@ -34,17 +23,14 @@ const FORBIDDEN: &[ForbiddenPattern] = &[ForbiddenPattern {
     description: "byte-cast to char (corrupts multi-byte UTF-8). \
                       Use `push_str(&s[a..b])` for slices, or stay in `Vec<u8>` \
                       until reassembling via `String::from_utf8` / `from_utf8_lossy`.",
-    // Catches `bytes[i] as char`, `b as char`, and similar single-byte
-    // -> char casts. We deliberately don't try to be clever — the rule
-    // is "no `as char` from a u8 expression", and any legitimate
-    // exception can opt out via `// utf8-safe: <reason>`.
+    // Any `as char`, such as `bytes[i] as char` or `b as char`. A legitimate
+    // use opts out with `// utf8-safe: <reason>`.
     needle: " as char",
     line_allowlist: &["utf8-safe:"],
 }];
 
-/// Files (relative to `src/`) that are exempt from the scan entirely.
-/// Empty for now — keep it that way unless a genuinely safe construct
-/// can't be expressed any other way.
+/// Files (relative to `src/`) not scanned at all. Keep it empty unless a safe
+/// construct can't be written any other way.
 const FILE_ALLOWLIST: &[&str] = &[];
 
 #[test]
@@ -83,10 +69,9 @@ fn no_forbidden_utf8_patterns_in_source() {
         };
 
         for (line_no, raw_line) in content.lines().enumerate() {
-            // Strip line-comment text from the search target so that a
-            // `// note: don't do `x as char` here` doc comment is not
-            // flagged as a violation. The allowlist marker, however, lives
-            // *inside* a comment, so we test it against the raw line.
+            // Drop a trailing comment before searching, so a comment mentioning
+            // `as char` isn't flagged. The opt-out marker is in the comment, so
+            // it's checked on the raw line.
             let scan_target = match raw_line.find("//") {
                 Some(idx) => &raw_line[..idx],
                 None => raw_line,

@@ -1,9 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { headingDisplayText } from "./heading-tracker";
 
-// The outline pane must show a heading's *content text*, never its Typst
-// markup. `headingDisplayText` is the lexical cleanup that turns a heading's
-// raw source (everything after the `=` markers) into that reader-facing text.
+// The outline shows a heading's text, never its markup. `headingDisplayText`
+// turns the heading's source (after the `=` markers) into that text.
 describe("headingDisplayText", () => {
   it("leaves plain headings untouched", () => {
     expect(headingDisplayText("InkyCap Documentation")).toBe("InkyCap Documentation");

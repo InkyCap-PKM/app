@@ -1,26 +1,18 @@
-// Spell-check underlining for the Typst editor.
+// Spell-check underlines for the Typst editor, in source and visual mode.
+// Checking is done by a Hunspell-backed `SpellChecker` from
+// `spellCheckerFacet`; this module decides what to check and draws the
+// underlines.
 //
-// Runs in both source and visual mode. The actual checking is delegated to a
-// `SpellChecker` (Hunspell-backed) supplied through `spellCheckerFacet`; this
-// module's job is to decide *what* to check and to draw the wavy underlines.
+// The underlines are a CodeMirror layer (positioned elements over the text),
+// not mark decorations: wrapping a word in a `<span>` splits the line into
+// boxes whose widths the browser rounds, so the word would shift when
+// underlined.
 //
-// The underlines are painted by a CodeMirror *layer* (absolutely positioned
-// elements floating over the text) rather than by a mark decoration. A mark
-// decoration would wrap each misspelled word in a <span>, which splits the
-// line into separate inline boxes; the browser rounds each box's width, so the
-// flagged word visibly nudges sideways the moment it is underlined. A layer
-// never touches inline layout, so the text stays exactly where it was.
-//
-// Typst-awareness is the point: we only check prose, never markup or code. We
-// walk the lezer-typst syntax tree and collect text from:
-//   • `Text` leaves — ordinary markup prose, including headings and the prose
-//     inside content brackets (`#callout(..)[prose]`, `#quote[prose]`, …).
-//   • `Str` literals *only when inside a `#verse("…")` call* — verse content is
-//     a string argument, not a Text leaf, so it would otherwise be skipped; the
-//     user explicitly wants verse checked. (Other string args — image paths,
-//     wikilink targets, link URLs — are deliberately left unchecked.)
-// Whole subtrees that never contain prose (raw/code blocks, math, comments,
-// labels, refs, links, imports) are skipped outright.
+// Only prose is checked, found by walking the lezer-typst tree:
+//   • `Text` leaves: ordinary prose, headings, and prose in content brackets (`#callout(..)[prose]`, `#quote[prose]`, …);
+//   • `Str` literals inside `#verse("…")` only, since verse text is a string argument. Other strings (paths, link targets, URLs) aren't checked.
+// Subtrees without prose (raw and code, math, comments, labels, refs, links,
+// imports) are skipped.
 
 import { syntaxTree } from "@codemirror/language";
 import { t } from "../../lib/i18n";
@@ -52,19 +44,16 @@ export const spellCheckerFacet = Facet.define<SpellChecker | null, SpellChecker 
   combine: (values) => (values.length ? values[values.length - 1] : null),
 });
 
-// Words the user chose to "Ignore" this session — skipped by the checker
-// without touching any dictionary. Session-scoped and global (cleared on app
-// restart); a deliberate, lightweight middle ground between a one-off fix and a
-// permanent dictionary add.
+// Words ignored this session, without changing any dictionary. Cleared on
+// restart.
 const ignoredWords = new Set<string>();
 
 // Forces a re-check without a doc/viewport/checker change — dispatched after
 // "Ignore" so the just-ignored word's underline clears immediately.
 const rebuildSpell = StateEffect.define<null>();
 
-// Says "the flagged words changed, repaint the underlines" without asking for
-// another check. Dispatched by the debounced re-check, which has already done
-// the work by the time it fires.
+// Repaint the underlines because the flagged words changed, without checking
+// again. Sent by the debounced re-check after it has run.
 const spellRedraw = StateEffect.define<null>();
 
 // Subtrees that never hold prose — skip them (and their descendants) entirely.
@@ -86,9 +75,8 @@ const SKIP_SUBTREE = new Set([
 ]);
 
 /**
- * A flagged word. Carries no styling of its own: the set of these ranges is
- * only a position store (mapped through edits, queried by the context menu),
- * and the layer below turns it into squiggles.
+ * A flagged word. Only a position store (mapped through edits, used by the
+ * context menu); the layer below draws it.
  */
 class Misspelling extends RangeValue {}
 const misspelling = new Misspelling();
@@ -127,9 +115,8 @@ function checkRange(
   WORD_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = WORD_RE.exec(text)) !== null) {
-    // Trim trailing apostrophes/hyphens (e.g. a possessive's quote) and
-    // normalize the typographic apostrophe to the straight one the
-    // dictionaries store ("don't", "l'eau").
+    // Trim trailing apostrophes and hyphens, and use the straight apostrophe
+    // the dictionaries store ("don't", "l'eau").
     const raw = m[0].replace(/[’'-]+$/, "");
     if (raw.length < 2) continue;
     const word = raw.replace(/’/g, "'");
@@ -177,9 +164,8 @@ const spellcheckPlugin = ViewPlugin.fromClass(
   class {
     misspellings: MisspellingSet;
     /**
-     * The vertical stretch of the scroller, in its own scroll coordinates,
-     * that the underline layer last covered. Null until the first draw, and
-     * again once a redraw has been asked for.
+     * The part of the scroller, in scroll coordinates, the layer last covered.
+     * Null before the first draw and after a redraw is requested.
      */
     drawnBand: { top: number; bottom: number } | null = null;
     private timer: ReturnType<typeof setTimeout> | null = null;
@@ -187,10 +173,9 @@ const spellcheckPlugin = ViewPlugin.fromClass(
 
     constructor(readonly view: EditorView) {
       this.misspellings = findMisspellings(view);
-      // CodeMirror reports a whole line as visible even when only part of a
-      // long wrapped paragraph is on screen, so scrolling inside one line
-      // never triggers a redraw on its own. Ask for one when the user
-      // scrolls past the stretch that was drawn.
+      // CodeMirror counts a long wrapped line as visible even when only part of
+      // it is, so scrolling within it never redraws by itself. Request a redraw
+      // when scrolling past the drawn part.
       this.onScroll = () => {
         const band = this.drawnBand;
         if (!band) return;
@@ -236,9 +221,8 @@ const spellcheckPlugin = ViewPlugin.fromClass(
 );
 
 // ── Underline layer ─────────────────────────────────────────────────────────
-// One absolutely-positioned element per flagged word (per visual line, when a
-// word wraps), drawn on top of the text. Nothing here takes part in inline
-// layout, so underlining a word never moves it.
+// One positioned element per flagged word (per visual line if it wraps), drawn
+// over the text, outside inline layout.
 
 /** Squiggle thickness and its gap below the glyphs, in CSS pixels. */
 const WAVE_HEIGHT = 3;
@@ -246,9 +230,8 @@ const WAVE_GAP = 1;
 /** Rough height of a line of text, as a multiple of its font size. */
 const TEXT_HEIGHT_RATIO = 1.2;
 /**
- * How far past the top and bottom of the screen squiggles are drawn, as a
- * share of the screen's height. Each squiggle is costly to paint, so this
- * stays small; scrolling past it triggers a redraw.
+ * How far beyond the screen to draw, as a share of its height. Kept small
+ * because each squiggle is costly; scrolling past it redraws.
  */
 const UNDERLINE_MARGIN_SCREENS = 0.25;
 
@@ -267,9 +250,8 @@ function fontSizeAt(view: EditorView, pos: number): number {
 }
 
 /**
- * The screen point that layer coordinates are measured from. Mirrors the
- * calculation `RectangleMarker.forRange` uses internally, which CodeMirror
- * does not export.
+ * The point layer coordinates are measured from, computed as
+ * `RectangleMarker.forRange` does internally (not exported).
  */
 function layerOrigin(view: EditorView): { left: number; top: number } {
   const scroller = view.scrollDOM;
@@ -297,11 +279,10 @@ function squiggleUnder(
 }
 
 /**
- * Squiggle bars covering one flagged word. The usual case, a word on one
- * visual line, is placed from the positions of its first and last
- * characters. `RectangleMarker.forRange` handles wrapping properly but costs
- * about 25 times as much per word, which adds up to seconds when a screen
- * holds hundreds of flagged words, so it is kept for words that wrap.
+ * Squiggles for one flagged word. A word on one visual line is placed from its
+ * first and last characters; `RectangleMarker.forRange` handles wrapping but
+ * costs about 25 times as much, which adds up to seconds with hundreds of
+ * flagged words, so it is only used for words that wrap.
  */
 function underlineMarkers(
   view: EditorView,
@@ -331,10 +312,9 @@ function underlineMarkers(
 }
 
 /**
- * The stretch of the document worth underlining: what is on screen plus a
- * margin above and below, so small scrolls find the squiggles already drawn.
- * Also records that stretch on the plugin so scrolling past it asks for a
- * redraw.
+ * The part of the document to underline: the screen plus a margin, so small
+ * scrolls find the squiggles drawn. Also recorded on the plugin, so scrolling
+ * past it requests a redraw.
  */
 function underlineWindow(
   view: EditorView,
@@ -362,9 +342,8 @@ function underlineWindow(
 const spellUnderlineLayer = layer({
   above: true,
   class: "cm-spell-layer",
-  // Text-layout changes (typing, scrolling, decorations appearing) already
-  // re-measure the layer on their own; this only catches the flagged words
-  // changing on their own.
+  // Layout changes already re-measure the layer; this catches the flagged words
+  // changing.
   update: (update) =>
     update.transactions.some((tr) =>
       tr.effects.some((e) => e.is(rebuildSpell) || e.is(spellRedraw)),
@@ -407,11 +386,10 @@ const spellcheckTheme = EditorView.baseTheme({
 });
 
 // ── Right-click menu ────────────────────────────────────────────────────────
-// Selecting a word triggers InkyCap's format toolbar, so the spellcheck menu
-// must NOT select the misspelling — it finds the underlined word under the
-// pointer, replaces it directly on a pick (no selection created), and never
-// summons the toolbar. Built as a plain DOM menu (styled with the shared
-// `.context-menu` tokens) because it's driven by a DOM event, not Solid state.
+// Selecting a word would bring up the format toolbar, so the menu doesn't
+// select the misspelling: it finds the underlined word under the pointer and
+// replaces it directly. A plain DOM menu with the shared `.context-menu`
+// styles, since it comes from a DOM event.
 
 let spellMenuEl: HTMLElement | null = null;
 let dismissSpellMenu: (() => void) | null = null;
@@ -438,10 +416,9 @@ function menuButton(label: string, onClick: () => void, opts?: { muted?: boolean
     closeSpellMenu();
     onClick();
   });
-  // Keyboard activation arrives as a click instead (lib/menu-nav.ts), and no
-  // mousedown ever precedes it. `detail === 0` is what tells the two apart —
-  // a click the pointer produced carries its click count, a synthesised one
-  // does not — so a real mouse click can't run the action twice.
+  // Keyboard activation arrives as a click with no mousedown (lib/menu-nav.ts).
+  // `detail === 0` marks a synthesized click, so a real click doesn't run the
+  // action twice.
   btn.addEventListener("click", (e) => {
     if (e.detail !== 0) return;
     closeSpellMenu();

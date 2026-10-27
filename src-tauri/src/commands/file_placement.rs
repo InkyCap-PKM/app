@@ -14,9 +14,9 @@ use tauri::Manager;
 use crate::state::{AppState, NoteboxSession};
 use crate::storage::local::LocalNoteboxStorage;
 
-/// Where the frontend wants an incoming file placed. Both fields are paths the
-/// frontend already holds (absolute or notebox-relative); the backend turns
-/// them into notebox-relative folders and validates them before writing.
+/// Where the frontend wants an incoming file. Both fields are paths the
+/// frontend has (absolute or notebox-relative); the backend turns them into
+/// notebox-relative folders and checks them before writing.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IncomingPlacement {
@@ -28,9 +28,8 @@ pub struct IncomingPlacement {
     pub current_note: Option<String>,
 }
 
-/// The notebox-relative folder holding `note` (a path from the frontend), or
-/// an empty string (the notebox root) when it is at the root, outside the
-/// notebox, or not a valid path.
+/// The notebox-relative folder of `note` (a frontend path), or `""` (the root)
+/// if it's at the root, outside the notebox or not a valid path.
 pub(crate) fn folder_of_note(note: &str, storage: &LocalNoteboxStorage) -> String {
     let Ok(arg) = crate::storage::path::sanitize_notebox_arg(note) else {
         return String::new();
@@ -66,10 +65,10 @@ pub(crate) async fn default_note_folder(
         .default_note_folder(&current_folder)
 }
 
-/// The notebox-relative folder an incoming file should be written to, per the
-/// rules in the module comment. `is_note` is true for Typst notes (including
-/// Markdown converted to Typst). The result is not yet validated; callers
-/// write through code that rejects folders outside the notebox.
+/// The notebox-relative folder for an incoming file, by the rules at the top of
+/// this file. `is_note` is true for Typst notes (including converted Markdown).
+/// Not yet validated; callers write through code that rejects folders outside
+/// the notebox.
 pub(crate) async fn incoming_folder(
     app: &tauri::AppHandle,
     session: &NoteboxSession,

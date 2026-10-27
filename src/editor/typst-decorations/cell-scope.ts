@@ -1,10 +1,10 @@
-// The scope of a cell editor: which slice of the mirrored note it edits.
+// Which part of the mirrored note a cell editor edits.
 //
 // A table cell is edited in its own CodeMirror view over a copy of the whole
-// note (see table-cell-editor.ts). Everything outside the cell is hidden and
-// locked, and the visual decorations are built for the cell alone. This module
-// holds the two pieces of state that make that work, kept dependency-free so
-// both the decoration builder and the cell editor can import it.
+// note (see table-cell-editor.ts), with everything outside the cell hidden and
+// locked and decorations built for the cell alone. This holds the two pieces of
+// state for that, without dependencies, so the decoration builder and the cell
+// editor can both import it.
 
 import { Facet, StateEffect, StateField } from "@codemirror/state";
 
@@ -15,9 +15,9 @@ export interface ScopeRange {
 }
 
 /**
- * On when the visual decorations should stay inline: block constructs (the
- * table itself, callouts, verse, images, …) are left as raw markup so they
- * never replace the range being edited.
+ * On when decorations must stay inline: block constructs (the table itself,
+ * callouts, verse, images, …) stay raw markup so they never replace the range
+ * being edited.
  */
 export const inlineOnlyFacet = Facet.define<boolean, boolean>({
   combine: (values) => values.some(Boolean),

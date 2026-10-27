@@ -4,11 +4,9 @@ import { typst } from "codemirror-lang-typst";
 import { buildDecorations } from "./visual-plugin";
 import { FuncPillWidget } from "./visual-widgets";
 
-// Direct formatting (`*bold*`, `_italic_`) reveals its delimiters when the
-// caret lands inside, so they can be edited. That reveal used to skip the
-// node's children too, which dropped anything nested inside — a
-// `#highlight[…]` in a bold run lost its fill and its pill and showed as raw
-// source. These pin that the reveal is limited to the delimiters.
+// Bold and italic (`*bold*`, `_italic_`) show their delimiters when the caret
+// is inside, for editing. Only the delimiters may be revealed; anything nested
+// (e.g. a `#highlight[…]` inside bold) keeps its fill and pill.
 
 /** Names of every pill widget in the decoration set. */
 function pillNames(doc: string, caret: number): string[] {

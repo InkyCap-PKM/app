@@ -1,6 +1,5 @@
-/* Journal Scroll pill and continuous scroll view.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Journal Scroll pill and scroll view. Part of layout.css, whose import
+   order (see ../layout.css) keeps the cascade. */
 
 /* ─── Journal Scroll pill (centered in editor header) ─── */
 
@@ -16,9 +15,8 @@
   border-radius: var(--radius-control);
   color: var(--fg-muted);
   cursor: pointer;
-  /* Match .editor-header__icon-btn exactly (its sibling in the header) — without
-     pinning the font-size it inherits the larger header font and renders taller,
-     and without the shared control height it drops out of the toolbar band. */
+  /* Match the sibling .editor-header__icon-btn: fix the font size (it would
+     inherit the larger header font) and use the shared control height. */
   font-size: var(--text-base);
   height: var(--pane-toolbar-control-height);
   box-sizing: border-box;
@@ -45,18 +43,6 @@
   height: 1.15em;
 }
 
-/* "Return to anchor" button — shares the toggle's bordered-button look so
-   the two read as one pill. Shown only while the scroll is on. */
-/* The Journal Scroll's date-direction and return-to-anchor controls live in
-   the right panel (reusing `.right-panel__tab`), not on this pill — so the
-   pill needs only the on/off toggle rule above.
-
-   Anchor-connection decoration has no pill control — it is always on.
-   See `.journal-scroll__entry--*` accent strips and
-   `.journal-scroll__entry-connection` header icons below. */
-
-
-
 /* ─── Journal Scroll view (continuous file scroll) ─── */
 
 .journal-scroll {
@@ -67,27 +53,23 @@
   flex-direction: column;
   gap: var(--space-6);
   background: var(--bg-secondary);
-  /* Seated exactly like the editor's writing surface: flush with the pane
-     while --editor-surface-inset is 0, inset in the gutter panel if the card
-     recipe is ever switched back on. */
+  /* Placed like the editor's writing surface: flush while
+     --editor-surface-inset is 0, inset if the card style is turned on. */
   margin: var(--editor-surface-inset);
   border-radius: var(--editor-surface-radius);
 }
 
 .journal-scroll__entry {
-  /* Card-framed entry: a flat panel with a left accent strip that encodes
-     connection-decoration state in step 13 (anchor, linksToAnchor,
-     linkedFromAnchor, sharesTags). The accent strip element is always
-     present so the modifier classes can light it up without layout shift. */
+  /* An entry card with a left accent strip showing how it connects to the
+     anchor (anchor, links to, linked from, shares tags). The strip is always
+     there, so the modifier classes light it up without shifting layout. */
   position: relative;
   background: var(--bg-primary);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-md);
   overflow: hidden;
   padding: 0;
-  /* Without this, the flex-column parent (with overflow-y: auto) shrinks
-     entries proportionally instead of overflowing — making them visually
-     collapse on top of each other. */
+  /* Don't let the scrolling flex column shrink entries on top of each other. */
   flex-shrink: 0;
 }
 
@@ -101,11 +83,10 @@
   transition: background var(--dur-fast) ease;
 }
 
-/* Connection decoration: an always-on accent strip + a subtle border
-   emphasis. Multiple flags may apply to the same entry; the strip can only
-   show one color, so specificity goes anchor > linksTo > linkedFrom >
-   sharesTags (cascade order below). The per-entry header icons
-   (`.journal-scroll__entry-connection`) show *every* applicable relation. */
+/* Connection strip and border emphasis. The strip shows one colour, so the
+   priority is anchor > linksTo > linkedFrom > sharesTags (cascade order
+   below); the header icons (`.journal-scroll__entry-connection`) show every
+   relation. */
 .journal-scroll__entry--shares-tags > .journal-scroll__entry-accent {
   background: var(--accent-warn);
 }
@@ -148,10 +129,8 @@
   color: var(--syntax-link, var(--accent));
 }
 
-/* Trailing cluster of the entry header — the compile-warning button
-   (when present) followed by the connection icons, pushed to the right
-   edge as a group so the warning button always sits just left of the
-   icons. */
+/* The end of the entry header: the warning button (if any) and the
+   connection icons, kept together at the right. */
 .journal-scroll__entry-header-end {
   margin-left: auto;
   flex-shrink: 0;
@@ -160,11 +139,9 @@
   gap: var(--space-2);
 }
 
-/* Compile-warning button — toggles the (otherwise hidden) diagnostics
-   block. Borderless like the other header buttons: warnings are secondary,
-   nice-to-know info in Journal Scroll, so the icon colour alone carries the
-   signal. Warning amber by default, error red when any diagnostic is an
-   error. */
+/* Warning button, toggling the hidden diagnostics. Borderless like the other
+   header buttons; the colour carries the signal (amber, or red if any is an
+   error). */
 .journal-scroll__entry-warning {
   flex-shrink: 0;
   display: inline-flex;
@@ -195,11 +172,9 @@
   display: block;
 }
 
-/* Connection icons — one per relation an entry has to the scroll's anchor.
-   Each icon is colored to match its accent-strip color so the strip's
-   meaning stays self-documenting. Decorative + tooltip only (no click
-   action); the native `title` carries the explanation on hover, and
-   `aria-label` exposes it to assistive tech. */
+/* One icon per relation to the anchor, coloured like its accent strip.
+   Informational only: `title` explains it on hover and `aria-label` for
+   assistive technology. */
 .journal-scroll__entry-connection {
   flex-shrink: 0;
   display: inline-flex;
@@ -244,18 +219,15 @@
   box-sizing: content-box;
 }
 
-/* Hide bibliography and footnote sections in the scroll view — the Scroll
-   Context sidebar already surfaces citations per-entry, so the full
-   bibliography is redundant noise in the compact scroll layout. */
+/* Hide bibliographies and footnotes in the scroll; the Scroll Context panel
+   lists citations. */
 .journal-scroll__entry-body section[role="doc-bibliography"],
 .journal-scroll__entry-body section[role="doc-endnotes"] {
   display: none;
 }
 
-/* "Show more" / "Show less" strip under a Neighbourhood excerpt: a flat,
-   rounded bar inset from the entry's edges. A faint wash of the accent
-   colour sets it apart from both the white body and the grey header band
-   without competing with the note. */
+/* "Show more" / "Show less" under a Neighbourhood excerpt: a flat rounded
+   bar with a faint accent wash, distinct from the body and the header band. */
 .journal-scroll__show-more {
   display: flex;
   align-items: center;

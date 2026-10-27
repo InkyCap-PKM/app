@@ -1,19 +1,14 @@
-// CM6 heading tracker — publishes the active document's heading list
-// to a Solid signal consumed by OutlinePanel.
+// Heading tracker: publishes the active document's headings to a Solid signal
+// for OutlinePanel.
 //
-// Which lines *are* headings is decided by Typst's own parser, through the
-// shared scan in heading-scan.ts. What stays here is the presentation half:
-// turning a heading's markup into the text a reader expects to see in the
-// outline, and keeping the signal fresh without re-scanning on every
-// keystroke.
+// Which lines are headings is decided by Typst's parser, through
+// heading-scan.ts. This file turns a heading's markup into readable outline
+// text and keeps the signal current without rescanning on every keystroke.
 //
-// Why the display text is a local lexical pass and not a `typst query`
-// round-trip: the outline updates alongside the editor as the user types.
-// Routing each keystroke through the Tauri IPC boundary, the Typst compiler,
-// and the introspector would add ~20ms of latency to every edit. CLAUDE.md's
-// Typst-first principle allows custom code where the native path can't be
-// reached; a synchronous surface can't wait on a compile, and the editor's
-// in-process syntax tree already answers the structural half of the question.
+// Per CLAUDE.md's Typst-first principle: the display text is computed here
+// rather than with `typst query`, because the outline updates as the user types
+// and a compile per keystroke would add about 20ms; the editor's syntax tree
+// already gives the structure.
 
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { syntaxTree } from "@codemirror/language";
@@ -33,17 +28,13 @@ const [headings, setHeadings] = createSignal<Heading[]>([]);
 export { headings };
 
 /**
- * Reduce a heading's inline Typst markup to the readable text a reader expects
- * in the outline — never the raw markup. A heading that is itself a wikilink
- * (`=== #wikilink("Getting Started")`) must read as "Getting Started", and the
- * common emphasis / content-call wrappers shouldn't leak their syntax either.
+ * Reduce a heading's inline markup to readable outline text. A heading that is
+ * a wikilink (`=== #wikilink("Getting Started")`) reads "Getting Started", and
+ * emphasis and content calls lose their syntax.
  *
- * This mirrors what the visual editor renders for the same constructs (a
- * wikilink shows its `display:` alias or its target; a content call shows its
- * body), kept as a small lexical pass because the outline is a synchronous,
- * per-keystroke surface — see the module header for why this file scans source
- * rather than routing through `typst query`. It is a presentation cleanup, not
- * a parser: unmatched or exotic markup is left as-is rather than guessed at.
+ * Matches what the visual editor shows (a wikilink's `display:` or target; a
+ * content call's body). Unmatched or unusual markup is left as is rather than
+ * guessed at.
  */
 export function headingDisplayText(raw: string): string {
   let s = raw;
@@ -56,10 +47,9 @@ export function headingDisplayText(raw: string): string {
   s = s.replace(/#link\(\s*"[^"]*"\s*\)\s*\[([^\]]*)\]/g, (_m, text) => text);
   s = s.replace(/#link\(\s*"([^"]*)"\s*\)/g, (_m, url) => url);
   // Any other content-bracket call (`#strong[…]`, `#emph[…]`, `#highlight[…]`,
-  // `#strike[…]`, `#text(..)[…]`, unknown helpers) renders as its body. The
-  // body pattern excludes nested brackets so the match is the innermost call;
-  // looping until stable then unwraps nested markup (`#strong[#highlight[x]]`)
-  // from the inside out.
+  // `#text(..)[…]`, unknown functions) becomes its body. The pattern excludes
+  // nested brackets, so it matches the innermost call; repeating until nothing
+  // changes unwraps nesting (`#strong[#highlight[x]]`).
   let prev: string;
   do {
     prev = s;
@@ -90,9 +80,11 @@ function collectHeadings(state: EditorState): Heading[] {
   return out;
 }
 
-/** Recompute the heading list for a given editor immediately. Called by the
- *  outline pane when it opens or the active editor changes — the live `update`
- *  hook below is gated to pane-open + debounced, so it doesn't cover those. */
+/**
+ * Recompute an editor's headings now. Called by the outline pane when it opens
+ * or the active editor changes, which the debounced `update` below doesn't
+ * cover.
+ */
 export function rescanHeadings(view: EditorView | undefined): void {
   setHeadings(view ? collectHeadings(view.state) : []);
 }
@@ -106,13 +98,12 @@ export const headingTracker = ViewPlugin.fromClass(
       setHeadings(collectHeadings(view.state));
     }
     update(update: ViewUpdate) {
-      // Only while the outline pane is open (a closed pane costs nothing per
-      // keystroke), and debounced so a multi-thousand-line note isn't fully
-      // re-scanned on every key. Snapshot the immutable state for the timer.
+      // Only while the outline pane is open, and debounced so a long note isn't
+      // rescanned on every key. The state is captured for the timer.
       //
-      // A reparse with no document change still moves headings: closing a code
-      // fence turns everything below it back into markup, and the tree is what
-      // tells us so.
+      // A reparse without a document change can still move headings (closing a
+      // code fence turns the text below back into markup), which the tree
+      // reflects.
       const reparsed = syntaxTree(update.state) !== syntaxTree(update.startState);
       if ((!update.docChanged && !reparsed) || !outlinePaneOpen()) return;
       if (this.timer) clearTimeout(this.timer);

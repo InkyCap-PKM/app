@@ -1,27 +1,18 @@
-//! Corpus statistics engine for the Mycelial View.
+//! Corpus statistics for the Mycelial View.
 //!
-//! Maintains unigram and bigram frequency tables across the notebox corpus,
-//! enabling TF-IDF scoring and PMI-based collocation detection. These
-//! statistics surface "emergent concepts" — terms that recur frequently
-//! across connected notes but have no dedicated page yet.
+//! Keeps unigram and bigram frequency tables across the notebox for TF-IDF
+//! scoring and collocation detection, to find "emergent concepts": terms that
+//! recur across connected notes but have no page yet.
 //!
-//! # Theory
-//!
-//! - **TF-IDF** (Term Frequency–Inverse Document Frequency): scores terms by
-//!   local importance (frequent in a note) modulated by global rarity (not
-//!   everywhere). High TF-IDF = distinctive vocabulary of a document cluster.
-//!
-//! - **PMI** (Pointwise Mutual Information): measures whether a bigram co-occurs
-//!   more than independent chance predicts. High PMI = a meaningful phrase
-//!   ("epistemic humility") rather than accidental adjacency ("the reason").
-//!
-//! - **Composite scoring**: for a given note's neighborhood (link graph ∪
-//!   semantic neighbors), candidate terms are ranked by a weighted blend of
-//!   TF-IDF (distinctiveness, max-normalized per run), NPMI (phrase cohesion,
-//!   n-grams), and *anchor-weighted* proximity — each neighborhood note's
-//!   vote counts in proportion to its similarity to the anchor, so different
-//!   anchors rank differently. The final suggestion slots are filled by MMR
-//!   selection to spread suggestions across the neighborhood.
+//! - **TF-IDF** scores a term by how frequent it is in a note against how common
+//!   it is overall, giving a cluster's distinctive vocabulary.
+//! - **PMI** measures whether a bigram occurs together more often than chance,
+//!   separating phrases ("epistemic humility") from accidental neighbours ("the
+//!   reason").
+//! - **Scoring** ranks candidates in a note's neighbourhood (linked and similar
+//!   notes) by a weighted blend of TF-IDF, NPMI and proximity, where each
+//!   neighbouring note's vote is weighted by its similarity to the anchor. MMR
+//!   selection then spreads the suggestions across the neighbourhood.
 
 pub mod config;
 pub mod stopwords;
@@ -40,10 +31,9 @@ const BIGRAM_SEP: char = '\x1f';
 /// `BIGRAM_SEP` as a `&str`, for `join` call sites.
 const BIGRAM_SEP_STR: &str = "\x1f";
 
-/// Sanity bound on how many words an existing page name may have and still be
-/// matched by the latent-link pass. There is no *functional* limit (a page
-/// title of any realistic length is recognized via its consecutive trigrams);
-/// this only stops a pathological name from driving an unbounded per-doc scan.
+/// Upper bound on the words in a page name the latent-link pass will match.
+/// Longer names are found through their trigrams; this only stops a
+/// pathological name from driving an unbounded scan.
 const MAX_PAGE_NAME_WORDS: usize = 8;
 
 /// The corpus-wide frequency statistics index.
@@ -94,10 +84,9 @@ pub struct EmergentConcept {
     pub is_bigram: bool,
 }
 
-/// A scored latent-link candidate — a recurring term/phrase that *already*
-/// matches an existing page, surfaced so the user can connect the notes that
-/// mention it without a wikilink. `target_path` is the existing page; the
-/// command layer filters `source_notes` down to notes that don't link it yet.
+/// A latent-link candidate: a recurring term that matches an existing page, so
+/// notes mentioning it can be linked. `target_path` is the page; the command
+/// layer narrows `source_notes` to notes not yet linking it.
 #[derive(Debug, Clone, Serialize)]
 pub struct LatentCandidate {
     pub term: String,
@@ -108,10 +97,8 @@ pub struct LatentCandidate {
     pub is_bigram: bool,
 }
 
-/// A term that *would* have surfaced as an emergent concept (it clears the same
-/// document-frequency and neighborhood-recurrence bars) but was dropped because
-/// it is a stopword. Surfaced so the user can see what the filter suppressed and
-/// rescue a word that actually matters in their notebox.
+/// A term that would have been an emergent concept but is a stopword, shown so
+/// the user can rescue a word that matters in their notebox.
 #[derive(Debug, Clone, Serialize)]
 pub struct ExcludedTerm {
     pub term: String,
@@ -119,10 +106,9 @@ pub struct ExcludedTerm {
     /// Neighborhood notes the term recurs in — the "is this worth rescuing?"
     /// signal shown to the user.
     pub doc_count: usize,
-    /// Which layer filtered it — `"builtin"` (the bundled EN/FR lists, rescued
-    /// by force-including via `dictionary.txt`) or `"user"` (the notebox's
-    /// `mycelial-stopwords.txt`, rescued by removing the line). Drives which
-    /// rescue action the UI offers.
+    /// Which list filtered it: `"builtin"` (the bundled EN/FR lists, rescued
+    /// through `dictionary.txt`) or `"user"` (`mycelial-stopwords.txt`, rescued
+    /// by removing the line).
     pub source: String,
 }
 
@@ -231,16 +217,9 @@ impl CorpusStats {
 
     /// Remove a document's contribution from corpus statistics.
     fn remove_doc(&mut self, path: &Path) {
-        // Only count a removal when the document is actually present. `update_doc`
-        // is remove-then-add, so using it to ADD a brand-new document must not
-        // decrement `total_docs` — otherwise the spurious decrement cancels the
-        // `add_doc` increment and the counter never grows. A corpus built
-        // entirely through `update_doc` (e.g. a bulk markdown import reindexing
-        // thousands of files into a fresh corpus) would otherwise leave
-        // `total_docs` stuck near 1 while the per-doc maps fill up, tripping the
-        // `total_docs < min_corpus_size` guard in `analyze_neighborhood`.
-        // `doc_word_count` is the canonical presence map (`add_doc` always
-        // populates it; `contains_doc` reads it).
+        // Only count a removal when the document is present. `update_doc` is
+        // remove-then-add, so adding a new document through it must not decrement
+        // `total_docs`. `doc_word_count` is the presence map.
         if self.doc_word_count.contains_key(path) && self.total_docs > 0 {
             self.total_docs -= 1;
         }
@@ -333,12 +312,9 @@ impl CorpusStats {
         self.doc_word_count.contains_key(path)
     }
 
-    /// Re-derive `total_docs` from the per-document maps. The invariant is
-    /// `total_docs == doc_word_count.len()` (one entry per indexed document);
-    /// call this after loading a persisted snapshot to repair any historical
-    /// desync — notably snapshots written before the `remove_doc`
-    /// over-decrement fix, where a corpus built via `update_doc` (bulk import)
-    /// left the counter stuck near 1 while the maps were fully populated.
+    /// Recompute `total_docs` from the per-document maps (it must equal
+    /// `doc_word_count.len()`). Call after loading a snapshot; older ones can
+    /// have it far too low.
     pub fn resync_total_docs(&mut self) {
         self.total_docs = self.doc_word_count.len();
     }
@@ -381,16 +357,9 @@ impl CorpusStats {
         (p_bigram / (p_w1 * p_w2)).log2()
     }
 
-    /// Normalized PMI for a bigram: `pmi / (−log₂ P(bigram))`, clamped to
-    /// `[0, 1]`.
-    ///
-    /// Raw PMI is unbounded (a genuine collocation easily reaches 8–12 bits)
-    /// while every other composite-score component lives in `[0, 1]`, so raw
-    /// PMI dominated the blend and made the ranking effectively corpus-global
-    /// — the root cause of the "same suggestions from every anchor" failure.
-    /// NPMI preserves the ordering among collocations but shares the others'
-    /// scale, so the config weights genuinely arbitrate. Negative association
-    /// (co-occurring less than chance) clamps to 0 — never a concept signal.
+    /// Normalized PMI of a bigram: `pmi / (−log₂ P(bigram))`, clamped to `[0,
+    /// 1]`. Raw PMI is unbounded and would outweigh the other score components,
+    /// which are all in `[0, 1]`. Negative association clamps to 0.
     pub fn npmi(&self, bigram_key: &str) -> f64 {
         if self.total_bigrams == 0 {
             return 0.0;
@@ -418,10 +387,9 @@ impl CorpusStats {
         }
     }
 
-    /// TF-IDF weight vector and its Euclidean norm for one document.
-    /// `doc_unigrams` stores unique term *sets*, so per-doc term frequency is
-    /// approximated as 1/word_count — consistent with
-    /// `avg_tfidf_in_neighborhood`. `None` when the doc is unindexed or empty.
+    /// TF-IDF vector and its norm for one document. `doc_unigrams` holds term
+    /// sets, so term frequency is approximated as 1/word_count, as in
+    /// `avg_tfidf_in_neighborhood`. `None` for an unindexed or empty document.
     fn doc_vector(&self, path: &Path) -> Option<(HashMap<&str, f64>, f64)> {
         let terms = self.doc_unigrams.get(path)?;
         let wc = self.doc_word_count.get(path).copied().unwrap_or(1).max(1) as f64;
@@ -466,10 +434,9 @@ impl CorpusStats {
         }
     }
 
-    /// Rank the `m` documents most semantically similar to `center` by
-    /// cosine similarity over TF-IDF vectors, with scores. This widens a
-    /// note's neighborhood beyond its (possibly sparse) link graph, and the
-    /// scored form also feeds kindred-note detection (similar but unlinked).
+    /// The `m` documents most similar to `center` (cosine over TF-IDF), with
+    /// scores. Widens a neighbourhood beyond its links and feeds kindred-note
+    /// detection.
     pub fn similar_docs_scored(&self, center: &Path, m: usize) -> Vec<(PathBuf, f64)> {
         if self.total_docs == 0 || m == 0 {
             return Vec::new();
@@ -508,10 +475,8 @@ impl CorpusStats {
             .collect()
     }
 
-    /// Cosine similarity of each of `paths` against `center` — the input for
-    /// anchor-weighted proximity, where a neighborhood note's vote counts in
-    /// proportion to how related it is to the note under analysis. The center
-    /// itself maps to 1.0; unindexed notes map to 0.
+    /// Cosine similarity of each of `paths` to `center`, for weighting
+    /// proximity votes. The centre maps to 1.0, unindexed notes to 0.
     pub fn similarity_map(&self, center: &Path, paths: &[PathBuf]) -> HashMap<PathBuf, f64> {
         let center_data = self.doc_vector(center);
         paths
@@ -535,10 +500,8 @@ impl CorpusStats {
         self.doc_word_count.get(path).copied()
     }
 
-    /// The most distinctive vocabulary two documents share: the intersection
-    /// of their unique-term sets ranked by idf (rarest first). This is the
-    /// "why are these two notes kindred" explanation the Mycelial View shows,
-    /// and doubles as writing-prompt material.
+    /// The most distinctive terms two documents share, rarest first: the
+    /// Mycelial View's explanation of why they are kindred.
     pub fn shared_distinctive_terms(&self, a: &Path, b: &Path, k: usize) -> Vec<String> {
         let (Some(sa), Some(sb)) = (self.doc_unigrams.get(a), self.doc_unigrams.get(b)) else {
             return Vec::new();
@@ -561,26 +524,19 @@ impl CorpusStats {
         shared.into_iter().take(k).cloned().collect()
     }
 
-    /// Analyze a note's neighborhood, splitting recurring terms into two
-    /// growth signals: **emergent concepts** (no page yet) and **latent
-    /// links** (a page already exists, but the notes mentioning it haven't
-    /// linked to it). `existing_pages` maps a lowercased page name (stem,
-    /// title, or alias) to the page's path.
+    /// Analyze a note's neighbourhood for two signals: **emergent concepts**
+    /// (no page yet) and **latent links** (a page exists but the notes
+    /// mentioning it don't link to it). `existing_pages` maps lowercased page
+    /// names (stem, title or alias) to paths.
     ///
-    /// `note_weights` maps every neighborhood note to its anchor weight —
-    /// `max(cosine-to-center, depth decay)`, built by the command layer — so a
-    /// term's proximity counts notes in proportion to how related they are to
-    /// the anchor. This is what makes two different anchors produce genuinely
-    /// different rankings instead of filtering one corpus-global leaderboard.
+    /// `note_weights` gives each neighbourhood note its weight relative to the
+    /// anchor (built by the command layer), so different anchors rank
+    /// differently.
     ///
-    /// Scoring runs in two passes: **gather** raw components (TF-IDF, NPMI,
-    /// weighted proximity) under the corpus-size threshold schedule, then
-    /// **blend** after normalizing the TF-IDF component by the run's maximum
-    /// (TF-IDF has no natural [0, 1] scale; NPMI and proximity already do).
-    /// Emergent slots are then filled by MMR selection so one dense pair of
-    /// notes can't supply every suggestion. Latent candidates return with raw
-    /// blended scores — the command layer merges dangling-wikilink candidates
-    /// on the same scale, MMR-selects, and normalizes at the end.
+    /// Two passes: gather raw TF-IDF, NPMI and proximity under the corpus-size
+    /// thresholds, then blend after scaling TF-IDF by the run's maximum.
+    /// Emergent slots are filled by MMR. Latent candidates keep raw scores; the
+    /// command layer merges, selects and normalizes them.
     pub fn analyze_neighborhood(
         &self,
         note_weights: &HashMap<PathBuf, f64>,
@@ -592,9 +548,8 @@ impl CorpusStats {
             latent: Vec::new(),
             excluded: Vec::new(),
         };
-        // Latent links are name matching and work from the second note on;
-        // only the *statistical* signals are gated, via the threshold
-        // schedule below.
+        // Latent links are name matching and work from the second note; only
+        // the statistical signals are gated, below.
         if note_weights.is_empty() || self.total_docs < 2 {
             return empty();
         }
@@ -604,19 +559,14 @@ impl CorpusStats {
         let mut candidates: Vec<RawCandidate> = Vec::new();
         let mut excluded: Vec<ExcludedTerm> = Vec::new();
 
-        // Latent links, name-driven: look each existing page name up in the
-        // per-doc n-gram sets instead of filtering the corpus frequency
-        // tables. This frees latent links from every statistical gate (a
-        // single mention of an existing page is already actionable) and finds
-        // names that never cleared `min_doc_freq` as corpus n-grams. Names
-        // longer than 3 words, or containing a stopword or one-letter word,
-        // are unreachable through the sets and are skipped — same reach the
-        // frequency-table path had, minus its df gates.
+        // Latent links: look each page name up in the per-document n-gram sets
+        // rather than the frequency tables, so a single mention counts. Names
+        // of more than 3 words are found through their trigrams below; names
+        // with a stopword or one-letter word aren't in the sets and are
+        // skipped.
         for (name, target_path) in existing_pages {
             let words: Vec<&str> = name.split_whitespace().collect();
-            // No hard length cap: a page named with many words should still be
-            // recognized as existing. `MAX_PAGE_NAME_WORDS` is only a sanity
-            // bound so a pathological title can't drive an unbounded scan.
+            // See `MAX_PAGE_NAME_WORDS`.
             if words.is_empty() || words.len() > MAX_PAGE_NAME_WORDS {
                 continue;
             }
@@ -663,20 +613,15 @@ impl CorpusStats {
                 };
                 (wprox, count, source_notes, distinct, distinct_is_tfidf)
             } else {
-                // Long names (4+ words): no n-gram set is indexed for the
-                // whole phrase, so detect it via its consecutive trigrams — a
-                // document contains the phrase iff it contains every one of
-                // the phrase's overlapping trigrams (the same overlap
-                // invariant `stitch_overlapping_shingles` relies on). This
-                // scans only the neighborhood, costs no persistent memory, and
-                // scales with the number of long-named pages, not the corpus.
+                // Names of 4+ words: a document contains the phrase if it
+                // contains all its overlapping trigrams (as
+                // `stitch_overlapping_shingles` assumes). Scans only the
+                // neighbourhood.
                 let tri_keys: Vec<String> =
                     words.windows(3).map(|w| w.join(BIGRAM_SEP_STR)).collect();
-                // Global prune: if any constituent trigram never occurs the
-                // phrase can't appear anywhere — skip before the per-doc scan.
-                // `min_tri_df` bounds the phrase's own doc frequency from above
-                // (a phrase is no more frequent than its rarest trigram), so it
-                // stands in for `df` in the ubiquity guard.
+                // If any trigram never occurs, skip. `min_tri_df` is an upper
+                // bound on the phrase's document frequency, so it stands in for
+                // `df` in the ubiquity check.
                 let mut min_tri_df = usize::MAX;
                 let mut absent = false;
                 for k in &tri_keys {
@@ -728,10 +673,9 @@ impl CorpusStats {
                     continue;
                 }
                 if self.stopwords.contains(term) {
-                    // The term cleared the df window but is a stopword. If it
-                    // also recurs across the neighborhood like a real emergent
-                    // concept would (and isn't already a page), record it as a
-                    // *suppressed* candidate so the UI can surface it for rescue.
+                    // A stopword that recurs like an emergent concept (and isn't
+                    // a page) is recorded as suppressed, so the UI can offer to
+                    // rescue it.
                     let (wprox, count, _) =
                         self.weighted_presence(term, note_weights, &self.doc_unigrams);
                     if count >= config.min_neighborhood_presence
@@ -846,10 +790,8 @@ impl CorpusStats {
             }
         }
 
-        // Blend pass: normalize the TF-IDF component by the run's maximum
-        // (its raw scale is idf/word-count units, meaningless next to the
-        // [0, 1] NPMI and proximity components), then apply the config
-        // weights and the n-gram boosts.
+        // Blend: scale TF-IDF by the run's maximum to match the [0, 1]
+        // components, then apply the weights and n-gram boosts.
         let max_tfidf = candidates
             .iter()
             .filter(|c| c.distinct_is_tfidf)
@@ -892,26 +834,21 @@ impl CorpusStats {
             }
         }
 
-        // Fuse consecutive overlapping shingles ("a b c" + "b c d" → "a b c
-        // d") into one concept before ranking, so the user sees the phrase
-        // rather than three near-identical windows of it.
+        // Merge overlapping shingles ("a b c" + "b c d" → "a b c d") into one
+        // phrase before ranking.
         stitch_overlapping_shingles(&mut emergent);
 
-        // Some surviving phrases are already covered by an existing page: an
-        // exact page name the per-n-gram checks couldn't catch (e.g. a 4-word
-        // title only the stitcher reassembled), or a shorter phrase wholly
-        // inside a neighborhood page's title. Drop them so the view suggests
-        // genuinely *new* concepts, not pages the user already has.
+        // Drop phrases already covered by a page: an exact name only the
+        // stitcher reassembled, or a phrase inside a neighbourhood page's
+        // title.
         let neighborhood_pages: HashSet<String> = note_weights
             .keys()
             .map(|p| crate::storage::to_frontend_string(p))
             .collect();
         suppress_existing_page_phrases(&mut emergent, existing_pages, &neighborhood_pages);
 
-        // Sort by score, then term, so equal-scoring candidates land in a
-        // stable order (HashMap iteration order is otherwise non-deterministic),
-        // then fill the emergent slots by MMR so the suggestions spread across
-        // the neighborhood instead of one dense cluster supplying everything.
+        // Sort by score, then term, for a stable order, then fill the emergent
+        // slots by MMR.
         emergent.sort_by(|a, b| {
             b.score
                 .partial_cmp(&a.score)
@@ -927,10 +864,8 @@ impl CorpusStats {
         );
         normalize_scores(emergent.iter_mut().map(|c| &mut c.score));
 
-        // Latent keeps extra headroom and RAW scores: the command layer drops
-        // candidates whose mentions all turn out to already be linked, merges
-        // in dangling-wikilink candidates on the same scale, MMR-selects, and
-        // normalizes at the end.
+        // Latent keeps extra candidates and raw scores for the command layer
+        // (see `analyze_neighborhood`).
         latent.sort_by(|a, b| {
             b.score
                 .partial_cmp(&a.score)
@@ -954,10 +889,10 @@ impl CorpusStats {
         }
     }
 
-    /// One pass over the neighborhood for a term: the anchor-weighted
-    /// presence (Σ weight of containing notes / Σ all weights, in [0, 1]),
-    /// the raw containing-note count, and the sorted containing-note list.
-    /// `sets` is one of `doc_unigrams` / `doc_bigram_sets` / `doc_trigram_sets`.
+    /// For one term across the neighbourhood: the weighted presence (weight of
+    /// containing notes / total weight, in [0, 1]), the count of containing
+    /// notes, and their sorted list. `sets` is `doc_unigrams`, `doc_bigram_sets`
+    /// or `doc_trigram_sets`.
     fn weighted_presence(
         &self,
         term: &str,
@@ -976,9 +911,7 @@ impl CorpusStats {
                 notes.push(crate::storage::to_frontend_string(path));
             }
         }
-        // `note_weights` is a HashMap — iteration order varies per call.
-        // Sort so the same notebox always yields the same result, and the
-        // Mycelial View layout stays stable across recomputes.
+        // Sort so results (and the Mycelial layout) are stable.
         notes.sort();
         let wprox = if total_weight > 0.0 {
             weight_sum / total_weight
@@ -988,14 +921,10 @@ impl CorpusStats {
         (wprox, count, notes)
     }
 
-    /// Anchor-weighted presence of a phrase longer than the largest indexed
-    /// n-gram (4+ words), detected through its consecutive trigrams: a document
-    /// contains the phrase iff its trigram set contains every one of the
-    /// phrase's overlapping trigrams. Same overlap invariant
-    /// `stitch_overlapping_shingles` relies on, so latent recognition of a long
-    /// page name stays consistent with how emergent shingles are fused.
-    /// `tri_keys` are `BIGRAM_SEP`-joined trigram keys. Returns (weighted
-    /// presence in [0, 1], containing-doc count, sorted source notes).
+    /// Weighted presence of a phrase of 4+ words, found through its overlapping
+    /// trigrams (see `stitch_overlapping_shingles`). `tri_keys` are
+    /// `BIGRAM_SEP`-joined trigram keys. Returns (weighted presence,
+    /// containing-doc count, sorted source notes).
     fn phrase_presence_via_trigrams(
         &self,
         tri_keys: &[String],
@@ -1069,16 +998,13 @@ impl CorpusStats {
     }
 }
 
-/// Corpus-size bands for the emergent-concept threshold schedule. Below
-/// `SPARSE_CORPUS_DOCS` the frequency statistics are pure noise, so emergent
-/// concepts stay off entirely (latent links, which are name matching, still
-/// run). Between the bands the frequency floors relax to 2 so a young notebox
-/// surfaces *something*, flagged as tentative by the UI via `total_docs`.
+/// Corpus-size bands for emergent concepts. Below `SPARSE_CORPUS_DOCS` they are
+/// off (latent links still run). Between the bands the frequency floors drop to
+/// 2, and the UI marks results as tentative.
 pub const SPARSE_CORPUS_DOCS: usize = 10;
 pub const GROWING_CORPUS_DOCS: usize = 50;
 
-/// The thresholds actually applied for a given corpus size — the scaled
-/// replacement for the old hard `min_corpus_size` cliff.
+/// The thresholds applied for a given corpus size, scaled with it.
 struct EffectiveThresholds {
     emergent_enabled: bool,
     min_doc_freq: usize,
@@ -1111,9 +1037,8 @@ fn effective_thresholds(config: &MycelialConfig, total_docs: usize) -> Effective
     }
 }
 
-/// A candidate signal gathered in the first pass of `analyze_neighborhood`,
-/// carrying raw score components; blending happens once the run's TF-IDF
-/// maximum is known.
+/// A candidate from the first pass of `analyze_neighborhood`, with raw score
+/// components.
 struct RawCandidate {
     /// Display form (words joined with spaces, lowercased corpus form).
     term: String,
@@ -1132,12 +1057,10 @@ struct RawCandidate {
     latent_target: Option<String>,
 }
 
-/// Greedy Maximal-Marginal-Relevance selection: repeatedly take the candidate
-/// with the best `score − λ · max Jaccard overlap` between its source-note
-/// set and each already-selected candidate's. Keeps the top slots from all
-/// being supplied by one dense pair of notes — the diversity half of the
-/// anti-repetition work. Pass items pre-sorted (score desc, term asc) so ties
-/// resolve deterministically; the output keeps selection order (best first).
+/// Greedy MMR selection: repeatedly take the candidate with the best `score − λ
+/// · max Jaccard overlap` of its source notes with those already selected, so
+/// one dense pair of notes can't fill every slot. Pass items sorted (score
+/// desc, term asc) for deterministic ties; output is in selection order.
 pub(crate) fn mmr_select<T>(
     mut items: Vec<T>,
     k: usize,
@@ -1185,38 +1108,16 @@ fn jaccard(a: &[String], b: &[String]) -> f64 {
     }
 }
 
-/// Fuse emergent concepts that are consecutive overlapping shingles of one
-/// longer run — "a b c" + "b c d" + "c d e" → "a b c d e".
-///
-/// Two same-length n-grams chain when the suffix of one equals the prefix of
-/// the next *and* they share a source note (so they are windows of the same
-/// run, not a coincidental word match in unrelated notes). The stitched
-/// concept keeps the best score of its parts and the union of their source
-/// notes; `resolve_mention` in the command layer then verifies the run
-/// actually occurs verbatim, dropping any over-eager stitch.
-///
-/// Same-length only: a bigram that is a prefix of a trigram ("machine
-/// learning" vs "machine learning models") is a legitimately distinct
-/// concept at a coarser grain and is deliberately left alone.
 /// Drop emergent concepts an existing page already covers:
-///   * **exact match** — the concept's words are exactly a page's name. It is
-///     an existing page, not a new concept, so it is suppressed
-///     unconditionally (the `<= 3`-word emergent passes catch this earlier via
-///     `existing_pages.contains_key`; this catches longer phrases that only
-///     `stitch_overlapping_shingles` reassembled, e.g. "charles van den
-///     heuvel" against the page "Charles van den Heuvel").
-///   * **subphrase** — a *multi-word* concept whose words are a contiguous run
-///     inside a longer page name *that is itself present in the neighborhood*.
-///     The neighborhood gate is what separates "you already have a page
-///     encompassing this" (suppress: e.g. "collection development" inside a
-///     linked "Collection Development Team") from a short phrase that merely
-///     shares words with some unrelated page (keep). Single-word concepts are
-///     never suppressed as subphrases — one word sits inside too many titles
-///     to carry meaning.
+///   * **exact match**: the concept is a page's name. Shorter phrases are
+///     caught earlier through `existing_pages`; this catches longer ones the
+///     stitcher reassembled ("charles van den heuvel").
+///   * **subphrase**: a multi-word concept inside a longer page name that is
+///     in the neighbourhood (e.g. "collection development" inside a linked
+///     "Collection Development Team"). Single words are never dropped this
+///     way; they sit inside too many titles.
 ///
-/// All terms compared are lowercased (emergent terms come from lowercased
-/// n-gram keys; `existing_pages` keys are lowercased at build time), so the
-/// match is case-insensitive.
+/// Terms are lowercased on both sides, so matching ignores case.
 fn suppress_existing_page_phrases(
     emergent: &mut Vec<EmergentConcept>,
     existing_pages: &HashMap<String, String>,
@@ -1253,6 +1154,14 @@ fn suppress_existing_page_phrases(
     });
 }
 
+/// Merge emergent concepts that are overlapping windows of one longer run:
+/// "a b c" + "b c d" + "c d e" → "a b c d e".
+///
+/// Two n-grams of the same length chain when one's suffix is the other's
+/// prefix and they share a source note. The result keeps the best score and
+/// all source notes; `resolve_mention` in the command layer checks that the
+/// run really occurs. Different lengths aren't merged: "machine learning" and
+/// "machine learning models" are distinct concepts.
 fn stitch_overlapping_shingles(emergent: &mut Vec<EmergentConcept>) {
     let n = emergent.len();
     if n < 2 {
@@ -1425,9 +1334,7 @@ pub fn extract_trigrams_from_tokens(
     let mut line2: usize = usize::MAX;
 
     for token in tokens {
-        // Punctuation ends the phrase run — a trigram must not span a comma,
-        // paren, sentence boundary, etc. The break token still starts a
-        // fresh run of its own.
+        // Punctuation ends the phrase run; the next token starts a new one.
         if token.phrase_break_before {
             w1 = None;
             w2 = None;
@@ -1458,10 +1365,8 @@ pub fn extract_trigrams_from_tokens(
     trigrams
 }
 
-/// Persisted form for cache serialization. Mirrors `PersistedSearchIndex`:
-/// the stats are loaded on notebox open and incrementally reconciled against
-/// the current files (via `saved_at` vs file mtime) instead of rebuilt from
-/// scratch — an O(corpus) re-tokenization the search index already avoids.
+/// Saved form of the stats. Like `PersistedSearchIndex`, loaded on open and
+/// updated for files changed since `saved_at` rather than rebuilt.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PersistedCorpusStats {
     pub stats: CorpusStats,
@@ -1469,9 +1374,8 @@ pub struct PersistedCorpusStats {
 }
 
 impl PersistedCorpusStats {
-    /// Serialize a borrowed `CorpusStats` with a save timestamp. Best-effort:
-    /// a serialization or write failure is logged and ignored (the snapshot is
-    /// a cache; a missing one just rebuilds on next open).
+    /// Save `stats` with a timestamp. Failures are logged and ignored; it is a
+    /// cache.
     pub fn save_borrowed(stats: &CorpusStats, saved_at: i64, path: &Path) {
         #[derive(Serialize)]
         struct Ref<'a> {
@@ -1493,9 +1397,8 @@ impl PersistedCorpusStats {
         }
     }
 
-    /// Load a persisted snapshot, or `None` if absent/unreadable/stale-format.
-    /// The `stopwords` set is `#[serde(skip)]`, so the caller must
-    /// `reload_stopwords` after loading.
+    /// Load a saved snapshot, or `None` if missing, unreadable or an old
+    /// format. `stopwords` isn't saved, so call `reload_stopwords` afterwards.
     pub fn load_from_file(path: &Path) -> Option<Self> {
         let data = std::fs::read(path).ok()?;
         bincode::deserialize(&data).ok()
@@ -1799,13 +1702,8 @@ mod tests {
 
     #[test]
     fn update_doc_on_new_docs_grows_total_docs() {
-        // Regression: `update_doc` is remove-then-add. Using it to ADD brand-new
-        // documents — exactly what a bulk markdown import does when it reindexes
-        // every file into a fresh corpus — must still grow `total_docs`. A prior
-        // over-decrement in `remove_doc` cancelled the `add_doc` increment, so a
-        // whole imported notebox ended up with `total_docs == 1` while the
-        // per-doc maps were fully populated, tripping the `min_corpus_size` guard
-        // in `analyze_neighborhood` and disabling latent/emergent detection.
+        // `update_doc` is remove-then-add; adding new documents through it (as a
+        // bulk import does) must still grow `total_docs`.
         let mut stats = CorpusStats::new(None);
         for i in 0..50 {
             let tokens = vec![make_token("alpha", 0), make_token(&format!("term{i}"), 0)];
@@ -1917,9 +1815,8 @@ mod tests {
 
     #[test]
     fn latent_recognizes_page_name_longer_than_three_words() {
-        // A 4-word page name is beyond the largest indexed n-gram, so it is
-        // detected via its consecutive trigrams. Two notes mention it without
-        // linking, so it must surface as a latent link.
+        // A 4-word page name, found through its trigrams; two notes mention it
+        // without linking, so it is a latent link.
         let phrase = ["quantum", "error", "correcting", "codes"];
         let mut stats = CorpusStats::new(None);
         stats.add_doc(Path::new("a.typ"), &doc(&phrase));

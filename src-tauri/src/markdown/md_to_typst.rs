@@ -1,24 +1,10 @@
 // ---------------------------------------------------------------------------
-// Why this is a Rust-side converter and not a Typst package
-// ---------------------------------------------------------------------------
-//
-// The Typst-native option here would be the `cmarker` package, which
-// renders CommonMark inside Typst. We deliberately don't use it because:
-//
-// 1. `cmarker` is consume-only (md → rendered output). It can't produce a
-//    `.typ` source file we can store as a note, which is what every InkyCap
-//    import path needs.
-// 2. InkyCap markdown carries first-class extensions — wikilinks, Obsidian
-//    tags, `==highlight==`, YAML frontmatter mapped to `#note(...)`. None of
-//    these survive a generic CommonMark parser; they have to be transformed
-//    pre-parse into their Typst-package equivalents (`#wikilink`, `#tag`,
-//    `#highlight`, `#note`).
-//
-// So the converter stays in Rust — it's not duplicating Typst, it's bridging
-// markdown semantics into our package's vocabulary. Per CLAUDE.md's
-// Typst-first principle: this is the "last resort, necessary to accomplish
-// something important" case. Don't replace this with a Typst-side renderer
-// without a plan for the four extensions above.
+// Per CLAUDE.md's Typst-first principle, a Typst-side renderer such as the
+// `cmarker` package was considered and rejected: it only renders Markdown,
+// it can't produce `.typ` source to store as a note, and it doesn't handle
+// InkyCap's extensions (wikilinks, Obsidian tags, `==highlight==`, YAML
+// frontmatter as `#note(...)`), which must become `#wikilink`, `#tag`,
+// `#highlight` and `#note` calls.
 // ---------------------------------------------------------------------------
 
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
@@ -30,26 +16,17 @@ use std::sync::LazyLock;
 use super::frontmatter::{parse_frontmatter_fields, sanitize_ident, system_alias, ParsedYamlValue};
 use crate::property_types::{builtin_property_type, PropertyType};
 
-/// Source-markdown dialect the converter should assume. The two flavors
-/// diverge in three meaningful places:
+/// The Markdown dialect of the source. The dialects differ in three places:
 ///
-/// - **`#word` semantics.** In Obsidian, `#word` after whitespace is a
-///   tag and the user has already `\#`-escaped any literal hashes.
-///   In standard markdown, `#` is purely literal (CommonMark only
-///   reserves it at line-start for headings, which pulldown-cmark
-///   consumes) so we must escape every `#` in pass-through text so
-///   things like prices, version numbers, and issue refs survive.
-/// - **`$…$` math.** Obsidian honors `$inline$` and `$$display$$`
-///   math; CommonMark does not. We enable pulldown-cmark's math
-///   extension only for Obsidian — otherwise `$6000 + travel $3000`
-///   parses as one math span.
-/// - **`%%comment%%`.** Obsidian's inline-comment syntax; stripped
-///   pre-parse in Obsidian, left as-is for standard.
+/// - **`#word`**: in Obsidian, `#word` after whitespace is a tag and literal
+///   hashes are already escaped. In standard Markdown, `#` is literal, so every
+///   `#` in text is escaped (prices, versions, issue numbers).
+/// - **`$…$` math**: only Obsidian has math; otherwise `$6000 + travel $3000`
+///   would parse as one math span.
+/// - **`%%comment%%`**: Obsidian comments, stripped only for Obsidian.
 ///
-/// Wikilink syntax (`[[…]]`), image embeds (`![[…]]`), and
-/// `==highlight==` are converted in both dialects — they're widely
-/// used outside Obsidian (Logseq, Foam, Pandoc) and not at risk of
-/// colliding with anything in standard markdown.
+/// Wikilinks, `![[…]]` embeds and `==highlight==` are converted in both
+/// dialects, since other tools use them too.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MarkdownDialect {
     /// CommonMark / GitHub-Flavored Markdown. `#` is always literal
@@ -67,24 +44,19 @@ pub struct MarkdownToTypstOptions {
     /// Whether to convert YAML frontmatter into a `#note(...)` call.
     /// When false, frontmatter is silently dropped.
     pub convert_frontmatter: bool,
-    /// Notebox attachment folder (relative to notebox root, without leading
-    /// slash) used to construct paths for Obsidian-style image embeds
-    /// `![[name.png]]`. The importer routes referenced files into this
-    /// folder so the emitted call `#image("/<attachment_folder>/name.png")`
-    /// resolves to the file's post-import location.
+    /// Notebox attachment folder (relative, no leading slash). The importer
+    /// moves embedded files here, and `![[name.png]]` becomes
+    /// `#image("/<attachment_folder>/name.png")`.
     pub attachment_folder: String,
     /// Source-markdown dialect — see [`MarkdownDialect`].
     pub dialect: MarkdownDialect,
-    /// User-confirmed YAML→property mapping from the import dialog, keyed by
-    /// lowercased source key. When `Some`, frontmatter is emitted strictly
-    /// per this table — keys absent from it (or mapped to `None`) are
-    /// dropped, and each value is formatted for its target property type.
-    /// When `None`, the importer falls back to the built-in alias defaults
-    /// (used by paths with no mapping UI: directory import, paste).
+    /// The YAML-to-property mapping confirmed in the import dialog, keyed by
+    /// lowercased source key. When `Some`, only mapped keys are emitted, each
+    /// formatted for its property type. When `None` (directory import, paste),
+    /// built-in defaults apply.
     pub frontmatter_mapping: Option<FrontmatterMapping>,
-    /// How to render LaTeX-flavoured math (`$…$` / `$$…$$`) from the source.
-    /// Markdown math is LaTeX, which Typst can't typeset natively — see
-    /// [`MathImportMode`].
+    /// How to handle LaTeX math (`$…$` / `$$…$$`), which Typst can't typeset;
+    /// see [`MathImportMode`].
     pub math: MathImportMode,
 }
 
@@ -106,21 +78,19 @@ impl Default for MarkdownToTypstOptions {
 /// notebox for a user-installed `mitex` package.
 #[derive(Debug, Clone, Default)]
 pub enum MathImportMode {
-    /// `mitex` is installed — render LaTeX via `#mi(`…`)` (inline) and
-    /// `#mitex(`…`)` (block), adding the package import to notes that use it.
-    /// The string is the installed version, for the import line.
+    /// `mitex` is installed: render LaTeX with `#mi(`…`)` (inline) and
+    /// `#mitex(`…`)` (block), importing the package in notes that use it. The
+    /// string is the installed version.
     Mitex { version: String },
-    /// `mitex` is absent — preserve the LaTeX verbatim as inline raw (inline
-    /// math) or a fenced ```` ```latex ```` block (display math). Nothing is
-    /// lost and the note still compiles; the user can install mitex or
-    /// rewrite the math as Typst math later.
+    /// `mitex` isn't installed: keep the LaTeX as inline raw or a ```` ```latex
+    /// ```` block. The note still compiles, and the math can be converted
+    /// later.
     #[default]
     Preserve,
 }
 
-/// Counts/flags from one conversion, so the importer can report how many
-/// LaTeX equations fell back to code blocks (and tell the user how to render
-/// them).
+/// Counts from one conversion, so the importer can report how many equations
+/// were kept as code.
 #[derive(Debug, Clone, Default)]
 pub struct ConversionStats {
     /// LaTeX equations preserved as code (mitex absent).
@@ -142,11 +112,9 @@ pub struct FieldMapping {
 /// Lowercased-source-key → mapping. Built from the user's dialog choices.
 pub type FrontmatterMapping = HashMap<String, FieldMapping>;
 
-/// `![[name.png|alt]]` — Obsidian-style image embed. Must run BEFORE
-/// the wikilink regex so the `[[name]]` portion isn't matched as a
-/// plain wikilink and the leading `!` left orphaned. The alt-text
-/// group (after `|`) is captured and forwarded to Typst's `image(alt:)`
-/// argument for search/accessibility.
+/// `![[name.png|alt]]` image embed. Runs before the wikilink pattern, which
+/// would otherwise leave the `!` behind. The alt text after `|` becomes
+/// `image(alt:)`.
 static IMAGE_EMBED_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]").unwrap());
 
@@ -165,11 +133,9 @@ static OBSIDIAN_TAG_RE: LazyLock<Regex> =
 static OBSIDIAN_HIGHLIGHT_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"==([^=\n>][^=\n]*)==").unwrap());
 
-// CriticMarkup → InkyCap primitives (interop with Obsidian/iA Writer/etc.).
-// Suggestions map to `#suggestion(...)`; CriticMarkup's comment + highlight map
-// to `#annotation` / `#highlight`. These run before the bare `==highlight==` pass
-// because `{==x==}` embeds `==x==`. `(?s)`-style `[\s\S]*?` allows multi-word
-// (single-line) content.
+// CriticMarkup (Obsidian, iA Writer, …): suggestions become `#suggestion(...)`,
+// comments `#annotation`, highlights `#highlight`. These run before the
+// `==highlight==` pass, since `{==x==}` contains `==x==`.
 static CRITIC_SUBSTITUTE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\{~~([\s\S]*?)~>([\s\S]*?)~~\}").unwrap());
 static CRITIC_INSERT_RE: LazyLock<Regex> =
@@ -181,16 +147,14 @@ static CRITIC_COMMENT_RE: LazyLock<Regex> =
 static CRITIC_HIGHLIGHT_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\{==([\s\S]*?)==\}").unwrap());
 
-/// Obsidian inline-comment syntax: `%%comment%%`. Renders to nothing in
-/// Obsidian; we strip it pre-parse for the Obsidian dialect only.
-/// `(?s)` makes `.` match newlines so multi-line comments are caught.
+/// Obsidian `%%comment%%`, stripped for the Obsidian dialect. `(?s)` catches
+/// multi-line comments.
 static OBSIDIAN_COMMENT_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)%%.*?%%").unwrap());
 
-/// Split an Obsidian link target into the note and the heading it points
-/// at. Obsidian jumps to the last heading named (`Diary#Week 3#Monday` goes
-/// to *Monday*). A link to a paragraph (`Diary#^a1b2c3`) has no InkyCap
-/// counterpart, so it keeps only the note. A target with no note part
-/// (`#Monday`, a heading in the same note) is left whole.
+/// Split an Obsidian link target into the note and heading. Obsidian uses the
+/// last heading (`Diary#Week 3#Monday` → *Monday*). A paragraph link
+/// (`Diary#^a1b2c3`) keeps only the note. A target with no note part
+/// (`#Monday`) is left whole.
 fn split_link_target(target: &str) -> (&str, Option<&str>) {
     let Some((note, rest)) = target.split_once('#') else {
         return (target.trim(), None);
@@ -254,12 +218,9 @@ fn embed_kind(name: &str) -> EmbedKind {
     }
 }
 
-/// Extract the set of filenames referenced by Obsidian-style file embeds
-/// (`![[name.png]]`, `![[clip.mp4]]`, `![[paper.pdf]]`) in a markdown
-/// source. Note embeds (`![[Other note]]`) are left out. The importer uses
-/// this to decide which files in the source notebox should be routed into
-/// the user's `attachment_folder` instead of preserving their original
-/// relative paths.
+/// File names embedded with `![[name.png]]`, `![[clip.mp4]]` or
+/// `![[paper.pdf]]` (note embeds excluded). The importer moves these into the
+/// attachment folder.
 pub fn extract_embed_filenames(input: &str) -> Vec<String> {
     let mut out = Vec::new();
     for caps in IMAGE_EMBED_RE.captures_iter(input) {
@@ -271,11 +232,9 @@ pub fn extract_embed_filenames(input: &str) -> Vec<String> {
     out
 }
 
-/// Extract the basenames of files referenced by standard markdown images
-/// (`![alt](path)`), skipping external (`http(s)://`, `data:`) and already-
-/// absolute (`/…`) URLs. Like [`extract_embed_filenames`], the importer routes
-/// these files into the user's `attachment_folder` so every imported image
-/// lands in one place (matching drag/drop/paste behaviour — see CLAUDE.md).
+/// Base names of files in standard images (`![alt](path)`), skipping external
+/// (`http(s)://`, `data:`) and absolute (`/…`) URLs. The importer moves these
+/// into the attachment folder too.
 pub fn extract_image_filenames(input: &str) -> Vec<String> {
     let mut out = Vec::new();
     for caps in STD_IMAGE_RE.captures_iter(input) {
@@ -295,18 +254,15 @@ pub fn extract_image_filenames(input: &str) -> Vec<String> {
     out
 }
 
-/// Whether an image URL points outside the notebox (so it's left untouched):
-/// a scheme-qualified URL (`http://`, `data:`) or an already notebox-absolute
+/// Whether an image URL is left untouched: a URL with a scheme or an absolute
 /// path (`/…`).
 fn is_external_or_absolute(url: &str) -> bool {
     url.starts_with('/') || url.starts_with("data:") || url.contains("://")
 }
 
-/// A notebox-local link or image address, with percent-codes such as `%20`
-/// turned back into the characters they stand for. Markdown apps (Obsidian by
-/// default) write a space in an address as `%20`, but the file and note names
-/// they point to have real spaces. An address that doesn't decode to valid
-/// text is kept as written.
+/// A local link or image address with percent-codes decoded: Markdown apps
+/// write spaces as `%20`, but the files have real spaces. Kept as written if it
+/// doesn't decode to valid text.
 fn decode_local_address(url: &str) -> Cow<'_, str> {
     percent_encoding::percent_decode_str(url)
         .decode_utf8()
@@ -318,9 +274,8 @@ fn image_basename(url: &str) -> &str {
     url.rsplit('/').next().unwrap_or(url)
 }
 
-/// Rewrite a standard-markdown image URL to the notebox-absolute attachment
-/// path the importer routes the file into. External/absolute URLs pass
-/// through unchanged.
+/// The notebox-absolute attachment path for a standard image URL. External and
+/// absolute URLs are returned unchanged.
 fn route_image_url(url: &str, attachment_folder: &str) -> String {
     if is_external_or_absolute(url) {
         return url.to_string();
@@ -371,15 +326,12 @@ pub fn markdown_to_typst_with_stats(
 
     out.push('\n');
 
-    // Pre-process: replace wikilinks, image embeds, and (Obsidian
-    // dialect only) tags + `%%comments%%` before parsing.
-    // pulldown-cmark splits text around `[` characters, so wikilink
-    // patterns never arrive as a single text event.
+    // Replace wikilinks, embeds and (Obsidian only) tags and `%%comments%%`
+    // before parsing; pulldown-cmark splits text at `[`, so a wikilink never
+    // arrives as one text event.
     let preprocessed = preprocess_markdown(body, &options.attachment_folder, options.dialect);
 
-    // `$…$` math is an Obsidian/Pandoc extension, not CommonMark.
-    // Enabling it in the Standard dialect would consume things like
-    // `salary + $6000 ... $3000 ...` as a math span.
+    // Math only in the Obsidian dialect (see `MarkdownDialect`).
     let mut md_options = Options::ENABLE_TABLES
         | Options::ENABLE_FOOTNOTES
         | Options::ENABLE_STRIKETHROUGH
@@ -413,13 +365,9 @@ pub fn markdown_to_typst_with_stats(
         }
     }
 
-    // Standard-dialect post-pass: escape any `#` that isn't part of a
-    // recognized Typst function call we emit. This runs on the full
-    // assembled output (not per-`Event::Text`) because pulldown-cmark
-    // can split a call like `#highlight[yellow]` across text events —
-    // `#highlight` arrives alone, `[yellow]` separately — and we need
-    // both visible together to decide whether the leading `#` should
-    // survive.
+    // Standard dialect: escape every `#` that doesn't start a call we emit.
+    // Done on the whole output because pulldown-cmark can split
+    // `#highlight[yellow]` across text events.
     if matches!(options.dialect, MarkdownDialect::Standard) {
         out = escape_unrecognized_hashes(&out);
     }
@@ -427,13 +375,8 @@ pub fn markdown_to_typst_with_stats(
     (out, stats)
 }
 
-/// Names of Typst function calls the converter emits with a leading
-/// `#`. Used by the Standard-dialect post-pass to preserve their `#`
-/// while escaping every other occurrence in user prose.
-///
-/// `import` and `note` appear in the file preamble; the rest are
-/// emitted from various converter paths and from preprocessor
-/// rewrites (`#tag`, `#wikilink`, `#image`, `#highlight`).
+/// Typst calls the converter emits with a `#`, which the Standard-dialect
+/// escape pass leaves alone.
 const EMITTED_TYPST_CALLS: &[&str] = &[
     "import",
     "note",
@@ -448,29 +391,23 @@ const EMITTED_TYPST_CALLS: &[&str] = &[
     "table",
     "line",
     "footnote",
-    // mitex math calls (only emitted when the package is installed); math is
-    // Obsidian-dialect-only today, but list them so the Standard-dialect
-    // hash-escape never mangles a `#mi`/`#mitex` should that change.
+    // mitex calls. Math is Obsidian-only, but listing them keeps `#mi` /
+    // `#mitex` safe if that changes.
     "mi",
     "mitex",
 ];
 
 fn escape_unrecognized_hashes(text: &str) -> String {
-    // Hand-rolled scan because the `regex` crate doesn't do lookahead
-    // (and depending on `fancy-regex` for this one decision isn't
-    // worth it). Walk the source byte-by-byte; at every `#`, check
-    // whether the next identifier is in [`EMITTED_TYPST_CALLS`] and
-    // is terminated by a non-word char or end-of-input. If so, leave
-    // the `#` alone; otherwise emit `\#`.
+    // A manual scan, since the `regex` crate has no lookahead: at each `#`,
+    // keep it if the following word is in [`EMITTED_TYPST_CALLS`] and ends at a
+    // non-word character or the end; otherwise write `\#`.
     let bytes = text.as_bytes();
     let mut out = String::with_capacity(text.len());
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'#' {
             let after_hash = i + 1;
-            // Scan an ASCII-identifier-like word: [a-zA-Z][a-zA-Z0-9_-]*
-            // Names are all ASCII-lowercase, so we don't need to worry
-            // about UTF-8 byte boundaries here.
+            // The names are ASCII, so scanning bytes is safe here.
             let mut j = after_hash;
             while j < bytes.len() {
                 let b = bytes[j];
@@ -492,9 +429,7 @@ fn escape_unrecognized_hashes(text: &str) -> String {
             i += 1;
             continue;
         }
-        // Copy this UTF-8 codepoint as-is. We can't index byte-by-byte
-        // into the output string for multi-byte chars without care, so
-        // walk by char_indices when the byte is non-ASCII.
+        // Copy non-ASCII characters whole.
         if bytes[i].is_ascii() {
             out.push(bytes[i] as char); // utf8-safe: guarded by is_ascii() — byte is 0..=127, maps identically to char
             i += 1;
@@ -507,19 +442,12 @@ fn escape_unrecognized_hashes(text: &str) -> String {
     out
 }
 
-/// Pre-process markdown source to replace wikilinks and (in Obsidian
-/// mode) tag/comment syntax with their Typst equivalents before the
-/// markdown parser sees them.
-///
-/// `attachment_folder` is the notebox-relative folder (no leading slash)
-/// the importer routes `![[name.png]]` embeds into; the emitted
-/// `#image("/<attachment_folder>/name")` path matches where the file
-/// will actually land post-import.
+/// Replace wikilinks and (in Obsidian mode) tags and comments with their Typst
+/// equivalents before the Markdown parser runs. `attachment_folder` is where
+/// the importer moves `![[name.png]]` files.
 fn preprocess_markdown(input: &str, attachment_folder: &str, dialect: MarkdownDialect) -> String {
-    // Order matters: replace Obsidian tags FIRST (so `#wikilink` produced by
-    // the wikilink pass isn't falsely matched as a tag), and image embeds
-    // before plain wikilinks (since `![[…]]` overlaps `[[…]]` and the
-    // generic wikilink replacement would leave the `!` orphaned otherwise).
+    // Order matters: tags first, so a `#wikilink` produced later isn't taken as
+    // a tag; embeds before wikilinks, since `![[…]]` contains `[[…]]`.
     let mut result = input.to_string();
 
     // `%%comment%%` — Obsidian inline comments. Strip pre-parse so they
@@ -529,11 +457,8 @@ fn preprocess_markdown(input: &str, attachment_folder: &str, dialect: MarkdownDi
         result = OBSIDIAN_COMMENT_RE.replace_all(&result, "").into_owned();
     }
 
-    // Replace Obsidian-style tags, but not inside code fences. Only in
-    // the Obsidian dialect: in Standard markdown a leading `#` after
-    // whitespace is just a literal character (`issue #42`, `version #2`,
-    // `model #abc-xyz`), and we must leave it alone so the later
-    // text-escape pass can `\#` it.
+    // Obsidian tags, outside code fences. In standard Markdown `#` after
+    // whitespace is literal (`issue #42`) and is escaped later instead.
     if matches!(dialect, MarkdownDialect::Obsidian) {
         let mut in_code_fence = false;
         let lines: Vec<String> = result
@@ -564,15 +489,11 @@ fn preprocess_markdown(input: &str, attachment_folder: &str, dialect: MarkdownDi
         result = lines.join("\n");
     }
 
-    // Replace `![[name]]` embeds BEFORE wikilinks so the generic wikilink
-    // pass doesn't strip the `[[…]]` and leave the `!` dangling as
-    // `!#wikilink(...)`. Each becomes what Obsidian shows for that kind of
-    // file (see `EmbedKind`). A note embed is handed on to the wikilink pass
-    // as a plain `[[…]]`. The filename's spaces and other URL-unsafe
-    // characters are kept — Typst paths accept them inside quoted strings.
-    // Paths are rooted at the notebox root (Per CLAUDE.md's portable-paths
-    // principle) and join the configured attachment folder so the importer's
-    // file-move target matches.
+    // `![[name]]` embeds, before wikilinks. Each becomes what Obsidian shows
+    // for that file type (see `EmbedKind`); a note embed is passed on as
+    // `[[…]]`. Spaces in file names are kept (they are fine in quoted Typst
+    // paths). Paths are notebox-root-absolute in the attachment folder, where
+    // the importer moves the files.
     result = IMAGE_EMBED_RE
         .replace_all(&result, |caps: &regex::Captures| {
             let name = caps[1].trim();
@@ -605,9 +526,8 @@ fn preprocess_markdown(input: &str, attachment_folder: &str, dialect: MarkdownDi
         })
         .into_owned();
 
-    // Replace wikilinks after tag processing. A heading in the target
-    // (`[[Diary#Monday]]`) becomes the link's `label:`, which InkyCap
-    // matches against the heading's text when the heading has no label.
+    // A heading in the target (`[[Diary#Monday]]`) becomes the link's `label:`,
+    // which InkyCap matches against heading text.
     result = WIKILINK_RE
         .replace_all(&result, |caps: &regex::Captures| {
             let (note, heading) = split_link_target(&caps[1]);
@@ -623,10 +543,7 @@ fn preprocess_markdown(input: &str, attachment_folder: &str, dialect: MarkdownDi
         })
         .into_owned();
 
-    // CriticMarkup → InkyCap primitives. Run before the bare `==highlight==`
-    // pass: `{==x==}` embeds `==x==`, so converting the braced form first stops
-    // the highlight pass from clipping it. Substitution before insert/delete is
-    // for clarity (distinct delimiters, so order isn't load-bearing).
+    // Before the `==highlight==` pass, since `{==x==}` contains `==x==`.
     result = CRITIC_SUBSTITUTE_RE
         .replace_all(&result, |caps: &regex::Captures| {
             format!(
@@ -688,12 +605,10 @@ pub fn extract_frontmatter(input: &str) -> (Option<String>, &str) {
     }
 }
 
-/// Convert YAML frontmatter into a `#note(...)` call using the built-in
-/// alias defaults. Used by import paths with no mapping UI (directory
-/// import, clipboard paste). Common keys resolve to their system property
-/// (`created`→`date`, `summary`→`description`, …); every other valid key
-/// passes through under its own (sanitized) name. The value-typing for each
-/// field follows the same rules as the dialog-driven path.
+/// Convert YAML frontmatter to a `#note(...)` call using the built-in defaults,
+/// for imports without the mapping dialog (directory import, paste). Common
+/// keys map to system properties (`created` → `date`, `summary` →
+/// `description`, …); others keep their sanitized name.
 fn frontmatter_to_note(yaml: &str) -> String {
     let fields = parse_frontmatter_fields(yaml);
     let mut emitted: Vec<(String, String)> = Vec::new();
@@ -715,11 +630,9 @@ fn frontmatter_to_note(yaml: &str) -> String {
     emit_note(&emitted)
 }
 
-/// Convert YAML frontmatter into a `#note(...)` call following the user's
-/// confirmed mapping (from the import dialog). Keys absent from the mapping,
-/// or mapped to `None`, are dropped. Distinct source keys that resolve to
-/// the same target collapse to the first occurrence (a `#note` call can't
-/// carry the same named argument twice).
+/// Convert YAML frontmatter to a `#note(...)` call using the mapping from the
+/// import dialog. Unmapped keys are dropped; when several keys map to the same
+/// target, the first wins.
 fn frontmatter_to_note_mapped(yaml: &str, mapping: &FrontmatterMapping) -> String {
     let fields = parse_frontmatter_fields(yaml);
     let mut emitted: Vec<(String, String)> = Vec::new();
@@ -756,9 +669,8 @@ fn emit_note(fields: &[(String, String)]) -> String {
     format!("#note(\n{},\n)", args.join(",\n"))
 }
 
-/// Format a parsed frontmatter value as a Typst expression for the given
-/// target property type. Returns `None` when the value is effectively empty
-/// (so the property is simply omitted rather than emitted as `""`).
+/// A frontmatter value as a Typst expression for the target type, or `None`
+/// when empty (the property is omitted).
 fn format_value_for_type(value: &ParsedYamlValue, ty: PropertyType) -> Option<String> {
     match ty {
         PropertyType::List | PropertyType::CommaList => {
@@ -813,9 +725,8 @@ fn format_value_for_type(value: &ParsedYamlValue, ty: PropertyType) -> Option<St
     }
 }
 
-/// Split a scalar that's being coerced into a list. A bracketed inline list
-/// or a comma-separated string becomes multiple items; anything else is a
-/// single-element list.
+/// Split a scalar being turned into a list: a bracketed list or comma-separated
+/// string becomes several items, anything else one.
 fn split_scalar_list(value: &str) -> Vec<String> {
     let value = value.trim();
     let inner = value
@@ -846,20 +757,15 @@ fn format_string_value(s: &str) -> String {
     format!("\"{}\"", escape_str(s))
 }
 
-/// Escape a string for use inside a Typst `"..."` string literal — only `\`
-/// and `"` are special there (`$`, backtick, etc. are literal inside a
-/// string), so this is intentionally narrower than `escape_text_for_typst`.
+/// Escape for a Typst `"..."` literal: only `\` and `"`. Narrower than
+/// `escape_text_for_typst`.
 fn escape_str(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-/// Heuristic: does this `$…$` content use LaTeX-only syntax Typst can't
-/// typeset natively? Markdown math is LaTeX, but the simple common cases
-/// (`E = mc^2`, `1 + 2 = 3`, `x^2 + y^2`) are also valid Typst math and
-/// render fine left as-is. Backslash commands (`\sum`, `\frac`, `\leq`) and
-/// `{}` grouping are LaTeX-specific — Typst uses `(...)` grouping and named
-/// functions — so those need mitex (or a code-block fallback). This keeps
-/// simple math rendering natively and only diverts genuine LaTeX.
+/// Whether `$…$` content needs LaTeX (backslash commands like `\frac`, or `{}`
+/// grouping). Simple math such as `E = mc^2` is also valid Typst and is left as
+/// is.
 fn is_latex_specific(math: &str) -> bool {
     math.contains('\\') || math.contains('{') || math.contains('}')
 }
@@ -891,19 +797,16 @@ struct Converter<'a> {
     in_code_block: bool,
     in_footnote: bool,
     footnote_label: String,
-    // Task-list conversion: an Obsidian/GFM `- [ ]` item becomes an InkyCap
-    // `#task(...)`. `task_line_reset` records the output offset right after a
-    // list item's bullet was emitted, so a TaskListMarker (which always
-    // follows the item start) can rewrite that bullet into a task. `in_task`
-    // routes the item's text into `task_buf` instead of the output.
+    // Task lists: a `- [ ]` item becomes `#task(...)`. `task_line_reset` is the
+    // output offset just after the item's bullet, so the TaskListMarker that
+    // follows can rewrite it; `in_task` sends the item text to `task_buf`.
     task_line_reset: Option<usize>,
     task_indent: String,
     in_task: bool,
     task_done: bool,
     task_buf: String,
-    // Math handling — see `MathImportMode`. `math_as_code` counts LaTeX
-    // equations preserved as code (mitex absent); `used_mitex` records that a
-    // `#mi`/`#mitex` call was emitted (so the note imports the package).
+    // See `MathImportMode`. `math_as_code` counts equations kept as code;
+    // `used_mitex` records that the note needs the mitex import.
     math_mode: MathImportMode,
     math_as_code: u32,
     used_mitex: bool,
@@ -964,9 +867,7 @@ impl<'a> Converter<'a> {
 
     fn emit(&mut self, s: &str) {
         if self.in_task {
-            // The task body is a plain string argument; capture everything
-            // (including any inline markup chars) so it isn't written to the
-            // document body mid-task.
+            // The task body is a string argument; collect all of it here.
             self.task_buf.push_str(s);
         } else if self.in_table_cell {
             self.cell_buf.push_str(s);
@@ -1027,9 +928,8 @@ impl<'a> Converter<'a> {
                 self.emit(&format!("#footnote[see {}]", label));
             }
             Event::TaskListMarker(checked) => {
-                // A task marker always immediately follows its list-item
-                // start. Rewrite the just-emitted bullet into an InkyCap
-                // `#task(...)`: drop the bullet and capture the item text.
+                // The marker follows its item start: turn the bullet just
+                // written into `#task(...)` and collect the item text.
                 if let Some(reset) = self.task_line_reset.take() {
                     self.out.truncate(reset);
                     self.in_task = true;
@@ -1137,11 +1037,9 @@ impl<'a> Converter<'a> {
                     } else {
                         format!("{}- ", indent)
                     };
-                    // On the direct output path, flush pending newlines and
-                    // record the line-start offset so a following
-                    // TaskListMarker can rewrite this bullet into #task.
-                    // Inside a blockquote/table cell the output is buffered
-                    // elsewhere, so skip task rewriting there.
+                    // Record the line start so a TaskListMarker can rewrite
+                    // this bullet. Not inside blockquotes or table cells, whose
+                    // output is buffered elsewhere.
                     if self.blockquote_depth == 0 && !self.in_table_cell {
                         self.flush_newlines();
                         self.task_line_reset = Some(self.out.len());
@@ -1288,9 +1186,7 @@ impl<'a> Converter<'a> {
                 // Route notebox-local images into the attachment folder; leave
                 // external/absolute URLs untouched.
                 let routed = route_image_url(&url, &self.attachment_folder);
-                // The `![alt]` text is forwarded to Typst's `image(alt:)` for
-                // search/accessibility. Inline markup inside the alt is flattened
-                // to plain text (Typst's `alt` is a plain `str`).
+                // The alt text becomes `image(alt:)`, flattened to plain text.
                 let alt = std::mem::take(&mut self.image_alt);
                 let alt = alt.trim();
                 if alt.is_empty() {
@@ -1350,9 +1246,7 @@ impl<'a> Converter<'a> {
 
     fn text(&mut self, text: &str) {
         if self.in_task {
-            // Task body is a plain-string argument: capture raw text (no
-            // Typst-markup escaping); `escape_str` handles the string literal
-            // at emit time.
+            // Raw text; `escape_str` escapes it when emitted.
             self.task_buf.push_str(text);
             return;
         }
@@ -1363,9 +1257,8 @@ impl<'a> Converter<'a> {
         }
 
         if self.in_image {
-            // Accumulate the `![alt]` text (raw); escaping happens at emit
-            // time via `escape_str`, and inline markup is flattened to plain
-            // text since Typst's `image(alt:)` takes a plain string.
+            // Raw alt text, flattened and escaped with `escape_str` when
+            // emitted.
             self.image_alt.push_str(text);
             return;
         }
@@ -1381,35 +1274,19 @@ impl<'a> Converter<'a> {
     }
 }
 
-/// Escape Typst-syntactic characters in pass-through markdown text so
-/// a stray character in the source doesn't acquire markup meaning
-/// post-import. This runs per-`Event::Text` and handles characters
-/// whose escape decision needs no surrounding context:
+/// Escape characters in pass-through text that would otherwise become Typst
+/// markup:
 ///
-/// - `` ` ``: a single bare backtick opens an inline raw region that
-///   swallows everything up to the next backtick.
-/// - `$`: opens math mode, which runs until the next `$`. Unbalanced
-///   dollar signs (e.g. plain-text prices like `$3000` / `$6000`)
-///   put everything in between into math mode.
-/// - `\`: Typst's own escape character. Pulldown-cmark may surface
-///   backslashes from source text (file paths, regex examples) that
-///   would otherwise consume the next character.
+/// - `` ` `` opens raw text up to the next backtick.
+/// - `$` opens math up to the next `$` (prices like `$3000`).
+/// - `\` is Typst's escape character.
 ///
-/// `#` is handled separately by [`escape_unrecognized_hashes`] in a
-/// final post-pass over the full converted output — pulldown-cmark
-/// can split a call like `#highlight[yellow]` across multiple text
-/// events (the `[…]` portion arrives separately), so deciding at
-/// per-event granularity whether a `#` is a function call or user
-/// prose isn't reliable. The post-pass sees full context.
-///
-/// Other Typst sigils (`[`, `]`) are intentionally NOT escaped
-/// because the preprocessor injects bracketed Typst calls like
-/// `#highlight[content]` through this text path. Standard-markdown
-/// inline syntax (`_`, `*`, headings, code spans) is consumed by
-/// pulldown-cmark and arrives as its own event kinds, so we don't
-/// see those characters as plain text. `@cite-key` and `<label>`
-/// produce only localized rendering errors, not document-wide
-/// breakage, so they're left to compile-time diagnostics.
+/// `#` is handled by [`escape_unrecognized_hashes`] on the whole output, since
+/// a call can be split across text events. `[` and `]` aren't escaped because
+/// the preprocessor passes bracketed calls like `#highlight[content]` through
+/// here. Markdown syntax (`_`, `*`, code spans) arrives as separate events.
+/// `@cite` and `<label>` only cause local errors, so they are left to compile
+/// diagnostics.
 fn escape_text_for_typst(text: &str) -> String {
     if !text.chars().any(needs_basic_escape) {
         return text.to_string();
@@ -1501,9 +1378,7 @@ fn heading_level_to_u8(level: HeadingLevel) -> u8 {
 mod tests {
     use super::*;
 
-    /// Existing tests were written before the dialect split; almost
-    /// all of them assume Obsidian behavior (tag preprocessing, math,
-    /// `[[wikilink]]`). New tests targeting the Standard dialect use
+    /// Converts with the Obsidian dialect. Standard-dialect tests use
     /// [`convert_standard`].
     fn convert(md: &str) -> String {
         let opts = MarkdownToTypstOptions {
@@ -1533,7 +1408,7 @@ mod tests {
 
     #[test]
     fn default_frontmatter_emits_via_serde_yaml() {
-        // Block-style list (unsupported by the old line parser) now works.
+        // Block-style list.
         let md =
             "---\ntitle: My Note\ntags:\n  - alpha\n  - beta\ncreated: 2024-03-01\n---\n\nBody";
         let out = convert(md);
@@ -1738,12 +1613,8 @@ mod tests {
 
     #[test]
     fn image_embed_emits_image_call_under_attachment_folder() {
-        // Obsidian-style image embed should NOT become `!#wikilink(...)`
-        // — the leading `!` was being orphaned because the wikilink
-        // regex stripped the `[[…]]` portion. The fix is a dedicated
-        // image-embed regex running first; the emitted path joins the
-        // configured attachment folder so it matches where the
-        // importer routes the file.
+        // An embed must not become `!#wikilink(...)`; its path joins the
+        // configured attachment folder.
         let opts = MarkdownToTypstOptions {
             attachment_folder: "Assets".to_string(),
             ..MarkdownToTypstOptions::default()
@@ -1843,10 +1714,7 @@ mod tests {
 
     #[test]
     fn image_embed_with_alt_text_preserves_alt() {
-        // `![[name.png|alt text]]` — the alt portion (after `|`) is
-        // forwarded to Typst's `image(alt:)` for search/accessibility.
-        // Without the dedicated image-embed pass the wikilink regex
-        // would turn it into `!#wikilink(\"name.png\", display: \"alt\")`.
+        // The alt text after `|` becomes `image(alt:)`.
         let opts = MarkdownToTypstOptions {
             attachment_folder: "Assets".to_string(),
             ..MarkdownToTypstOptions::default()
@@ -1860,9 +1728,7 @@ mod tests {
 
     #[test]
     fn plain_wikilink_still_works_after_image_embed_pass() {
-        // Regression: the image-embed regex runs before the wikilink
-        // regex; make sure a plain `[[link]]` isn't accidentally
-        // consumed by the new pass.
+        // The embed pass must not consume a plain `[[link]]`.
         let opts = MarkdownToTypstOptions::default();
         let result = markdown_to_typst("see [[My Note]]", &opts);
         assert!(result.contains("#wikilink(\"My Note\")"));
@@ -1871,20 +1737,15 @@ mod tests {
 
     #[test]
     fn escapes_stray_backtick() {
-        // Regression: a single stray backtick in markdown source
-        // (e.g. a typo after a wikilink) would otherwise open a Typst
-        // raw block and swallow the rest of the document. Importer
-        // must emit it as an escaped backtick so the file stays well-
-        // formed and the rest of the source renders normally.
+        // A stray backtick must be escaped, or it opens a raw block that
+        // swallows the rest of the document.
         let result = convert("see [[Concordia]]`\n\n## Next section\n");
         // The escape — `\``  — leaves the rest of the document free.
         assert!(
             result.contains("\\`"),
             "expected escaped backtick, got:\n{result}"
         );
-        // And the section heading after the typo should still appear
-        // as a heading (would be consumed by the unclosed raw block
-        // otherwise).
+        // The following heading still converts.
         assert!(
             result.contains("== Next section"),
             "section heading after stray backtick missing:\n{result}"
@@ -1893,11 +1754,8 @@ mod tests {
 
     #[test]
     fn escapes_dollar_signs() {
-        // Regression from a real import: a list with prices like
-        // `$6000 ... $3000 ... $3000` paired unbalanced dollar signs
-        // and dropped the entire rest of the document into math mode.
-        // Each `$` in pass-through text must be escaped to `\$` so
-        // they render as literal currency symbols.
+        // Unbalanced dollar signs in prices would put the rest of the document
+        // in math mode; each `$` must become `\$`.
         let md = "- salary $6000 + travel\n- bonus $3000\n- extra $3000 more\n";
         let result = convert(md);
         assert!(
@@ -1915,10 +1773,7 @@ mod tests {
 
     #[test]
     fn escapes_backslash() {
-        // Typst uses `\` as the escape character. Pass-through text
-        // containing backslashes (file paths, etc.) needs them
-        // doubled so they appear as literal characters in the import
-        // rather than escaping whatever follows.
+        // Backslashes in text are doubled so they stay literal.
         let result = convert("path C:\\Users\\jc\\file.txt");
         assert!(
             result.contains("C:\\\\Users\\\\jc\\\\file.txt"),
@@ -1928,9 +1783,7 @@ mod tests {
 
     #[test]
     fn fenced_code_block_content_not_escaped() {
-        // Inside a Typst raw block the content is verbatim — backticks
-        // there would still be problematic in principle, but escaping
-        // them would corrupt code listings. Keep the existing behavior.
+        // Code blocks are verbatim; escaping backticks would corrupt them.
         let result = convert("```\nfn foo() { let s = `hi`; }\n```");
         assert!(
             result.contains("let s = `hi`;"),
@@ -1940,10 +1793,7 @@ mod tests {
 
     #[test]
     fn inline_code_span_preserved() {
-        // `Event::Code` is a different event from `Event::Text` — we
-        // emit it with surrounding backticks to make a Typst raw
-        // inline. The text-escape path does NOT see it, so the
-        // backticks emitted here are intentional and must survive.
+        // Inline code is emitted with its own backticks, which must survive.
         let result = convert("call `format!()` here");
         assert!(
             result.contains("`format!()`"),
@@ -1953,10 +1803,7 @@ mod tests {
 
     #[test]
     fn standard_dialect_escapes_literal_hash() {
-        // `issue #42`, `version #2`, `model #abc` are common standard-
-        // markdown patterns that must survive as literals. Without
-        // escaping, Typst would parse `#42` as the integer 42 (so the
-        // `#` disappears) and `#abc` as an undefined function call.
+        // `#42` would otherwise be the integer 42 and `#abc` a function call.
         let result = convert_standard("see issue #42 and version #2 and model #abc");
         assert!(
             result.contains("issue \\#42"),
@@ -1974,10 +1821,7 @@ mod tests {
 
     #[test]
     fn standard_dialect_preserves_injected_calls() {
-        // Even in Standard, `[[wikilink]]` / `![[embed]]` / `==hi==`
-        // are still converted to Typst function calls — those flow
-        // through the same text-emit path as escaped `#`, so the
-        // escape pass must NOT touch their leading `#`.
+        // Calls produced from `[[…]]`, `![[…]]` and `==…==` keep their `#`.
         let result = convert_standard("see [[My Note]] and ![[pic.png]] and ==yellow== text");
         assert!(
             result.contains("#wikilink(\"My Note\")"),
@@ -2059,9 +1903,7 @@ mod tests {
 
     #[test]
     fn standard_dialect_disables_dollar_math() {
-        // In Obsidian, `$E=mc^2$` is math (consumed by pulldown-cmark
-        // and emitted via Event::InlineMath). In Standard, the same
-        // text is plain prose — the `$` signs get escaped to `\$`.
+        // In Standard, `$E=mc^2$` is prose and the `$` is escaped.
         let result = convert_standard("formula: $E=mc^2$ here");
         assert!(
             result.contains("\\$E=mc^2\\$"),

@@ -1,45 +1,31 @@
-//! Typst-AST-driven plain-text projection for full-text search.
+//! Plain-text projection of a note for full-text search.
 //!
-//! The search engine's job is to find a user's *prose*, not raw Typst
-//! source. Indexing raw bytes means `_italicize_` is tokenized as the
-//! single word `_italicize_` and the user's "italicize" query misses;
-//! a `#tag("doc-howto")` call ends up on whichever line the tag panel
-//! navigates to, which isn't the line the tag is actually on.
+//! Search should match prose, not raw source: `_italicize_` must be found by
+//! "italicize". Per CLAUDE.md's Typst-first principle, the source is parsed
+//! with `typst::syntax::parse` and walked to collect `Text` leaves, plus the
+//! text arguments of a few functions (tag, wikilink, link, image and embed
+//! names). Markup (`Emph`, `Strong`, content-bracket calls, headings, list
+//! items) drops out because it wraps the text rather than containing it.
 //!
-//! Per CLAUDE.md's Typst-first principle: instead of stripping markup
-//! with regex, we parse the source with `typst::syntax::parse` — the
-//! same parser the compiler uses — and walk the AST collecting every
-//! `Text` leaf along with a few well-known function-call arguments
-//! that carry user-visible text (tag/wikilink/link/image/embed names).
-//! Markup wrappers (`Emph`, `Strong`, content-bracket function calls,
-//! headings, list items, …) disappear automatically because they're
-//! structural nodes around the text leaves rather than part of them.
-//!
-//! Every emitted token carries the source byte range it originated
-//! from, so the engine can keep highlighting matches in the user's
-//! actual source and the result snippet still shows the original line.
+//! Each token keeps its source byte range, so matches are highlighted in the
+//! real source.
 
 use std::collections::HashMap;
 
 use crate::typst_pipeline::syntax::{ast, parse, LinkedNode, SyntaxKind};
 
-/// A single tokenizable word along with where it appeared in the source.
-///
-/// `line` is 0-based and `char_start`/`char_end` are byte offsets within
-/// that line — the same conventions the engine's `WordPosition` uses,
-/// so highlight ranges in the SearchPanel keep working unchanged.
+/// One word and where it appears. `line` is 0-based; `char_start` / `char_end`
+/// are byte offsets in the line, as in the engine's `WordPosition`.
 #[derive(Debug, Clone)]
 pub struct TextToken {
     pub word: String,
     pub line: usize,
     pub char_start: usize,
     pub char_end: usize,
-    /// True when phrase-separating punctuation (a comma, paren, sentence
-    /// terminator, dash, …) sat between this token and the one before it.
-    /// The corpus engine's n-gram extractors break a phrase run here, so a
-    /// bigram/trigram never spans a punctuation boundary — keeping the
-    /// commas in "(CIADI, Milieux, NextGen Cities)" from fusing list items
-    /// into meaningless collocations.
+    /// True when punctuation (comma, bracket, sentence end, dash, …) separates
+    /// this token from the previous one. N-gram extraction breaks phrases here,
+    /// so "(CIADI, Milieux, NextGen Cities)" doesn't produce cross-item
+    /// phrases.
     pub phrase_break_before: bool,
 }
 
@@ -49,32 +35,23 @@ pub struct TextToken {
 pub struct TextProjection {
     /// All searchable tokens in source order.
     pub tokens: Vec<TextToken>,
-    /// `tag name (lowercased)` → source line indices of `#tag("…")`
-    /// call sites. Used so `tag:` filter clicks land on the actual tag
-    /// call instead of a heuristic "first non-empty line".
+    /// Tag name → line indices of its `#tag("…")` calls, so `tag:` results open
+    /// on the tag.
     pub tag_locations: HashMap<String, Vec<usize>>,
     /// Heading text (lowercased) collected from every `Heading` node,
     /// for the `section:` filter.
     pub headings: Vec<String>,
-    /// Text (lowercased) of the document's first level-1 heading (`= …`),
-    /// if any. Used as a fallback signal for the title-match relevance
-    /// bonus when a note doesn't set `#note(title: …)`.
+    /// Lowercased first level-1 heading, used for the title bonus when there's
+    /// no `#note(title: …)`.
     pub first_h1: Option<String>,
-    /// Source line indices (0-based) covered by an `#annotation[…]` or
-    /// `#suggestion[…]` call. Sorted + deduped. Drives the "Annotations"
-    /// search scope (restrict results to these lines) and the `annotation:`
-    /// filter's navigation, mirroring `tag_locations`.
+    /// Sorted line indices inside `#annotation[…]` or `#suggestion[…]`, for the
+    /// Annotations scope and `annotation:` navigation.
     pub annotation_lines: Vec<usize>,
-    /// Concatenated, lowercased body text of every `#annotation` / `#suggestion`
-    /// call in the document — the prose a reader wrote inside the marks (not the
-    /// `#annotation[`/`kind:` markup). Backs the `annotation:` filter's
-    /// substring match.
+    /// Lowercased body text of every annotation and suggestion, for the
+    /// `annotation:` filter.
     pub annotation_text: String,
-    /// Transient build state, not output: set when a phrase-separating
-    /// character was the last thing seen, so the *next* token emitted —
-    /// possibly from a different AST node — is flagged as starting a fresh
-    /// phrase run. This carries a trailing comma on one `Text` node across
-    /// to the first word of the next one.
+    /// Build state: set after a separating character so the next token,
+    /// possibly from another node, starts a new phrase.
     pending_break: bool,
 }
 
@@ -91,9 +68,8 @@ pub fn project(source: &str) -> TextProjection {
     out
 }
 
-/// Where `phrase` occurs among `tokens`, as the indices of the first and last
-/// token of each occurrence, in order. The phrase's words must match
-/// consecutive tokens on one line, ignoring case.
+/// Occurrences of `phrase` in `tokens`, as (first, last) token indices. The
+/// words must match consecutive tokens on one line, ignoring case.
 pub fn phrase_matches(tokens: &[TextToken], phrase: &str) -> Vec<(usize, usize)> {
     let words: Vec<String> = phrase.split_whitespace().map(str::to_lowercase).collect();
     if words.is_empty() {
@@ -113,9 +89,8 @@ pub fn phrase_matches(tokens: &[TextToken], phrase: &str) -> Vec<(usize, usize)>
     out
 }
 
-/// Byte ranges of every occurrence of `phrase` in `source`'s prose, in
-/// order. Matches as [`phrase_matches`] does, so properties, code and
-/// comments are never matched.
+/// Byte ranges of `phrase` in `source`'s prose, matched as [`phrase_matches`]
+/// does, so properties, code and comments never match.
 pub fn phrase_ranges(source: &str, phrase: &str) -> Vec<std::ops::Range<usize>> {
     let line_map = LineMap::new(source);
     let tokens = project(source).tokens;
@@ -129,12 +104,9 @@ pub fn phrase_ranges(source: &str, phrase: &str) -> Vec<std::ops::Range<usize>> 
         .collect()
 }
 
-/// Recursive descent over the AST.
-///
-/// Default behavior is "descend into every child"; the special-cases
-/// below cover the nodes we either want to skip entirely (code mode,
-/// labels, math, comments, notebox-side metadata) or for which we extract
-/// text out-of-band from arguments (function calls with prose payloads).
+/// Walk the tree. Descends into every child except nodes to skip (code, labels,
+/// math, comments, notebox metadata) and calls whose text comes from their
+/// arguments.
 fn walk(node: &LinkedNode<'_>, source: &str, line_map: &LineMap, out: &mut TextProjection) {
     match node.kind() {
         // Hidden / structural nodes — never user-visible prose.
@@ -148,23 +120,19 @@ fn walk(node: &LinkedNode<'_>, source: &str, line_map: &LineMap, out: &mut TextP
         // dedicated math-aware indexer exists.
         SyntaxKind::Equation | SyntaxKind::Math => return,
 
-        // Code mode: parenthesized arguments, blocks of `#let`/`#if`/…
-        // — none of this is prose. Function-call argument prose lives
-        // in `ContentBlock` (`[…]`), which we still descend into via
-        // `handle_func_call`.
+        // Code isn't prose. Prose arguments are in `ContentBlock`s, reached
+        // through `handle_func_call`.
         SyntaxKind::CodeBlock | SyntaxKind::Code => return,
 
         SyntaxKind::Heading => {
-            // Record heading text for the `section:` filter. We capture
-            // it from the rendered text of all descendant Text leaves
-            // (so `= Hello *world*` indexes as "hello world").
+            // Heading text for the `section:` filter, from all its text (`=
+            // Hello *world*` → "hello world").
             let heading_text = collect_text_within(node);
             let trimmed = heading_text.trim();
             if !trimmed.is_empty() {
                 let lowered = trimmed.to_lowercase();
-                // Capture the first level-1 heading as a title-fallback.
-                // `ast::Heading::depth` returns the marker count (`=` = 1,
-                // `==` = 2, …), so we only latch on depth == 1.
+                // The first level-1 heading is the title fallback. `depth` is
+                // the number of `=`.
                 if out.first_h1.is_none() {
                     if let Some(heading) = node.cast::<ast::Heading>() {
                         if heading.depth().get() == 1 {
@@ -179,12 +147,9 @@ fn walk(node: &LinkedNode<'_>, source: &str, line_map: &LineMap, out: &mut TextP
         }
 
         SyntaxKind::Raw => {
-            // Code spans / blocks: index their content so users can
-            // search for identifiers inside fenced code. `ast::Raw::text`
-            // gives the un-delimited body, but we don't have a byte
-            // range for that body alone — so we tokenize the raw node's
-            // source range directly. Backticks are non-word characters
-            // and are dropped naturally by the tokenizer.
+            // Index code so identifiers can be found. There's no byte range for
+            // the body alone, so tokenize the node's range; backticks aren't
+            // word characters.
             let range = node.range();
             emit_tokens_in_range(source, range, line_map, out);
             return;
@@ -209,14 +174,9 @@ fn walk(node: &LinkedNode<'_>, source: &str, line_map: &LineMap, out: &mut TextP
     }
 }
 
-/// Function-call dispatch.
-///
-/// We special-case the InkyCap-relevant functions whose searchable text
-/// lives in a *string argument* (not in a `ContentBlock`), then fall
-/// back to "descend into `ContentBlock` children only" so generic
-/// content-bracket wrappers (`#strong[…]`, `#emph[…]`, `#highlight[…]`,
-/// `#callout(…)[…]`, custom user functions) yield their bracketed prose
-/// without us having to enumerate every function in the language.
+/// Function calls. A few InkyCap functions keep their searchable text in a
+/// string argument; every other call contributes only its `ContentBlock`s, so
+/// `#strong[…]`, `#highlight[…]`, `#callout(…)[…]` and user functions all work.
 fn handle_func_call(
     node: &LinkedNode<'_>,
     source: &str,
@@ -248,9 +208,8 @@ fn handle_func_call(
         Some("bibliography") => (),
 
         Some("tag") => {
-            // `#tag("name")` — extract the name as a searchable token,
-            // *and* record this call site as a tag location for the
-            // `tag:` filter's navigation.
+            // `#tag("name")`: index the name and record the call for `tag:`
+            // navigation.
             if let Some((name, anchor)) = first_positional_string_at(node) {
                 let line = line_map.line_of(anchor);
                 out.tag_locations
@@ -262,20 +221,16 @@ fn handle_func_call(
         }
 
         Some("wikilink") => {
-            // `#wikilink("Page Name", label: "…")` — first positional
-            // is the target note name, which is the user-visible bit.
-            // Anchor at the string content (not the call) so a search match
-            // highlights the name, not the `#wikilink(` markup.
+            // `#wikilink("Page Name", …)`: index the target name, anchored at
+            // the string so a match highlights the name.
             if let Some((name, anchor)) = first_positional_string_at(node) {
                 emit_string_tokens(&name, anchor, line_map, out);
             }
         }
 
         Some("annotation") | Some("suggestion") => {
-            // `#annotation[…]` / `#suggestion(kind: …)[…]` — record the lines
-            // the call spans (for the Annotations search scope) and the body
-            // prose (for the `annotation:` filter), then descend so the body
-            // still indexes as ordinary searchable text.
+            // `#annotation[…]` / `#suggestion(…)[…]`: record the lines and body
+            // text, then descend so the body is still searchable.
             let range = node.range();
             let start_line = line_map.line_of(range.start);
             let end_line = line_map.line_of(range.end.saturating_sub(1).max(range.start));
@@ -290,9 +245,8 @@ fn handle_func_call(
                 }
                 out.annotation_text.push_str(&body.to_lowercase());
             }
-            // A `#suggestion`'s `note:` is its reviewer comment — part of the
-            // annotation's content, so index it under the `annotation:` filter
-            // too (the body is markup; the note is a string arg, missed above).
+            // A suggestion's `note:` is its reviewer comment; include it for
+            // `annotation:`.
             if let Some(note) = named_string_arg(node, "note") {
                 let note = note.trim();
                 if !note.is_empty() {
@@ -306,9 +260,7 @@ fn handle_func_call(
         }
 
         Some("link") | Some("link-ref") => {
-            // `#link("https://…")[display body]` — descend into the
-            // ContentBlock for the display body. The URL itself is not
-            // prose; skip it.
+            // `#link("…")[text]`: index the text, not the URL.
             descend_into_content_blocks(node, source, line_map, out);
         }
 
@@ -327,19 +279,13 @@ fn handle_func_call(
         }
 
         _ => {
-            // Unknown function: its prose payload (if any) lives in
-            // `ContentBlock` children of `Args`. Descend only there so
-            // we don't pick up code-mode arguments.
+            // Other functions: only their `ContentBlock` arguments are prose.
             descend_into_content_blocks(node, source, line_map, out);
         }
     }
 }
 
-/// Walk into every `ContentBlock` descendant of this FuncCall's `Args`
-/// node, ignoring code-mode arguments. Used as the default behavior for
-/// unknown function calls so `#strong[bold text]`, `#highlight[…]`,
-/// `#callout(kind: "note")[Body]`, etc. yield their inner prose
-/// uniformly.
+/// Walk the `ContentBlock` arguments of this call, skipping code arguments.
 fn descend_into_content_blocks(
     node: &LinkedNode<'_>,
     source: &str,
@@ -356,11 +302,6 @@ fn descend_into_content_blocks(
     }
 }
 
-/// Read the first positional string argument from a FuncCall, returning
-/// its decoded value (quotes stripped, escapes resolved). Returns
-/// `None` if the first argument isn't a string literal — which means
-/// either a code expression that we can't see through, or a named arg
-/// in the first slot.
 /// The string value of a named argument `name: "…"` on a call, if present
 /// (e.g. a `#suggestion`'s `note:` reviewer comment).
 fn named_string_arg(call_node: &LinkedNode<'_>, name: &str) -> Option<String> {
@@ -384,16 +325,9 @@ fn named_string_arg(call_node: &LinkedNode<'_>, name: &str) -> Option<String> {
     None
 }
 
-/// The first positional string argument's decoded value, paired with the
-/// source byte offset of its *content* (just past the opening quote).
-///
-/// Anchoring emitted tokens at the content offset — rather than the enclosing
-/// call's `#func(` start — makes a search match inside `#wikilink("journalism")`
-/// or `#tag("name")` highlight the argument text, not the function markup.
-/// The offset assumes no escape sequences shift the content, which holds for
-/// the note names / tags / paths these calls carry in practice; under an
-/// escape the highlight can drift by the escape's width, acceptable for a
-/// search excerpt.
+/// The first positional string argument and the byte offset of its content
+/// (after the opening quote), so a match highlights the argument rather than
+/// `#func(`. Escapes in the string can shift the highlight slightly.
 fn first_positional_string_at(call_node: &LinkedNode<'_>) -> Option<(String, usize)> {
     let args_node = call_node
         .children()
@@ -425,13 +359,7 @@ fn first_positional_string_at(call_node: &LinkedNode<'_>) -> Option<(String, usi
     None
 }
 
-/// Emit tokens from a string value that didn't come from the source
-/// directly (e.g. the decoded contents of a string literal). We treat
-/// it as having occurred at `anchor_byte` in the source so highlight
-/// ranges still point somewhere reasonable — the call site of the
-/// function it came from. This is intentional: clicking a `doc-howto`
-/// tag-search result should land on `#tag("doc-howto")`, even though
-/// the literal string "doc-howto" lives between the quotes.
+/// Emit tokens from a decoded string, placed at `anchor_byte` in the source.
 fn emit_string_tokens(
     text: &str,
     anchor_byte: usize,
@@ -467,9 +395,8 @@ fn emit_string_tokens(
     }
 }
 
-/// Emit tokens for the byte range `range` of `source`. Handles ranges
-/// that span newlines (relevant for Raw blocks): each line is tokenized
-/// independently so positions stay correct.
+/// Emit tokens for `range` of `source`, line by line so positions stay right
+/// across newlines.
 fn emit_tokens_in_range(
     source: &str,
     range: std::ops::Range<usize>,
@@ -486,9 +413,8 @@ fn emit_tokens_in_range(
     let mut line_byte_start = line_map.line_start(line);
 
     let mut word_start_in_seg: Option<usize> = None;
-    // Byte index (within `segment`) just past the previous emitted word, so
-    // the run of characters between two words can be inspected for phrase-
-    // separating punctuation.
+    // End of the previous word in `segment`, so the characters between words
+    // can be checked for punctuation.
     let mut prev_word_end_in_seg: usize = 0;
 
     let emit = |seg_start: usize,
@@ -569,9 +495,8 @@ fn emit_tokens_in_range(
     }
 }
 
-/// Collect the concatenated text of every Text descendant of `node`,
-/// space-separated. Used for heading-text extraction so structural
-/// markup inside a heading doesn't fragment the indexed phrase.
+/// All text under `node`, space-separated, so markup inside a heading doesn't
+/// split it.
 fn collect_text_within(node: &LinkedNode<'_>) -> String {
     let mut out = String::new();
     fn recurse(node: &LinkedNode<'_>, out: &mut String) {
@@ -594,11 +519,8 @@ fn collect_text_within(node: &LinkedNode<'_>) -> String {
     out
 }
 
-/// Tokenize a plain string (no AST context). Returns (byte_offset, word)
-/// pairs, with the same word-character rules the legacy `word_boundaries`
-/// helper used so search behavior stays consistent across the rest of
-/// the engine. The engine also uses this to split file names, so a name is
-/// matched against the same notion of a word as body text.
+/// Split a string into (byte offset, word) pairs using the engine's word rules.
+/// Also used for file names, so they match like body text.
 pub(crate) fn word_boundaries(text: &str) -> Vec<(usize, &str)> {
     let mut words = Vec::new();
     let mut start: Option<usize> = None;
@@ -622,11 +544,9 @@ fn is_word_char(ch: char) -> bool {
     ch.is_alphanumeric() || ch == '_' || ch == '-'
 }
 
-/// A character that ends one phrase and begins another — commas, brackets,
-/// sentence terminators, dashes, quotes. Used to stop n-gram extraction from
-/// forming a "phrase" across a punctuation boundary. Intra-word punctuation
-/// (`'` in "don't", `-` in "gasoline-powered") is deliberately excluded —
-/// those are handled by `is_word_char` and never split a word.
+/// A character that separates phrases: commas, brackets, sentence ends, dashes,
+/// quotes. Punctuation inside words (`'` in "don't", `-` in "gasoline-powered")
+/// isn't included.
 fn is_phrase_separator(ch: char) -> bool {
     matches!(
         ch,
@@ -661,9 +581,7 @@ fn gap_breaks_phrase(gap: &str) -> bool {
     gap.chars().any(|c| c == '\n' || is_phrase_separator(c))
 }
 
-/// Filename stem from a path-shaped string (forward-slash separated,
-/// as Typst paths always are). Used by `#image` so image callsites
-/// contribute their filename as searchable text.
+/// File stem of a `/`-separated path, so `#image` contributes its file name.
 fn path_stem(path: &str) -> &str {
     let after_slash = path.rsplit('/').next().unwrap_or(path);
     match after_slash.rsplit_once('.') {
@@ -717,17 +635,12 @@ pub struct QuestionSpan {
     pub text: String,
 }
 
-/// Find question sentences in `content`: a `?` that directly follows the
-/// projection's prose (so a `?` inside markup, code-ish tokens, or a URL
-/// query string doesn't fire), preceded by at least `min_words` prose tokens
-/// since the last sentence terminator on the line. Returns at most `max`
-/// spans in document order.
+/// Questions in `content`: a `?` directly after prose (not inside markup, code
+/// or a URL), with at least `min_words` words since the last sentence end on
+/// the line. At most `max`, in document order.
 ///
-/// Runs against the same `TextProjection` the corpus engine uses, so
-/// questions inside the `#note(...)` metadata block or import lines can
-/// never surface. Sentences are line-local: Typst prose paragraphs are
-/// typically soft-wrapped single source lines, and a hard line break is a
-/// reasonable sentence boundary for a snippet.
+/// Uses the same projection as the corpus engine, so questions in `#note(...)`
+/// or imports never appear. Sentences end at line breaks.
 pub fn extract_questions(
     content: &str,
     projection: &TextProjection,
@@ -754,9 +667,8 @@ pub fn extract_questions(
             if out.len() >= max {
                 break;
             }
-            // The `?` must directly follow prose (allowing a closing bracket
-            // or quote in between): the last non-space byte before it has to
-            // be the end of a projected token.
+            // The `?` must directly follow a token (a closing bracket or quote
+            // may come between).
             let before = line[..qpos]
                 .trim_end()
                 .trim_end_matches([')', ']', '}', '"', '\'', '\u{201d}', '\u{2019}', '\u{00bb}']);
@@ -829,9 +741,7 @@ mod tests {
 
     #[test]
     fn phrase_can_i_italicize_is_contiguous() {
-        // The whole point: "can i italicize" should match across the
-        // _italicize_ markup. We check that the three tokens appear in
-        // sequence on the same line so phrase search succeeds.
+        // "can i italicize" must match across the `_italicize_` markup.
         let p = project("can i _italicize_ yes");
         let line0: Vec<&str> = p
             .tokens
@@ -896,10 +806,8 @@ mod tests {
 
     #[test]
     fn note_properties_block_is_not_indexed() {
-        // `#note(title: "Scratchpad", zid: "20201215142213")` is the
-        // properties block; its values flow through DocEntry.title /
-        // property_keys, not through body-text search. Make sure the
-        // tag panel never lands on it.
+        // The `#note(...)` block is properties, not body text; the tag panel
+        // must never land on it.
         let src = "#note(\n  title: \"Scratchpad\",\n  zid: \"20201215142213\",\n)\n\nbody.\n";
         let p = project(src);
         let w = words(&p);
@@ -928,10 +836,7 @@ mod tests {
 
     #[test]
     fn wikilink_token_anchors_to_argument_not_markup() {
-        // Regression: a search match inside `#wikilink("…")` must highlight the
-        // argument text, not the `#wikilink(` markup. The token's source span
-        // (line-relative byte offsets, which equal source offsets on line 0)
-        // must slice back to exactly the matched word.
+        // A match in `#wikilink("…")` highlights the argument, not the markup.
         let src = "see #wikilink(\"journalism\") ok";
         let p = project(src);
         let t = p
@@ -967,9 +872,7 @@ mod tests {
 
     #[test]
     fn highlights_match_user_screenshot_case() {
-        // From the second screenshot — `can i _italicize_ yes I #highlight()[can]`
-        // should be searchable both as `italicize` and as `can` (the
-        // highlight body).
+        // Both `italicize` and the highlight body `can` are searchable.
         let p = project("can i _italicize_ yes I #highlight()[can]");
         let w = words(&p);
         let on_line0: Vec<&str> = w.iter().filter(|(l, _)| *l == 0).map(|(_, t)| *t).collect();
@@ -999,9 +902,7 @@ mod tests {
 
     #[test]
     fn parenthetical_list_items_each_break() {
-        // The mycelial motivating case: a comma-separated parenthetical list.
-        // Every item after the opening paren or a comma starts a fresh
-        // phrase run, so no bigram/trigram fuses the list items together.
+        // Each list item after a paren or comma starts a new phrase.
         let p = project("4 institutes (ciadi, milieux, nextgen, appliedai)");
         for w in ["ciadi", "milieux", "nextgen", "appliedai"] {
             assert!(
@@ -1120,9 +1021,7 @@ mod tests {
 
     #[test]
     fn multibyte_text_positions_are_byte_offsets() {
-        // Sanity check: an em-dash before a word shouldn't desync
-        // positions. char_end - char_start must equal the byte length
-        // of `word`.
+        // An em dash before a word keeps positions in sync.
         let p = project("café — résumé");
         for tok in &p.tokens {
             assert_eq!(tok.char_end - tok.char_start, tok.word.len());

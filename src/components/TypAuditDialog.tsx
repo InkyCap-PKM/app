@@ -6,18 +6,15 @@ import { openTab } from "../stores/tabs";
 import { toastError } from "../stores/toasts";
 import { useI18n, tPlural } from "../lib/i18n";
 
-/// Surfaces the result of a notebox-wide audit of `.typ` files for InkyCap
-/// compatibility. Foreign `.typ` files (typically copied in from another
-/// tool, or converted from `.docx` via typst.app/Pandoc) often lack the
-/// inkycap-notebox import and the top-level `#note(...)` metadata call —
-/// neither breaks Typst compilation, but together they cause notebox
-/// primitives (`#wikilink`, `#tag`, …) to fail and leave the collection
-/// table without title/author/date for those files.
+/// Shows the result of checking the notebox's `.typ` files for InkyCap
+/// compatibility. Files from other tools (or converted from `.docx`) often lack
+/// the inkycap-notebox import and the `#note(...)` call. They still compile,
+/// but notebox functions (`#wikilink`, `#tag`, …) fail and collection tables
+/// have no title, author or date for them.
 ///
-/// The dialog is opened from the command palette ("Tools: Audit .typ
-/// files"). It runs the audit on open, then offers a one-click repair
-/// that prepends the import line and inserts a stub `#note()` —
-/// non-destructive: existing `#note(...)` calls are never overwritten.
+/// Opened from the command palette ("Tools: Audit .typ files"). Runs the check
+/// on open and offers a repair that adds the import line and a stub `#note()`;
+/// existing `#note(...)` calls are never overwritten.
 const TypAuditDialog: Component<{
   open: boolean;
   onClose: () => void;
@@ -41,11 +38,10 @@ const TypAuditDialog: Component<{
     return (report()?.markdownFixes ?? []).map((f) => f.path);
   }
 
-  // Per-change accept/reject. Every fix is accepted by default; the user can
-  // reject individual ones to keep a line as-is (e.g. the tool misread it, or
-  // they want it that way). Keyed by `path::line` — line is unique per file and
-  // stable across a repair (fixes are same-line replacements), so a rejection
-  // survives the post-repair re-audit but resets when the dialog is reopened.
+  // Accept or reject each change. All are accepted by default; rejecting one
+  // keeps that line as it is. Keyed by `path::line` (fixes replace whole lines,
+  // so the line stays the same after a repair), so a rejection survives the
+  // check that follows a repair but not reopening the dialog.
   const [rejected, setRejected] = createSignal<Set<string>>(new Set());
   const fixKey = (path: string, line: number) => `${path}::${line}`;
   const isAccepted = (path: string, line: number) =>
@@ -138,9 +134,8 @@ const TypAuditDialog: Component<{
     );
   }
 
-  /// Write the results to a note at the notebox root, open it in a tab, and
-  /// close the dialog — so the findings stay visible while the user fixes
-  /// files (the dialog can't be open at the same time as editing).
+  /// Write the results to a note at the notebox root, open it, and close the
+  /// dialog, so the findings stay visible while the user fixes files.
   async function runSaveReport() {
     setPhase("saving");
     setError(null);
@@ -155,9 +150,8 @@ const TypAuditDialog: Component<{
     }
   }
 
-  // Kick off a fresh audit each time the dialog transitions from closed
-  // to open. State is reset so a previous run's report or error doesn't
-  // bleed into the new session.
+  // Run a new check each time the dialog opens, clearing the previous report or
+  // error.
   let lastOpen = false;
   createEffect(() => {
     if (props.open && !lastOpen) {

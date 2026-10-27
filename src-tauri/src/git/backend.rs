@@ -1,19 +1,12 @@
-//! Thin synchronous wrapper over `git2` — the only place in InkyCap that
-//! talks to libgit2.
+//! A thin synchronous wrapper over `git2`, and the only code that talks to
+//! libgit2. It offers just the operations collaboration needs: open/init,
+//! remotes, status, history and blob reads, 3-way merge, stage/commit, fetch
+//! and push. Sync itself is composed from these in `commands::git`.
 //!
-//! It exposes exactly the operations the collaboration loop needs and nothing
-//! more: open/init, remote management, the head/status read used on notebox
-//! open, the merge-base + blob reads that Phase 2's 3-way diff will run
-//! against, and the stage/commit/fetch/push that Phase 3 will drive. There is
-//! deliberately **no** high-level `pull`/`sync` — inline review always sits
-//! between fetch and apply, so the steps stay separate.
-//!
-//! ## Threading
-//! [`git2::Repository`] is `Send` but not `Sync`, so a `GitBackend` is **not**
-//! stored in the shared [`crate::state::AppState`]. Callers open one per
-//! operation from the notebox root (opening is cheap relative to a fetch) and
-//! drop it. Network operations (`fetch`/`push`) block and should be run on a
-//! blocking executor by their command.
+//! ## Threading [`git2::Repository`] is `Send` but not `Sync`, so a
+//! `GitBackend` isn't kept in [`crate::state::AppState`]. Open one per
+//! operation from the notebox root and drop it. `fetch` and `push` block; run
+//! them on a blocking executor.
 
 use std::path::{Path, PathBuf};
 
@@ -41,24 +34,19 @@ pub struct GitStatusSummary {
     /// Commits the local branch is behind its upstream (incoming). `0` when
     /// there is no upstream tracking branch.
     pub behind: usize,
-    /// Commits present locally but not yet on the remote — what "Publish"
-    /// would send. Unlike [`ahead`], this counts *all* local commits when the
-    /// remote-tracking ref does not exist yet (never pushed/fetched), so the
-    /// first publish is surfaced. Populated by the command layer (which knows
-    /// the configured remote + branch); `0` from a bare [`status_summary`].
+    /// Local commits not on the remote yet (what "Publish" sends). Unlike
+    /// [`ahead`], counts every local commit when there is no remote-tracking
+    /// ref yet. Filled in by the command layer; `0` from [`status_summary`].
     pub unpushed: usize,
-    /// Whether there is local work others haven't received yet — the qualitative
-    /// signal the UI shows ("Changes to share") instead of a raw commit count.
-    /// Server mode: dirty or unpushed. Package mode: dirty or HEAD moved past the
-    /// last exported commit (commit counts are meaningless with no remote, since
-    /// nothing ever resets them). Populated by the command layer; `false` from a
-    /// bare [`status_summary`].
+    /// Whether there is local work others haven't received ("Changes to share").
+    /// With a server: uncommitted or unpushed changes. Package mode: uncommitted
+    /// changes, or HEAD moved since the last export. Filled in by the command
+    /// layer; `false` from [`status_summary`].
     pub unshared: bool,
 }
 
-/// How a path changed between two commits (git rename detection is off, so a
-/// rename appears as a `Renamed` entry carrying both paths when rename detection
-/// is enabled on the diff, else as a `Deleted` + `Added` pair).
+/// How a path changed between two commits. With rename detection on, a rename is
+/// one `Renamed` entry with both paths; otherwise a `Deleted` + `Added` pair.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum ChangeStatus {
     Added,
@@ -100,9 +88,9 @@ pub struct ChangedPath {
     pub old_path: Option<PathBuf>,
 }
 
-/// Map one diff delta to a [`ChangedPath`], or `None` when it carries no usable
-/// path. Shared by the tree-to-tree and tree-to-workdir diffs so both classify
-/// renames identically. Untracked entries (workdir additions) count as adds.
+/// A diff delta as a [`ChangedPath`], or `None` without a usable path. Shared
+/// by both diffs so renames are classified the same way. Untracked files count
+/// as added.
 fn delta_to_changed(delta: &git2::DiffDelta) -> Option<ChangedPath> {
     match delta.status() {
         git2::Delta::Added | git2::Delta::Untracked => {
@@ -134,9 +122,7 @@ fn delta_to_changed(delta: &git2::DiffDelta) -> Option<ChangedPath> {
     }
 }
 
-/// Author + message of a commit — the review-context the loop harvests from
-/// git (incoming = banner; outgoing = decision summary). Carries no note
-/// content.
+/// A commit's author and message. No note content.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CommitInfo {
     pub author_name: String,
@@ -148,9 +134,8 @@ pub struct CommitInfo {
     pub short_hash: String,
 }
 
-/// One past version of a single file in the commit graph — a row in a note's
-/// version history. Carries commit metadata only (no content); the content is
-/// fetched on demand via [`GitBackend::read_blob_at`].
+/// One past version of a file: commit metadata only; content comes from
+/// [`GitBackend::read_blob_at`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileVersion {
@@ -162,12 +147,10 @@ pub struct FileVersion {
     /// Commit time, seconds since the Unix epoch (UTC).
     pub timestamp: i64,
     pub message: String,
-    /// This is the user's own version from just before the last sync took
-    /// *theirs* over their overlapping edit to this note. Set by
-    /// [`crate::commands::git::git_note_history`] (not the pure walk), so the
-    /// History view can flag the one entry that shows what the merge replaced.
-    /// Defaults false; only ever true for the `last_sync_oid` commit of a note
-    /// the last sync resolved by taking theirs.
+    /// The user's own version from just before the last sync replaced their
+    /// edit to this note, so the History view can flag it. Set by
+    /// [`crate::commands::git::git_note_history`] for the `last_sync_oid`
+    /// commit.
     #[serde(default)]
     pub took_theirs_baseline: bool,
 }
@@ -233,9 +216,8 @@ impl GitBackend {
             .and_then(|r| r.url().ok().map(str::to_string))
     }
 
-    /// Delete the named remote (and its remote-tracking refs). Idempotent: a
-    /// missing remote is a no-op. Used to drop the transient local-path remote a
-    /// first-time package import leaves behind (it pointed at a temp dir).
+    /// Delete a remote and its tracking refs; missing is fine. Used to remove
+    /// the temporary remote a first-time package import leaves.
     pub fn remove_remote(&self, name: &str) -> Result<()> {
         match self.repo.remote_delete(name) {
             Ok(()) => Ok(()),
@@ -293,9 +275,8 @@ impl GitBackend {
             }
         }
 
-        // Dirty = any non-ignored status entry. Untracked files count as
-        // dirty (a collaborator's new, unsaved note matters); ignored files
-        // (staging, local.json, caches) do not.
+        // Any non-ignored status entry counts as dirty, untracked files
+        // included; ignored files (staging, local.json, caches) don't.
         let mut opts = git2::StatusOptions::new();
         opts.include_untracked(true).include_ignored(false);
         let statuses = self.repo.statuses(Some(&mut opts))?;
@@ -304,7 +285,7 @@ impl GitBackend {
         Ok(summary)
     }
 
-    // ── 3-way-diff inputs (Phase 2) ──────────────────────────────────────
+    // ── 3-way diff inputs ────────────────────────────────────────────────
 
     /// Best common ancestor of two commits — the merge base that makes a real
     /// 3-way merge possible. `None` when the histories are unrelated.
@@ -330,9 +311,8 @@ impl GitBackend {
         Ok(walk.count())
     }
 
-    /// Resolve the tip of a remote-tracking branch
-    /// (`refs/remotes/<remote>/<branch>`) to its commit OID. `None` until a
-    /// fetch has populated it.
+    /// Commit at the tip of `refs/remotes/<remote>/<branch>`, or `None` before
+    /// a fetch.
     pub fn remote_tracking_oid(&self, remote_name: &str, branch: &str) -> Result<Option<Oid>> {
         let refname = format!("refs/remotes/{remote_name}/{branch}");
         match self.repo.refname_to_id(&refname) {
@@ -355,10 +335,8 @@ impl GitBackend {
         })
     }
 
-    /// Paths that differ between two commit trees (`from` → `to`). `from` is
-    /// `None` for an unborn local branch (everything in `to` is an add). Rename
-    /// detection is on, so a move/rename collapses into one [`ChangeStatus::Renamed`]
-    /// entry carrying both paths instead of a delete + add pair.
+    /// Paths that differ from commit `from` to `to`; `None` for `from` treats
+    /// everything as added. Renames are one [`ChangeStatus::Renamed`] entry.
     pub fn changed_paths(&self, from: Option<Oid>, to: Oid) -> Result<Vec<ChangedPath>> {
         let from_tree = match from {
             Some(oid) => Some(self.repo.find_commit(oid)?.tree()?),
@@ -373,15 +351,12 @@ impl GitBackend {
         Ok(diff.deltas().filter_map(|d| delta_to_changed(&d)).collect())
     }
 
-    /// Paths in the **working tree** (committed-but-unshared work *and*
-    /// uncommitted edits, including new untracked notes) that differ from a
-    /// baseline commit — what an export/sync would carry to collaborators.
-    /// `base` is the last-shared commit (package mode) or the upstream tip
-    /// (server mode); `None` means nothing has been shared yet, so every
-    /// tracked and untracked file counts as an add. Ignored files (staging,
-    /// `local.json`, caches) are excluded, matching [`Self::status_summary`].
-    /// Rename detection is on (including for untracked files), so moving a note
-    /// surfaces as one [`ChangeStatus::Renamed`] entry, not a delete + add pair.
+    /// Working-tree paths (committed and uncommitted, including new untracked
+    /// notes) that differ from `base`: what a share would send. `base` is the
+    /// last shared commit (package mode) or the upstream tip; `None` makes
+    /// everything an addition. Ignored files are excluded, as in
+    /// [`Self::status_summary`]. Renames, including of untracked files, are one
+    /// [`ChangeStatus::Renamed`] entry.
     pub fn changed_since(&self, base: Option<Oid>) -> Result<Vec<ChangedPath>> {
         let base_tree = match base {
             Some(oid) => Some(self.repo.find_commit(oid)?.tree()?),
@@ -403,9 +378,8 @@ impl GitBackend {
         Ok(diff.deltas().filter_map(|d| delta_to_changed(&d)).collect())
     }
 
-    /// Read a file's bytes as of a specific commit, by notebox-relative path.
-    /// `None` when the path does not exist in that commit's tree. Reads
-    /// straight from git objects — the working tree is never touched.
+    /// A file's bytes at a commit, by notebox-relative path, or `None` if
+    /// absent. Reads git objects only.
     pub fn read_blob_at(&self, commit: Oid, rel: &Path) -> Result<Option<Vec<u8>>> {
         let tree = self.repo.find_commit(commit)?.tree()?;
         let entry = match tree.get_path(rel) {
@@ -417,13 +391,11 @@ impl GitBackend {
         Ok(object.as_blob().map(|b| b.content().to_vec()))
     }
 
-    // ── Version history (Phase 6) ─────────────────────────────────────────
+    // ── Version history ───────────────────────────────────────────────────
 
-    /// The commits that changed `rel`, newest first, up to `limit` — a note's
-    /// version history. Each entry's content is fetched on demand with
-    /// [`Self::read_blob_at`]. Walks the first-parent-relative diff of each
-    /// commit (a merge that altered the note relative to its first parent
-    /// counts as a version). Returns an empty list on an unborn branch.
+    /// Commits that changed `rel`, newest first, up to `limit`, comparing each
+    /// commit with its first parent (so a merge that changed the note counts).
+    /// Empty on an unborn branch.
     pub fn file_history(&self, rel: &Path, limit: usize) -> Result<Vec<FileVersion>> {
         if self.current_head()?.is_none() {
             return Ok(Vec::new());
@@ -455,11 +427,10 @@ impl GitBackend {
         Ok(out)
     }
 
-    // ── Staging & commit (Phase 3) ───────────────────────────────────────
+    // ── Staging & commit ─────────────────────────────────────────────────
 
-    /// The `user.name` / `user.email` from this repo's git config (local +
-    /// global), for pre-filling the commit-identity fields with what a commit
-    /// would actually use. `None` when either is unset or empty.
+    /// `user.name` / `user.email` from git config (repo and global), or `None`
+    /// if either is missing.
     pub fn config_identity(&self) -> Option<(String, String)> {
         let cfg = self.repo.config().ok()?;
         let name = cfg
@@ -473,11 +444,9 @@ impl GitBackend {
         Some((name, email))
     }
 
-    /// Build the commit-author signature from the notebox's resolved `identity`
-    /// (the per-notebox choice, passed in by the caller), falling back to git's
-    /// own `user.name`/`user.email` (`.git/config` → `~/.gitconfig`). Errors when
-    /// neither yields a complete name + email, so the caller can prompt rather
-    /// than commit anonymously.
+    /// The commit signature from `identity` (the notebox's choice), else git's
+    /// `user.name` / `user.email`. Errors if neither gives a full name and email,
+    /// so the caller can ask instead of committing anonymously.
     pub fn author_signature(
         &self,
         identity: Option<&auth::GitIdentity>,
@@ -505,10 +474,9 @@ impl GitBackend {
         Ok(())
     }
 
-    /// On an unborn HEAD (a freshly initialized repo with no commits), point
-    /// HEAD at `refs/heads/<branch>` so the first commit lands on the
-    /// *configured* branch rather than libgit2's compiled-in default
-    /// (`master`). No-op once a commit exists (an adopted repo keeps its branch).
+    /// On a repo with no commits, point HEAD at `refs/heads/<branch>` so the
+    /// first commit lands on the configured branch, not `master`. No-op once a
+    /// commit exists.
     pub fn ensure_initial_branch(&self, branch: &str) -> Result<()> {
         if self.current_head()?.is_none() {
             self.repo.set_head(&format!("refs/heads/{branch}"))?;
@@ -516,10 +484,8 @@ impl GitBackend {
         Ok(())
     }
 
-    /// Stage every working-tree change (additions, modifications, deletions),
-    /// honouring `.gitignore` — the index image for a "publish my work" commit.
-    /// `add_all` covers new/modified non-ignored files; `update_all` records
-    /// deletions of tracked files.
+    /// Stage every working-tree change, honouring `.gitignore`: `add_all` for
+    /// new and modified files, `update_all` for deletions.
     pub fn stage_all(&self) -> Result<()> {
         let mut index = self.repo.index()?;
         index.add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)?;
@@ -528,10 +494,8 @@ impl GitBackend {
         Ok(())
     }
 
-    /// Count commits present locally but not yet on the remote — what a publish
-    /// would send. When the remote-tracking ref exists, that's the ahead-count
-    /// against it; before the first push/fetch it does not exist, so every
-    /// commit reachable from HEAD is unpushed.
+    /// Local commits not on the remote: the count ahead of the tracking ref, or
+    /// every commit from HEAD before the first push or fetch.
     pub fn unpushed_count(&self, remote_name: &str, branch: &str) -> Result<usize> {
         let head = match self.current_head()? {
             Some((_, oid)) => oid,
@@ -547,16 +511,14 @@ impl GitBackend {
         }
     }
 
-    // ── 3-way merge (Phase 5: the Sync model) ────────────────────────────
+    // ── 3-way merge ───────────────────────────────────────────────────────
     //
-    // Real git merge, not the rebase-onto-theirs of the retired consolidate
-    // path: a merge commit with both tips as parents fast-forwards the remote
-    // and is atomic (no partial-merge trap). `merge_commits_to_tree` does the
-    // file-level 3-way; conflicts come back as paths for the suggestion UI.
+    // A merge commit with both tips as parents fast-forwards the remote and is
+    // atomic. `merge_commits_to_tree` does the file-level merge and reports
+    // conflicting paths.
 
-    /// 3-way merge `ours` and `theirs` (libgit2 finds the common ancestor).
-    /// Returns the merged tree to commit, or the conflicting notebox-relative
-    /// paths. Operates in memory — the working tree is untouched.
+    /// 3-way merge `ours` and `theirs`, in memory. Returns the merged tree, or
+    /// the conflicting notebox-relative paths.
     pub fn merge_commits_to_tree(&self, ours: Oid, theirs: Oid) -> Result<MergeOutcome> {
         let our_c = self.repo.find_commit(ours)?;
         let their_c = self.repo.find_commit(theirs)?;
@@ -565,9 +527,8 @@ impl GitBackend {
             let mut paths = Vec::new();
             for c in idx.conflicts()? {
                 let c = c?;
-                // Prefer whichever side carries the path; git stores it as raw
-                // bytes (UTF-8 in practice for note paths). Lossy is fine here —
-                // the value is only used as a relative-path identity for the UI.
+                // Take the path from whichever side has it. Lossy UTF-8 is fine;
+                // it is only an identifier for the UI.
                 if let Some(entry) = c.our.or(c.their).or(c.ancestor) {
                     let p = PathBuf::from(String::from_utf8_lossy(&entry.path).into_owned());
                     if !paths.contains(&p) {
@@ -580,18 +541,11 @@ impl GitBackend {
         Ok(MergeOutcome::Clean(idx.write_tree_to(&self.repo)?))
     }
 
-    /// Materialize the *cleanly-merged* portion of a 3-way merge of `ours`+
-    /// `theirs` into the working tree, leaving conflicting paths untouched
-    /// (still at *ours*) for the suggestion-review layer to render.
-    ///
-    /// Used on the conflict-pause path: the user sees every non-conflicting
-    /// incoming change land immediately, and resolves only the conflicts. The
-    /// merge is recomputed in memory (cheap); for every path *theirs* changed
-    /// relative to the merge base that did **not** conflict, the merged blob is
-    /// written to disk (or the file removed, for a clean deletion). This is a
-    /// git-level checkout of part of a tree — the same kind of direct
-    /// working-tree write [`Self::checkout_head_force`] performs — so it
-    /// deliberately bypasses `NoteboxStorage`, which is for app-authored content.
+    /// Write the cleanly merged part of merging `ours` and `theirs` to the
+    /// working tree, leaving conflicting paths at `ours`. Every path the other
+    /// side changed without conflict gets its merged blob (or is removed). Like
+    /// [`Self::checkout_head_force`] this writes the working tree directly,
+    /// bypassing `NoteboxStorage`, which is for app-authored content.
     pub fn apply_clean_merge(&self, ours: Oid, theirs: Oid) -> Result<MergeApplication> {
         let our_c = self.repo.find_commit(ours)?;
         let their_c = self.repo.find_commit(theirs)?;
@@ -647,9 +601,7 @@ impl GitBackend {
         Ok(MergeApplication { conflicts, applied })
     }
 
-    /// Write the current index out as a tree object and return its OID — the
-    /// merged tree to hand to [`Self::commit_tree`] after a conflict resolution
-    /// has been staged into the working tree + index.
+    /// Write the index as a tree and return its id, for [`Self::commit_tree`].
     pub fn write_index_tree(&self) -> Result<Oid> {
         let mut index = self.repo.index()?;
         Ok(index.write_tree()?)
@@ -675,10 +627,8 @@ impl GitBackend {
             .commit(Some("HEAD"), author, author, message, &tree, &parent_refs)?)
     }
 
-    /// Update the working tree (and index) to match HEAD. Called after a merge
-    /// commit or a fast-forward, where local work is already committed so
-    /// nothing uncommitted is at risk. Forced so the working tree ends up
-    /// exactly matching HEAD.
+    /// Force the working tree and index to match HEAD. Used after a merge
+    /// commit or fast-forward, when local work is already committed.
     pub fn checkout_head_force(&self) -> Result<()> {
         let mut co = git2::build::CheckoutBuilder::new();
         co.force();
@@ -686,18 +636,16 @@ impl GitBackend {
         Ok(())
     }
 
-    /// Fast-forward the current branch to `target` and update the working tree.
-    /// For a pure pull when local has not diverged. The caller has already
-    /// committed local work, so the forced checkout discards nothing.
+    /// Fast-forward the branch to `target` and update the working tree. Local
+    /// work is already committed, so nothing is lost.
     pub fn fast_forward_checkout(&self, target: Oid) -> Result<()> {
         let mut head_ref = self.repo.head()?;
         head_ref.set_target(target, "fast-forward")?;
         self.checkout_head_force()
     }
 
-    /// Commit whatever is currently staged in the index, with `author` as both
-    /// author and committer. Parents are the current head (none on the first
-    /// commit). Returns the new commit's OID.
+    /// Commit the index with `author` as author and committer, on top of the
+    /// current head (no parent for the first commit). Returns the new commit.
     pub fn commit(&self, message: &str, author: &git2::Signature) -> Result<Oid> {
         let mut index = self.repo.index()?;
         let tree_oid = index.write_tree()?;
@@ -715,17 +663,12 @@ impl GitBackend {
         Ok(oid)
     }
 
-    // ── Network (Phase 2/3; first exercised there) ───────────────────────
+    // ── Network ──────────────────────────────────────────────────────────
 
-    /// Fetch `branch` from the named remote into its remote-tracking ref. Does
-    /// not merge — review sits between fetch and apply. Blocking.
+    /// Fetch `branch` into its remote-tracking ref, without merging. Blocking.
     ///
-    /// Prunes while fetching: a plain fetch leaves a remote-tracking ref in
-    /// place even after its branch disappears from the remote (a deleted/
-    /// migrated/re-created remote). Sync reads that ref as "theirs", so a stale
-    /// one makes it merge against phantom content that no longer exists upstream.
-    /// Pruning drops `refs/remotes/<remote>/<branch>` when the remote no longer
-    /// has the branch, so Sync then correctly sees "nothing incoming".
+    /// Prunes, so a tracking ref is removed when the branch no longer exists on
+    /// the remote; otherwise Sync would merge against content that is gone.
     pub fn fetch(&self, remote_name: &str, branch: &str) -> Result<()> {
         let mut remote = self.repo.find_remote(remote_name)?;
         let url = remote.url().unwrap_or("").to_string();
@@ -737,11 +680,9 @@ impl GitBackend {
         Ok(())
     }
 
-    /// Push `branch` to the named remote. Never force-pushes. Returns whether
-    /// the remote *rejected* the update (it moved since the last fetch) so the
-    /// caller can fall back to fetch-and-review instead of forcing. A rejection
-    /// is a normal outcome, not an error; transport/auth failures are `Err`.
-    /// Blocking.
+    /// Push `branch`, never forcing. A rejection (the remote moved since the
+    /// last fetch) is returned as a result, not an error, so the caller can
+    /// sync first. Transport and auth failures are `Err`. Blocking.
     pub fn push(&self, remote_name: &str, branch: &str) -> Result<PushResult> {
         use std::sync::{Arc, Mutex};
         let mut remote = self.repo.find_remote(remote_name)?;
@@ -762,9 +703,8 @@ impl GitBackend {
         let mut po = git2::PushOptions::new();
         po.remote_callbacks(cb);
         let refspec = format!("refs/heads/{branch}:refs/heads/{branch}");
-        // A non-fast-forward is a normal "remote moved" outcome, surfaced
-        // either as a `NotFastForward` error or via the callback above
-        // depending on transport — treat both as a rejection, not a failure.
+        // A non-fast-forward is reported as an error or through the callback
+        // depending on transport; both mean rejected.
         match remote.push(&[refspec], Some(&mut po)) {
             Ok(()) => {}
             Err(e) if e.code() == git2::ErrorCode::NotFastForward => {
@@ -778,10 +718,8 @@ impl GitBackend {
 
         let message = rejection.lock().unwrap().take();
         if message.is_none() {
-            // Mirror the just-pushed branch into the local remote-tracking ref
-            // so status (unpushed / behind) reflects the push immediately,
-            // without requiring a round-trip fetch. This is what git does for a
-            // tracked push; libgit2's `push` does not do it for us.
+            // Update the local tracking ref to the pushed commit, as git does,
+            // so status is right without a fetch; libgit2 doesn't do this.
             if let Some((_, head)) = self.current_head()? {
                 let refname = format!("refs/remotes/{remote_name}/{branch}");
                 self.repo
@@ -809,13 +747,10 @@ pub struct PushResult {
 /// reader knows why they're there. Written once.
 const GITIGNORE_MARKER: &str = "# --- InkyCap (managed) ---";
 
-/// Notebox-internal paths a collaborative `.gitignore` must exclude, each with a
-/// one-line rationale. Only entries InkyCap writes *inside* the notebox belong
-/// here — window state, the metadata cache and the search index already live
-/// under the OS config/cache dirs, outside the repo. Everything else in the
-/// notebox (`.typ` notes, attachments, `.bib`, `.collection`, the bundled
-/// `inkycap-notebox` package, the shared `.inkycap/settings.json`) is meant to
-/// travel.
+/// Paths inside the notebox that a collaborative `.gitignore` excludes, each
+/// with a reason. Other app state lives outside the notebox. Everything else
+/// (notes, attachments, `.bib`, `.collection`, the notebox package,
+/// `.inkycap/settings.json`) is shared.
 const GITIGNORE_ENTRIES: &[(&str, &str)] = &[
     (
         ".inkycap/local.json",
@@ -829,10 +764,8 @@ const GITIGNORE_ENTRIES: &[(&str, &str)] = &[
     ("Thumbs.db", ""),
 ];
 
-/// Ensure a collaborative notebox's `.gitignore` excludes every managed entry.
-/// Idempotent and **additive**: it appends only the entries not already present
-/// (so a notebox set up by an older version gains new ones without duplication),
-/// writes the header once, and never touches user-authored lines.
+/// Make sure the `.gitignore` excludes every managed entry. Only adds missing
+/// entries (writing the header once), never changes user lines.
 pub fn ensure_collaboration_gitignore(root: &Path) -> Result<()> {
     let path = root.join(".gitignore");
     let existing = std::fs::read_to_string(&path).unwrap_or_default();
@@ -1177,11 +1110,11 @@ mod tests {
         );
     }
 
-    // ── Phase 5 merge engine ─────────────────────────────────────────────
+    // ── Merge engine ─────────────────────────────────────────────────────
 
-    /// Build a bare remote seeded with `files` on `main`, plus two clones A and
-    /// B both at that base. Returns the temp dirs (kept alive), the clones'
-    /// backends + paths, and the branch name.
+    /// A bare remote seeded with `files` on `main`, and two clones A and B at
+    /// that commit. Returns the temp dirs (kept alive), the clones' backends
+    /// and paths, and the branch.
     #[allow(clippy::type_complexity)]
     fn bare_with_two_clones(
         files: &[(&str, &str)],
@@ -1204,9 +1137,8 @@ mod tests {
         let apath = adir.path().join("a");
         git2::Repository::clone(url, &apath).unwrap();
         let a = GitBackend::open(&apath).unwrap();
-        // Cloning an empty remote leaves an unborn HEAD on libgit2's default
-        // branch (master); pin it to main before the first commit, exactly as
-        // setup's apply_setup does, so the whole fixture is on one branch.
+        // An empty clone has an unborn HEAD on `master`; pin it to main as
+        // setup does.
         a.ensure_initial_branch("main").unwrap();
         for (name, content) in files {
             std::fs::write(apath.join(name), content).unwrap();
@@ -1292,9 +1224,8 @@ mod tests {
         }
     }
 
-    /// On a conflicted merge, the clean (non-conflicting) incoming files are
-    /// materialized into the working tree while the conflicting file is left at
-    /// *ours* for the suggestion layer to render.
+    /// With a conflict, the clean incoming files are written to the working
+    /// tree and the conflicting file stays at ours.
     #[test]
     fn apply_clean_merge_lands_clean_files_and_holds_conflicts() {
         let (_bare, _ad, _bd, a, apath, b, bpath, branch) = bare_with_two_clones(&[
@@ -1330,9 +1261,8 @@ mod tests {
         );
     }
 
-    /// When the remote's branch disappears (a reset / migrated / re-created
-    /// remote), a pruning fetch drops the now-dangling remote-tracking ref, so
-    /// Sync sees "nothing incoming" instead of merging against phantom content.
+    /// When the branch disappears from the remote, a pruning fetch drops the
+    /// tracking ref, so Sync sees nothing incoming.
     #[test]
     fn fetch_prunes_stale_tracking_ref_when_remote_branch_deleted() {
         let (bare, _ad, _bd, _a, _apath, b, _bpath, branch) =

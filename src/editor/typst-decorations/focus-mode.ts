@@ -6,10 +6,10 @@ export type FocusMode = "none" | "line" | "section";
 /** How much of the document counts as "focused" around the caret. */
 export type FocusScope = "line" | "section";
 
-/** Scope used when dimming is on but focus mode is off. Dimming stands on its
- *  own, so it still needs to know what to leave clear. A paragraph is the
- *  forgiving choice: with `line`, a hard-wrapped note would dim the rest of
- *  the sentence the writer is in the middle of. */
+/**
+ * Scope when dimming is on but focus mode is off. A paragraph, since with
+ * `line` a hard-wrapped note would dim the rest of the sentence being written.
+ */
 const DIM_ONLY_SCOPE: FocusScope = "section";
 
 export const focusModeFacet = Facet.define<FocusMode, FocusMode>({

@@ -1,15 +1,13 @@
-// CM6 annotation tracker — publishes the active document's list of
-// `#annotation[…]` comments and `#suggestion(…)[…]` tracked changes to a Solid
-// signal consumed by the right-panel Annotations pane.
+// Annotation tracker: publishes the active document's `#annotation[…]` comments
+// and `#suggestion(…)[…]` tracked changes to a Solid signal for the Annotations
+// pane.
 //
-// Like `heading-tracker`, this is a CM-side scan (no `typst query` round-trip):
-// the list is lexical and the pane needs it synchronously. To stay light, the
-// scan only runs **while the Annotations pane is open** — when it's closed (the
-// common case) editing costs nothing here. The pane triggers an initial scan on
-// open / tab-switch via `rescanAnnotations`; this plugin keeps it live during
-// edits while it's open. The walk visits the same Lezer FuncCall nodes the
-// visual editor uses (and reuses its field extractors) but builds no DOM, so it
-// is far cheaper than the decoration pass it piggybacks on.
+// Like `heading-tracker`, it scans in the editor (no `typst query`), since the
+// pane needs the list immediately. It only runs while the Annotations pane is
+// open, so editing costs nothing otherwise. The pane asks for a scan on open
+// and tab switch (`rescanAnnotations`); this plugin keeps it current while
+// open. It walks the same FuncCall nodes as the visual editor (with its field
+// readers) but builds no DOM.
 
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { syntaxTree } from "@codemirror/language";
@@ -53,9 +51,11 @@ function paneOpen(): boolean {
   return rightPanelTab() === "annotations" && !rightCollapsed();
 }
 
-/** Recompute the list for a given editor immediately. Called by the pane when
- *  it opens or the active editor changes — the cases the live `update` hook
- *  below doesn't cover (it only fires on document edits). */
+/**
+ * Recompute an editor's list now. Called by the pane when it opens or the
+ * active editor changes, which the `update` below (document edits only) doesn't
+ * cover.
+ */
 export function rescanAnnotations(view: EditorView | undefined): void {
   setNoteAnnotations(view ? collectAnnotations(view.state) : []);
 }
@@ -79,10 +79,9 @@ function collectAnnotations(state: EditorState): AnnotationEntry[] {
       if (delimIdx < 0) return;
       const funcName = text.substring(hashOffset, delimIdx).trim();
 
-      // The FuncCall node sometimes starts *after* the leading `#` (markup vs
-      // code context). Normalize `from` to include it, so consumers that
-      // transform or delete the whole call (`#annotation[…]`) don't orphan the
-      // `#` — which would otherwise leave invalid Typst behind on dismiss.
+      // The FuncCall node may start after the `#` (markup vs code context).
+      // Include it in `from`, so removing the whole call doesn't leave a stray
+      // `#` (invalid Typst).
       let from = node.from;
       if (hashOffset === 0 && from > 0 && state.doc.sliceString(from - 1, from) === "#") {
         from -= 1;
@@ -121,9 +120,8 @@ function collectAnnotations(state: EditorState): AnnotationEntry[] {
 
 export const annotationTracker = ViewPlugin.fromClass(
   class {
-    // Keep the list live during edits — but only when the pane is open, so a
-    // closed pane costs nothing per keystroke. The pane handles the initial
-    // scan on open / tab-switch via `rescanAnnotations`.
+    // Keep the list current during edits, only while the pane is open. The pane
+    // handles the first scan.
     update(update: ViewUpdate) {
       if (update.docChanged && paneOpen()) {
         setNoteAnnotations(collectAnnotations(update.state));

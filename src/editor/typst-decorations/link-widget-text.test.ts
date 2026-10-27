@@ -7,7 +7,7 @@ import { LinkWidget, linkTextFromUrl } from "./widgets";
 
 describe("linkTextFromUrl", () => {
   it("drops a mailto: or tel: prefix, as Typst does", () => {
-    expect(linkTextFromUrl("mailto:joshua@phydeau.org")).toBe("joshua@phydeau.org");
+    expect(linkTextFromUrl("mailto:athena@inkycap.org")).toBe("athena@inkycap.org");
     expect(linkTextFromUrl("tel:+1-555-0100")).toBe("+1-555-0100");
   });
 
@@ -17,8 +17,8 @@ describe("linkTextFromUrl", () => {
   });
 
   it("shows the plain address in the link widget, with the full URL as its tooltip", () => {
-    const el = new LinkWidget("mailto:joshua@phydeau.org", "").toDOM() as HTMLElement;
-    expect(el.textContent).toBe("joshua@phydeau.org");
-    expect(el.title).toBe("mailto:joshua@phydeau.org");
+    const el = new LinkWidget("mailto:athena@inkycap.org", "").toDOM() as HTMLElement;
+    expect(el.textContent).toBe("athena@inkycap.org");
+    expect(el.title).toBe("mailto:athena@inkycap.org");
   });
 });

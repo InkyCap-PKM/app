@@ -1,6 +1,6 @@
-// Export/Import tab: the Typst-file import toggle, Markdown-archive import
-// (dialect detect + property mapping) and the Pandoc-path configuration with
-// live detection status.
+// Export/Import tab: the Typst file import setting, Markdown archive import
+// (dialect detection and property mapping) and the Pandoc path with its
+// detection status.
 import { createSignal, onMount, Show } from "solid-js";
 import * as ipc from "../../lib/ipc";
 import { settings, updateSetting } from "../../stores/settings";
@@ -15,9 +15,8 @@ export function ExportSettingsSection() {
   const [pandocStatus, setPandocStatus] = createSignal<string>(t("settings.export.pandocChecking"));
   const [importStatus, setImportStatus] = createSignal<string | null>(null);
   const [importing, setImporting] = createSignal(false);
-  // Selected source file path and the dialect preselected from
-  // autodetect. When `pickedFile` is non-null, the dialect-confirm
-  // panel is shown; the user can flip the toggle before clicking Run.
+  // The chosen source file and the detected dialect. While `pickedFile` is set,
+  // the dialect panel is shown and the user can change it before Run.
   const [pickedFile, setPickedFile] = createSignal<string | null>(null);
   const [dialect, setDialect] = createSignal<ipc.MarkdownDialect>("standard");
   const [autoDetected, setAutoDetected] = createSignal<ipc.MarkdownDialect | null>(null);
@@ -42,10 +41,9 @@ export function ExportSettingsSection() {
     const zipPath = await open({
       title: t("settings.export.archivePickerTitle"),
       defaultPath: await homeDirDefault(),
-      // Tauri filter extensions match the final dot-segment only — `tar.gz`
-      // wouldn't match `.tar.gz` files. We list `gz` (covers `.tar.gz`) plus
-      // `tgz`; the backend validates the actual archive shape and rejects
-      // bare `.gz` files that aren't tarballs.
+      // Tauri file filters match only the last extension, so `tar.gz` wouldn't
+      // match. `gz` (for `.tar.gz`) and `tgz` are listed; the backend checks
+      // the archive and rejects `.gz` files that aren't tarballs.
       filters: [
         { name: t("settings.export.archiveFilterName"), extensions: ["zip", "gz", "tgz"] },
       ],
@@ -67,9 +65,9 @@ export function ExportSettingsSection() {
     }
   }
 
-  // Step 1 of import: scan the archive's YAML frontmatter. If it carries any
-  // properties, open the mapping dialog so the user can confirm/adjust how
-  // they convert; otherwise go straight to the import.
+  // First step of import: scan the archive's YAML frontmatter. If there are
+  // properties, open the mapping dialog to confirm how they convert; otherwise
+  // import directly.
   async function runImport() {
     const source = pickedFile();
     if (!source) return;

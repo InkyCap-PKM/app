@@ -6,12 +6,12 @@ import { typst } from "codemirror-lang-typst";
 import { typstVisualMode } from "./visual-plugin";
 import { typstKeymap } from "./keymaps";
 
-// A rendered block quote or callout is one unit to cursor motion, so arriving
-// from outside puts the caret on the call's outer edge — and moving up from the
-// line below lands it at the very start, ahead of the hidden opener. None of
-// that markup is drawn, so the caret looks like it is in the block's text while
-// typing actually writes outside the frame: the letter appears at the top of the
-// block, or after it. These pin that the caret comes to rest in the body.
+// A rendered block quote or callout is one unit for cursor motion, so arriving
+// from outside puts the caret on the call's outer edge, and moving up from below
+// puts it at the very start, before the hidden opener. The markup isn't drawn,
+// so the caret looks inside the text while typing lands outside the frame (at
+// the top of the block, or after it). These check that the caret ends up in the
+// body.
 
 const QUOTE = '#quote(block: true)[Hello there]\n\ntail';
 const CALLOUT = '#callout("note")[Hello there]\n\ntail';
@@ -41,10 +41,9 @@ function moveTo(doc: string, from: number, to: number) {
 
 describe("caret entering a block element from outside", () => {
   it("lands at the end of the body when arriving from below", () => {
-    // Moving up from the line below skips the whole call as one unit, so the
-    // caret is placed before `#quote(block: true)[` — the far end from where
-    // the writer is coming. It belongs at the end of the text they are
-    // arriving at, which is also where they left it going out.
+    // Moving up from below skips the call as one unit, putting the caret before
+    // `#quote(block: true)[`, the far end. It belongs at the end of the text
+    // being arrived at, where it left going out.
     const below = QUOTE.indexOf("\n") + 1;
     expect(moveTo(QUOTE, below, 0)).toEqual({
       head: QUOTE.indexOf("]"),
@@ -114,11 +113,11 @@ describe("caret entering a multi-line block", () => {
   });
 });
 
-// Home inside a block element, and Left out of a verse, both used to be
-// answered by the line-start caret rule, which is written for a list bullet:
-// it sends a caret at a line start past any hidden markup covering it. For a
-// whole-line element that markup *is* the element, so Home landed in front of
-// the block and leaving a verse leftwards threw the caret to its far end.
+// Home inside a block element, and Left out of a verse, must not use the
+// line-start caret rule meant for list bullets (which moves a caret at a line
+// start past the hidden markup): for a whole-line element that markup is the
+// element, so Home would land before the block and Left would throw the caret
+// to the verse's far end.
 describe("keyboard motion at a block element's own line start", () => {
   it("Home puts the caret at the start of the body, not before the block", () => {
     const v = mk(QUOTE, QUOTE.indexOf("there"));
@@ -165,11 +164,10 @@ describe("clicking on a block element's frame", () => {
   });
 });
 
-// The rule reads what is drawn — a replaced range holding a
-// `BlockBodyElementWidget` — so every element built that way behaves the same.
-// An earlier version worked off the syntax tree instead and quietly missed a
-// callout whose body ran over several lines or held another call, because the
-// parser stops a FuncCall node short in both cases.
+// The rule reads what is drawn (a replaced range holding a
+// `BlockBodyElementWidget`), so every element built that way behaves the same,
+// including callouts whose body spans lines or holds another call, where the
+// parser ends the FuncCall node early.
 describe("every block element behaves the same way", () => {
   const CASES: { name: string; doc: string }[] = [
     { name: "a one-line block quote", doc: "#quote(block: true)[Hello there]\n\ntail" },

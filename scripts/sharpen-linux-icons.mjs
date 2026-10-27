@@ -1,24 +1,20 @@
-// Post-process the icon set for crisp Linux rendering.
+// Make the Linux icons sharp.
 //
-// `npx tauri icon` rasterizes the master SVG once at 1024px and then DOWNSCALES
-// to every size with an image filter. For a detailed mark (the cap's thin
-// "rain" lines, the glasses) that downscale turns the small sizes to mush, so
-// the launcher/dock/task-switcher icon looks blurry — especially on GNOME with
-// fractional scaling, which requests odd pixel sizes and then scales a
-// fixed-size PNG again.
+// `npx tauri icon` renders the SVG once at 1024px and scales it down to every
+// size, which blurs the small sizes of a detailed logo (the cap's thin lines,
+// the glasses), especially on GNOME with fractional scaling, which scales the
+// PNG again.
 //
-// Two corrections, both sourced from the same vector master so they never drift
-// from what `tauri icon` produced for the other platforms:
-//   1. Re-render the Linux PNG sizes DIRECTLY from the SVG at their native
-//      resolution (rsvg anti-aliases for the target size instead of squashing a
-//      big raster) — crisper fallback bitmaps.
-//   2. Emit a scalable `icon.svg`, which the deb installs into
-//      hicolor/scalable/apps/. GNOME prefers the vector and renders it sharp at
-//      ANY size/scale — the thing every well-behaved GTK app ships and the real
-//      cure for the "blurry at every scale" symptom.
+// Two fixes, both from the same SVG so they match the other platforms' icons:
 //
-// The macOS/.icns, Windows/.ico and Store tiles `tauri icon` makes are left
-// untouched.
+//   1. Render each Linux PNG size directly from the SVG, anti-aliased for that
+//      size.
+//   2. Write a scalable `icon.svg`, which the deb installs into
+//      hicolor/scalable/apps/. GNOME prefers it and renders it sharp at any
+//      size.
+//
+// The macOS (.icns), Windows (.ico) and Store icons from `tauri icon` are left
+// alone.
 import { execFileSync } from "node:child_process";
 import { copyFileSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -61,10 +57,9 @@ const svgOut = resolve(ICONS, "icon.svg");
 copyFileSync(MASTER, svgOut);
 console.log("[sharpen-linux-icons] icon.svg written (scalable hicolor icon)");
 
-// Guard: gdk-pixbuf's SVG loader (GNOME's app-grid/dash/switcher rasterizer)
-// sniffs only the first ~256 bytes for the `<svg>` tag. If anything (e.g. a
-// leading comment) pushes it past that window the loader rejects the file and
-// GNOME renders a blurry fallback. Fail the build rather than ship that.
+// gdk-pixbuf's SVG loader (used by GNOME) only checks the first ~256 bytes for
+// `<svg>` and rejects the file otherwise, so fail the build if anything pushes
+// it further.
 const svgHead = readFileSync(svgOut).subarray(0, 256).indexOf(Buffer.from("<svg"));
 if (svgHead < 0) {
   throw new Error(

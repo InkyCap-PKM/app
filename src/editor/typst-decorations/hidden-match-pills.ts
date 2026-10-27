@@ -1,19 +1,17 @@
 // Search matches hidden behind a pill.
 //
-// Some pills replace the source they stand for instead of sitting beside it:
-// an annotation's comment, a Typst comment, a `#set` rule, the style preamble,
-// a `#sym` name. A search match in that source would be marked on text nobody
-// can see, so the search appears to find nothing. This plugin marks the pill
-// itself in the search-match colour while its hidden source holds a match from
-// the notebox search (search-matches.ts) or the in-page find (Ctrl+F), and
-// marks it more strongly when it holds the find's current match. Find marks
-// only its current match unless its "All" toggle is on, and pills follow the
-// same rule. Revealing the pill keeps a selected match selected (see
-// `runEditSource` in pill.ts), so it stays highlighted in the shown source.
+// Some pills replace the source they stand for: an annotation's comment, a
+// Typst comment, a `#set` rule, the style preamble, a `#sym` name. A match
+// there would be marked on invisible text, so search would seem to find
+// nothing. This marks the pill itself in the search match colour while its
+// hidden source holds a notebox search match (search-matches.ts) or in-page
+// find match (Ctrl+F), and more strongly for find's current match. Find marks
+// only its current match unless "All" is on, and pills do the same. Revealing a
+// pill keeps a selected match selected (see `runEditSource` in pill.ts).
 //
-// Pills declare what they hide through `hides` on `buildPillButton`. Tables
-// and verses meet the same need their own way (cell-search.ts and
-// `verseSearchHighlighter` in widgets.ts), because their content stays visible.
+// Pills declare what they hide with `hides` on `buildPillButton`. Tables and
+// verses keep their content visible and handle this themselves (cell-search.ts
+// and `verseSearchHighlighter` in widgets.ts).
 
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import type { EditorState } from "@codemirror/state";
@@ -32,9 +30,11 @@ function searchActive(state: EditorState): boolean {
   return searchPanelOpen(state) || searchMatchRanges(state).length > 0;
 }
 
-/** How the source `range` relates to the current matches. `searchHits` are
- *  the notebox-search matches, read once per repaint; `findShowsAll` is
- *  whether Find's "All" toggle is on. */
+/**
+ * How the source `range` relates to the matches. `searchHits` are the notebox
+ * search matches, read once per repaint; `findShowsAll` is whether find's "All"
+ * is on.
+ */
 function hitIn(
   state: EditorState,
   range: SourceRange,

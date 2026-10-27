@@ -1,9 +1,7 @@
-// Creation rules: configurable note creation presets.
-// Each rule defines a scaffold, target folder, filename pattern, and optional hotkey.
-// Rules are persisted at `<notebox>/.inkycap/creation_rules.json` — they belong
-// to the notebox because they reference notebox-local scaffolds and folder paths,
-// and different noteboxes legitimately want different creation rule sets.
-// Two built-in rules are always present: "New Note" (Zettelkasten) and "Daily Note".
+// Creation rules: note creation presets, each with a scaffold, folder, file name
+// pattern and optional hotkey. Stored in `<notebox>/.inkycap/creation_rules.json`,
+// since they refer to the notebox's scaffolds and folders. "New Note" and "Daily
+// Note" are always present.
 
 use std::path::{Path, PathBuf};
 
@@ -43,25 +41,18 @@ pub struct CreationRule {
     /// Whether this is a built-in rule (cannot be deleted).
     #[serde(default)]
     pub builtin: bool,
-    /// Typst template package to import and apply via show rule.
-    /// E.g. "@preview/charged-ieee:0.1.0" or a local path.
-    /// Empty string means no Typst template.
+    /// Typst template package to import and apply with a show rule, e.g.
+    /// "@preview/charged-ieee:0.1.0" or a local path. Empty for none.
     #[serde(default)]
     pub typst_template: String,
-    /// Soft-disable flag. Disabled rules are hidden from the toolbar,
-    /// command palette, and global hotkey registration, but stay in the
-    /// settings list so the user can re-enable them. Built-in rules can't
-    /// be deleted; disabling is the equivalent escape hatch.
+    /// Disabled rules are hidden from the toolbar, palette and hotkeys but stay
+    /// in Settings. Built-in rules can't be deleted, only disabled.
     #[serde(default)]
     pub disabled: bool,
 }
 
-/// Default built-in rules.
-///
-/// `target_folder` for "New Note" is intentionally empty — the executor
-/// falls back to the user's Files & Links "New note location" setting at
-/// trigger time, so this rule respects whichever folder the user picks
-/// without InkyCap baking a path into the rule definition.
+/// The built-in rules. "New Note" has no `target_folder`, so it uses the "New
+/// note location" setting when run.
 pub fn default_rules() -> Vec<CreationRule> {
     vec![
         CreationRule {
@@ -110,11 +101,8 @@ fn rules_path(notebox_root: &Path) -> PathBuf {
     notebox_root.join(".inkycap").join("creation_rules.json")
 }
 
-/// Load creation rules from the notebox, merging with built-in defaults.
-///
-/// If a built-in rule is missing (e.g. the user deleted the rules file),
-/// the default is restored and the file is rewritten so the safety net
-/// runs at most once per session.
+/// Load the notebox's rules, adding any missing built-in rule (e.g. after the
+/// file was deleted) and rewriting the file, so this happens once.
 pub fn load_rules(notebox_root: &Path) -> Vec<CreationRule> {
     let path = rules_path(notebox_root);
     let mut user_rules: Vec<CreationRule> = std::fs::read_to_string(&path)
@@ -131,10 +119,8 @@ pub fn load_rules(notebox_root: &Path) -> Vec<CreationRule> {
 
     let mutated = !missing.is_empty();
     if mutated {
-        // Prepend the missing builtins as a block so they stay above any
-        // user-defined rules AND keep their canonical order
-        // (`default_rules()` returns New Note before Daily Note —
-        // inserting one-by-one with `insert(0, ...)` would reverse that).
+        // Put the missing built-ins first as a block, in `default_rules()`
+        // order (inserting one at a time at 0 would reverse them).
         let mut combined = missing;
         combined.extend(user_rules);
         user_rules = combined;
@@ -149,12 +135,9 @@ pub fn load_rules(notebox_root: &Path) -> Vec<CreationRule> {
     user_rules
 }
 
-/// Reorder rules so those named in `ordered_ids` appear first, in that
-/// order, with any rule not mentioned keeping its relative order after them.
-/// Ids in `ordered_ids` that match no rule are ignored. The frontend sends
-/// the full list of rule ids after a move, so in practice every rule is
-/// named and the order is fully determined; the "unmentioned keep relative
-/// order" behaviour is defensive against a stale or partial list.
+/// Put the rules named in `ordered_ids` first, in that order; others keep their
+/// relative order after them; unknown ids are ignored. The frontend sends every
+/// id, so the order is fully set; the rest guards against a stale list.
 pub fn reorder_rules(rules: &mut Vec<CreationRule>, ordered_ids: &[String]) {
     let mut rest: Vec<CreationRule> = std::mem::take(rules);
     let mut ordered: Vec<CreationRule> = Vec::with_capacity(rest.len());
@@ -178,13 +161,10 @@ pub fn save_rules(notebox_root: &Path, rules: &[CreationRule]) -> Result<()> {
     Ok(())
 }
 
-/// Resolve the on-disk target directory for a rule, applying the
-/// notebox-level fallback when the rule's `target_folder` is empty.
-///
-/// `fallback_folder` is the user's "New note location" preference
-/// expressed as a path relative to the notebox root (empty string = notebox
-/// root). Variables are expanded in both the rule's folder and the
-/// fallback so e.g. a fallback of `daily/{{date:YYYY}}` still works.
+/// The folder a rule creates notes in, falling back to `fallback_folder` (the
+/// "New note location" setting, notebox-relative, "" for the root) when the
+/// rule has none. Variables are expanded in both, so `daily/{{date:YYYY}}`
+/// works.
 pub fn resolve_target_dir(
     rule: &CreationRule,
     notebox_root: &std::path::Path,
@@ -208,10 +188,9 @@ pub fn expand_folder(raw: &str, locale: Locale) -> String {
     scaffolds::expand_variables(raw, "", locale).content
 }
 
-/// Sanitize a user-supplied filename for use as a `.typ` basename.
-/// Strips path separators and dotted prefixes so the rule trigger can't
-/// be coerced into writing outside the target directory or into a hidden
-/// file. Returns None if nothing is left after sanitization.
+/// Clean a file name for a `.typ` file: remove path separators and leading
+/// dots, so a rule can't write outside its folder or create a hidden file. None
+/// if nothing is left.
 pub fn sanitize_filename(name: &str) -> Option<String> {
     let stem = name.trim().trim_end_matches(".typ");
     let cleaned: String = stem
@@ -226,18 +205,14 @@ pub fn sanitize_filename(name: &str) -> Option<String> {
     }
 }
 
-/// Execute a creation rule: expand filename and target folder, returning
-/// the target path (content comes from the scaffold, applied by the command
-/// layer).
+/// Run a creation rule: expand the file name and folder and return the path
+/// (the command layer adds the scaffold content).
 ///
-/// `title_override` is the user-supplied filename when the rule's pattern
-/// is empty (the UI prompts for one in that case). When the pattern is
-/// empty — or reduces to nothing once expanded — AND no override is
-/// provided, returns [`InkyCapError::FilenameRequired`]; the caller is
-/// expected to prompt the user and retry.
-///
-/// `fallback_folder` is consulted only when the rule's own
-/// `target_folder` is empty. See [`resolve_target_dir`].
+/// `title_override` is the file name the user entered for a rule whose pattern
+/// is empty. If the pattern is empty or expands to nothing and there is no
+/// override, returns [`InkyCapError::FilenameRequired`] so the caller can ask.
+/// `fallback_folder` is used only when the rule has no folder (see
+/// [`resolve_target_dir`]).
 pub fn execute_rule(
     rule: &CreationRule,
     notebox_root: &std::path::Path,
@@ -356,12 +331,8 @@ mod tests {
         )
         .expect("daily-note default executes");
         let year = chrono::Local::now().format("%Y").to_string();
-        // Use `Path::starts_with` rather than a stringified substring search:
-        // `PathBuf::join` uses `\` on Windows, so a literal `"daily/<year>/"`
-        // substring would never match there even though the path structure
-        // is correct. `Path::starts_with` compares components and treats
-        // both separators as equivalent, so the same assertion works
-        // cross-platform.
+        // `Path::starts_with` compares components, so it works with Windows'
+        // `\` separators where a string match wouldn't.
         let expected_prefix = Path::new("/notebox/Daily").join(&year);
         assert!(
             path.starts_with(&expected_prefix),

@@ -1,18 +1,12 @@
-// i18n coverage enforcement.
+// i18n coverage check.
 //
-// Scans every `.tsx` file for user-facing text that bypasses the translation
-// seam — bare JSX text and string literals in the `title`/`placeholder`/
-// `aria-label`/`alt` attributes — and fails if any appears in a file that is
-// NOT on the unmigrated allowlist below. New components are therefore protected
-// from day one, while the existing backlog is tolerated until Phase 3 migrates
-// it. This mirrors the source-scanning enforcement the Rust side already uses
-// (see src-tauri/tests/utf8_safety.rs, path_safety.rs) and the `// utf8-safe:`
-// escape-hatch convention.
+// Scans every `.tsx` file for user-facing text that bypasses translation (bare
+// JSX text, and string literals in `title`/`placeholder`/`aria-label`/`alt`)
+// and fails if any is found in a file not listed in `UNMIGRATED` below. Like
+// the Rust checks (src-tauri/tests/utf8_safety.rs, path_safety.rs).
 //
-// Lifecycle: when Phase 3 migrates a file, remove it from `UNMIGRATED` — the
-// file flips from "ignored" to "enforced". A genuinely untranslatable literal
-// (a brand name, a symbol) gets a `// i18n-exempt: <reason>` comment on its
-// line or the line above instead.
+// A literal that can't be translated (a brand name, a symbol) gets a `//
+// i18n-exempt: <reason>` comment on its line or the line above.
 
 /// <reference types="node" />
 import { describe, it, expect } from "vitest";
@@ -92,10 +86,9 @@ function collectTsx(dir: string, acc: string[] = []): string[] {
 
 const rel = (abs: string) => relative(ROOT, abs).split(sep).join("/");
 
-// ── Not-yet-migrated backlog (Phase 1/2 baseline) ────────────────────
-// EMPTY: Phase 3 migrated every backlog .tsx through t()/useI18n(). Every
-// enforced .tsx now stays clean. Do NOT add files here — route their text
-// through t()/useI18n(), or annotate `// i18n-exempt: <reason>`.
+// ── Files not yet translated ─────────────────────────────────────────
+// Empty: every .tsx uses t()/useI18n(). Don't add files here; translate their
+// text, or mark it `// i18n-exempt: <reason>`.
 const UNMIGRATED = new Set<string>([]);
 
 describe("i18n coverage scanner", () => {

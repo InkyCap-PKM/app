@@ -1,9 +1,6 @@
-// UI scale system — scales all type-scale and icon-size tokens
-// proportionally based on the editor.font_size setting.
-//
-// The CSS tokens in themes.css define the baseline at font_size=15.
-// This module recalculates them when font_size changes so that
-// Ctrl+/Ctrl- scales the entire interface uniformly.
+// UI scale: scales the type and icon size tokens with the editor.font_size
+// setting. themes.css defines them at font_size 15; this recalculates them when
+// it changes, so Ctrl+/Ctrl- scales the whole interface.
 
 const BASE_FONT_SIZE = 15;
 

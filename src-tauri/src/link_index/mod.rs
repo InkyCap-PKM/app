@@ -1,18 +1,8 @@
-// ---------------------------------------------------------------------------
-// Why link resolution lives in Rust, not Typst
-// ---------------------------------------------------------------------------
-//
-// Per CLAUDE.md's Typst-first principle, we use `typst query` to *extract*
-// outgoing wikilinks from each note (via `<inkycap-link>` metadata in the
-// notebox package — see `inkycap-notebox/lib.typ`). What Typst cannot do
-// is *resolve* a wikilink target string like `"Reading notes"` to an actual
-// file path on disk: that resolution is notebox-specific (filename matching,
-// disambiguation, alias lookup) and Typst has no view of the notebox as a
-// whole, only the file currently being compiled.
-//
-// So the split is deliberate and idiomatic: extraction is native (Typst
-// knows the source), resolution is Rust-side (Rust knows the notebox).
-// ---------------------------------------------------------------------------
+// Per CLAUDE.md's Typst-first principle, outgoing wikilinks are extracted
+// with `typst query` (the `<inkycap-link>` metadata from
+// `inkycap-notebox/lib.typ`). Resolving a target like `"Reading notes"` to a
+// file is done here in Rust: it depends on the whole notebox (file names,
+// aliases, disambiguation), and Typst only sees the file being compiled.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -137,20 +127,17 @@ impl LinkIndex {
     }
 }
 
-/// The canonical wikilink "stem" of a note path: its file name with a trailing
-/// `.typ` removed (case-insensitively). Unlike [`std::path::Path::file_stem`],
-/// this does **not** truncate at the first dot, so a note named
-/// `v1.2 plan.typ` keeps the stem `v1.2 plan` instead of collapsing to `v1`.
+/// A note's wikilink name: its file name without a trailing `.typ` (any case).
+/// Unlike [`std::path::Path::file_stem`], it doesn't cut at the first dot, so
+/// `v1.2 plan.typ` gives `v1.2 plan`, not `v1`.
 ///
-/// Wikilink targets are matched against this value, and the rename backlink
-/// rewriter computes old/new stems with it, so every site that derives a note's
-/// link identity from its path must route through here — `file_stem()` would
-/// silently disagree the moment a filename contains a dot.
+/// Wikilink targets are matched against this, and renames rewrite backlinks
+/// with it, so always derive a note's link name from its path here;
+/// `file_stem()` gives a different answer for names with dots.
 pub fn note_stem(path: &std::path::Path) -> String {
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    // `ends_with` on the lowercased name proves the trailing four bytes are an
-    // ASCII case variant of ".typ" — all single-byte — so `len - 4` lands on a
-    // char boundary and the slice below is UTF-8-safe.
+    // The last four bytes are ASCII ".typ" in some case, so `len - 4` is a
+    // character boundary.
     if name.to_ascii_lowercase().ends_with(".typ") {
         name[..name.len() - 4].to_string()
     } else {
@@ -179,11 +166,9 @@ pub(crate) fn link_name_key(text: &str) -> Option<String> {
     link_note_name(text).map(str::to_lowercase)
 }
 
-/// Every wikilink that names a note which does not exist yet, as
-/// `(linking note, note name)` pairs. The name has any heading suffix removed.
-///
-/// Matching follows the same rules as backlink resolution, so a target listed
-/// here is exactly one that shows as unresolved everywhere else.
+/// Every wikilink to a note that doesn't exist yet, as `(linking note, note
+/// name)` pairs, without heading suffixes. Uses the same matching as backlinks,
+/// so these are exactly the links shown as unresolved elsewhere.
 pub fn unresolved_links<'a>(
     sources: impl IntoIterator<Item = (&'a NoteId, &'a [String])>,
     all_paths: &[PathBuf],

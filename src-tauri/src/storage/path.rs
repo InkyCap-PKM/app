@@ -1,46 +1,30 @@
-//! Notebox-scoped path validation.
+//! Path validation for the notebox. Every path from the frontend (command
+//! arguments, drops, watcher events) is checked against the notebox root here
+//! before any I/O. It guards against:
 //!
-//! Every path that enters the backend from the frontend — whether via an IPC
-//! command argument, a clipboard drop, or a file-watcher event — must be
-//! validated against the notebox root before it is used for I/O. This module is
-//! the single source of truth for that check.
+//! 1. **Relative traversal** (`../../etc/passwd`): canonicalizing removes `..`,
+//!    and the result must start with the canonical root.
+//! 2. **Absolute paths** outside the notebox: joined, canonicalized and checked
+//!    the same way.
+//! 3. **Symlink escapes**: `std::fs::canonicalize` follows symlinks, so a link
+//!    to `/tmp` resolves to `/tmp/...` and fails.
 //!
-//! The validator defends against three classes of escape:
-//!
-//! 1. **Relative traversal** (`../../etc/passwd`): canonicalization collapses
-//!    `..` components, and the result is then compared against the canonical
-//!    notebox root with `starts_with`.
-//! 2. **Absolute paths** pointing outside the notebox: treated the same as
-//!    relative paths — join, canonicalize, verify containment.
-//! 3. **Symlink escapes**: `std::fs::canonicalize` follows symlinks, so a
-//!    symlink inside the notebox that targets `/tmp` will canonicalize to
-//!    `/tmp/...` and fail the containment check.
-//!
-//! For paths whose target does not yet exist (e.g. a file about to be created
-//! or renamed into place), we walk up to the nearest existing ancestor,
-//! canonicalize that, and then re-append the non-existent tail. The tail
-//! components are validated to contain no `..`, so the rebuilt path cannot
-//! escape.
+//! For paths that don't exist yet (a file about to be created or renamed), the
+//! nearest existing ancestor is canonicalized and the rest appended; the rest
+//! may not contain `..`.
 
 use std::path::{Component, Path, PathBuf};
 
 use crate::errors::{InkyCapError, Result};
 
-/// Render a `Path` as a string for the frontend in a cross-platform-stable
-/// shape: strip the Windows `\\?\` UNC verbatim prefix that
-/// `std::fs::canonicalize` introduces, then flip backslashes to forward
-/// slashes so JS string operations (`startsWith`, `split("/")`, etc.) behave
-/// identically on Windows and Unix.
+/// A `Path` as a string for the frontend, the same on every OS: without the
+/// Windows `\\?\` prefix that `std::fs::canonicalize` adds, and with forward
+/// slashes, so `startsWith` and `split("/")` work alike everywhere.
 ///
-/// All path strings that cross the IPC boundary outbound — `NoteboxInfo`,
-/// `FileTreeNode.path`, file-watcher events, graph node IDs — flow through
-/// here so the frontend can assume a single canonical shape. Rust on Windows
-/// accepts forward-slash paths in `PathBuf::from`, so a round-trip through
-/// the frontend stays valid for filesystem I/O on the way back in.
-///
-/// Per CLAUDE.md's path-normalization guidance for Windows: every outbound
-/// stringification of a `Path` goes through this helper, not
-/// `Path::display().to_string()`.
+/// Every path sent to the frontend (`NoteboxInfo`, `FileTreeNode.path`, watcher
+/// events, graph node IDs) goes through this, never
+/// `Path::display().to_string()` (see CLAUDE.md). `PathBuf::from` accepts
+/// forward slashes on Windows, so paths coming back still work.
 pub fn to_frontend_string(path: &Path) -> String {
     let s = path.display().to_string(); // path-stringification-ok: this *is* the canonical-shape helper
 
@@ -55,18 +39,13 @@ pub fn to_frontend_string(path: &Path) -> String {
     trimmed.replace('\\', "/")
 }
 
-/// Canonicalize the notebox root once, up-front. Fails if the root does not
-/// exist or cannot be resolved (e.g. permission denied).
+/// Canonicalize the notebox root, once. Fails if it doesn't exist or can't be
+/// resolved.
 ///
-/// On Windows the result is stripped of the `\\?\` verbatim prefix that
-/// `std::fs::canonicalize` introduces. This is purely a representational
-/// concern — the prefix is functionally invisible to filesystem syscalls but
-/// causes `Path` equality to diverge from the same path without the prefix
-/// (Components carry distinct `Prefix::Verbatim*` vs `Prefix::Disk` variants).
-/// Stripping it here keeps every notebox-derived `PathBuf` in one canonical
-/// shape so the link index, property index, and `starts_with` containment
-/// checks all line up regardless of whether the caller round-tripped through
-/// the frontend.
+/// On Windows the `\\?\` prefix is removed: it doesn't affect file access but
+/// makes `Path` comparisons differ from the same path without it. Without it,
+/// every path derived from the root has one form, so the indexes and
+/// `starts_with` checks agree.
 pub fn canonicalize_root(root: &Path) -> Result<PathBuf> {
     std::fs::canonicalize(root)
         .map(strip_verbatim_prefix)
@@ -79,9 +58,8 @@ pub fn canonicalize_root(root: &Path) -> Result<PathBuf> {
         })
 }
 
-/// Strip the Windows `\\?\` verbatim-namespace prefix from a path, leaving a
-/// regular drive-letter or UNC path. No-op on non-Windows or on paths that
-/// don't carry the prefix.
+/// Remove the Windows `\\?\` prefix, leaving a normal drive or UNC path. No-op
+/// elsewhere.
 fn strip_verbatim_prefix(p: PathBuf) -> PathBuf {
     let s = p.to_string_lossy();
     if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
@@ -93,13 +71,9 @@ fn strip_verbatim_prefix(p: PathBuf) -> PathBuf {
     }
 }
 
-/// Lightweight command-boundary validation for path arguments from the frontend.
-///
-/// Catches the most common injection patterns before the path reaches storage:
-/// null bytes and `..` traversal components. Accepts both absolute and relative
-/// paths — the frontend sends absolute paths (from `FileTreeNode.path`) for most
-/// operations. The downstream `LocalNoteboxStorage::resolve_path` performs the full
-/// canonical containment check against the notebox root.
+/// Quick check of a path argument from the frontend: rejects null bytes and `..`
+/// components. Absolute and relative paths are accepted (most frontend paths are
+/// absolute); `LocalNoteboxStorage::resolve_path` does the full containment check.
 pub fn sanitize_notebox_arg(path: &str) -> Result<PathBuf> {
     if path.contains('\0') {
         return Err(InkyCapError::InvalidPath(
@@ -117,16 +91,11 @@ pub fn sanitize_notebox_arg(path: &str) -> Result<PathBuf> {
     Ok(PathBuf::from(path))
 }
 
-/// Validate that `path` — absolute or relative — resolves to a location inside
-/// `canonical_root`, and return the canonical resolved path.
-///
-/// `canonical_root` MUST already be canonicalized (typically via
-/// [`canonicalize_root`] stored on [`LocalNoteboxStorage`]). Passing a raw root
-/// would break the `starts_with` comparison when the root itself contains a
-/// symlink.
-///
-/// The `path` argument may be relative (joined to root) or absolute (used as
-/// given). Either way, the final resolved path must live under the root.
+/// Check that `path` (absolute, or relative to the root) resolves inside
+/// `canonical_root`, and return the canonical path. `canonical_root` must
+/// already be canonical (as stored by [`LocalNoteboxStorage`] from
+/// [`canonicalize_root`]); a raw root containing a symlink would break the
+/// comparison.
 pub fn validate_notebox_path(canonical_root: &Path, path: &Path) -> Result<PathBuf> {
     let joined = if path.is_absolute() {
         path.to_path_buf()
@@ -146,13 +115,10 @@ pub fn validate_notebox_path(canonical_root: &Path, path: &Path) -> Result<PathB
     Ok(resolved)
 }
 
-/// Canonicalize a path whose target may not yet exist.
-///
-/// Walks upward until an existing ancestor is found, canonicalizes it, then
-/// re-appends the non-existent tail. Tail components are restricted to plain
-/// `Normal` components — `..` and `.` in the tail are rejected, otherwise a
-/// create-new-file operation could escape the notebox even though the ancestor
-/// is safely inside it.
+/// Canonicalize a path that may not exist yet: canonicalize the nearest
+/// existing ancestor and append the rest. The appended part may only contain
+/// plain names; `..` or `.` there could escape the notebox from an ancestor
+/// inside it.
 fn canonicalize_with_nonexistent_tail(path: &Path) -> Result<PathBuf> {
     // Fast path: the target already exists.
     if let Ok(c) = std::fs::canonicalize(path) {
@@ -185,9 +151,8 @@ fn canonicalize_with_nonexistent_tail(path: &Path) -> Result<PathBuf> {
         }
     };
 
-    // Reject `..` / `.` in the non-existent tail so an attacker can't craft a
-    // path like `<canon_ancestor>/a/../../../etc/passwd` where the tail cancels
-    // out earlier components.
+    // Reject `..` and `.` in the appended part (e.g.
+    // `<ancestor>/a/../../../etc/passwd`).
     let mut resolved = canon_ancestor;
     for segment in tail.iter().rev() {
         let seg_path = Path::new(segment);

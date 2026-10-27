@@ -1,14 +1,12 @@
-//! Read-side operations on existing backup archives:
+//! Reading existing backup archives:
 //!
-//!   - `list_archives` — enumerate archives in the destination folder.
-//!   - `list_contents`  — open one archive and return its entries.
-//!   - `extract_files`  — pull selected entries back onto the filesystem,
-//!     with deterministic conflict handling.
+//!   - `list_archives`: archives in the destination folder.
+//!   - `list_contents`: one archive's entries.
+//!   - `extract_files`: restore chosen entries, with predictable conflict handling.
 //!
-//! Encryption-aware: when an archive is AES-encrypted, the caller passes
-//! the password (typically fetched from the OS keychain) and we route
-//! through `by_name_decrypt`. An empty / wrong password surfaces a
-//! clear error rather than mangled bytes.
+//! For AES-encrypted archives the caller passes the password (usually from the
+//! keychain) and `by_name_decrypt` is used; a missing or wrong password gives a
+//! clear error rather than garbage.
 
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
@@ -40,10 +38,8 @@ pub struct BackupContentEntry {
     pub is_dir: bool,
     /// Uncompressed size in bytes. `0` for directory entries.
     pub size_bytes: u64,
-    /// True when this entry is AES-encrypted. All entries in a given
-    /// archive share an encryption state in practice, but we surface
-    /// it per-entry so the UI can adapt if a future archive happens
-    /// to mix modes.
+    /// True when the entry is AES-encrypted. Archives don't mix modes in
+    /// practice, but it is per entry in case one does.
     pub encrypted: bool,
 }
 
@@ -51,33 +47,28 @@ pub struct BackupContentEntry {
 #[derive(Debug, Clone, Copy, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum RestoreConflictPolicy {
-    /// Skip the file, leaving the existing one untouched. Safest
-    /// default — the user's current copy is never destroyed without
-    /// their explicit ask.
+    /// Keep the existing file and skip this one. The default, so a current file
+    /// is never lost without the user asking.
     Skip,
     /// Overwrite in place.
     Overwrite,
-    /// Write the restored file next to the existing one with a
-    /// `.restored-<timestamp>` suffix on the stem. The existing file
-    /// is left untouched.
+    /// Write the restored file beside the existing one with a
+    /// `.restored-<timestamp>` suffix; the existing file is kept.
     Rename,
 }
 
 /// Per-file result of an extract pass.
 #[derive(Debug, Serialize)]
 pub struct RestoreResult {
-    /// Frontend-canonical absolute path of the file that was created
-    /// (or would have been overwritten). For a `skipped` outcome this
-    /// is the path the file would have had.
+    /// Absolute path (frontend form) of the file created, or for `skipped` the
+    /// path it would have had.
     pub dest_path: String,
     /// One of: `"written"`, `"skipped"`, `"renamed"`.
     pub outcome: String,
 }
 
-/// Enumerate archives in `folder` that match `pattern`. Returns the
-/// most-recent first, the same order the retention pruner uses. When
-/// `folder` doesn't exist (user reconfigured but never ran a backup),
-/// an empty list is returned rather than an error.
+/// Archives in `folder` matching `pattern`, newest first (the pruner's order).
+/// Empty if `folder` doesn't exist yet.
 pub fn list_archives(folder: &Path, pattern: &str) -> Result<Vec<BackupEntry>> {
     let paths = super::archive::list_matching_archives(folder, pattern)?;
     let mut out = Vec::with_capacity(paths.len());
@@ -110,11 +101,8 @@ pub fn list_archives(folder: &Path, pattern: &str) -> Result<Vec<BackupEntry>> {
     Ok(out)
 }
 
-/// Open `archive_path` and return its entry list. Doesn't decrypt
-/// anything — entry metadata is in the central directory, which is
-/// never encrypted. The `encrypted` flag on each `BackupContentEntry`
-/// tells the UI whether the user will need to supply a password to
-/// extract.
+/// An archive's entries. Nothing is decrypted: the entry list isn't encrypted,
+/// and each entry's `encrypted` flag says whether restoring needs a password.
 pub fn list_contents(archive_path: &Path) -> Result<Vec<BackupContentEntry>> {
     // The shared lister reads from the central directory (no decryption),
     // so encrypted archives still enumerate without a password.
@@ -130,14 +118,10 @@ pub fn list_contents(archive_path: &Path) -> Result<Vec<BackupContentEntry>> {
         .collect())
 }
 
-/// Extract selected entries from `archive_path` into `target_root`.
-/// Interior paths in the archive are joined onto `target_root` with
-/// the leading `notebox/` or `user-config/` prefix stripped — so a
-/// restore into the notebox root puts files back at their original
-/// locations.
-///
-/// `password` is required when any selected entry is AES-encrypted.
-/// Passing `None` for an encrypted archive surfaces a clear error.
+/// Extract chosen entries into `target_root`, with the `notebox/` or
+/// `user-config/` prefix removed, so restoring into the notebox puts files back
+/// where they were. `password` is required for encrypted entries; `None` gives
+/// a clear error.
 pub fn extract_files(
     archive_path: &Path,
     target_root: &Path,
@@ -145,10 +129,8 @@ pub fn extract_files(
     password: Option<&str>,
     conflict: RestoreConflictPolicy,
 ) -> Result<Vec<RestoreResult>> {
-    // Refuse to restore outside the target root (defence-in-depth
-    // against a maliciously-crafted archive with `../../../etc/...`
-    // entries). All interior paths must, after the prefix strip and
-    // join, still live under target_root canonical.
+    // Refuse anything that would land outside the target (an archive with
+    // `../../../etc/...` entries).
     let target_canon = std::fs::canonicalize(target_root).map_err(|e| {
         InkyCapError::InvalidPath(format!(
             "restore target {} not accessible: {e}",
@@ -163,16 +145,13 @@ pub fn extract_files(
 
     for interior in entries {
         if interior.ends_with('/') {
-            // Skip directory entries — we'll mkdir as needed for files
-            // below. Restoring an empty folder is technically possible
-            // but isn't a meaningful recovery action.
+            // Skip folder entries; folders are created as files need them.
             continue;
         }
 
-        // Strip the archive's grouping prefix so files land back at
-        // their original notebox-relative path. We accept either
-        // prefix because the user might restore a notebox-only file
-        // OR a user-config file into different targets.
+        // Remove the grouping prefix so files return to their relative paths.
+        // Either prefix is accepted, since notebox and config files may be
+        // restored to different places.
         let rel = interior
             .strip_prefix("notebox/")
             .or_else(|| interior.strip_prefix("user-config/"))
@@ -214,9 +193,8 @@ pub fn extract_files(
             dest.clone()
         };
 
-        // Re-resolve the canonical parent and verify it still lives
-        // under target_canon — protects against symlinks that race
-        // between create_dir_all and the write below.
+        // Check the canonical parent is still inside the target, against
+        // symlinks swapped in after create_dir_all.
         if let Some(parent) = final_dest.parent() {
             if let Ok(parent_canon) = std::fs::canonicalize(parent) {
                 if !parent_canon.starts_with(&target_canon) {
@@ -254,9 +232,8 @@ pub fn extract_files(
     Ok(results)
 }
 
-/// Build a `<stem>.restored-<unix>.<ext>` sibling path for a Rename
-/// conflict resolution. Falls back to `<full-name>.restored-<unix>`
-/// when the original has no extension.
+/// `<stem>.restored-<unix>.<ext>` beside the original, or
+/// `<name>.restored-<unix>` without an extension.
 fn rename_target(original: &Path) -> PathBuf {
     let stamp = std::time::SystemTime::now()
         .duration_since(UNIX_EPOCH)

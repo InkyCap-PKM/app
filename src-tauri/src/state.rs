@@ -28,31 +28,25 @@ pub struct IndexStats {
     pub property_keys: Vec<String>,
 }
 
-/// The per-window notebox session: everything that belongs to *one open
-/// notebox in one OS window*. Each window (identified by its Tauri label —
-/// `main`, `note-docs`, `note-<ts>`) owns exactly one of these, looked up via
-/// [`AppState::session`]. Splitting this out of `AppState` is what lets two
-/// windows show different noteboxes without clobbering each other.
+/// Everything that belongs to one open notebox in one window. Each window (by
+/// Tauri label: `main`, `note-docs`, `note-<ts>`) owns one, looked up with
+/// [`AppState::session`], so windows can show different noteboxes.
 ///
-/// **Lock ordering invariant.** Several fields below are `RwLock`s and any
-/// code path that holds more than one of them at the same time MUST acquire
-/// them in this order to prevent deadlocks:
+/// **Lock order.** Code holding more than one of these `RwLock`s at once must
+/// take them in this order:
 ///
 /// 1. `link_index`
 /// 2. `property_index`
 /// 3. `search_engine`
 ///
-/// (The persistent `metadata_cache` is a shared `Arc` accessed last, after the
-/// index locks are released.) Non-nested single-lock acquisitions (acquire,
-/// use, release, then the next) are always safe. The one helper that nests two
-/// locks is [`NoteboxSession::reindex_note`], which holds `link_index` (write)
-/// while briefly acquiring `property_index` (read) to snapshot the note path
-/// set. If you add a helper that nests differently, either follow the order
-/// above or split it into sequential single-lock steps.
+/// The shared `metadata_cache` is used last, after these are released. Taking
+/// one lock at a time is always safe. [`NoteboxSession::reindex_note`] is the
+/// one helper that nests two: it holds `link_index` (write) while briefly
+/// reading `property_index`. A new helper must follow this order or take locks
+/// one at a time.
 ///
-/// The `AppState::sessions` map lock is always acquired *outside* (before) any
-/// of these — and only ever to clone the `Arc<NoteboxSession>` out, never held
-/// while a session lock is taken — so it adds no new deadlock surface.
+/// The `AppState::sessions` map lock is only taken beforehand, to clone out the
+/// session `Arc`, and never held while a session lock is taken.
 pub struct NoteboxSession {
     /// Tauri window label that owns this session. Used to target events
     /// (`emit_to`) at the right window's webview.
@@ -64,13 +58,12 @@ pub struct NoteboxSession {
     pub collection_files: RwLock<Vec<PathBuf>>,
     /// File watcher handle — kept alive as long as a notebox is open.
     pub watcher: RwLock<Option<RecommendedWatcher>>,
-    /// Notebox health monitor abort handle. See [`crate::notebox_health`].
-    /// Owned here so opening a new notebox can cancel the previous monitor
-    /// before spawning its replacement.
+    /// Abort handle for the notebox health monitor (see
+    /// [`crate::notebox_health`]), so opening a notebox can stop the previous
+    /// one.
     pub health_monitor: RwLock<Option<tokio::task::AbortHandle>>,
-    /// Per-notebox settings, persisted at `<notebox>/.inkycap/settings.json`.
-    /// Reset to defaults until a notebox is opened; loaded in
-    /// `open_notebox_fast`.
+    /// Per-notebox settings from `<notebox>/.inkycap/settings.json`, loaded in
+    /// `open_notebox_fast`. Defaults until a notebox is open.
     pub notebox_settings: RwLock<NoteboxSettings>,
     /// Full-text search engine with inverted index.
     pub search_engine: RwLock<SearchEngine>,
@@ -78,33 +71,26 @@ pub struct NoteboxSession {
     pub corpus_stats: RwLock<CorpusStats>,
     /// Property type registry for this notebox, persisted per-notebox.
     pub property_types: RwLock<PropertyTypeRegistry>,
-    /// Typst compile pipeline, instantiated on notebox open. The Mutex (rather
-    /// than RwLock) is intentional: every compile mutates the underlying
-    /// World's source/main caches, so all access is single-writer.
+    /// Typst compiler, created on notebox open. A Mutex because every compile
+    /// changes the World's caches.
     pub typst_compiler: Mutex<Option<TypstCompiler>>,
-    /// Persistent metadata cache (SQLite), shared process-wide. Cloned in from
-    /// `AppState` at session creation — the cache is opened once at startup and
-    /// keyed internally by notebox root, so a single handle safely serves every
-    /// window. Optional because cache open is best-effort.
+    /// Persistent metadata cache (SQLite), shared by all windows and keyed by
+    /// notebox root. Optional because opening it can fail.
     metadata_cache: Option<Arc<MetadataCache>>,
-    /// True once [`NoteboxSession::build_indexes`] has finished for the open
-    /// notebox, whether or not it succeeded. Cleared on every open. While
-    /// false, reads that miss the (still empty) indexes answer from the
-    /// metadata cache instead of parsing on demand, so they never wait behind
-    /// the notebox-wide scan.
+    /// True once [`NoteboxSession::build_indexes`] has finished, successfully
+    /// or not. Cleared on open. Until then, lookups the empty indexes can't
+    /// answer are served from the metadata cache rather than parsed, so they
+    /// don't wait for the scan.
     index_ready: AtomicBool,
-    /// Unix timestamp of the last search index save. Used to debounce
-    /// persistence — the index is only written to disk if at least
-    /// `SEARCH_SAVE_INTERVAL_SECS` have elapsed since the last save.
+    /// Unix time of the last search index save, for debouncing (see
+    /// `SEARCH_SAVE_INTERVAL_SECS`).
     last_search_save: AtomicI64,
     /// Unix timestamp of the last corpus-stats save. Same debounce as the
     /// search index — both are caches reconciled against file mtimes on open.
     last_corpus_save: AtomicI64,
-    /// True when this session's open notebox is the bundled documentation
-    /// notebox — a special, help-only notebox. Drives ephemeral editing
-    /// (content writes are no-ops, structural mutations are refused) and the
-    /// documentation-specific font cascade. Set on every `open_notebox` so it
-    /// reflects the currently-open notebox, not a previous one.
+    /// True when the open notebox is the bundled documentation notebox: content
+    /// writes do nothing, structural changes are refused, and its own font
+    /// cascade applies. Set on every `open_notebox`.
     is_documentation: AtomicBool,
     /// Folders outside the notebox the user chose in a backend save/folder
     /// dialog; export commands only write inside these.
@@ -114,12 +100,11 @@ pub struct NoteboxSession {
     /// The background index build currently running, if any. A newer build,
     /// or opening another notebox in this window, cancels it.
     index_build_task: StdMutex<Option<tokio::task::AbortHandle>>,
-    /// Notes changed while an index build runs; `None` when no build runs.
-    /// A build reads every note first and swaps its results in at the end, so
-    /// an update applied in between would be overwritten by an older reading.
-    /// Updates are therefore only recorded here during a build and replayed
-    /// from disk once its results are in place. This also keeps saves from
-    /// waiting behind the build's long hold on the compiler.
+    /// Notes changed while an index build runs; `None` when none runs. The
+    /// build reads every note first and swaps its results in at the end, so a
+    /// change applied in between would be overwritten. Changes are recorded
+    /// here instead and replayed from disk after the build. This also keeps
+    /// saves from waiting on the compiler.
     changed_during_build: StdMutex<Option<Vec<PathBuf>>>,
 }
 
@@ -151,51 +136,40 @@ impl NoteboxSession {
         }
     }
 
-    /// Mark (or unmark) this session as serving the bundled documentation
-    /// notebox. Called by `open_notebox` once it knows which notebox the window
-    /// is opening.
+    /// Mark whether this session serves the documentation notebox. Called by
+    /// `open_notebox`.
     pub fn set_documentation(&self, value: bool) {
         self.is_documentation
             .store(value, std::sync::atomic::Ordering::Relaxed);
     }
 
-    /// True when this session's open notebox is the bundled documentation
-    /// notebox. Mutating commands consult this: content writes become no-ops
-    /// (edits are kept in the editor for the session but never persisted) and
-    /// structural mutations are refused with [`InkyCapError::DocumentationReadOnly`].
+    /// True when the open notebox is the documentation notebox. Content writes then
+    /// do nothing (edits stay in the editor) and structural changes fail with
+    /// [`InkyCapError::DocumentationReadOnly`].
     pub fn is_documentation(&self) -> bool {
         self.is_documentation
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    /// Fast notebox open: sets `notebox_root`, `storage`, lists collection files, clears
-    /// the indexes, and returns the rough `.typ` file count from a directory
-    /// walk. The expensive metadata parse / link resolution / search index
-    /// build happens later in [`NoteboxSession::build_indexes`], typically
-    /// spawned as a background task by the `open_notebox` Tauri command.
+    /// Fast notebox open: set `notebox_root` and `storage`, list collections, clear the
+    /// indexes and return the approximate number of `.typ` files. The slow work happens
+    /// later in [`NoteboxSession::build_indexes`], usually as a background task started
+    /// by `open_notebox`.
     ///
-    /// `global_citations` is the user-global citation settings, threaded in by
-    /// the caller (`open_notebox`) because the per-notebox compiler style falls
-    /// back to the global named style when the notebox has no override.
-    ///
-    /// Returns the number of note files discovered, so the caller can
-    /// populate `NoteboxInfo.file_count` immediately.
+    /// `global_citations` is passed in because the compiler's citation style falls back
+    /// to the global style when the notebox has none.
     pub async fn open_notebox_fast(
         &self,
         path: PathBuf,
         global_citations: &CitationSettings,
     ) -> crate::errors::Result<usize> {
         let storage = Arc::new(LocalNoteboxStorage::new(path.clone())?);
-        // Canonicalize the root so that every in-memory path we store uses
-        // the same prefix that the storage layer validates against. This
-        // prevents subtle mismatches when the user-supplied path contains a
-        // symlink or trailing separators.
+        // Use the canonical root everywhere, matching what the storage layer
+        // validates (symlinks, trailing separators).
         let canonical_path = storage.canonical_root().to_path_buf();
 
-        // Scaffold reserved `.inkycap/` directories before the scanner runs so
-        // the collections folder exists by the time we list it. The scaffold
-        // also writes the notebox library; the original placement (later in
-        // this function) is preserved by being idempotent.
+        // Create the `.inkycap/` folders first so the collections folder exists
+        // before it is listed. Idempotent.
         crate::notebox_package::scaffold(&canonical_path);
 
         // Cheap directory walks — no file reads, no parsing.
@@ -208,15 +182,13 @@ impl NoteboxSession {
         };
         let note_count = note_files.len();
 
-        // A build still running for the previous notebox would swap that
-        // notebox's indexes in after this reset, and its record of changed
-        // notes belongs to that notebox too.
+        // A build still running for the previous notebox would swap its indexes
+        // in after this reset.
         self.cancel_index_build();
         *lock_ignoring_poison(&self.changed_during_build) = None;
 
-        // Reset stale state from any previously open notebox before swapping in
-        // the new notebox root. Empty indexes are fine — UI features that depend
-        // on them should show a loading state until `notebox:index-ready` fires.
+        // Clear the previous notebox's state. Features using the indexes show a
+        // loading state until `notebox:index-ready`.
         *self.property_index.write().await = PropertyIndex::new();
         *self.link_index.write().await = LinkIndex::new();
         *self.search_engine.write().await = SearchEngine::new();
@@ -225,25 +197,20 @@ impl NoteboxSession {
         *self.collection_files.write().await = collection_files;
         *self.property_types.write().await = PropertyTypeRegistry::load(&canonical_path);
 
-        // Load this notebox's settings so subsequent reads (folder paths,
-        // citation source, journal scroll preferences, etc.) reflect what
-        // travels with the notebox, not the previous one.
+        // Load this notebox's settings.
         *self.notebox_settings.write().await =
             crate::notebox_settings::load_settings(&canonical_path);
 
         // (Scaffold already ran above so the notebox library is on disk
         // before the compiler is constructed.)
 
-        // Pre-warm the Typst compiler at notebox-open time so the first
-        // reading-mode render doesn't pay the ~340ms font-discovery cost
-        // measured in the Phase 0 bench. Construction is synchronous; future
-        // work that adds system fonts may want to spawn this off-thread.
+        // Create the Typst compiler now, so the first reading-mode render
+        // doesn't pay for font discovery (about 340ms).
         let mut compiler = TypstCompiler::new(canonical_path.clone());
         {
             let notebox = self.notebox_settings.read().await;
-            // Per-notebox `custom_csl_path` overrides the user-global default
-            // style. If no override, fall back to the user-global named
-            // style (unless it's "custom" with no path — treat as no style).
+            // The notebox's `custom_csl_path` overrides the global style;
+            // "custom" with no path means no style.
             let style = notebox.citations.custom_csl_path.clone().or_else(|| {
                 global_citations
                     .citation_style
@@ -260,15 +227,12 @@ impl NoteboxSession {
         Ok(note_count)
     }
 
-    /// Build the property index, link index, and full-text search index for
-    /// this session's notebox. Intended to run as a background task after
-    /// [`NoteboxSession::open_notebox_fast`]; the indexes are computed locally
-    /// and then swapped in with brief write locks so that read-side IPC
-    /// commands aren't blocked for the entire build.
+    /// Build the property, link and search indexes for this notebox. Runs as a
+    /// background task after [`NoteboxSession::open_notebox_fast`]; results are
+    /// computed locally and swapped in with brief write locks, so reads aren't
+    /// blocked during the build.
     ///
-    /// Marks the session index-ready when it returns, on success or failure,
-    /// so reads stop answering from the cache and fall back to on-demand
-    /// parsing for anything the indexes do not know.
+    /// Marks the session index-ready when done, successful or not.
     pub async fn build_indexes(&self) -> crate::errors::Result<IndexStats> {
         let _one_build_at_a_time = self.index_build_lock.lock().await;
         self.build_indexes_locked().await
@@ -280,9 +244,8 @@ impl NoteboxSession {
         // entries behind; they still need replaying, so keep them.
         lock_ignoring_poison(&self.changed_during_build).get_or_insert_with(Vec::new);
         let result = self.build_indexes_inner().await;
-        // Stop recording (updates from here on apply directly), then bring the
-        // notes changed during the build up to date. Also on failure: the
-        // updates were held back and would otherwise be lost.
+        // Stop recording and apply the notes changed during the build, on
+        // failure too, or those changes would be lost.
         let changed = lock_ignoring_poison(&self.changed_during_build)
             .take()
             .unwrap_or_default();
@@ -309,9 +272,9 @@ impl NoteboxSession {
         }
     }
 
-    /// Record `paths` for replay when an index build is running. Returns
-    /// `true` when recorded, meaning the caller must not update the indexes
-    /// now (see `changed_during_build`).
+    /// Record `paths` if an index build is running. Returns `true` when
+    /// recorded; the caller must then not update the indexes (see
+    /// `changed_during_build`).
     fn defer_while_building<'a>(&self, paths: impl IntoIterator<Item = &'a Path>) -> bool {
         let mut changed = lock_ignoring_poison(&self.changed_during_build);
         match changed.as_mut() {
@@ -324,9 +287,8 @@ impl NoteboxSession {
     }
 
     /// Re-read each note recorded during a build and update the indexes from
-    /// what is on disk now: reindex the ones that exist, drop the ones that
-    /// don't. Also reloads the stopword lists, which may have been edited
-    /// after the build read them.
+    /// disk: reindex those that exist, remove those that don't. Also reloads
+    /// the stopword lists.
     async fn replay_changed_notes(&self, changed: Vec<PathBuf>) {
         let mut seen = HashSet::new();
         let changed: Vec<PathBuf> = changed
@@ -369,9 +331,9 @@ impl NoteboxSession {
         self.index_ready.load(Ordering::Relaxed)
     }
 
-    /// One note's metadata from the persistent cache, without the compiler.
-    /// `None` when there is no cache, no open notebox, or nothing fresh cached
-    /// for the note. See [`crate::scanner::walker::note_from_cache`].
+    /// One note's metadata from the persistent cache, without compiling. `None`
+    /// without a cache, an open notebox or a fresh entry. See
+    /// [`crate::scanner::walker::note_from_cache`].
     pub async fn cached_note(
         &self,
         path: &std::path::Path,
@@ -401,11 +363,8 @@ impl NoteboxSession {
 
         let cache = self.metadata_cache.clone();
 
-        // Acquire the compiler for the duration of the scan so that
-        // `typst query` metadata extraction can run. The compiler
-        // mutex is the only exclusive lock here — other state locks
-        // (property_index, link_index, etc.) are acquired only briefly
-        // at the end for the swap.
+        // Hold the compiler for the whole scan (needed for `typst query`).
+        // Other locks are taken only briefly for the swap at the end.
         let mut compiler_guard = self.typst_compiler.lock().await;
         let compiler = compiler_guard
             .as_mut()
@@ -433,8 +392,7 @@ impl NoteboxSession {
             (s, None)
         };
 
-        // The scan compiled every note, leaving the compiler's file caches
-        // full of sources and images from the last notes scanned; interactive
+        // Empty the compiler's file caches, which the scan filled; interactive
         // compiles start better from empty caches.
         compiler.forget_cached_files();
         // Release the compiler before the index-swap section, which
@@ -457,10 +415,8 @@ impl NoteboxSession {
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
 
-        // Corpus statistics for the Mycelial View. Load the persisted snapshot
-        // and incrementally reconcile it against the current files (mtime vs
-        // `saved_at`) rather than re-tokenizing the whole corpus on every open
-        // — the same load-then-update pattern the search index uses.
+        // Mycelial View corpus statistics: load the saved snapshot and update
+        // it for changed files (by mtime), like the search index.
         let corpus_path = corpus_stats_path(&notebox_root);
         let corpus_stats = if let Some(persisted) =
             PersistedCorpusStats::load_from_file(&corpus_path)
@@ -468,11 +424,9 @@ impl NoteboxSession {
             let mut stats = persisted.stats;
             // `stopwords` is `#[serde(skip)]`, so re-derive it after load.
             stats.reload_stopwords(Some(&notebox_root));
-            // Repair `total_docs` against the per-document maps. Snapshots
-            // written before the `remove_doc` over-decrement fix (e.g. a corpus
-            // built entirely via `update_doc` during a bulk markdown import) can
-            // carry a `total_docs` stuck near 1 while holding thousands of docs,
-            // which silently disables Mycelial's latent/emergent analysis.
+            // Repair `total_docs` from the per-document maps; older snapshots
+            // can have it far too low, which disables Mycelial's latent and
+            // emergent analysis.
             stats.resync_total_docs();
             let saved_at = persisted.saved_at;
 
@@ -620,19 +574,10 @@ impl NoteboxSession {
         Ok(stats)
     }
 
-    /// Force a full rebuild of every index from disk, discarding the persisted
-    /// caches first. This is the user-initiated "Rebuild cache" recovery action
-    /// — distinct from [`build_indexes`], which reconciles against the caches by
-    /// mtime for speed. Here we clear them so neither a corrupt cache entry nor
-    /// a watcher-missed external change (a rename/move done in another app while
-    /// InkyCap was closed) can survive into the rebuilt indexes.
-    ///
-    /// Clearing == pruning this notebox's metadata (parse) cache with an empty
-    /// keep-set so every note is re-parsed, plus deleting the persisted search
-    /// and corpus snapshots so they are rebuilt from scratch rather than
-    /// reconciled. Then [`build_indexes`] re-parses every note and rebuilds the
-    /// link, property, search, and corpus indexes. This re-parses the whole
-    /// notebox (the slow path), so callers should treat it as a long operation.
+    /// "Rebuild cache": rebuild every index from disk, discarding the caches
+    /// first so neither a corrupt entry nor an external change the watcher
+    /// missed survives. Unlike [`build_indexes`], which reuses cached data by
+    /// mtime, this re-parses the whole notebox, so treat it as a long operation.
     pub async fn rebuild_indexes_from_disk(&self) -> crate::errors::Result<IndexStats> {
         // Wait for any running build first: clearing its caches mid-scan would
         // leave that build reconciling against files that no longer exist.
@@ -644,30 +589,25 @@ impl NoteboxSession {
             .clone()
             .ok_or(crate::errors::InkyCapError::NoteboxNotOpen)?;
 
-        // Drop the parse cache for this notebox so `build_indexes` re-parses
-        // every note instead of trusting cached metadata. An empty keep-set
-        // means "no file is still present", so `prune` deletes all rows for
-        // this notebox. Best-effort: a cache failure must not block recovery.
+        // Remove this notebox's parse cache so every note is re-parsed (an
+        // empty keep-set deletes all rows). A failure here must not block
+        // recovery.
         if let Some(cache) = self.metadata_cache.as_ref() {
             if let Err(e) = cache.prune(&notebox_root, &HashSet::new()) {
                 log::warn!("rebuild: clearing metadata cache failed: {e} — continuing");
             }
         }
-        // Delete the persisted search-index and corpus-stats snapshots so
-        // `build_indexes` takes its build-from-scratch branch. Missing files
-        // are fine (first rebuild, or never persisted).
+        // Delete the saved search and corpus snapshots so they are rebuilt from
+        // scratch. Missing files are fine.
         let _ = std::fs::remove_file(search_index_path(&notebox_root));
         let _ = std::fs::remove_file(corpus_stats_path(&notebox_root));
 
         self.build_indexes_locked().await
     }
 
-    /// Write a freshly re-parsed note through to the persistent metadata
-    /// cache. Called from the in-app mutation paths (file_ops, files,
-    /// creation_rules) so that warm starts after lots of editing don't have
-    /// to re-parse those files. Errors are logged and swallowed — cache
-    /// write-through is a performance optimization, not a correctness
-    /// requirement.
+    /// Write a re-parsed note to the metadata cache, so later starts don't
+    /// re-parse it. Errors are logged and ignored; the cache is only an
+    /// optimization.
     pub async fn cache_upsert_note(
         &self,
         abs_path: &std::path::Path,
@@ -706,9 +646,8 @@ impl NoteboxSession {
         }
     }
 
-    /// Remove a note's entry from the persistent metadata cache. Called from
-    /// the in-app deletion paths so a deleted file doesn't linger in the
-    /// cache and reappear on next launch.
+    /// Remove a note from the metadata cache, so a deleted file doesn't come
+    /// back on the next launch.
     pub async fn cache_remove_note(&self, abs_path: &std::path::Path) {
         let cache = match self.metadata_cache.clone() {
             Some(c) => c,
@@ -754,44 +693,35 @@ impl NoteboxSession {
         }
     }
 
-    /// Re-index a single note across **every** in-memory index (link, search,
-    /// property) and write through to the persistent metadata cache.
+    /// Reindex one note in every index (link, search, property) and the
+    /// metadata cache. Every note change (creation, save, property update,
+    /// rename) must go through here so they stay consistent.
     ///
-    /// This is the single authoritative write-through path. Any mutation of a
-    /// note — creation, content save, property update, rename — must funnel
-    /// through here so the indices and cache stay coherent.
-    ///
-    /// Lock ordering (to avoid deadlocks with the watcher-side path):
-    ///   0. typst_compiler (acquired first, released before index locks)
+    /// Lock order:
+    ///   0. typst_compiler (released before the index locks)
     ///   1. link_index (write)
     ///   2. property_index (read, then dropped)
     ///   3. search_engine (write)
-    ///   4. metadata cache (via `cache_upsert_note`, acquires its own guard)
-    ///   5. property_index (write, last — consumes the parsed note)
+    ///   4. metadata cache (through `cache_upsert_note`)
+    ///   5. property_index (write, last)
     ///
-    /// While an index build runs, the update is only recorded and is applied
-    /// when the build finishes (see `changed_during_build`).
+    /// While an index build runs, the change is recorded and applied afterwards
+    /// (see `changed_during_build`).
     pub async fn reindex_note(&self, path: &std::path::Path, content: &str) {
         if self.defer_while_building([path]) {
             return;
         }
         self.reindex_note_inner(path, content).await;
-        // Resolve once after the per-note update. For a single note the prop
-        // index now contains it (the inner step updates it before we get here),
-        // so backlinks for newly-arrived self-references resolve on first index.
+        // Resolve after the update, so backlinks to the note itself resolve on
+        // first index.
         self.resolve_all_backlinks().await;
         self.maybe_save_search_index().await;
         self.maybe_save_corpus_stats().await;
     }
 
-    /// Re-index a *batch* of notes with a **single** backlink resolution at the
-    /// end, instead of one O(notebox) re-resolution per note.
-    ///
-    /// The watcher coalesces bursts of file changes (a git checkout, a tool
-    /// rewriting many notes, an editor's write-then-touch double event) into
-    /// one call here — collapsing what used to be N concurrent tasks each
-    /// doing an O(N) StemIndex rebuild (O(N²) total, all contending on the
-    /// single compiler mutex) into one sequential pass plus one resolve.
+    /// Reindex several notes with one backlink resolution at the end instead of
+    /// one per note. The watcher batches bursts of changes (a git checkout, a
+    /// tool rewriting many notes) into one call.
     pub async fn reindex_notes(&self, batch: Vec<(std::path::PathBuf, String)>) {
         if batch.is_empty() || self.defer_while_building(batch.iter().map(|(p, _)| p.as_path())) {
             return;
@@ -804,10 +734,9 @@ impl NoteboxSession {
         self.maybe_save_corpus_stats().await;
     }
 
-    /// Per-note index update shared by [`reindex_note`] and [`reindex_notes`].
-    /// Updates the link forward-edges, search engine, corpus stats, metadata
-    /// cache, and property index — but does **not** resolve backlinks or
-    /// persist the search index; the caller does that once for the whole batch.
+    /// Per-note update shared by [`reindex_note`] and [`reindex_notes`]: links,
+    /// search, corpus stats, metadata cache and property index. The caller
+    /// resolves backlinks and saves the search index once for the batch.
     async fn reindex_note_inner(&self, path: &std::path::Path, content: &str) {
         let notebox_root = self.notebox_root.read().await;
         let Some(root) = notebox_root.as_ref() else {
@@ -823,13 +752,9 @@ impl NoteboxSession {
             crate::scanner::walker::parse_note(path, content, &root, compiler_guard.as_mut())
         };
 
-        // parse_note does not populate file.* properties (those come from the
-        // filesystem). Derive them from a fresh stat so filters like
-        // `file.ext == "typ"` work — crucially for a brand-new note (e.g. one
-        // just written by a collaboration apply), which has no prior index
-        // entry to carry forward from and would otherwise be excluded from
-        // every collection until a full rescan (restart). Fall back to the old
-        // entry's file.* if the stat fails for any reason.
+        // `parse_note` doesn't fill in `file.*` properties; take them from the
+        // file, so filters like `file.ext == "typ"` include a brand-new note.
+        // Fall back to the old entry's values if that fails.
         match self.get_storage().await {
             Ok(storage) => match storage.file_metadata(path).await {
                 Ok(meta) => {
@@ -840,9 +765,8 @@ impl NoteboxSession {
             Err(_) => self.carry_forward_file_props(path, &mut note).await,
         }
 
-        // 1. Link index: forget the old links, record the new ones. The
-        // notebox-wide re-resolution is deferred to `resolve_all_backlinks`,
-        // run once by the caller after every note in the batch is updated.
+        // 1. Links: replace the note's links. The caller resolves backlinks
+        //    afterwards.
         {
             let mut link_index = self.link_index.write().await;
             link_index.remove_note(&path.to_path_buf());
@@ -891,19 +815,10 @@ impl NoteboxSession {
         drop(prop_index);
     }
 
-    /// Rebuild the whole backlink index from the current set of indexed notes.
-    ///
-    /// A targeted `resolve_note_links(path)` was tempting (cheaper per call)
-    /// but it only updates the *current* note's outgoing links and the
-    /// backlinks of its targets. It does not fix two real cases:
-    ///   • A newly-arrived note B that other pre-existing notes A already
-    ///     wikilinked by name — those `forward_raw["B"]` entries were resolved
-    ///     before B existed and so still produce an empty `forward[A]`.
-    ///   • A renamed/deleted note that leaves stale `forward[A]` entries on
-    ///     other notes pointing at a path that no longer exists.
-    /// `resolve_and_build_backlinks` is O(N + L_total) over the StemIndex and
-    /// produces a coherent index unconditionally. Acquires `link_index` (write)
-    /// then `property_index` (read), preserving the documented lock ordering.
+    /// Rebuild the backlink index from all indexed notes. Resolving only one
+    /// note's links would miss notes that linked to it before it existed, and
+    /// stale links to renamed or deleted notes. Takes `link_index` (write),
+    /// then `property_index` (read).
     async fn resolve_all_backlinks(&self) {
         let mut link_index = self.link_index.write().await;
         let all_paths: Vec<std::path::PathBuf> = {
@@ -926,8 +841,7 @@ impl NoteboxSession {
     }
 
     /// Per-note removal shared by [`remove_from_indices`] and the watcher's
-    /// batched apply path. Drops the note from every index and the cache but
-    /// does not resolve backlinks or persist — the caller does that once.
+    /// batches. The caller resolves backlinks and saves.
     async fn remove_from_indices_inner(&self, path: &std::path::Path) {
         let path_buf = path.to_path_buf();
         {
@@ -949,9 +863,7 @@ impl NoteboxSession {
         self.cache_remove_note(path).await;
     }
 
-    /// Save the search index to disk if at least 60 seconds have elapsed
-    /// since the last save. Called after mutations to keep the persisted
-    /// snapshot reasonably fresh without hammering the disk on every edit.
+    /// Save the search index if 60 seconds have passed since the last save.
     async fn maybe_save_search_index(&self) {
         const SEARCH_SAVE_INTERVAL_SECS: i64 = 60;
 
@@ -975,9 +887,8 @@ impl NoteboxSession {
         self.last_search_save.store(now, Ordering::Relaxed);
     }
 
-    /// Persist the corpus stats if at least `SEARCH_SAVE_INTERVAL_SECS` have
-    /// elapsed since the last save. Same debounce and rationale as
-    /// [`maybe_save_search_index`] — both are mtime-reconciled caches.
+    /// Save the corpus stats if `SEARCH_SAVE_INTERVAL_SECS` have passed, as
+    /// [`maybe_save_search_index`] does.
     async fn maybe_save_corpus_stats(&self) {
         const CORPUS_SAVE_INTERVAL_SECS: i64 = 60;
 
@@ -1002,19 +913,17 @@ impl NoteboxSession {
     }
 }
 
-/// Lock a std mutex, carrying on with the data if a panicking thread
-/// poisoned it. The guarded values here are plain bookkeeping that stays
-/// consistent even if a holder panicked.
+/// Lock a std mutex even if it was poisoned; the data it guards stays
+/// consistent after a panic.
 fn lock_ignoring_poison<T>(mutex: &StdMutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-/// Global application state, managed by Tauri. Holds the genuinely app-wide
-/// state (user settings, bookmarks, the shared metadata cache, backup
-/// coordination) plus the per-window [`NoteboxSession`] map. Per-notebox state
-/// lives on `NoteboxSession`, looked up via [`AppState::session`].
+/// App-wide state managed by Tauri: user settings, bookmarks, the shared
+/// metadata cache, backup coordination, and the per-window [`NoteboxSession`]
+/// map (see [`AppState::session`]).
 pub struct AppState {
     /// Per-window notebox sessions, keyed by Tauri window label.
     sessions: RwLock<HashMap<String, Arc<NoteboxSession>>>,
@@ -1022,42 +931,27 @@ pub struct AppState {
     pub settings: RwLock<UserSettings>,
     /// User bookmarks (notes, searches, headings, collections).
     pub bookmarks: RwLock<Vec<Bookmark>>,
-    /// Persistent metadata cache (SQLite). Optional because cache open is
-    /// best-effort — a missing or corrupt cache should never block app launch.
-    /// Shared into each [`NoteboxSession`] at creation.
+    /// Persistent metadata cache (SQLite), shared into each [`NoteboxSession`].
+    /// Optional, so a missing or corrupt cache never blocks launch.
     pub metadata_cache: RwLock<Option<Arc<MetadataCache>>>,
-    /// Allowlist of absolute paths that the user has just dropped onto a
-    /// window via the OS drag-drop event. Populated by the Rust-side
-    /// `on_drag_drop_event` listener (see `lib.rs`) and consumed once by
-    /// `copy_path_into_notebox`. This is the only authority for "did the
-    /// user really drop this file?" — it prevents a compromised renderer or
-    /// future plugin from invoking the command with arbitrary paths.
-    /// Entries auto-expire after `DROP_ALLOWLIST_TTL`.
+    /// Absolute paths the user just dropped on a window, filled by the Rust
+    /// drop listener (see `lib.rs`) and used once by `copy_path_into_notebox`.
+    /// The only proof that the user really dropped a file, so the frontend
+    /// can't pass arbitrary paths. Entries expire after `DROP_ALLOWLIST_TTL`.
     drop_allowlist: StdMutex<HashMap<PathBuf, Instant>>,
-    /// Serialises backup runs so a manual command-palette trigger and a
-    /// scheduled tick can't overlap and corrupt each other's archives.
-    /// Held only for the duration of one run; the unit type is a marker
-    /// — we just need exclusion, not shared state.
+    /// Ensures one backup runs at a time, so a manual and a scheduled backup
+    /// can't collide.
     pub backup_run_lock: Mutex<()>,
-    /// Wakes the backup scheduler when settings change so it can
-    /// recompute the next-due time. Without this, switching the
-    /// interval from 24h to 1h would only take effect at the next
-    /// natural wake (up to 24h later) — surprising for the user.
-    /// Fired from `update_settings` after any successful save.
+    /// Wakes the backup scheduler after settings are saved, so a changed
+    /// interval applies right away.
     pub backup_scheduler_wake: Arc<Notify>,
-    /// Cooperative cancellation flag for an in-flight backup run.
-    /// The `cancel_backup` Tauri command sets it; the archive writer
-    /// polls it between entries and aborts cleanly. Cleared at the
-    /// start of every run so a leftover flag from a previous attempt
-    /// can't kill the next one. `Arc` so blocking-thread workers can
-    /// share it without borrowing into the tokio task.
+    /// Set by `cancel_backup`; the archive writer checks it between entries and
+    /// stops. Cleared at the start of each run.
     pub backup_cancel: Arc<AtomicBool>,
 }
 
-/// How long a dropped-path entry remains valid before it's pruned. Long
-/// enough to cover the round-trip through the JS event listener and the
-/// async `copy_path_into_notebox` invocation, short enough that a stale
-/// entry can't be reused later in the session.
+/// How long a dropped path stays valid: enough for the frontend to call
+/// `copy_path_into_notebox`, short enough that it can't be reused later.
 const DROP_ALLOWLIST_TTL: Duration = Duration::from_secs(60);
 
 impl Default for AppState {
@@ -1069,16 +963,11 @@ impl Default for AppState {
 impl AppState {
     pub fn new() -> Self {
         let settings = crate::settings::load_settings();
-        // Move regenerable indexes from the legacy data_dir location to the
-        // cache_dir layout. Safe to run on every launch — it's a no-op once
-        // migrated, and losing a cache file at worst forces a single cold
-        // rebuild.
+        // Move indexes from the old data_dir location to cache_dir. No-op once
+        // done.
         crate::app_paths::migrate_legacy_cache_paths();
-        // Open the persistent metadata cache. We can't use the Tauri AppHandle
-        // here (this is called inside the builder), so we resolve the cache
-        // directory via `app_paths` — same approach the rest of the codebase
-        // uses for config / bookmarks. A cache failure is logged and the app
-        // continues with no cache (slow path).
+        // Open the metadata cache, locating it through `app_paths` (no
+        // AppHandle here). On failure the app runs without a cache.
         let metadata_cache = Self::open_metadata_cache();
         Self {
             sessions: RwLock::new(HashMap::new()),
@@ -1092,10 +981,8 @@ impl AppState {
         }
     }
 
-    /// Resolve the [`NoteboxSession`] for a given window label, creating an
-    /// empty one on first use. The session `Arc` is cloned out so the caller
-    /// holds it without keeping the map locked — the map lock is never held
-    /// while a per-session lock is taken, so it adds no deadlock surface.
+    /// The [`NoteboxSession`] for a window label, created on first use. The
+    /// `Arc` is cloned out so the map isn't locked while the session is used.
     pub async fn session(&self, label: &str) -> Arc<NoteboxSession> {
         if let Some(s) = self.sessions.read().await.get(label) {
             return s.clone();
@@ -1120,18 +1007,16 @@ impl AppState {
         self.sessions.write().await.remove(label);
     }
 
-    /// Snapshot every session's `Arc` out of the map, releasing the map lock
-    /// before any per-session lock is taken (honours the lock-ordering note on
-    /// `NoteboxSession`).
+    /// Every session's `Arc`, released from the map lock before any session
+    /// lock is taken.
     async fn session_snapshot(&self) -> Vec<(String, Arc<NoteboxSession>)> {
         let map = self.sessions.read().await;
         map.iter().map(|(l, s)| (l.clone(), s.clone())).collect()
     }
 
-    /// The label of a window — other than `exclude_label` — that currently has
-    /// the notebox at `canonical_root` open, if any. Enforces one-notebox-per-
-    /// window: a notebox can't be open in two windows, because two editors over
-    /// the same file can silently overwrite each other.
+    /// A window other than `exclude_label` with the notebox at `canonical_root`
+    /// open, if any. A notebox can be open in only one window, since two
+    /// editors on one file can overwrite each other.
     pub async fn window_for_notebox(
         &self,
         canonical_root: &Path,
@@ -1148,9 +1033,7 @@ impl AppState {
         None
     }
 
-    /// Every window that currently has a notebox open, as (window label,
-    /// notebox root) pairs. Lets the frontend disable / focus already-open
-    /// noteboxes in the switcher and picker.
+    /// Every window with a notebox open, as (label, root) pairs.
     pub async fn open_noteboxes(&self) -> Vec<(String, PathBuf)> {
         let mut out = Vec::new();
         for (label, session) in self.session_snapshot().await {
@@ -1161,11 +1044,9 @@ impl AppState {
         out
     }
 
-    /// Record that the OS drag-drop event delivered these absolute paths to
-    /// our window. Called from the Rust-side `on_drag_drop_event` listener
-    /// in `lib.rs`. Synchronous (no `await`) so it can populate the allowlist
-    /// before the parallel JS event handler races to call
-    /// `copy_path_into_notebox`.
+    /// Record the paths an OS drop delivered. Called from the drop listener in
+    /// `lib.rs`; synchronous so the allowlist is filled before the frontend
+    /// calls `copy_path_into_notebox`.
     pub fn register_drop_paths<I: IntoIterator<Item = PathBuf>>(&self, paths: I) {
         let mut allow = self.drop_allowlist.lock().expect("drop_allowlist poisoned");
         let now = Instant::now();
@@ -1176,9 +1057,8 @@ impl AppState {
         }
     }
 
-    /// Atomically check whether `path` was registered by a recent OS drop and
-    /// remove it (single-use). Returns `true` if the path was on the
-    /// allowlist and not expired.
+    /// Check whether `path` came from a recent drop and remove it (single use).
+    /// True if it was listed and not expired.
     pub fn consume_drop_path(&self, path: &Path) -> bool {
         let mut allow = self.drop_allowlist.lock().expect("drop_allowlist poisoned");
         let now = Instant::now();
@@ -1186,9 +1066,8 @@ impl AppState {
         allow.remove(path).is_some()
     }
 
-    /// Resolve the cache database path under the user's cache directory and
-    /// open it. Errors are logged and surfaced as `None` so callers fall back
-    /// to the cacheless cold path.
+    /// Open the cache database in the user's cache folder, or `None` (logged)
+    /// on failure.
     fn open_metadata_cache() -> Option<Arc<MetadataCache>> {
         let cache_dir = crate::app_paths::cache_dir();
         let db_path = cache_dir.join("metadata-cache.sqlite");
@@ -1269,14 +1148,10 @@ fn extract_search_meta(
         })
 }
 
-/// Resolve the bibliography override path based on citation settings.
-/// When the source is "zotero", reads entries from the Zotero database and
-/// exports them to `.inkycap/zotero-export.bib` so the Typst compiler can
-/// resolve `@key` citations. Returns the notebox-relative path to use as the
-/// bibliography override.
-///
-/// Takes both the user-global citations (for the system Zotero install path)
-/// and the notebox-specific citations (source choice, bibliography path).
+/// The bibliography path to use, from the citation settings. For "zotero",
+/// exports the Zotero database to `.inkycap/zotero-export.bib` so Typst can
+/// resolve `@key`. Returns a notebox-relative path. Takes the global settings
+/// (Zotero location) and the notebox's (source and bibliography path).
 pub fn configure_bibliography(
     notebox_root: &Path,
     global: &CitationSettings,

@@ -1,12 +1,5 @@
-//! Typst compile pipeline.
-//!
-//! Phase 1 surface: build a [`TypstCompiler`] per open notebox, compile a `.typ`
-//! file to per-page SVG for reading mode. Bibliography auto-prepend is wired
-//! in but the rest of the layered features (query for metadata, PDF export,
-//! incremental edits, package resolution, fonts beyond the embedded set) land
-//! in later phases.
-//!
-//! See [TYPST_PIVOT.md](../../../TYPST_PIVOT.md) §6 for the design.
+//! Typst compile pipeline: one [`TypstCompiler`] per open notebox, used for SVG
+//! and HTML rendering, metadata queries and exports.
 
 pub mod bibliography;
 pub mod book_wrapper;

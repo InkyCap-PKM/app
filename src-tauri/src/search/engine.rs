@@ -41,10 +41,8 @@ impl AnnotationScope {
     }
 }
 
-/// Flatten a note's property map into a `key → [stringified values]`
-/// form that the search engine uses to evaluate `property:key=value`
-/// filters. Values are lowercased so filter matching is case
-/// insensitive; `file.*` pseudo-properties are skipped.
+/// A note's properties as `key → [values]` for `property:key=value` filters.
+/// Values are lowercased; `file.*` properties are skipped.
 pub fn flatten_property_values(
     properties: &HashMap<String, PropertyValue>,
 ) -> HashMap<String, Vec<String>> {
@@ -86,11 +84,9 @@ fn collect_value_strings(value: &PropertyValue, out: &mut Vec<String>) {
     }
 }
 
-/// Precomputed collection membership for `collection:` filters: lowercased
-/// collection name → set of member note paths. Resolved by the command layer
-/// (which has the collection definitions and property index) and handed to the
-/// engine, which only intersects it with document paths. Empty when a query
-/// references no collections.
+/// Collection members for `collection:` filters: lowercased name → note paths.
+/// The command layer resolves this; the engine only intersects it. Empty when a
+/// query names no collections.
 pub type CollectionMembership = HashMap<String, HashSet<PathBuf>>;
 
 /// Position of a word within a document: (line_number, word_offset_in_line, char_start, char_end).
@@ -102,33 +98,25 @@ struct WordPosition {
     char_end: usize,
 }
 
-/// Per-document index data.
-///
-/// `Default` produces a *tombstone*: an empty entry with an empty path. A
-/// tombstone occupies a freed doc-id slot until that slot is reused, and is
-/// skipped by every full-doc iteration because its empty path never matches
-/// `path_to_doc` (see `remove_doc`).
+/// Index data for one document. `Default` is a tombstone: an empty entry in a
+/// freed slot until reused. Its empty path never matches `path_to_doc`, so
+/// iterations skip it (see `remove_doc`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct DocEntry {
     path: PathBuf,
     file_name: String,
     /// Title from the `#note(title: ...)` property, if any.
     title: Option<String>,
-    /// Lowercased text of the document's first level-1 heading (`= …`),
-    /// if any. Used as a fallback for the title-match relevance bonus
-    /// when `title` is not set.
+    /// Lowercased first level-1 heading, used for the title bonus when `title`
+    /// isn't set.
     first_h1: Option<String>,
     /// Tags extracted from the document.
     tags: Vec<String>,
-    /// Property keys (lowercased) present on the document. Populated so
-    /// that `property:name` filters can be evaluated directly against the
-    /// search index rather than cross-referencing the separate property
-    /// index.
+    /// Lowercased property keys, so `property:name` filters can be checked
+    /// here.
     property_keys: Vec<String>,
-    /// Stringified, lowercased property values, keyed by (lowercased)
-    /// property key. Enables `property:key=value` filters
-    /// — the engine substring-matches `value` against any string in
-    /// the matching key's bucket.
+    /// Lowercased property values by key, for `property:key=value` (substring
+    /// match).
     property_values: HashMap<String, Vec<String>>,
     /// Lines of the document (for context retrieval).
     lines: Vec<String>,
@@ -137,20 +125,15 @@ struct DocEntry {
     /// Heading text (lowercased) extracted from `=`-prefix lines. Used by
     /// the `section:` filter.
     headings: Vec<String>,
-    /// Indices of lines that are the auto-injected notebox-library import.
-    /// These lines are kept in `lines` so result line numbers still point
-    /// at the source, but they are filtered out of every user-facing
-    /// path: word index, regex match scan, "best line" pick, filter
-    /// representative line, and context windows.
+    /// Lines that are the notebox import. Kept in `lines` so line numbers match
+    /// the source, but excluded from indexing, matching, snippets and context.
     import_line_indices: Vec<usize>,
-    /// `tag name (lowercased)` → source line indices of `#tag("…")` call
-    /// sites, populated from the AST projection so `tag:` filter clicks
-    /// land on the actual tag call instead of a heuristic line.
+    /// Tag name → line indices of its `#tag("…")` calls, so `tag:` results open
+    /// on the tag.
     tag_locations: HashMap<String, Vec<usize>>,
-    /// Source line indices covered by an `#annotation[…]` / `#suggestion[…]`
-    /// call. Drives the "Annotations" search scope and `annotation:` filter
-    /// navigation. `#[serde(default)]` keeps older persisted indexes loadable
-    /// — they simply carry no annotation lines until the note is reindexed.
+    /// Lines inside `#annotation[…]` / `#suggestion[…]`, for the Annotations
+    /// scope and `annotation:` filter. `#[serde(default)]` keeps older saved
+    /// indexes loadable.
     #[serde(default)]
     annotation_lines: Vec<usize>,
     /// Concatenated, lowercased body prose of every annotation/suggestion in
@@ -168,12 +151,9 @@ struct DocEntry {
 /// The inverted index: word → list of (doc_id, positions).
 type PostingList = Vec<(usize, Vec<WordPosition>)>;
 
-/// Compile a user-supplied search pattern with bounded compiled size. Search
-/// patterns can arrive from shared/imported queries, so cap the compiled
-/// program and DFA so a pathologically large pattern can't blow memory. The
-/// `regex` crate has no catastrophic backtracking, so this is the only DoS
-/// surface worth bounding here. Returns `None` on invalid or over-budget
-/// patterns (callers treat that as "matches nothing").
+/// Compile a search pattern with a size limit, since patterns can come from
+/// shared queries. The `regex` crate doesn't backtrack, so size is the only
+/// risk. `None` for invalid or oversized patterns, which match nothing.
 fn compile_bounded_regex(pattern: &str) -> Option<Regex> {
     const SIZE_LIMIT: usize = 1 << 20; // 1 MiB compiled program
     const DFA_SIZE_LIMIT: usize = 1 << 20; // 1 MiB lazy-DFA cache
@@ -187,24 +167,19 @@ fn compile_bounded_regex(pattern: &str) -> Option<Regex> {
 /// Full-text search engine with an in-memory inverted index.
 #[derive(Serialize, Deserialize)]
 pub struct SearchEngine {
-    /// All indexed documents, indexed by doc-id. Freed slots hold a tombstone
-    /// (`DocEntry::default`) and are listed in `free_ids` for reuse; the vec
-    /// never shrinks so existing doc-ids stay valid as keys into posting lists.
+    /// Documents by id. Freed slots hold a tombstone and are listed in
+    /// `free_ids`; the vec never shrinks, so ids stay valid in posting lists.
     docs: Vec<DocEntry>,
     /// Path → doc index for fast lookup.
     path_to_doc: HashMap<PathBuf, usize>,
     /// Inverted index: lowercase word → posting list.
     index: HashMap<String, PostingList>,
-    /// Parallel to `docs`: the unique index words each doc-id contributed.
-    /// Lets `remove_doc` rescan only those words' posting lists instead of
-    /// every posting list in the notebox (the difference between O(words in
-    /// one note) and O(unique words in the whole notebox) on every save).
-    /// Empty for tombstoned slots.
+    /// Per doc id, the words it added, so `remove_doc` only touches those
+    /// posting lists. Empty for tombstones.
     #[serde(default)]
     doc_words: Vec<Vec<String>>,
-    /// Doc-id slots vacated by `remove_doc`, available for reuse so `docs`
-    /// (and its heavy per-doc `lines`) doesn't grow unbounded across an
-    /// editing session that repeatedly re-indexes the same note.
+    /// Freed doc ids, reused so `docs` doesn't grow while one note is reindexed
+    /// repeatedly.
     #[serde(default)]
     free_ids: Vec<usize>,
 }
@@ -344,13 +319,9 @@ impl SearchEngine {
         self.doc_words[doc_id] = words;
     }
 
-    /// Remove a document from the index.
-    ///
-    /// Touches only the posting lists for the words this document actually
-    /// contributed (tracked in `doc_words`), then tombstones the doc slot and
-    /// marks it reusable — so removal cost scales with the size of the one
-    /// note, not with the size of the whole notebox. A posting list that
-    /// becomes empty is dropped to keep `index` from accumulating dead keys.
+    /// Remove a document. Only the posting lists of its own words (`doc_words`)
+    /// are touched, so cost scales with the note, not the notebox. Its slot is
+    /// tombstoned for reuse, and empty posting lists are dropped.
     pub fn remove_doc(&mut self, path: &Path) {
         let Some(doc_id) = self.path_to_doc.remove(path) else {
             return;
@@ -383,32 +354,23 @@ impl SearchEngine {
         self.free_ids.push(doc_id);
     }
 
-    /// Execute a search query and return ranked results — one entry per
-    /// matched line. The frontend groups by file. Lines that belong to
-    /// the auto-injected notebox-library import are filtered out so users
-    /// never see InkyCap's preamble in the result list.
+    /// Run a query and return ranked results, one per matching line (the
+    /// frontend groups by file). Notebox import lines are excluded.
     pub fn search(&self, query: &QueryNode, max_results: usize) -> Vec<SearchResult> {
-        // `collection:` scoping is a feature of the paginated UI search; the
-        // bare `search` path (quick lookups) carries no membership data, so a
-        // `collection:` filter there simply matches nothing.
+        // Without collection data here, a `collection:` filter matches nothing.
         let empty = CollectionMembership::new();
         let mut results = self.collect_ranked_results(query, AnnotationScope::All, None, &empty);
         results.truncate(max_results);
         results
     }
 
-    /// Like [`search`], but returns the total match count before
-    /// truncation and supports an offset for pagination. When
-    /// `annotation_scope` selects whether annotation/suggestion lines are
-    /// searched, ignored, or searched exclusively — the SearchPanel's
-    /// tri-state "Annotations" toggle.
+    /// Like [`search`], with the total count before truncation and an offset
+    /// for paging. `annotation_scope` searches annotation and suggestion lines
+    /// too, not at all, or only (the Annotations toggle).
     ///
-    /// `verify_span` enables case-sensitive search: the inverted index is
-    /// case-insensitive, so candidate lines are found case-insensitively and
-    /// then each matched span (the literal source slice) is re-checked against
-    /// the original-case query via this predicate. Applying it here — before
-    /// counting and pagination — keeps `total_count` and the page in agreement
-    /// (a case-sensitive query that drops a line also drops it from the count).
+    /// `verify_span` makes the search case-sensitive: lines are found
+    /// case-insensitively, then each matched span is checked with it. Done
+    /// before counting, so `total_count` matches the pages.
     pub fn search_paginated(
         &self,
         query: &QueryNode,
@@ -425,12 +387,9 @@ impl SearchEngine {
         (page, total_count)
     }
 
-    /// Core search logic: evaluate query, build scored results, sort by
-    /// relevance descending. Callers decide how to slice the output.
-    /// `annotation_scope` filters result lines by their annotation membership
-    /// (mirrors the import-line skip). When `verify_span` is set, each matched
-    /// span is re-checked against it (case-sensitive search) and a line whose
-    /// every match is rejected is dropped entirely.
+    /// Evaluate the query and build results sorted by score. `annotation_scope`
+    /// filters lines by annotation membership. With `verify_span`, rejected
+    /// spans are removed and a line with none left is dropped.
     fn collect_ranked_results(
         &self,
         query: &QueryNode,
@@ -450,18 +409,14 @@ impl SearchEngine {
                 continue;
             }
 
-            // Compute per-doc score factors once; every line in this doc
-            // shares the same filename/title bonuses and word-count
-            // density baseline.
+            // Per-document score factors, shared by its lines.
             let total_match_count: usize = line_matches.values().map(|v| v.len()).sum();
             let match_in_filename = {
                 let fname_lower = doc.file_name.to_lowercase();
                 self.query_matches_text(query, &fname_lower)
             };
-            // Title-match bonus fires if the query matches *either* the
-            // explicit `#note(title: …)` property or the document's first
-            // level-1 heading. The bonus is awarded once — matching both
-            // doesn't stack.
+            // The title bonus applies once if the query matches the
+            // `#note(title: …)` or the first level-1 heading.
             let match_in_title = {
                 let in_property = doc.title.as_ref().is_some_and(|t| {
                     let t_lower = t.to_lowercase();
@@ -480,9 +435,7 @@ impl SearchEngine {
                 doc.word_count,
             );
 
-            // Where the query's text lands inside the file name, so the UI
-            // can highlight the term in the result header. Computed once per
-            // doc and shared by every line row.
+            // Where the query matches the file name, for highlighting.
             let file_name_ranges = query_filename_ranges(query, &doc.file_name);
 
             // Walk matches in source order so the UI shows them in the
@@ -504,10 +457,9 @@ impl SearchEngine {
                     .map(|p| (p.char_start, p.char_end))
                     .collect();
 
-                // Case-sensitive verification: keep only spans the predicate
-                // accepts. `char_start`/`char_end` are byte offsets here (the
-                // UTF-16 conversion for the frontend happens later, in the
-                // command), so the slice lands on char boundaries.
+                // Case-sensitive check. `char_start` / `char_end` are byte
+                // offsets here (converted to UTF-16 later), so the slice lands
+                // on char boundaries.
                 if let Some(verify) = verify_span {
                     match_ranges.retain(|(s, e)| line_text.get(*s..*e).is_some_and(verify));
                     if match_ranges.is_empty() {
@@ -525,10 +477,8 @@ impl SearchEngine {
                     line_text,
                     match_ranges,
                     file_name_ranges: file_name_ranges.clone(),
-                    // Per-line score: use the doc score plus a small bonus
-                    // for line density so the file's first match (often the
-                    // most relevant) ranks just slightly higher than later
-                    // hits inside the same file.
+                    // A small per-match bonus ranks the busier lines of a file
+                    // slightly higher.
                     score: doc_score + (positions.len() as f64) * 0.01,
                     modified_time: doc.modified_time,
                     created_time: doc.created_time,
@@ -564,10 +514,9 @@ impl SearchEngine {
             QueryNode::Regex(pattern) => self.find_regex(pattern),
             QueryNode::Filter { kind, value } => self.find_filter(kind, value, collections),
             QueryNode::And(left, right) => {
-                // `positive AND NOT x` is the common shape of an excluding
-                // query (`foo -bar`). Evaluate the positive side and subtract
-                // the excluded docs directly, instead of evaluating `Not` into
-                // a notebox-scale complement map and intersecting it away.
+                // `foo -bar`: evaluate the positive side and subtract the
+                // excluded documents, rather than building a notebox-wide
+                // complement for `Not`.
                 if let QueryNode::Not(inner) = right.as_ref() {
                     return self.evaluate_and_not(left, inner, collections);
                 }
@@ -635,9 +584,8 @@ impl SearchEngine {
         }
     }
 
-    /// Evaluate `positive AND NOT excluded` lazily: keep the positive side's
-    /// matches, drop any doc that the excluded side matches. Avoids the
-    /// notebox-scale complement map a standalone `Not` would build.
+    /// `positive AND NOT excluded`: keep the positive matches, minus the
+    /// documents the excluded side matches.
     fn evaluate_and_not(
         &self,
         positive: &QueryNode,
@@ -650,12 +598,8 @@ impl SearchEngine {
         matches
     }
 
-    /// Find documents whose body text contains a single term.
-    ///
-    /// Body-only lookup against the inverted index. Callers that want the
-    /// full "term matches body or filename" behaviour use [`find_term`];
-    /// phrase matching seeds from the body postings only, so it calls this
-    /// directly.
+    /// Documents whose body contains `term`. [`find_term`] also matches file
+    /// names; phrase matching uses this directly.
     fn find_term_body(&self, term: &str) -> HashMap<usize, HashMap<usize, Vec<WordPosition>>> {
         let mut result = HashMap::new();
         if let Some(posting) = self.index.get(term) {
@@ -670,14 +614,11 @@ impl SearchEngine {
         result
     }
 
-    /// Find documents containing a single term in their body text or their
-    /// filename. A word that appears only in the file name still surfaces the
-    /// note (via a representative-line placeholder) and picks up the filename
-    /// relevance bonus. The file name is matched a whole word at a time, the
-    /// same rule the body index uses, so `ink` finds a note called "Ink and
-    /// Switch" but not one called "Linked thinking"; `ink*` is how the user
-    /// asks for the wider match. (The explicit `file:` filter keeps its
-    /// documented substring rule — it is opt-in and scoped.)
+    /// Documents containing `term` in the body or file name. A file-name-only
+    /// match is shown with a representative line and gets the file-name bonus.
+    /// File names match whole words, like the body: `ink` finds "Ink and
+    /// Switch" but not "Linked thinking"; `ink*` widens it. (`file:` keeps its
+    /// substring rule.)
     fn find_term(&self, term: &str) -> HashMap<usize, HashMap<usize, Vec<WordPosition>>> {
         // `term` is already lowercased by the query parser.
         let mut result = self.find_term_body(term);
@@ -687,11 +628,8 @@ impl SearchEngine {
         result
     }
 
-    /// A synthetic single-line match used when a document matches at the
-    /// document level (a filter, or a filename hit) rather than on a
-    /// specific body line. Points at the first non-empty, non-import line
-    /// with a zero-width range so the result carries a readable snippet
-    /// without highlighting an arbitrary span.
+    /// A placeholder match for a document matched as a whole (a filter or file
+    /// name): the first non-empty, non-import line with an empty range.
     fn representative_line_match(&self, doc: &DocEntry) -> HashMap<usize, Vec<WordPosition>> {
         let representative = doc
             .lines
@@ -713,11 +651,9 @@ impl SearchEngine {
         lines
     }
 
-    /// Add documents whose (lowercased) filename satisfies `matches_name` to
-    /// an existing match set. Documents already present keep their precise
-    /// body positions; documents that match only by filename are added with
-    /// a representative-line placeholder. Shadowed duplicate paths are
-    /// skipped, matching every other doc-iterating path.
+    /// Add documents whose lowercased file name satisfies `matches_name`.
+    /// Existing matches keep their positions; new ones get a representative
+    /// line. Shadowed duplicate paths are skipped.
     fn add_filename_matches(
         &self,
         result: &mut HashMap<usize, HashMap<usize, Vec<WordPosition>>>,
@@ -742,20 +678,14 @@ impl SearchEngine {
             return HashMap::new();
         }
 
-        // Start with the first word's body positions. Filename hits can't
-        // seed a phrase (they carry no per-word positions to check adjacency
-        // against), so use the body-only lookup here and add filename phrase
-        // matches once at the end.
+        // Seed from body positions; file names have no word positions, so
+        // phrase matches on names are added at the end.
         let first_matches = self.find_term_body(&words[0]);
         let mut result = HashMap::new();
 
         for (doc_id, line_positions) in &first_matches {
-            // Build a doc-local lookup for each subsequent phrase word:
-            // (line, word_index) → position. Each word's posting list is
-            // scanned exactly once for this doc (not once per candidate start
-            // position, and not across every doc as the old nested scan did),
-            // so phrase matching is O(positions) instead of
-            // O(starts × words × notebox-wide-postings).
+            // Per document, map (line, word index) → position for each later
+            // phrase word, scanning each posting list once.
             let tail_maps: Vec<HashMap<(usize, usize), &WordPosition>> = words[1..]
                 .iter()
                 .map(|word| {
@@ -805,9 +735,7 @@ impl SearchEngine {
             }
         }
 
-        // Also match the phrase against filenames, as a consecutive run of
-        // whole words, so a quoted title that lives only in the file name
-        // still surfaces the note.
+        // Also match the phrase as consecutive whole words of the file name.
         self.add_filename_matches(&mut result, |name| {
             !filename_phrase_ranges(name, words).is_empty()
         });
@@ -837,10 +765,8 @@ impl SearchEngine {
             }
         }
 
-        // A wildcard matches a file name one word at a time, exactly as it
-        // matches the indexed body words above. Spanning the whole name
-        // instead would make `ink*` match every name that merely starts with
-        // "ink", and highlight all of it.
+        // Match file names a word at a time, as body words are, so `ink*`
+        // doesn't match and highlight whole names.
         self.add_filename_matches(&mut result, |name| {
             !filename_word_ranges(name, |word| re.is_match(word)).is_empty()
         });
@@ -891,10 +817,8 @@ impl SearchEngine {
         collections: &CollectionMembership,
     ) -> HashMap<usize, HashMap<usize, Vec<WordPosition>>> {
         let value_lower = value.to_lowercase();
-        // A path filter is compared in the frontend's forward-slash shape, with
-        // the value folded to the same, so a folder completed from the file
-        // tree (or typed with either separator) matches on Windows as well as
-        // Unix. Indexed paths carry the OS-native separator.
+        // Compare paths with forward slashes on both sides, so a folder from
+        // the file tree matches on Windows too.
         let path_value = value_lower.replace('\\', "/");
         let mut result = HashMap::new();
 
@@ -913,20 +837,15 @@ impl SearchEngine {
                     .iter()
                     .any(|t| t.to_lowercase().contains(&value_lower)),
                 FilterKind::Section => {
-                    // Match notes with a heading (lowercased) containing
-                    // the value as a substring. Heading text is collected
-                    // at index time from `=`-prefix lines.
+                    // Notes with a heading containing the value. Headings are
+                    // collected when indexing.
                     doc.headings.iter().any(|h| h.contains(&value_lower))
                 }
                 FilterKind::Property => {
-                    // Two forms:
-                    //   `property:name` — notes where the key exists
-                    //   `property:name=value` — key exists AND one of
-                    //     its stringified values contains `value`
-                    //     (case-insensitive substring). Matching by
-                    //     substring lets partial queries like
-                    //     `property:status=draft` hit `draft`,
-                    //     `drafts`, etc., which is the usual intent.
+                    // `property:name` matches notes with the key;
+                    // `property:name=value` also needs one of its values to
+                    // contain `value` (case-insensitive), so `draft` matches
+                    // `drafts` too.
                     if let Some(eq_idx) = value_lower.find('=') {
                         let key = value_lower[..eq_idx].trim();
                         let needle = value_lower[eq_idx + 1..].trim();
@@ -946,9 +865,8 @@ impl SearchEngine {
                     }
                 }
                 FilterKind::Annotation => {
-                    // `annotation:` (empty) → any note with an annotation;
-                    // `annotation:foo` → a note whose annotation body contains
-                    // `foo`.
+                    // `annotation:` matches any note with an annotation;
+                    // `annotation:foo` one whose annotation contains `foo`.
                     if value_lower.is_empty() {
                         !doc.annotation_lines.is_empty()
                     } else {
@@ -956,9 +874,7 @@ impl SearchEngine {
                     }
                 }
                 FilterKind::Collection => {
-                    // Membership was resolved by the command layer (keyed by
-                    // lowercased collection name); the engine just checks
-                    // whether this document is one of the member paths.
+                    // Membership comes from the command layer.
                     collections
                         .get(&value_lower)
                         .is_some_and(|members| members.contains(&doc.path))
@@ -966,12 +882,8 @@ impl SearchEngine {
             };
 
             if matches {
-                // For `tag:` filters, jump to the actual `#tag("…")`
-                // call site (recorded by the AST projection) rather
-                // than picking a representative line — otherwise the
-                // result would land on whichever non-empty line came
-                // first, typically inside the `#note(...)` properties
-                // block.
+                // `tag:` results open on the `#tag("…")` call rather than the
+                // first line, which is usually in `#note(...)`.
                 let mut lines: HashMap<usize, Vec<WordPosition>> = HashMap::new();
                 if let FilterKind::Tag = kind {
                     for (tag_name, tag_lines) in &doc.tag_locations {
@@ -990,9 +902,8 @@ impl SearchEngine {
                         }
                     }
                 }
-                // `annotation:` filters land on the annotation call line(s) —
-                // those whose source line contains the value (or all of them
-                // for a bare `annotation:`).
+                // `annotation:` results open on the matching annotation lines
+                // (all of them for a bare `annotation:`).
                 if let FilterKind::Annotation = kind {
                     for &line_idx in &doc.annotation_lines {
                         if doc.import_line_indices.contains(&line_idx) {
@@ -1014,12 +925,8 @@ impl SearchEngine {
                     }
                 }
 
-                // Fallback (and the only path for non-tag filters):
-                // pick the first non-empty, non-import line as a
-                // representative. Also covers the rare case where a
-                // tag was set in `#note(tags: (...))` syntax but the
-                // body contains no `#tag(...)` call — the doc still
-                // matches the filter, just lacks a precise location.
+                // Otherwise use the first non-empty, non-import line. Also
+                // covers a tag set only in `#note(tags: …)`.
                 if lines.is_empty() {
                     lines = self.representative_line_match(doc);
                 }
@@ -1227,31 +1134,10 @@ struct DocBuild {
     word_positions: Vec<(String, Vec<WordPosition>)>,
 }
 
-/// Tokenize a single document into the structures the engine consumes.
-///
-/// Indexing is driven by [`text_projection::project`] — a Typst-AST walk
-/// that emits one token per *rendered word*, with markup wrappers
-/// (`_…_`, `*…*`, `#strong[…]`, `#highlight[…]`, headings, list items,
-/// nested content-bracket calls, …) automatically stripped because they
-/// are structural nodes around the text leaves rather than part of
-/// them. This is what makes a search for `italicize` find content
-/// authored as `_italicize_`, and a search for the body of a
-/// `#highlight[yellow]` find `yellow`.
-///
-/// `doc.lines` still holds the raw source so result snippets show what
-/// the user wrote, and `match_ranges` from the index continue to point
-/// at byte offsets inside the raw line. The auto-injected notebox import
-/// line is skipped from indexing (so users searching for `notebox` or
-/// `import` don't get every note back) but kept in `lines` so result
-/// line numbers stay aligned with the source.
-/// Byte ranges of the whole words in `text` that satisfy `pred`. Each word is
-/// lowercased before the test; the returned ranges index the original string.
-///
-/// File names are split with the same word rules the body index is built from
-/// (`text_projection::word_boundaries`), so a bare term matches a name the way
-/// it matches body text — as a whole word, with `*` the way to widen it. The
-/// ranges also mean a highlight covers only the word that matched rather than
-/// the rest of the name.
+/// Byte ranges of the whole words in `text` that satisfy `pred`, each word
+/// lowercased before the test. Uses the body index's word rules
+/// (`text_projection::word_boundaries`), so a term matches a file name as a
+/// whole word, and only the matching word is highlighted.
 fn filename_word_ranges(text: &str, pred: impl Fn(&str) -> bool) -> Vec<(usize, usize)> {
     crate::search::text_projection::word_boundaries(text)
         .into_iter()
@@ -1282,11 +1168,9 @@ fn filename_phrase_ranges(text: &str, words: &[String]) -> Vec<(usize, usize)> {
     out
 }
 
-/// Byte ranges within `text` (original case) that the query's literal text
-/// leaves match, case-insensitively, with overlaps merged. Powers filename
-/// highlighting in the result list — it answers "where in this file name did
-/// the query hit?". Filters, negations, proximity, and raw regex contribute
-/// nothing; only the words the user actually typed are highlighted.
+/// Byte ranges in `text` matched by the query's literal words
+/// (case-insensitive, overlaps merged), for highlighting file names. Filters,
+/// negations, proximity and regex add nothing.
 fn query_filename_ranges(node: &QueryNode, text: &str) -> Vec<(usize, usize)> {
     let mut ranges = collect_filename_ranges(node, text);
     merge_ranges(&mut ranges);
@@ -1298,9 +1182,8 @@ fn collect_filename_ranges(node: &QueryNode, text: &str) -> Vec<(usize, usize)> 
         QueryNode::Term(term) => filename_word_ranges(text, |word| word == term),
         QueryNode::Phrase(words) => filename_phrase_ranges(text, words),
         QueryNode::Wildcard(pattern) => {
-            // Highlight the words the pattern matched, not the whole name:
-            // `ink*` marks "InkyCap" in "InkyCap - Build Binaries" and leaves
-            // the rest alone. Mirrors how `find_wildcard` matches.
+            // Highlight only the words the pattern matched (`ink*` marks
+            // "InkyCap", not the whole name), as `find_wildcard` matches.
             let anchored = format!("^{}$", pattern.replace('*', ".*"));
             match compile_bounded_regex(&anchored) {
                 Some(re) => filename_word_ranges(text, |word| re.is_match(word)),
@@ -1330,6 +1213,15 @@ fn merge_ranges(ranges: &mut Vec<(usize, usize)>) {
     *ranges = merged;
 }
 
+/// Tokenize one document for the engine.
+///
+/// Words come from [`text_projection::project`], which walks the Typst syntax
+/// tree and yields rendered words, so markup is stripped: `_italicize_` is
+/// found by `italicize`, `#highlight[yellow]` by `yellow`.
+///
+/// `doc.lines` keeps the raw source for snippets, and match ranges are byte
+/// offsets in it. The notebox import line isn't indexed but stays in `lines`
+/// so line numbers match the source.
 fn build_doc(
     path: PathBuf,
     content: &str,
@@ -1355,9 +1247,8 @@ fn build_doc(
 
     let projection = crate::search::text_projection::project(content);
 
-    // Build the inverted-index entries, assigning per-line word indices
-    // in source order so phrase search ("a b c") keeps working: words
-    // 0, 1, 2 must be consecutive on the same line.
+    // Word indices per line in source order, so phrase search can check
+    // adjacency.
     let mut local_index: HashMap<String, Vec<WordPosition>> = HashMap::new();
     let mut word_count = 0usize;
     let mut per_line_word_idx: HashMap<usize, usize> = HashMap::new();
@@ -1403,10 +1294,8 @@ fn build_doc(
     }
 }
 
-/// Collect up to `window` lines of context before and after `line_idx`,
-/// skipping notebox-import lines. The returned tuples preserve source
-/// order — `before` runs from earliest to nearest, `after` runs from
-/// nearest to latest.
+/// Up to `window` lines either side of `line_idx`, skipping import lines, in
+/// source order.
 fn collect_context(
     lines: &[String],
     import_indices: &[usize],
@@ -1497,9 +1386,7 @@ mod tests {
         ])
     }
 
-    /// Distinct files among the result rows. Engine `search` emits one
-    /// row per matched line, so tests that care about file-level recall
-    /// need to deduplicate by path.
+    /// Distinct files among the results (search returns one row per line).
     fn unique_paths(results: &[SearchResult]) -> usize {
         let mut paths: Vec<&str> = results.iter().map(|r| r.path.as_str()).collect();
         paths.sort();
@@ -1581,9 +1468,8 @@ mod tests {
         let engine = make_engine();
         let query = parse_query("rust programming").unwrap();
         let results = engine.search(&query, 10);
-        // Only note1 has both — `rust` appears on two lines while
-        // `programming` appears on one; the AND merge produces two rows
-        // for that file.
+        // Only note1 has both words; `rust` is on two of its lines, so two
+        // rows.
         assert_eq!(unique_paths(&results), 1);
         assert!(results.iter().all(|r| r.path.contains("note1")));
     }
@@ -1604,9 +1490,9 @@ mod tests {
     #[test]
     fn filename_match_composes_with_boolean_query() {
         let engine = make_engine();
-        // `note1` matches only note1's filename; `rust` matches the bodies of
-        // note1 and note2. The AND keeps just note1 — proving filename hits
-        // flow through boolean composition like any other leaf match.
+        // `note1` matches only the file name and `rust` the bodies of note1 and
+        // note2; the AND keeps note1, so file-name hits combine like any other
+        // match.
         let query = parse_query("note1 rust").unwrap();
         let results = engine.search(&query, 10);
         assert_eq!(unique_paths(&results), 1);
@@ -1683,9 +1569,8 @@ mod tests {
 
     #[test]
     fn test_property_value_filter() {
-        // Two notes share a `status` key but with different values.
-        // `property:status=draft` should match only the first; multi-word
-        // values require quoting in the query.
+        // Same key, different values: `property:status=draft` matches only the
+        // first.
         let mut values1: HashMap<String, Vec<String>> = HashMap::new();
         values1.insert("status".to_string(), vec!["draft".to_string()]);
         let mut values2: HashMap<String, Vec<String>> = HashMap::new();
@@ -1721,9 +1606,7 @@ mod tests {
         assert_eq!(r.len(), 1);
         assert!(r[0].path.ends_with("b.md"));
 
-        // Quoted form composing with another filter — verifies that
-        // the property: branch doesn't eat the remainder of the query
-        // when the value is quoted.
+        // A quoted value doesn't swallow the rest of the query.
         let q = parse_query("property:status=\"draft\" path:a").unwrap();
         let r = engine.search(&q, 10);
         assert_eq!(r.len(), 1);
@@ -1819,9 +1702,8 @@ mod tests {
         let mut engine = make_engine();
         let doc_count = engine.docs.len();
 
-        // `python` appears only in note2; removing note2 should drop the word
-        // from the index entirely (incremental removal must prune empty
-        // posting lists, not leave dead keys behind).
+        // Removing note2 must drop `python` from the index, not leave an empty
+        // posting list.
         engine.remove_doc(Path::new("/notebox/note2.md"));
         assert!(!engine.index.contains_key("python"));
         assert!(!engine
@@ -1965,9 +1847,7 @@ mod tests {
 
     #[test]
     fn bare_term_matches_a_file_name_a_whole_word_at_a_time() {
-        // A bare term is whole-word in body text; file names now agree, so
-        // "ink" no longer drags in every name with those three letters buried
-        // inside a longer word.
+        // A bare term matches file names as whole words, like body text.
         let engine = name_engine();
         assert_eq!(matched_names(&engine, "ink"), vec!["Ink and Switch"]);
         assert_eq!(
@@ -1999,8 +1879,7 @@ mod tests {
     #[test]
     fn a_file_name_highlight_covers_only_the_word_that_matched() {
         let engine = name_engine();
-        // A wildcard used to highlight the whole name, because it was matched
-        // against the whole name with `.*` soaking up the rest.
+        // A wildcard highlights only the matched word, not the whole name.
         assert_eq!(
             highlighted_name(&engine, "ink*", "InkyCap - Build Binaries"),
             "[InkyCap] - Build Binaries"

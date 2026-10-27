@@ -2,10 +2,10 @@ import type { Component } from "solid-js";
 import { lucideFrame } from "./frame";
 
 /**
- * Word/character count glyph: three text lines plus a "#" (count) mark.
- * Editable master: `design-assets/text-count.svg` — keep the two in sync by
- * hand. Recoloured to `currentColor` here so it sits with the lucide icons in
- * the status bar; the master keeps its own palette for standalone preview.
+ * Word/character count icon: three text lines and a "#". Master:
+ * `design-assets/text-count.svg`, kept in step by hand. Uses `currentColor`
+ * here to sit with the Lucide icons in the status bar; the master keeps its own
+ * colours.
  */
 export const TextCountIcon: Component<{ size?: number; class?: string }> = (
   props,

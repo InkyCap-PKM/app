@@ -4,10 +4,9 @@ use tauri::State;
 
 use crate::state::{AppState, NoteboxSession};
 
-/// Apply the export dialog's "Review markup" choice to a note's raw source
-/// before any other processing. `mode` is the frontend string tag
-/// (`"accept"` / `"reject"` / `"keep"`); absent/unknown defaults to keeping the
-/// tracked-change marks so an export never silently rewrites content.
+/// Apply the export's "Review markup" choice to a note's source first. `mode`
+/// is `"accept"`, `"reject"` or `"keep"`; missing or unknown keeps the marks,
+/// so an export never silently changes content.
 pub(crate) fn apply_review_mode(content: &str, mode: Option<&str>) -> String {
     use crate::typst_pipeline::review_markup::{prepare_review_markup, ReviewMarkupMode};
     prepare_review_markup(content, ReviewMarkupMode::from_opt(mode))
@@ -15,9 +14,8 @@ pub(crate) fn apply_review_mode(content: &str, mode: Option<&str>) -> String {
 
 // ── Bibliography ────────────────────────────────────────────────
 
-/// Determine the bibliography file to use for export. Collection-level
-/// `bibliography_file` takes priority; otherwise falls back to the global
-/// citation settings (Zotero export or user-configured `.bib`).
+/// The bibliography file for export: the collection's `bibliography_file`, else
+/// the citation settings (Zotero export or the configured `.bib`).
 pub(super) async fn resolve_effective_bib(
     collection_bib: Option<&str>,
     notebox_root: Option<&Path>,
@@ -35,9 +33,8 @@ pub(super) async fn resolve_effective_bib(
     crate::state::configure_bibliography(notebox_root, &global, &notebox)
 }
 
-/// Resolve the effective citation style. The per-notebox `custom_csl_path`
-/// override wins; otherwise the user-global named style (e.g.
-/// `"chicago-notes"`) applies. `None` when neither is configured.
+/// The citation style: the notebox's `custom_csl_path`, else the user's named
+/// style (e.g. `"chicago-notes"`), else `None`.
 pub(super) async fn resolve_user_bib_style(
     state: &State<'_, AppState>,
     session: &NoteboxSession,
@@ -54,15 +51,10 @@ pub(super) async fn resolve_user_bib_style(
     })
 }
 
-/// Resolve bibliography settings and inject/suppress as needed. Combines
-/// `resolve_effective_bib`, `resolve_user_bib_style`, `maybe_inject_bibliography`,
-/// and `apply_bibliography_visibility` into a single call.
-///
-/// Finally escapes stray `@` references (emails like `athena@inkycap.org`) so a
-/// strict export compile doesn't fail on an unknown label — the same step the
-/// reading view runs. This is the shared chokepoint every prepare-based export
-/// path funnels through, so folding the escape in here fixes them all at once
-/// rather than repeating (and forgetting) it at each call site.
+/// Resolve the bibliography and style, add or hide the bibliography as needed, and
+/// escape stray `@` (emails like `athena@inkycap.org`) so a strict export doesn't
+/// fail on an unknown label, as the reading view does. Every export path that
+/// prepares a note goes through here.
 pub(super) async fn prepare_bibliography(
     source: String,
     collection_bib: Option<&str>,
@@ -83,17 +75,14 @@ pub(super) async fn prepare_bibliography(
     crate::commands::typst::escape_non_bib_citations(&source, state.inner(), session).await
 }
 
-/// Suppress the rendered bibliography from export output without breaking
-/// citation resolution. When `include` is `false`, prepends a Typst show
-/// rule that replaces the bibliography element with `none` — the
-/// `#bibliography(...)` call still binds the bib file (so `@key` citations
-/// resolve) but its visible output is dropped entirely, leaving no blank
-/// trailing pages.
+/// Hide the bibliography in export output while citations still resolve. With
+/// `include` false, a show rule replaces the bibliography element with `none`;
+/// the `#bibliography(...)` call still loads the file, and no blank trailing
+/// pages are left.
 ///
-/// Per CLAUDE.md's Typst-first principle: this uses a Typst show rule
-/// rather than mutating user source or stripping the `#bibliography`
-/// call, so a user-written `#bibliography(...)` is suppressed by the
-/// same mechanism as our auto-injected one.
+/// Per CLAUDE.md's Typst-first principle this is a show rule rather than
+/// editing the source, so a user's own `#bibliography(...)` is hidden the same
+/// way as ours.
 pub(super) fn apply_bibliography_visibility(source: String, include: bool) -> String {
     if include {
         return source;
@@ -144,9 +133,8 @@ pub(super) fn maybe_inject_bibliography(
 
 // ── Wikilinks ───────────────────────────────────────────────────
 
-/// Rewrite `#wikilink(...)` calls in Typst source to `#link(...)` calls pointing
-/// to the target HTML file. Wikilinks to notes outside the collection become
-/// plain text.
+/// Rewrite `#wikilink(...)` calls as `#link(...)` to the target's HTML file;
+/// links to notes outside the collection become plain text.
 pub(super) fn rewrite_wikilinks_to_links(
     source: &str,
     name_to_file: &std::collections::HashMap<String, String>,
@@ -177,9 +165,8 @@ pub(super) fn strip_wikilinks_from_source(source: &str) -> String {
 
 // ── Document metadata injection ─────────────────────────────────
 
-/// Inject `#set document(...)` rule from `#note(...)` properties so that
-/// Typst embeds title/author/date/keywords into the compiled document.
-/// `typst-pdf` then writes these into the PDF metadata fields.
+/// Add `#set document(...)` from the `#note(...)` properties, so title, author,
+/// date and keywords end up in the PDF metadata.
 pub(super) fn inject_document_metadata(source: &str) -> String {
     use crate::typst_pipeline::note_rewriter::note_call_span;
 
@@ -262,9 +249,8 @@ pub(super) fn extract_metadata_raw(source: &str) -> Vec<(String, String)> {
         .collect()
 }
 
-/// Normalize metadata for document property formats (DOCX/ODT/PDF).
-/// Maps InkyCap keys to standard document property keys, normalizes dates,
-/// and filters out keys that aren't document properties.
+/// Metadata for document properties (DOCX/ODT/PDF): InkyCap keys mapped to
+/// standard ones, dates normalized, other keys dropped.
 pub(super) fn normalize_metadata(raw: &[(String, String)]) -> Vec<(String, String)> {
     raw.iter()
         .filter_map(|(k, v)| {
@@ -283,9 +269,8 @@ pub(super) fn normalize_metadata(raw: &[(String, String)]) -> Vec<(String, Strin
         .collect()
 }
 
-/// Convert datetime-style values to ISO date strings.
-/// Handles: `datetime(year: 2026, month: 4, day: 29)` → `2026-04-29`
-/// and passes through already-formatted dates like `2026-04-29`.
+/// Dates as ISO strings: `datetime(year: 2026, month: 4, day: 29)` →
+/// `2026-04-29`; `2026-04-29` is kept.
 pub(super) fn normalize_date_value(value: &str) -> String {
     if let Some(rest) = value.strip_prefix("datetime(") {
         if let Some(inner) = rest.strip_suffix(')') {
@@ -391,9 +376,8 @@ pub(super) fn parse_date_to_typst_datetime(value: &str) -> Option<String> {
     None
 }
 
-/// Extract the first positional string argument from a Typst args slice
-/// (e.g. `"foo"` from `"foo", display: "bar"`). Returns `None` if the args
-/// don't begin with a quoted string.
+/// The first positional string in an argument string (`"foo"` from `"foo",
+/// display: "bar"`), or `None`.
 pub(super) fn parse_first_string_arg(args: &str) -> Option<String> {
     let trimmed = args.trim_start();
     if !trimmed.starts_with('"') {
@@ -467,9 +451,8 @@ pub(super) fn find_matching_paren(s: &str, open_pos: usize) -> Option<usize> {
     None
 }
 
-/// Cheap predicate: does this Typst args slice contain `<name>:` as a
-/// named-argument keyword? Used to detect non-string alt values
-/// (`alt: none`, `alt: my-var`) that `parse_named_string_arg` skips.
+/// Whether the argument string has `<name>:`, to catch non-string values (`alt:
+/// none`, `alt: my-var`) that `parse_named_string_arg` skips.
 pub(super) fn args_has_named_arg(args: &str, name: &str) -> bool {
     let needle = format!("{}:", name);
     let mut search = args;
@@ -492,15 +475,12 @@ pub(super) fn args_has_named_arg(args: &str, name: &str) -> bool {
 
 // ── HTML asset localization ─────────────────────────────────────
 
-/// Make exported HTML self-contained: copy every notebox asset referenced by a
-/// notebox-root-absolute `src="/…"` attribute (images, `#video`/`#audio`) into
-/// `output_dir`, preserving its relative subpath, and rewrite the attribute to
-/// that relative path. typst-html leaves these paths untouched, so without this
-/// an exported `.html`/site points back at `/Assets/…` and shows nothing.
-///
-/// `src`s that already carry a scheme (`http:`, `blob:`, `data:`, …) or are
-/// already relative don't start with `/`, so they're left untouched. Returns
-/// the rewritten HTML and the list of relative paths copied.
+/// Make exported HTML self-contained: copy every notebox file referenced by a
+/// root-absolute `src="/…"` (images, `#video` / `#audio`) into `output_dir` at
+/// its relative path and rewrite the attribute. typst-html leaves these paths
+/// alone, so the export would otherwise point at `/Assets/…`. `src`s with a
+/// scheme or already relative are untouched. Returns the HTML and the paths
+/// copied.
 pub(super) async fn localize_html_assets(
     html: &str,
     notebox_root: &Path,
@@ -518,10 +498,8 @@ pub(super) async fn localize_html_assets(
         }
     }
 
-    // Copy each into the output directory, preserving its relative subpath.
-    // Paths that don't resolve to a real file inside the notebox are left as
-    // written (and not rewritten below), so a broken reference stays visible
-    // rather than silently disappearing.
+    // Paths that aren't real files in the notebox are left as written, so a
+    // broken reference stays visible.
     let mut copied_ok = std::collections::HashSet::new();
     let mut copied = Vec::new();
     for p in &paths {
@@ -567,23 +545,11 @@ pub(super) async fn localize_html_assets(
 
 // ── Template resolution ─────────────────────────────────────────
 
-/// Resolve a template reference to a Typst import path.
+/// A template reference as an import path for `#import "<resolved>": *`:
 ///
-/// - Paths starting with `/` are notebox-root-relative, passed through.
-///
-/// Resolve a creation-rule's Typst-template reference into something we can
-/// inject as `#import "<resolved>": *`.
-///
-/// - Paths starting with `/` or `@` are passed through (notebox-root-absolute
-///   or package spec — already canonical).
-/// - Bare names are interpreted as an `@local/<name>:0.1.0` spec by default.
-///   Users authoring custom-namespace local packages can write the full
-///   `@<namespace>/<name>:<version>` form in the rule field.
-///
-/// `notebox_root` is accepted for API symmetry with earlier code paths that
-/// resolved against the filesystem; it's currently unused but kept so call
-/// sites don't need to change if we later add manifest-aware resolution
-/// (e.g. picking the latest available version for a bare name).
+/// - `/` or `@` paths pass through (notebox-root-absolute or a package spec).
+/// - A bare name becomes `@local/<name>:0.1.0`; other namespaces can be written
+///   out as `@<namespace>/<name>:<version>`.
 pub fn resolve_template_path(template: &str) -> String {
     resolve_template_path_with_root(template, None)
 }

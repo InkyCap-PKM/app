@@ -1,18 +1,13 @@
-/* Enhanced links (external-link icons, hover affordances).
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Links pane. Part of layout.css, whose import order (see ../layout.css)
+   keeps the cascade. */
 
 /* ── Enhanced Links ── */
 
-/* Toolbar above the Inbound/Outbound/Potential sections. Mirrors the
-   search-panel options row so the controls feel native — same icon-btn
-   styling, same right-anchored sort menu, same height. The buttons are
-   centered horizontally so the cluster sits as a balanced toolbar
-   rather than hugging the left edge. */
-/* The toolbar leads the pane, so it stands in the same band as the editor's
-   toolbar and the other panes' headers (see --pane-toolbar-height). The gap
-   below it is a margin rather than bottom padding, so the band is the row's
-   whole box and its buttons centre in it. */
+/* Toolbar above the Inbound/Outbound/Potential sections, like the search
+   panel's options row (same buttons, sort menu and height), centred. It leads
+   the pane, so it sits in the band shared with the editor toolbar and other
+   pane headers (see --pane-toolbar-height). The gap below is a margin, not
+   padding, so the buttons centre in the band. */
 .right-panel__links-toolbar {
   display: flex;
   align-items: center;
@@ -72,11 +67,9 @@
   color: var(--fg-primary);
 }
 
-/* Clickable variant of the existing section header. The visual style
-   stays identical to a non-clickable Properties / Outline header so
-   the Links pane reads consistent with its neighbours — the only
-   affordance is the cursor + a subtle hover lift and the chevron sitting
-   in the header-actions slot. */
+/* Clickable section header. Looks like the Properties and Outline headers;
+   only the cursor, a slight hover lift and the chevron in the actions slot
+   differ. */
 .right-panel__section-header--clickable {
   cursor: pointer;
   user-select: none;
@@ -96,10 +89,9 @@
   color: var(--fg-dim);
 }
 
-/* Link previews wrap rather than end in an ellipsis, so the highlighted
-   match is always in view. The match line is the main text; the ctx-
-   variant carries the before/after text shown when "More context" is on,
-   visually subdued. */
+/* Link previews wrap rather than truncate, so the highlighted match is
+   always visible. The match line is the main text; the ctx- variant holds
+   the surrounding text shown with "More context", in a muted style. */
 .link-context--match {
   color: var(--fg-muted);
   white-space: normal;

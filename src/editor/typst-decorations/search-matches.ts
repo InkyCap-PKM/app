@@ -1,13 +1,10 @@
-// Highlight *every* notebox-search match in the opened note — not just the one
-// the user clicked. When a search result is opened, the SearchPanel hands the
-// editor all of that file's match ranges (via the editor handle), and this
-// decoration field marks them all. A multi-term query like `journ* AND canad*`
-// then shows both `journal` and `canada` highlighted in the file, instead of
-// only the single line the user clicked.
+// Highlights every notebox search match in the opened note, not only the
+// clicked one. When a result is opened, the SearchPanel gives the editor all of
+// that file's match ranges, and this field marks them, so `journ* AND canad*`
+// shows both `journal` and `canada`.
 //
-// This is distinct from the in-page Ctrl+F find (see search-panel.ts), which
-// drives CodeMirror's own `.cm-searchMatch`; here we own a separate decoration
-// fed straight from the backend's match positions.
+// Separate from Ctrl+F find (search-panel.ts), which uses CodeMirror's
+// `.cm-searchMatch`; this decoration is fed from the backend's match positions.
 
 import { EditorView, Decoration, type DecorationSet } from "@codemirror/view";
 import { StateField, StateEffect, RangeSetBuilder, type EditorState } from "@codemirror/state";

@@ -1,19 +1,14 @@
-// Shared utilities for hotkey strings. Used both by the global keyboard
-// dispatcher and the rule editor's hotkey-recording UI so they speak the
-// same string format.
+// Hotkey string helpers, shared by the global keyboard dispatcher and the rule
+// editor's hotkey recorder so both use the same format.
 
-/** Format a KeyboardEvent into the registry's canonical keybinding string
- *  ("Ctrl+Shift+N"). Returns null for a bare modifier press, an unmodified
- *  key, or any event we don't intend to register as a shortcut. Single-
- *  character keys are uppercased so `Ctrl+n` and `Ctrl+N` collide as the
- *  same combo from the registry's perspective. */
-// With Shift held, a printable key reports its *shifted* glyph in `e.key`
-// (Shift+0 → ")", Shift+] → "}", Shift+\ → "|"). Map those back to the base key
-// so a binding can be written against the key you press ("Ctrl+Shift+0") and
-// still match. Covers the US/ANSI layout; on layouts that produce a different
-// glyph the combo simply won't normalize and the binding can be remapped (the
-// planned user-customizable bindings). Letters are unaffected — Shift+m already
-// reports "M", which we uppercase below.
+/** Format a KeyboardEvent as the registry's keybinding string ("Ctrl+Shift+N").
+ *  Null for a bare modifier, an unmodified key, or any event that can't be a
+ *  shortcut. Single characters are uppercased, so `Ctrl+n` and `Ctrl+N` are
+ *  the same combo. */
+// With Shift held, `e.key` is the shifted character (Shift+0 → ")", Shift+] →
+// "}", Shift+\ → "|"). Map those back to the base key, so "Ctrl+Shift+0"
+// matches the key pressed. Covers the US layout; on other layouts the combo
+// isn't normalized and can be rebound. Letters are fine (Shift+m gives "M").
 const SHIFTED_TO_BASE: Record<string, string> = {
   ")": "0", "!": "1", "@": "2", "#": "3", "$": "4", "%": "5",
   "^": "6", "&": "7", "*": "8", "(": "9",
@@ -37,25 +32,23 @@ export function formatKeyCombo(e: KeyboardEvent): string | null {
   else if (key === "ArrowLeft") key = "Left";
   else if (key === "ArrowRight") key = "Right";
 
-  // A bare key (no modifier) isn't a shortcut, with one exception: the
-  // function keys F1–F12. They aren't produced by text entry, so binding one
-  // on its own (F2 = rename, F6 = cycle regions) can't shadow typing. Any
-  // un-bound function key still falls through — findCommandByKeybinding returns
-  // null and the dispatcher leaves the event alone (e.g. F5, F12).
+  // A key without a modifier isn't a shortcut, except the function keys F1–F12,
+  // which don't type text, so binding one alone (F2 = rename, F6 = cycle
+  // regions) can't block typing. An unbound function key (e.g. F5, F12) finds
+  // no command and is left alone.
   if (parts.length === 0 && !/^F\d{1,2}$/.test(key)) return null;
 
   parts.push(key);
   return parts.join("+");
 }
 
-/** True when the focused element opted out of global hotkeys via
- *  `data-hotkey-recording="true"`. The dispatcher checks this before
- *  firing a command so the rule editor's "press a combo" field can
- *  capture the keystroke without the matching command also firing.
- *
- *  Implemented as a focused-element attribute rather than a module-
- *  level flag: if the editor unmounts mid-recording or focus moves
- *  away, the suppression naturally lifts without any cleanup code. */
+/**
+ * True when the focused element opts out of global hotkeys with
+ * `data-hotkey-recording="true"`, so the rule editor's "press a combo" field
+ * can record a key without its command firing. An attribute on the focused
+ * element rather than a flag, so it lifts by itself when focus moves or the
+ * field unmounts.
+ */
 export function isHotkeyRecordingActive(): boolean {
   const el = document.activeElement;
   if (!(el instanceof HTMLElement)) return false;

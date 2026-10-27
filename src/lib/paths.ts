@@ -1,28 +1,22 @@
 /**
- * Path utilities for notebox paths arriving from the Rust backend.
+ * Helpers for notebox paths from the backend.
  *
- * The backend ships every outbound path through
- * `crate::storage::to_frontend_string` (see `src-tauri/src/storage/path.rs`),
- * which strips the Windows `\\?\` UNC verbatim prefix and converts `\` to
- * `/`. So in normal operation every path the frontend sees is already in a
- * canonical, forward-slash, no-UNC shape.
+ * The backend sends every path through `crate::storage::to_frontend_string`
+ * (see `src-tauri/src/storage/path.rs`), which removes the Windows `\\?\`
+ * prefix and uses `/`, so paths normally arrive in that form already.
  *
- * `normalizePath` exists as a defensive double-check at *equality* sites —
- * the places where a single missed normalization in the backend would
- * silently break a comparison (status bar, "reveal in file tree", tab
- * lookups, graph node IDs). Calling it on already-canonical paths is a
- * no-op, so wrapping comparisons in it costs nothing and immunizes the
- * frontend against future regressions on either side of the IPC boundary.
+ * `normalizePath` is a safety check where paths are compared (status bar,
+ * "reveal in file tree", tab lookups, graph node ids), where one missed
+ * conversion would quietly break the comparison. It does nothing to an
+ * already-canonical path.
  *
- * Do NOT use `normalizePath` to *transform* paths for sending back to the
- * backend — Rust handles either separator fine via `PathBuf::from`, and
- * mutating a user-facing path string for display can confuse other code
- * paths that expect the original. Read-only comparison helper only.
+ * Don't use it to change paths sent back to the backend (Rust accepts either
+ * separator) or for display; it is for comparisons only.
  */
 
 /**
- * Return a canonical-shape copy of `path`: Windows `\\?\` UNC prefix stripped,
- * backslashes converted to forward slashes. Idempotent.
+ * `path` in canonical form: Windows `\\?\` prefix removed, backslashes turned
+ * into forward slashes. Applying it twice changes nothing.
  */
 export function normalizePath(path: string): string {
   if (!path) return path;

@@ -1,19 +1,10 @@
 // ---------------------------------------------------------------------------
-// Why this is a Rust-side converter and not a Typst feature
-// ---------------------------------------------------------------------------
-//
-// Typst doesn't have a native typ → markdown emitter. The HTML backend
-// (`typst::compile::<HtmlDocument>`) gets close but loses our package-level
-// semantics: a `#wikilink("Foo")` becomes `<a href="Foo.typ">`, which is the
-// wrong shape for round-tripping with markdown ecosystems (Obsidian etc.)
-// that expect `[[Foo]]`. Likewise `#tag("x")` becomes prose, and `#note(...)`
-// vanishes into PDF metadata instead of YAML frontmatter.
-//
-// The exporter here is the `inkycap-notebox` package's reverse map, kept in
-// Rust because it's the only place the package's vocabulary and markdown's
-// vocabulary both make sense. Per CLAUDE.md's Typst-first principle: the
-// rule says "before developing something outside" — we did look, the native
-// path doesn't reach.
+// Per CLAUDE.md's Typst-first principle: Typst has no Markdown output. The
+// HTML backend comes closest but loses the package's meaning:
+// `#wikilink("Foo")` becomes `<a href="Foo.typ">` rather than `[[Foo]]`,
+// `#tag("x")` becomes prose, and `#note(...)` becomes PDF metadata instead of
+// YAML frontmatter. So this converter maps the package's functions to
+// Markdown in Rust.
 // ---------------------------------------------------------------------------
 
 use regex::Regex;
@@ -52,9 +43,8 @@ impl Default for TypstToMarkdownOptions {
 static IMPORT_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"^#import\s+"[^"]*"\s*:\s*\*\s*$"#).unwrap());
 
-// Heading lines reach `convert_line` only after the raw-block filter in
-// `typst_to_markdown` has taken the fenced code out of the stream, so this
-// pattern never sees a `= …` line that Typst would call raw text.
+// Fenced code is removed by the raw-block filter in `typst_to_markdown` before
+// lines reach `convert_line`, so this never sees a `= …` line inside code.
 static HEADING_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(=+)\s+(.*)$").unwrap());
 
 static WIKILINK_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -70,10 +60,9 @@ static LINK_RE: LazyLock<Regex> =
 static LINK_BARE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"#link\("([^"]*)"\)"#).unwrap());
 
-// Matches `#image("path")` and `#image("path", width: 25%, …)`. The path goes
-// into `![](path)`; an `alt:` arg (if present) is recovered into the `![alt]`
-// text via `IMAGE_ALT_RE`. Other named args (width/height/fit) have no
-// CommonMark equivalent and are dropped.
+// `#image("path", …)` → `![](path)`, with `alt:` recovered by `IMAGE_ALT_RE`.
+// Other arguments (width, height, fit) have no Markdown equivalent and are
+// dropped.
 static IMAGE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"#image\("([^"]*)"((?:,[^)]*)?)\)"#).unwrap());
 
@@ -87,10 +76,9 @@ fn unescape_typst_string(literal: &str) -> String {
 static IMAGE_ALT_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"alt:\s*"((?:[^"\\]|\\.)*)""#).unwrap());
 
-// Kind, then whatever else the call carries (`title:`, `color:`, in any
-// order), then the body. The argument tail is lazy so it stops at the `)[`
-// that opens the body, which keeps it correct for a value with parentheses of
-// its own such as `color: rgb("#ff9100")`.
+// Kind, then any other arguments (`title:`, `color:`), then the body. The
+// argument part is lazy, so it stops at the `)[` before the body, even with
+// values like `color: rgb("#ff9100")`.
 static CALLOUT_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"#callout\("([^"]*)"(.*?)\)\[(.*?)\]"#).unwrap());
 
@@ -110,11 +98,10 @@ static HIGHLIGHT_RE: LazyLock<Regex> =
 static FOOTNOTE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"#footnote\[([^\]]*)\]"#).unwrap());
 
-// CriticMarkup interop: #suggestion(...) / #annotation map to the standard
-// CriticMarkup delimiters so a note exported to markdown carries its tracked
-// changes + comments to other CriticMarkup-aware tools (Obsidian, iA Writer).
-// `[^)]*` after the kind absorbs any `by:`/`on:` attribution; bodies use the
-// same single-bracket limitation as the other inline regexes (no nested `]`).
+// CriticMarkup: `#suggestion(...)` and `#annotation` become CriticMarkup
+// delimiters, so tracked changes and comments carry over to other tools
+// (Obsidian, iA Writer). `[^)]*` after the kind takes any `by:` / `on:`; bodies
+// can't contain `]`, like the other inline patterns.
 static SUGGESTION_REPLACE_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"#suggestion\(kind:\s*"replace",\s*old:\s*\[([^\]]*)\][^)]*\)\[([^\]]*)\]"#)
         .unwrap()
@@ -136,9 +123,8 @@ static UNKNOWN_FUNC_RE: LazyLock<Regex> =
 
 /// Convert InkyCap Typst source to markdown.
 pub fn typst_to_markdown(input: &str, options: &TypstToMarkdownOptions) -> String {
-    // The `#note(...)` properties become the YAML header. Typst's parser
-    // finds the call, however it is laid out, and the call is cut out of the
-    // body before the line-by-line conversion below.
+    // The `#note(...)` properties become the YAML header. Typst's parser finds
+    // the call, and it is removed from the body before the line conversion.
     let frontmatter = note_frontmatter(input);
     let without_note;
     let input = match note_rewriter::note_call_span(input) {
@@ -158,20 +144,16 @@ pub fn typst_to_markdown(input: &str, options: &TypstToMarkdownOptions) -> Strin
     let mut in_table = false;
     let mut table_buf = String::new();
 
-    // Which lines are fenced code is Typst's call, not a `starts_with("```")`
-    // scan's. The scan missed a fence opened inside a list item (`- ``` `),
-    // and everything in that block — headings, wikilinks, emphasis — was then
-    // translated as if it were markup (issue #21). Markdown fences the same
-    // way Typst does, so these lines pass through untouched.
+    // Typst decides which lines are code, so a fence opened inside a list item
+    // (`- ``` `) is recognized (issue #21). Markdown fences the same way, so
+    // these lines pass through unchanged.
     let raw_lines = source_structure::raw_block_lines(input);
 
     for (idx, line) in input.lines().enumerate() {
-        // Fenced code — delimiters included — passes through untouched, ahead
-        // of every other branch: a code sample may legitimately contain an
-        // `#import` line, a `#note(` call, or anything else this loop would
-        // otherwise consume. The exception is a fence *inside* a multi-line
-        // `#table(…)` call, whose accumulation below needs every line to find
-        // its closing paren.
+        // Code, fences included, passes through before any other branch, since
+        // it may contain `#import`, `#note(` or anything else. The exception is
+        // a fence inside a multi-line `#table(…)`, which needs every line to
+        // find its closing paren.
         if !in_table && raw_lines.contains(&(idx + 1)) {
             out.push_str(line);
             out.push('\n');
@@ -366,9 +348,8 @@ fn convert_inline(text: &str, options: &TypstToMarkdownOptions) -> String {
         .replace_all(&result, |caps: &regex::Captures| format!("[^{}]", &caps[1]))
         .into_owned();
 
-    // CriticMarkup: tracked-change suggestions + reviewer comments. Replace
-    // must run before insert/delete (they key on distinct `kind` literals, so
-    // order is for clarity, not correctness).
+    // Tracked changes and comments. Replace first, for clarity (the kinds don't
+    // overlap).
     result = SUGGESTION_REPLACE_RE
         .replace_all(&result, |caps: &regex::Captures| {
             format!("{{~~{}~>{}~~}}", &caps[1], &caps[2])
@@ -390,9 +371,8 @@ fn convert_inline(text: &str, options: &TypstToMarkdownOptions) -> String {
         })
         .into_owned();
 
-    // Typst emphasis: _text_ → *text* (markdown italic)
-    // Typst bold: *text* → **text** (markdown bold)
-    // These are context-sensitive — only convert when they look like inline markup.
+    // Typst `_text_` → Markdown `*text*`; Typst `*text*` → Markdown `**text**`,
+    // only where they look like inline markup.
     result = convert_typst_emphasis(&result);
 
     // Inline math: $...$ stays as $...$
@@ -417,10 +397,9 @@ fn convert_inline(text: &str, options: &TypstToMarkdownOptions) -> String {
     result
 }
 
-/// A link or image address in the form Markdown accepts. An address with a
-/// space or a parenthesis would end the link early, so it goes inside angle
-/// brackets (`[text](<My Note.md>)`), which Markdown reads verbatim. The few
-/// characters not allowed there are percent-encoded.
+/// A link or image address Markdown accepts: with a space or parenthesis it
+/// goes in angle brackets (`[text](<My Note.md>)`), and the few characters not
+/// allowed there are percent-encoded.
 fn link_destination(target: &str) -> String {
     if !target.contains(|c: char| c.is_whitespace() || matches!(c, '(' | ')' | '<' | '>')) {
         return target.to_string();
@@ -591,9 +570,8 @@ fn extract_table_cells(inner: &str) -> (Vec<String>, Vec<String>) {
         // Skip past the columns: argument.
         body_cells = extract_bracket_cells(inner);
 
-        // Filter out anything that looks like a named argument value
-        // (the columns array items). The bracket extractor only picks up
-        // [content] blocks, so named arg values like `(1fr, 2fr)` are skipped.
+        // Values like `(1fr, 2fr)` are skipped; only `[content]` blocks are
+        // taken.
     }
 
     (header_cells, body_cells)
@@ -645,9 +623,7 @@ fn extract_bracket_cells(text: &str) -> Vec<String> {
     cells
 }
 
-/// Convert Typst emphasis markers to markdown:
-/// Typst `*bold*` → markdown `**bold**`
-/// Typst `_italic_` → markdown `*italic*`
+/// Typst emphasis to Markdown: `*bold*` → `**bold**`, `_italic_` → `*italic*`.
 fn convert_typst_emphasis(text: &str) -> String {
     let mut result = String::with_capacity(text.len());
     let chars: Vec<char> = text.chars().collect();
@@ -692,10 +668,9 @@ fn find_closing_marker(chars: &[char], start: usize, marker: char) -> Option<usi
     (start..chars.len()).find(|&i| chars[i] == marker && (i == 0 || chars[i - 1] != ' '))
 }
 
-/// The note's `#note(...)` properties as a YAML mapping (ending in a newline),
-/// or `None` when it has no properties worth writing. The YAML is written by
-/// a YAML library, so a value such as `Dogs: a study` comes out quoted and
-/// the header always parses.
+/// The note's `#note(...)` properties as YAML (ending in a newline), or `None`
+/// if there are none to write. Written by a YAML library, so values like `Dogs:
+/// a study` are quoted.
 fn note_frontmatter(input: &str) -> Option<String> {
     let mut mapping = serde_yaml::Mapping::new();
     for (key, raw) in note_rewriter::extract_note_properties(input) {
@@ -716,11 +691,10 @@ fn note_frontmatter(input: &str) -> Option<String> {
     serde_yaml::to_string(&mapping).ok()
 }
 
-/// Convert one property value to YAML. Strings, numbers, booleans and arrays
-/// map directly; `datetime(...)` becomes an ISO 8601 date (with the time when
-/// it has one); `link-ref("Target")` becomes `[[Target]]`, the form Markdown
-/// note apps read as a link. An empty string, `none` or `auto` is left out.
-/// Anything else is kept as its Typst source text.
+/// One property value as YAML: strings, numbers, booleans and arrays directly;
+/// `datetime(...)` as an ISO date (with time if given); `link-ref("Target")` as
+/// `[[Target]]`. Empty strings, `none` and `auto` are left out; anything else
+/// is its Typst source.
 fn typst_expr_to_yaml(expr: ast::Expr) -> Option<serde_yaml::Value> {
     use serde_yaml::Value;
     let source_text = || Value::String(expr.to_untyped().full_text().to_string());
@@ -760,9 +734,8 @@ fn typst_expr_to_yaml(expr: ast::Expr) -> Option<serde_yaml::Value> {
     }
 }
 
-/// `datetime(year: 2026, month: 4, day: 29)` → `2026-04-29`, adding
-/// `T09:30:00` when the call also gives `hour:` and `minute:`. `None` when
-/// the call names neither a full date nor a time.
+/// `datetime(year: 2026, month: 4, day: 29)` → `2026-04-29`, plus `T09:30:00`
+/// with `hour:` and `minute:`. `None` without a full date or time.
 fn datetime_call_to_iso(call: ast::FuncCall) -> Option<String> {
     let part = |name: &str| {
         call.args().items().find_map(|arg| match arg {
@@ -871,9 +844,7 @@ mod tests {
 
     #[test]
     fn leaves_a_fence_opened_inside_a_list_item_alone() {
-        // Issue #21's shape. A `starts_with("```")` scan misses this fence
-        // because the line opens with the list marker, and everything in the
-        // block was then translated as markup.
+        // Issue #21: a fence after a list marker.
         let input = "= Real\n- Bullet\n  - ```\n= Not a headliner\n```\n";
         let result = convert(input);
         assert!(

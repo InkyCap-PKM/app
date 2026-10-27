@@ -2,12 +2,10 @@ import type { Component } from "solid-js";
 import { lucideFrame } from "./frame";
 
 /**
- * "Copy the whole note" glyph for Compose cards: a full page with a folded
- * corner in front of a second page, set beside the passage-copy buttons.
+ * "Copy the whole note" icon for Compose cards: a page with a folded corner in
+ * front of another page.
  *
- * ⚠ Master lives at design-assets/compose-files-copy.svg. That file and this
- * component are kept in sync BY HAND — if you redraw the glyph, edit both,
- * or the editable master and the shipped icon will silently diverge.
+ * Master: design-assets/compose-files-copy.svg, kept in step by hand.
  */
 export const ComposeFilesCopyIcon: Component<{ size?: number; class?: string }> = (props) => (
   <svg {...lucideFrame(props.size ?? 18)} class={props.class}>

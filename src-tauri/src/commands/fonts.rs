@@ -20,18 +20,17 @@ fn discover_system_fonts() -> Vec<String> {
     families.into_iter().collect()
 }
 
-/// Return a sorted, deduplicated list of font family names available on
-/// the system. The result is cached for the lifetime of the process
-/// (system fonts don't change at runtime).
+/// Sorted, deduplicated font family names available on the system, cached for
+/// the session.
 #[tauri::command]
 pub async fn list_system_fonts() -> Result<Vec<String>, InkyCapError> {
     let fonts = SYSTEM_FONTS.get_or_init(discover_system_fonts);
     Ok(fonts.clone())
 }
 
-/// Return the OS's default font families per generic role (sans/serif/mono).
-/// Resolved via fontconfig on Linux, hardcoded on macOS/Windows. Used by
-/// the frontend font picker to display labels like "System (Cantarell)".
+/// The OS default font families per role (sans, serif, mono): fontconfig on
+/// Linux, fixed on macOS and Windows. For font picker labels like "System
+/// (Cantarell)".
 #[tauri::command]
 pub async fn system_font_defaults() -> Result<SystemFontDefaults, InkyCapError> {
     Ok(font_resolver::system_defaults().clone())

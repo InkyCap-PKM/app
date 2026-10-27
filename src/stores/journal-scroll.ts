@@ -1,33 +1,22 @@
 // ---------------------------------------------------------------------------
-// Journal Scroll store — per-tab state for the scrolling note review surface.
+// Journal Scroll store: per-tab state for the scrolling review view.
 //
-// Pagination model — *one-directional*:
-//   * The anchor lives at offset 0 in the sorted result and is always the
-//     first (top) row. The feed only ever unfolds *downward* from it; there
-//     is no loading of entries above the anchor. This is deliberate: an
-//     entry compiling above the viewport would shove the reader's content
-//     down (the feed "jumps back"), and there is no reliable scroll gesture
-//     to trigger an upward load anyway. To see notes on the other temporal
-//     side of the anchor, the user flips `dateDirection` (the pill's
-//     date-direction toggle) or re-anchors.
-//   * `loadMoreAfter` extends `lastOffset` by BATCH each call. The backend's
-//     strict-offset slice semantics mean a `result.length < limit` response
-//     unambiguously indicates the feed is exhausted.
-//   * `dateDirection` chooses whether downward = older (`desc`, the default
-//     "recent → past") or newer (`asc`, "past → recent"). It is the sort
-//     direction handed to every `ScrollQuery`.
-//   * `scope` picks which notes the feed holds. `timeline` is every note in
-//     the user's "Anchor scope" setting, unfolding in time from the anchor.
-//     `neighbourhood` is the anchor plus the notes it links to and the notes
-//     that link to it; the backend keeps the anchor first, so the whole
-//     neighbourhood lies below it in date order.
-//   * Merges dedupe by path: a sort property that mutates between paginated
-//     queries (e.g. `file.mtime` after an edit) can otherwise shift the
-//     sorted list so a later page re-returns an already-loaded note.
+// The feed grows in one direction:
+//   * The anchor is offset 0 and always the first row; entries only load below
+//     it. Content loading above would push the reader's place down. To see the
+//     other side in time, flip `dateDirection` or re-anchor.
+//   * `loadMoreAfter` extends `lastOffset` by BATCH. The backend's strict
+//     slicing means a response shorter than `limit` is the end.
+//   * `dateDirection`: `desc` (default) shows older notes going down, `asc`
+//     newer. It is the sort direction of every `ScrollQuery`.
+//   * `scope`: `timeline` holds every note in the "Anchor scope" setting;
+//     `neighbourhood` the anchor plus the notes it links to and from, with the
+//     anchor first.
+//   * Merges skip paths already loaded, since a sort property that changes
+//     between pages (e.g. `file.mtime`) can repeat a note.
 //
-// `visibleEntries` is a signal updated by JournalScrollView's
-// IntersectionObserver. The right-panel "Scroll Context" tab subscribes to
-// it for outline / connections / tag-concentration / citation sub-panes.
+// `visibleEntries` is updated by JournalScrollView's IntersectionObserver; the
+// Scroll Context tab reads it.
 // ---------------------------------------------------------------------------
 
 import { createSignal } from "solid-js";
@@ -56,31 +45,35 @@ export interface JournalScrollState {
   lastOffset: number;
   hasMoreAfter: boolean;
   loading: boolean;
-  /** Sort direction of the date feed. `desc` = recent→past (downward scroll
-   *  shows older notes, the default); `asc` = past→recent. Toggled per-tab
-   *  by the pill's date-direction button. */
+  /**
+   * Date order: `desc` (default) shows older notes going down; `asc` newer. Per
+   * tab.
+   */
   dateDirection: SortDir;
   /** Notebox paths of currently in-view entries; updated by an
    *  IntersectionObserver on each entry frame. */
   visibleEntries: string[];
-  /** Scroll-local navigation history — the notes the user has jumped
-   *  between via wikilink clicks *inside* the scroll. Drives the header
-   *  back/forward arrows while scroll is enabled; the tab's own file
-   *  history is irrelevant inside a scroll. */
+  /**
+   * Back/forward history of wikilink jumps inside the scroll, for the header
+   * arrows while scroll is on.
+   */
   navBack: string[];
   navForward: string[];
-  /** The note the within-scroll navigation currently considers "current"
-   *  (the most recent jump target, or the anchor before any jump). Needed
-   *  to know what to push onto the opposite stack on back/forward. */
+  /**
+   * The note navigation considers current (the last jump target, or the
+   * anchor), pushed onto the other stack on back/forward.
+   */
   navCurrent: string;
-  /** A pending request for the view to scroll a path to the top, issued by
-   *  `scrollNavBack` / `scrollNavForward`. The `nonce` makes repeated
-   *  requests for the same path distinct so the view's effect re-fires.
-   *  The view consumes (clears) it via `consumeScrollNavRequest`. */
+  /**
+   * A request for the view to scroll a path to the top, from `scrollNavBack` /
+   * `scrollNavForward`. `nonce` makes repeats distinct. Cleared by
+   * `consumeScrollNavRequest`.
+   */
   scrollNavRequest: { path: string; nonce: number } | null;
-  /** Bumped each time `loadInitial` rebuilds the result set. The view
-   *  watches it and, on a change, pins the anchor entry to the top of the
-   *  viewport through the asynchronous per-entry compiles. */
+  /**
+   * Bumped when `loadInitial` rebuilds the results; the view then pins the
+   * anchor to the top while entries compile.
+   */
   anchorPinNonce: number;
 }
 
@@ -93,23 +86,15 @@ const INITIAL_FORWARD = BATCH + 1;
 // per result-set rebuild so the view can observe each as a distinct event.
 let anchorPinCounter = 0;
 
-// Per-tab last-known scroll position. Survives tab-switch unmounts so that
-// when the user returns to a Journal Scroll tab they land where they left
-// off — switching tabs unmounts the entire <TypstEditor>, taking the scroll
-// container's `scrollTop` with it.
+// Last scroll position per tab, kept across the unmount a tab switch causes.
 //
-// The position is stored *entry-anchored*, not as a raw pixel `scrollTop`:
-// the path of the entry at the top of the viewport plus the pixel offset of
-// that entry's top edge relative to the viewport top. A raw pixel value is
-// unrestorable on remount — entries compile asynchronously, so entries above
-// the restore point may still be short placeholders and the same `scrollTop`
-// would land somewhere else entirely. An entry + offset can be re-pinned
-// precisely once that one entry's frame exists, regardless of what is or
-// isn't rendered above it.
+// Stored as the top visible entry's path and its offset from the viewport top,
+// not a pixel `scrollTop`: after a remount, entries above may still be
+// placeholders, but one entry and an offset can be restored once that entry
+// exists.
 //
-// The map is non-reactive on purpose: the view writes on every scroll, but
-// no component re-renders when it changes. The store clears the entry
-// whenever the result set is rebuilt (sort/scope change, anchor move).
+// Not reactive: the view writes it on every scroll. Cleared whenever the
+// results are rebuilt.
 export interface SavedScrollPosition {
   /** Notebox path of the entry pinned to the top of the viewport. */
   path: string;
@@ -196,9 +181,7 @@ export function getVisibleEntries(tabId: string): string[] {
 
 // === Query construction ===
 
-// `date_sort` (a user setting) picks the sort *key*; `direction` (the
-// per-tab date-direction toggle) picks the *order*. Every sort variant
-// carries the direction — `desc` is recent-first, `asc` reverses it.
+// The `date_sort` setting picks the key; the per-tab direction the order.
 function buildSort(direction: SortDir): ScrollSort {
   switch (noteboxSettings.journal_scroll.date_sort) {
     case "modified":
@@ -206,9 +189,8 @@ function buildSort(direction: SortDir): ScrollSort {
     case "zid":
       return { kind: "zid", direction };
     case "note_date":
-      // The `date` property authored in `#note(date: ...)`. Datetime values
-      // are stringified to ISO `YYYY-MM-DD` by lib.typ, so a lexicographic
-      // compare orders them chronologically.
+      // `#note(date: ...)`. lib.typ stores dates as `YYYY-MM-DD`, so string
+      // order is date order.
       return { kind: "property", name: "date", direction };
     case "created":
     default:
@@ -216,10 +198,11 @@ function buildSort(direction: SortDir): ScrollSort {
   }
 }
 
-/** The folder the Daily Note creation rule writes into. The rule's
- *  `target_folder` may interpolate date variables (e.g. `daily/{{date:YYYY}}`);
- *  the scope is the static prefix before the first variable. Empty when no
- *  daily-note rule is present or it has a fully dynamic target. */
+/**
+ * The Daily Note rule's folder: the static part of its `target_folder` before
+ * the first variable (e.g. `daily` for `daily/{{date:YYYY}}`). Empty without
+ * such a rule or with a fully variable folder.
+ */
 export function dailyNotesFolder(): string {
   const rule = creationRules().find((r) => r.id === "daily-note");
   if (!rule) return "";
@@ -229,9 +212,10 @@ export function dailyNotesFolder(): string {
   return prefix.replace(/\/+$/, "");
 }
 
-/** Resolve the notebox-relative folder the scroll is scoped to, or `null`
- *  for the whole notebox. Driven entirely by the user's "Anchor scope"
- *  setting — the scroll itself no longer has per-tab modes. */
+/**
+ * The notebox-relative folder the scroll is limited to, or `null` for the whole
+ * notebox, from the "Anchor scope" setting.
+ */
 function scopeFolder(): string | null {
   switch (noteboxSettings.journal_scroll.anchor_scope) {
     case "daily": {
@@ -271,11 +255,11 @@ function buildQuery(
   };
 }
 
-/** Look up a target path's offset in the same sorted result the scroll
- *  uses, without mutating any state. Returns `null` when the target is
- *  not in the current query. The wikilink-click handler uses this to
- *  decide whether to extend the loaded window toward the target or fall
- *  through to a new tab. */
+/**
+ * A target's offset in the scroll's sorted results, without changing state;
+ * `null` if it isn't there. The wikilink handler uses it to decide between
+ * paging to the target and opening a new tab.
+ */
 export async function findOffsetForTarget(
   tabId: string,
   targetPath: string,
@@ -295,9 +279,7 @@ export async function findOffsetForTarget(
   }
 }
 
-/** Read-only accessor for the forward pagination cursor — the most-positive
- *  offset loaded so far. The wikilink-click loader uses it to know how far
- *  the feed must extend to reach a target. */
+/** The furthest offset loaded so far. */
 export function getLastOffset(tabId: string): number {
   scrollVersion();
   return scrollStates[tabId]?.lastOffset ?? 0;
@@ -316,9 +298,7 @@ async function loadInitial(tabId: string) {
   const state = scrollStates[tabId];
   if (!state) return;
 
-  // Rebuilding the result set: a saved scroll position from a previous
-  // load no longer maps onto the same content. Reset so the view starts
-  // at the top.
+  // A saved position from before no longer matches; start at the top.
   resetSavedScroll(tabId);
 
   setScrollStates(
@@ -328,9 +308,7 @@ async function loadInitial(tabId: string) {
       s[tabId].lastOffset = INITIAL_FORWARD - 1;
       s[tabId].hasMoreAfter = true;
       s[tabId].visibleEntries = [];
-      // The result set is being rebuilt — within-scroll navigation history
-      // no longer maps onto it. Reset to a clean state anchored on the
-      // (possibly new) anchor.
+      // Navigation history no longer matches; start fresh at the anchor.
       s[tabId].navBack = [];
       s[tabId].navForward = [];
       s[tabId].navCurrent = s[tabId].anchorPath;
@@ -340,9 +318,7 @@ async function loadInitial(tabId: string) {
   bump();
   bumpVisible();
 
-  // One unidirectional request for the anchor and the rows after it.
-  // Nothing is ever loaded above the anchor — it sits at the top of the
-  // viewport with no asynchronously-growing content to displace it.
+  // One request for the anchor and the rows after it.
   try {
     const fromAnchor = await ipc.runScrollQuery(
       buildQuery(state, 0, INITIAL_FORWARD),
@@ -392,10 +368,8 @@ export async function loadMoreAfter(tabId: string) {
     if (!scrollStates[tabId]) return;
     setScrollStates(
       produce((s) => {
-        // Dedupe against already-loaded paths: if the sort property
-        // mutated between pages the slice can re-return a loaded note.
-        // `hasMoreAfter` still keys off the raw response length — that is
-        // the backend's strict-offset edge signal, independent of dupes.
+        // Skip notes already loaded. `hasMoreAfter` still uses the raw response
+        // length, the backend's end signal.
         const loaded = new Set(s[tabId].entries.map((e) => e.path));
         const fresh = newEntries.filter((e) => !loaded.has(e.path));
         s[tabId].entries = [...s[tabId].entries, ...fresh];
@@ -468,9 +442,10 @@ export async function updateAnchor(tabId: string, newAnchorPath: string) {
   await loadInitial(tabId);
 }
 
-/** Re-anchor the scroll on `targetPath` without clearing the
- *  back/forward navigation history. Used by in-scroll wikilink
- *  navigation where the caller manages the nav stack separately. */
+/**
+ * Re-anchor on `targetPath`, keeping the back/forward history. Used by
+ * in-scroll wikilink navigation.
+ */
 export async function reanchorForNavigation(
   tabId: string,
   targetPath: string,
@@ -535,11 +510,9 @@ export async function setScrollScope(tabId: string, scope: ScrollScope) {
 
 // === Within-scroll navigation ===
 //
-// While scroll is enabled, the header back/forward arrows operate on this
-// per-tab history of wikilink jumps *inside* the scroll, not the tab's file
-// history. A jump records the note it was made *from* (so "back" returns to
-// the note the user clicked the link in), and a back/forward step issues a
-// `scrollNavRequest` the view picks up to scroll the target to the top.
+// While scroll is on, the back/forward arrows use this per-tab history of
+// wikilink jumps. A jump records the note it was made from, and a step issues a
+// `scrollNavRequest` for the view.
 
 let navNonce = 0;
 
@@ -553,9 +526,10 @@ export function canScrollNavForward(tabId: string): boolean {
   return (scrollStates[tabId]?.navForward.length ?? 0) > 0;
 }
 
-/** Record a within-scroll wikilink jump from `fromPath` to `toPath`. The
- *  source note goes on the back stack and the forward stack is cleared,
- *  matching browser-style history. */
+/**
+ * Record a jump from `fromPath` to `toPath`: the source goes on the back stack
+ * and the forward stack is cleared, as in a browser.
+ */
 export function recordScrollNavigation(
   tabId: string,
   fromPath: string,
@@ -600,11 +574,10 @@ export function scrollNavForward(tabId: string) {
   bump();
 }
 
-/** Reposition the scroll viewport at the anchor entry — the note the scroll
- *  was originally opened from. Issues a `scrollNavRequest` the view consumes
- *  (paging the loaded window toward the anchor first if it has scrolled out
- *  of range). This is a pure viewport jump: it deliberately does *not* touch
- *  the within-scroll back/forward history. */
+/**
+ * Scroll back to the anchor (the note the scroll was opened from) through a
+ * `scrollNavRequest`, without changing back/forward history.
+ */
 export function scrollToAnchor(tabId: string) {
   const state = scrollStates[tabId];
   if (!state || !state.anchorPath) return;
@@ -638,9 +611,10 @@ export function consumeScrollNavRequest(tabId: string) {
   bump();
 }
 
-/** Called by JournalScrollView's IntersectionObserver each time the set of
- *  in-view entries changes. The right-panel "Scroll Context" tab subscribes
- *  via `getVisibleEntries(tabId)`. */
+/**
+ * Called by JournalScrollView's IntersectionObserver when the visible entries
+ * change; read with `getVisibleEntries(tabId)`.
+ */
 export function setVisibleEntries(tabId: string, paths: string[]) {
   const state = scrollStates[tabId];
   if (!state) return;

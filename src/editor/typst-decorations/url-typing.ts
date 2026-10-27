@@ -2,26 +2,24 @@
 //
 // Typst reads bare `http://` and `https://` text as a link, but after any other
 // scheme (`zotero://`, `ftp://`, `inkycap://`, …) the `//` starts a comment and
-// the rest of the address vanishes from the note. So in ordinary text, typing
-// the second `/` of `<scheme>://`, or the `:` of `mailto:`, turns what was
-// typed into a `#link("…")` call with the caret inside the address. (A bare
-// `mailto:` address has no `//`, but its `@` would be read as a reference.)
+// the rest of the address disappears. So in ordinary text, typing the second
+// `/` of `<scheme>://`, or the `:` of `mailto:`, turns the text into a
+// `#link("…")` call with the caret in the address. (A `mailto:` address has no
+// `//`, but its `@` would be read as a reference.)
 //
-// An `@` can't be decided when it is typed: `joshua@` may become an email
-// address or a citation placed straight after a word. So email addresses and
-// fediverse handles are rewritten when the word ends, with a space or Enter,
-// by what Typst's parser made of the whole word (see address-markup.ts):
-// `joshua@phydeau.org` becomes a `mailto:` link, `@person@mastodon.social`
-// becomes plain text with its `@`s escaped, and a reference to a bibliography
-// key or a label in the note is left alone. The `@` menu offers the same
-// choices explicitly (see reference-suggest.ts).
+// An `@` can't be decided when typed: `athena@` may become an email address or
+// a citation right after a word. So email addresses and fediverse handles are
+// rewritten when the word ends (space or Enter), from what Typst's parser made
+// of it (see address-markup.ts): `athena@inkycap.org` becomes a `mailto:` link,
+// `@person@mastodon.social` becomes plain text with escaped `@`s, and a
+// reference to a bibliography key or label is left alone. The `@` menu offers
+// the same choices (see reference-suggest.ts).
 //
-// A space or Enter typed at the end of a link's address steps out of the call
-// first, since an address cannot contain either. Undo turns a link back into
-// the text as it was before; for an email address that is the escaped
-// `joshua\@phydeau.org`, Typst's plain-text form of an address.
+// A space or Enter at the end of a link's address steps out of the call first,
+// since an address can't contain either. Undo restores the text as it was; for
+// an email address that is the escaped `athena\@inkycap.org`.
 //
-// Visual mode only: the source editor stays plain Typst.
+// Visual mode only; the source editor stays plain Typst.
 
 import { EditorView, keymap } from "@codemirror/view";
 import { Prec, type EditorState, type Extension } from "@codemirror/state";
@@ -127,9 +125,8 @@ const urlTypingInput = EditorView.inputHandler.of((view, from, to, text) => {
   return false;
 });
 
-// Enter finishes an address, or moves the caret out of a link call, and then
-// lets the usual Enter run, so list continuation and line breaks behave as at
-// the end of any other text.
+// Enter finishes an address or leaves a link call, then the usual Enter runs,
+// so lists and line breaks behave as anywhere else.
 const urlTypingKeymap = Prec.high(
   keymap.of([
     {

@@ -1,23 +1,17 @@
-// Persists window geometry across launches.
+// Saves and restores window geometry, in place of tauri-plugin-window-state,
+// which goes wrong on Linux/GTK:
 //
-// Why the custom implementation (replacing tauri-plugin-window-state):
+// 1. It saves on every Resized event, gated by `is_maximized()`. Maximizing
+//    fires Resized at monitor size before `is_maximized()` changes, so the
+//    maximized size is saved as the normal size.
+// 2. `inner_size()` is the GDK window size, which on GNOME includes the
+//    client-side shadow margin (~52×99 logical px), but `set_inner_size()` sets
+//    the content size. Saving one and restoring with the other grows the window
+//    by the shadow each time, until GNOME maximizes it.
 //
-// 1. The plugin saves geometry on every WindowEvent::Resized, gated by
-//    is_maximized(). On Linux/GTK, maximize transitions fire Resized
-//    with monitor-covering dimensions *before* is_maximized() flips,
-//    so it writes maximized-sized values as the unmaximized geometry.
-// 2. Tao/GTK exposes `inner_size()` as the GDK window size reported by
-//    `configure-event`, which on GNOME *includes* the client-side
-//    decoration shadow margin (~52×99 logical px). `set_inner_size()`
-//    however calls `gtk_window.resize()` with the content size. Round-
-//    tripping save(inner_size) -> load(set_inner_size) therefore
-//    inflates the window by the shadow delta on every cycle — it
-//    eventually exceeds the monitor and GNOME auto-maximizes it.
-//
-// Fix: measure the decoration delta once per session by comparing the
-// first-known requested size to what `configure-event` reports, then
-// save (reported - delta) and restore via `set_inner_size(saved)`.
-// After one round-trip the window size is stable.
+// So the shadow delta is measured once per session (the first reported size
+// against the requested one), and `reported - delta` is saved and restored with
+// `set_inner_size`.
 
 use std::{
     fs,
@@ -56,24 +50,20 @@ impl Default for WindowState {
     }
 }
 
-/// tauri.conf.json's main window default size, in logical pixels.
-/// Kept in sync manually with the config so we can compute the
-/// physical size of the initial configure-event and learn the CSD
-/// shadow delta from it. If the value in tauri.conf.json changes,
-/// update here too.
+/// The main window's default size in tauri.conf.json, in logical pixels, used
+/// to learn the shadow delta from the first configure event. Keep in sync with
+/// the config.
 const TAURI_CONF_DEFAULT_LOGICAL: (f64, f64) = (1280.0, 800.0);
 
 pub struct WindowStateStore {
     pub state: Mutex<WindowState>,
-    /// Decoration shadow delta in physical pixels, learned on the
-    /// first Resized event after the window maps.
-    /// `(reported - expected_initial_physical)`. None until measured.
+    /// Shadow delta in physical pixels (`reported -
+    /// expected_initial_physical`), learned from the first Resized event after
+    /// mapping. None until measured.
     pub delta: Mutex<Option<(u32, u32)>>,
-    /// tauri.conf.json default × scale_factor at startup, in
-    /// physical pixels. The first configure-event always fires at
-    /// this size plus the CSD shadow — that's where `delta` comes
-    /// from. Stored here so the handler has access without needing
-    /// to re-read config or scale.
+    /// The tauri.conf.json default size × scale factor, in physical pixels. The
+    /// first configure event comes at this size plus the shadow, which gives
+    /// `delta`.
     pub initial_expected: (u32, u32),
 }
 
@@ -123,12 +113,10 @@ pub fn save<R: Runtime>(app: &AppHandle<R>, state: &WindowState) {
     }
 }
 
-/// Apply saved geometry (or a sensible default for a fresh install)
-/// to the window. Must be called AFTER `window.show()` — on Linux/GTK
-/// `set_inner_size` is only reliable on a mapped window. Also records
-/// the requested size into `WindowStateStore.awaiting_set` so the
-/// event handler can measure the CSD shadow delta from the resulting
-/// configure-event.
+/// Apply saved geometry (or a default on a fresh install). Call after
+/// `window.show()`; on GTK `set_inner_size` is only reliable on a mapped
+/// window. Records the requested size in `WindowStateStore.awaiting_set` so the
+/// event handler can measure the shadow delta.
 pub fn apply<R: Runtime>(window: &WebviewWindow<R>, saved: Option<&WindowState>) {
     let scale = window.scale_factor().unwrap_or(1.0);
 
@@ -149,9 +137,8 @@ pub fn apply<R: Runtime>(window: &WebviewWindow<R>, saved: Option<&WindowState>)
         }
     }
 
-    // Target: saved content size if sane, otherwise the tauri.conf
-    // default — which means "don't resize" since the window was just
-    // mapped at that size anyway.
+    // The saved size if sensible, otherwise the default (no resize, since the
+    // window was just mapped at that size).
     let (target_w, target_h) = match saved {
         Some(s) if s.width > 0 && s.height > 0 => (s.width, s.height),
         _ => conf_default_physical(scale),
@@ -162,10 +149,8 @@ pub fn apply<R: Runtime>(window: &WebviewWindow<R>, saved: Option<&WindowState>)
         height: target_h,
     });
 
-    // Maximize when the user left it maximized last session, and also on a
-    // fresh install (no saved state) so the very first launch fills the
-    // screen — `unwrap_or(true)` covers the no-saved-state case. Once the
-    // window has been saved, the user's own choice is honoured thereafter.
+    // Maximize if the window was maximized last time, and on a fresh install
+    // (`unwrap_or(true)`) so the first launch fills the screen.
     if saved.map(|s| s.maximized).unwrap_or(true) {
         let _ = window.maximize();
     }
@@ -186,12 +171,10 @@ pub fn attach<R: Runtime>(window: &WebviewWindow<R>) -> Arc<AtomicBool> {
                 let store = app.state::<WindowStateStore>();
                 let reported = (size.width, size.height);
 
-                // Learn the CSD shadow delta from the *first*
-                // configure-event, which always fires at the
-                // tauri.conf default size + shadow. Must be locked
-                // in before apply()'s set_inner_size can fire its
-                // own resize event — otherwise a smaller-than-
-                // default saved size would produce nonsense.
+                // Learn the shadow delta from the first configure event (at the
+                // default size plus shadow), before apply()'s set_inner_size
+                // fires its own resize; a smaller saved size would otherwise
+                // give a wrong delta.
                 {
                     let mut delta_guard = store.delta.lock().unwrap();
                     if delta_guard.is_none() {

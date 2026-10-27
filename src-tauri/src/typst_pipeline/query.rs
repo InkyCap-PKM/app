@@ -1,9 +1,7 @@
-//! Metadata extraction via Typst's introspector.
-//!
-//! After compiling a document, we query the introspector for the InkyCap
-//! labels (`<inkycap-note>`, `<inkycap-tag>`, `<inkycap-link>`,
-//! `<inkycap-agenda>`) and convert the attached `metadata(...)` values into
-//! Rust types that the scanner and indexes consume.
+//! Metadata extraction through Typst's introspector: after compiling, query the
+//! InkyCap labels (`<inkycap-note>`, `<inkycap-tag>`, `<inkycap-link>`,
+//! `<inkycap-agenda>`) and convert their `metadata(...)` values for the scanner
+//! and indexes.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -34,45 +32,37 @@ pub struct QueryResult {
     pub heading_labels: Vec<String>,
     /// Inline `#task` / `#due` markers from `<inkycap-agenda>`.
     pub agenda: Vec<AgendaMarker>,
-    /// Document-level recurrence rule from `#note(recurrence: (…))`. Extracted
-    /// out of the note dict separately from `properties` so the structured rule
-    /// never reaches the generic property surfaces as a stringified dict.
+    /// The rule from `#note(recurrence: (…))`, kept out of `properties` so it
+    /// never appears as a stringified dict.
     pub recurrence: Option<Recurrence>,
-    /// Count of unresolved `#suggestion(...)` tracked changes (`<inkycap-
-    /// suggestion>`). Accepting/rejecting a suggestion unwraps the call so its
-    /// label vanishes from the compiled document — so this is a true "still
-    /// awaiting a decision" count, not a textual occurrence count. Drives the
-    /// notebox-wide "changes to resolve" indicator. Plain `#annotation`
-    /// comments are deliberately excluded: a comment carries no accept/reject
-    /// decision (mirrors the per-file Changes & History badge).
+    /// Number of unresolved `#suggestion(...)` changes
+    /// (`<inkycap-suggestion>`). Accepting or rejecting removes the call, so
+    /// this counts only those awaiting a decision. Used for the "changes to
+    /// resolve" indicator. `#annotation` comments aren't counted, since they
+    /// need no decision.
     pub suggestions: usize,
 }
 
-/// A comparable key approximating a located element's reading-order position
-/// in the document: `(page, top, left)`. Used to compare metadata markers
-/// against the transclusion boundary.
+/// An element's approximate reading-order position, `(page, top, left)`, for
+/// comparing markers with the transclusion boundary.
 type PosKey = (usize, f64, f64);
 
 /// Query a compiled document for all InkyCap metadata.
 pub fn query_document(document: &PagedDocument) -> QueryResult {
-    // 0.15: `introspector` is a private field behind an accessor returning
-    // `&Arc<PagedIntrospector>`; `.as_ref()` yields `&PagedIntrospector`, which
-    // coerces to the `&dyn Introspector` our helpers take.
+    // `introspector()` returns `&Arc<PagedIntrospector>`; `.as_ref()` gives the
+    // `&dyn Introspector` the helpers take.
     let introspector = document.introspector().as_ref();
     let mut result = QueryResult::default();
 
-    // Transclusion guard. A note that does `#include "other.typ"` compiles the
-    // included file inline, so `other`'s `<inkycap-note>` / `<inkycap-tag>` /
-    // `<inkycap-link>` / `<inkycap-agenda>` labels appear in *this* document
-    // too. The host's own `#note(...)` is always first in document order (it
-    // lives in the prelude, above the body); a *second* `<inkycap-note>` marks
-    // where included content begins. We read only the first note for
-    // properties and drop body labels positioned at/after that boundary, so a
-    // host note never absorbs an included note's identity, tags, or links.
+    // Transclusion guard. An `#include`d note compiles inline, so its labels
+    // appear in this document too. The host's `#note(...)` always comes first;
+    // a second `<inkycap-note>` marks where included content starts. Only the
+    // first note's properties are read, and body labels at or after that point
+    // are dropped, so a host never takes on an included note's identity, tags
+    // or links.
     //
-    // The one case this can't distinguish is host content authored *physically
-    // after* an `#include` — raw `#include` provides no hook marking where the
-    // included note ends. The clean pattern is `#include` as a trailing block.
+    // Host content written after an `#include` can't be told apart from the
+    // included note, so `#include` works best as a trailing block.
     let boundary = transclusion_boundary(introspector);
 
     extract_note_metadata(introspector, &mut result);
@@ -88,16 +78,14 @@ pub fn query_document(document: &PagedDocument) -> QueryResult {
 /// location (an unplaced/detached element).
 fn pos_key(introspector: &dyn Introspector, elem: &Content) -> Option<PosKey> {
     let loc = elem.location()?;
-    // 0.15: `position` returns `Option<DocumentPosition>` (an element may have
-    // no resolved position) and `DocumentPosition` abstracts over paged/HTML;
-    // we only ever query paged documents, so resolve to the paged variant.
+    // `position` may be `None`; only paged documents are queried, so use the
+    // paged position.
     let pos = introspector.position(loc)?.as_paged_or_default();
     Some((pos.page.get(), pos.point.y.to_raw(), pos.point.x.to_raw()))
 }
 
-/// Position of the second `<inkycap-note>`, marking the start of `#include`d
-/// content. `None` when the document has at most one note (the common case),
-/// so nothing is filtered.
+/// Position of the second `<inkycap-note>`, where `#include`d content starts.
+/// `None` with at most one note.
 fn transclusion_boundary(introspector: &dyn Introspector) -> Option<PosKey> {
     let selector = label_selector("inkycap-note")?;
     let notes = introspector.query(&selector);
@@ -107,16 +95,14 @@ fn transclusion_boundary(introspector: &dyn Introspector) -> Option<PosKey> {
     pos_key(introspector, &notes[1])
 }
 
-/// Whether a metadata marker at `key` belongs to transcluded content — i.e.
-/// it sits at or past the transclusion `boundary`. False when either is
-/// unknown (no boundary, or an unlocatable element).
+/// Whether a marker at `key` is in transcluded content (at or after
+/// `boundary`). False if either is unknown.
 fn is_transcluded(key: Option<PosKey>, boundary: Option<PosKey>) -> bool {
     matches!((key, boundary), (Some(k), Some(b)) if k >= b)
 }
 
-/// Drop-based timer for the full compile+query path. CLAUDE.md asks for query
-/// instrumentation "from the outset"; logging on drop covers every early
-/// return. `debug` level, file name only (local-first privacy).
+/// Logs the compile-and-query time on drop, so every return path is covered.
+/// `debug` level, file name only.
 struct QueryTimer {
     file: String,
     start: std::time::Instant,
@@ -145,30 +131,16 @@ impl Drop for QueryTimer {
     }
 }
 
-/// Styles added to the top of a note for the metadata compile.
-///
-/// Syntax-highlighting a code block makes Typst prepare its grammar for that
-/// language and keep it for the rest of the session, tens of MB per language.
-/// Indexing compiles every note but never looks at the highlighted result, so
-/// it would load every language the notebox uses at startup. With no theme,
-/// Typst skips highlighting entirely (Typst's own `raw(theme: none)`), and the
-/// metadata it reports is otherwise the same. The index keeps no positions
-/// inside the note, so the extra line shifts nothing it records.
+/// Styles prepended for the metadata compile. Highlighting a code block makes
+/// Typst load and keep that language's grammar (tens of MB each), and indexing
+/// compiles every note. With no theme, Typst skips highlighting (`raw(theme:
+/// none)`); the metadata is the same, and the index records no positions inside
+/// the note, so the extra line shifts nothing.
 const METADATA_COMPILE_STYLES: &str = "#set raw(theme: none)\n";
 
-/// Compile a file and extract metadata in one step. Returns
-/// [`QueryResult::default()`] if the file fails to compile — callers that
-/// need a graceful display for broken files (e.g. the property panel)
-/// rely on the scanner's persisted [`MetadataCache`], which keeps the last
-/// successful query result keyed by `(mtime, size)` and short-circuits
-/// this function when the file hasn't changed since it last compiled.
-///
-/// Earlier versions of this module ran a hand-rolled raw-source extractor
-/// when compilation failed; that has been removed because the source-text
-/// fallback duplicated `note_rewriter`'s parsing surface and silently
-/// disagreed with Typst's own evaluation in edge cases (single-element
-/// tuples, `link-ref` round-trips, escape handling). For files that have
-/// truly never compiled, an empty result is the honest answer.
+/// Compile a file and extract its metadata. Returns [`QueryResult::default()`]
+/// if it can't compile; the scanner's [`MetadataCache`] keeps the last good
+/// result by `(mtime, size)` for broken files.
 ///
 /// [`MetadataCache`]: crate::cache::MetadataCache
 pub fn compile_and_query(
@@ -178,22 +150,16 @@ pub fn compile_and_query(
 ) -> QueryResult {
     let _t = QueryTimer::start(abs_path);
     let styled_source = format!("{METADATA_COMPILE_STYLES}{source}");
-    // First try compiling the full file *with recovery*. A clean file compiles
-    // on the first pass; a file with a localized error (a stray token, a broken
-    // `#include`) has just those spans dropped and recompiles, so body-derived
-    // metadata — inline `#task` / `#due` Agenda markers, wikilinks, tags —
-    // still surfaces from the salvageable parts. Without recovery here, any
-    // single body error would send the file to the preamble-only fallback
-    // below, which recovers document-level `#note(...)` properties but loses
-    // every inline marker (the bug where adding a `#task`/`#due` to a note with
-    // an unrelated body error never reached the Agenda).
+    // Compile with recovery first: a localized error (a stray token, a broken
+    // `#include`) is dropped and the rest recompiled, so inline `#task` /
+    // `#due` markers, wikilinks and tags still come through. The preamble-only
+    // fallback below would keep `#note(...)` properties but lose them.
     if let Some(document) = compiler.compile_document_recovering(abs_path, styled_source) {
         return query_document(&document);
     }
-    // Recovery couldn't make progress (error budget exhausted, or a non-
-    // localized failure). Fall back to compiling just the preamble (import +
-    // `#note(...)`) so document-level properties still reach the panel, then
-    // recover what body metadata we can from the raw AST below.
+    // Recovery failed. Compile only the import and `#note(...)` so properties
+    // still reach the panel, then take what body metadata we can from the
+    // syntax tree.
     let mut result = QueryResult::default();
     let preamble = extract_note_preamble(&source);
     if preamble.len() < source.len() {
@@ -201,16 +167,10 @@ pub fn compile_and_query(
             result = query_document(&document);
         }
     }
-    // The preamble compile recovers properties from `#note(...)` but
-    // throws away body-derived metadata — wikilinks and body tags. For a
-    // user with a notebox full of notes where one body has a typst error
-    // (an unresolved citation, a broken image path, etc.), the result
-    // is a Links pane that silently shows nothing for every note that
-    // hit this path. Use `typst::syntax` to walk the parsed AST and
-    // pick out the `wikilink(...)` / `tag(...)` call sites directly —
-    // they have a stable surface syntax we can read without depending
-    // on evaluation, and CLAUDE.md's Typst-first principle steers us
-    // here (typst::syntax is the supported parsing surface).
+    // The preamble compile loses wikilinks and body tags, so a note with one
+    // body error would show no links. Per CLAUDE.md's Typst-first principle,
+    // read the `wikilink(...)` / `tag(...)` calls from the `typst::syntax`
+    // tree, which needs no evaluation.
     let (ast_links, ast_tags, ast_agenda) = extract_body_metadata_via_syntax(&source);
     // Every link found this way is a `wikilink(...)` call, so a body link.
     for link in ast_links {
@@ -224,21 +184,16 @@ pub fn compile_and_query(
             result.tags.push(tag);
         }
     }
-    // Only `#task` bodies are recoverable from the AST — a `#due` date is
-    // typically a `datetime(...)` call that can't be formatted without
-    // evaluation. Broken files therefore surface their tasks (sans due
-    // date) but not their bare date markers; the cache holds the full
-    // result from the last successful compile.
+    // Only `#task` bodies can be read from the tree; a `#due` date is usually a
+    // `datetime(...)` call that needs evaluation. The cache holds the full
+    // result from the last good compile.
     result.agenda = ast_agenda;
     result
 }
 
-/// Walk the parsed AST and collect raw wikilink targets and tag names.
-/// Used as a fallback for files that fail to compile but still need to
-/// surface their outgoing links in the Links pane. Restricted to the
-/// `wikilink(...)` and `tag(...)` call shapes the `inkycap-notebox`
-/// package exports — anything else would require evaluation to be
-/// trusted.
+/// Wikilink targets, tag names and tasks from the syntax tree, for files that
+/// don't compile. Only the package's `wikilink(...)`, `tag(...)` and task call
+/// shapes; anything else would need evaluation.
 fn extract_body_metadata_via_syntax(source: &str) -> (Vec<String>, Vec<String>, Vec<AgendaMarker>) {
     let root = parse(source);
     let node = LinkedNode::new(&root);
@@ -291,10 +246,8 @@ fn walk_for_body_calls(
     }
 }
 
-/// Return the value of the first positional argument when it's a string
-/// literal; `None` otherwise (named arg first, non-string positional,
-/// empty args, etc.). Mirrors the first-positional-string scanning
-/// pattern in `path_rebase::rebase_first_string_arg`.
+/// The first positional argument if it is a string literal, else `None`. Like
+/// `path_rebase::rebase_first_string_arg`.
 pub(crate) fn first_string_positional_arg(call_node: &LinkedNode<'_>) -> Option<String> {
     let args_node = call_node
         .children()
@@ -319,19 +272,16 @@ pub(crate) fn first_string_positional_arg(call_node: &LinkedNode<'_>) -> Option<
                 return Some(s.to_string());
             }
 
-            // Anything else in the first positional slot — variable,
-            // function call, named arg — means we can't statically
-            // recover a target. Stop walking; one positional slot per
-            // call.
+            // Anything else in the first positional slot can't be read
+            // statically.
             _ => return None,
         }
     }
     None
 }
 
-/// Return just the import preamble + `#note(...)` call as a standalone source.
-/// Mirror of [`crate::notebox_package::strip_note_preamble`] — same parser, but
-/// keeps the prefix and drops the body.
+/// Just the import and `#note(...)` call, as a source of its own. The
+/// counterpart of [`crate::notebox_package::strip_note_preamble`].
 fn extract_note_preamble(content: &str) -> String {
     let body_start = content.len() - crate::notebox_package::strip_note_preamble(content).len();
     content[..body_start].to_string()
@@ -370,10 +320,8 @@ fn extract_note_metadata(introspector: &dyn Introspector, result: &mut QueryResu
             let key_str = key.as_str().to_string();
 
             if key_str == "recurrence" {
-                // Structured rule — parsed into its own field, deliberately not
-                // mirrored into `properties` (it would otherwise show up as a
-                // raw dict row in the property panel and as a column in
-                // collection tables).
+                // Parsed into its own field, not `properties`, so it doesn't
+                // show as a raw dict in the panel or as a collection column.
                 if let Value::Dict(rec) = value {
                     result.recurrence = Recurrence::from_typst_dict(rec);
                 }
@@ -552,12 +500,9 @@ fn extract_agenda_markers(
 // <inkycap-suggestion> — unresolved tracked changes (count only)
 // ---------------------------------------------------------------------------
 
-/// Count the note's open `#suggestion(...)` tracked changes. We only need the
-/// total per file for the notebox-wide indicator — the rich per-suggestion
-/// data is read CM-side by the annotation tracker for the open note — so this
-/// counts labels rather than decoding each metadata dict. The same
-/// transclusion guard as the other extractors keeps an `#include`d note's open
-/// suggestions from inflating the host's count.
+/// Count the note's open `#suggestion(...)` changes, by label (the details are
+/// read in the editor for the open note). The transclusion guard keeps an
+/// included note's suggestions out of the count.
 fn extract_review_markup(
     introspector: &dyn Introspector,
     result: &mut QueryResult,
@@ -647,9 +592,8 @@ mod tests {
 
     #[test]
     fn extracts_inline_due_recurrence() {
-        // End-to-end: a `#due(..., recurrence: (…))` compiles through the
-        // package and the rule round-trips out of the `<inkycap-agenda>` dict,
-        // exercising lib.typ's `_fmt-recurrence` normalizer.
+        // A `#due(..., recurrence: (…))` round-trips through the package's
+        // `_fmt-recurrence`.
         let (_dir, root) = setup_notebox_with_package(
             r#"Reminder #due(datetime(year: 2026, month: 6, day: 15), label: "Standup", recurrence: (freq: "week", interval: 2, by-day: ("mo", "we"), until: datetime(year: 2026, month: 12, day: 7)))."#,
         );
@@ -691,11 +635,8 @@ mod tests {
 
     #[test]
     fn preamble_fallback_keeps_note_after_leading_comments() {
-        // Regression: a `//` comment (or the locale `#set text(...)` directive)
-        // between the import and `#note(...)` once made `extract_note_preamble`
-        // drop the call, so a note whose body fails to compile fell back to a
-        // preamble with no metadata and showed an empty property panel.
-        // `extract_note_preamble` must keep the `#note(...)` call regardless.
+        // A comment (or the locale `#set text(...)`) between the import and
+        // `#note(...)` must not make `extract_note_preamble` drop the call.
         let src = "#import \"/.inkycap/notebox.typ\": *\n\n// lead\n// more\n\
                    #set text(lang: \"fr\")\n#note(title: \"Commented\")\n= Body\n";
         let pre = extract_note_preamble(src);
@@ -707,9 +648,8 @@ mod tests {
 
     #[test]
     fn extracts_note_metadata_with_leading_comment_via_fallback() {
-        // End-to-end through the preamble fallback: a comment before `#note(...)`
-        // plus a body that fails to compile (an unresolved citation here) must
-        // still surface the note's properties to the panel.
+        // Through the preamble fallback: a comment before `#note(...)` and a
+        // failing body still give the note's properties.
         let (_dir, root) = setup_notebox_with_package(
             "// a leading comment\n#note(title: \"Commented\", tags: (\"x\",))\n\
              = Body\n\nSee @missing-citation for details.\n",
@@ -756,10 +696,8 @@ mod tests {
 
     #[test]
     fn extracts_wikilinks_from_ast_when_body_compile_fails() {
-        // File compiles up to `#note(...)` properties but the body
-        // references an undefined function — full compile dies, preamble
-        // fallback succeeds. The AST walk must recover the wikilink so
-        // the Links pane still shows it.
+        // The body calls an undefined function, so only the preamble compiles;
+        // the syntax-tree walk must still find the wikilink.
         let (_dir, root) = setup_notebox_with_package(
             r#"#note(title: "Has Broken Body")
 
@@ -879,12 +817,8 @@ Reference to #wikilink("Target Note") here.
         assert!(result.links.is_empty());
     }
 
-    /// When a file fails to compile, the query returns an empty result —
-    /// the scanner's persisted cache is the supported source of property
-    /// data for broken files. Earlier we extracted properties from the
-    /// raw source text on failure, but that duplicated `note_rewriter`'s
-    /// parsing and silently disagreed with Typst's evaluation in edge
-    /// cases.
+    /// A file that fails to compile gives an empty result; the scanner's cache
+    /// supplies properties for broken files.
     #[test]
     fn returns_empty_result_when_compilation_fails() {
         let dir = tempdir().expect("tempdir");
@@ -980,14 +914,8 @@ Keynote confirmed #due(datetime(year: 2026, month: 7, day: 1), label: "Conferenc
 
     #[test]
     fn inline_markers_survive_a_broken_body_via_recovery() {
-        // Regression: a note carrying inline `#task` / `#due` markers AND a
-        // localized body error (a broken `#include` of a non-existent file)
-        // must still surface its markers to the Agenda. Before recovery was
-        // wired into the metadata pipeline, the failed full compile sent this
-        // file to the preamble-only fallback, which kept document-level
-        // properties but dropped every inline marker — the exact symptom of
-        // "adding a date/task never reaches the Agenda" on a note whose body
-        // happens not to compile.
+        // Inline `#task` / `#due` markers still reach the Agenda when the body
+        // has a localized error (an `#include` of a missing file).
         let (_dir, root) = setup_notebox_with_package(
             "#note(title: \"Daisy\")\n\n\
              Remember #due(\"2026-06-16\", label: \"get that eye exam\")\n\n\
@@ -1023,11 +951,9 @@ Keynote confirmed #due(datetime(year: 2026, month: 7, day: 1), label: "Conferenc
         assert_eq!(task.due.as_deref(), Some("2026-06-16"));
     }
 
-    /// A note that `#include`s another note must not absorb the included
-    /// note's identity, tags, or links into its own index. The included
-    /// content compiles inline (so its labels appear in the document), but
-    /// the indexer reads only the host's own first `<inkycap-note>` and drops
-    /// body labels positioned past the second note. See `query_document`.
+    /// A note that `#include`s another doesn't take on its identity, tags or
+    /// links: only the host's first `<inkycap-note>` is read and body labels
+    /// after the second are dropped. See `query_document`.
     #[test]
     fn include_does_not_pollute_host_index() {
         let dir = tempdir().expect("tempdir");
@@ -1103,9 +1029,8 @@ Keynote confirmed #due(datetime(year: 2026, month: 7, day: 1), label: "Conferenc
         }
     }
 
-    /// `#include "/other.typ"` from a note in a subfolder must render the
-    /// included note's *body* into the compiled document — not just compile.
-    /// Reproduces the real-notebox layout (host in `test1/`, target at root).
+    /// `#include "/other.typ"` from a note in a subfolder renders the included
+    /// note's body (host in `test1/`, target at the root).
     #[test]
     fn include_renders_included_body() {
         let dir = tempdir().expect("tempdir");

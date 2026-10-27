@@ -1,10 +1,6 @@
-//! One-shot backup runner — orchestrates archive build + retention prune
-//! + state update for a single backup invocation.
-//!
-//! Synchronization: held behind a `tokio::sync::Mutex` in `AppState` so
-//! a manual command-palette run and a scheduled tick can't overlap. The
-//! mutex is acquired by the caller (`commands::backup::backup_now`),
-//! not here — keeps the runner pure and testable.
+//! Runs one backup: builds the archive, prunes old ones and updates the state.
+//! The caller (`commands::backup::backup_now`) holds the `AppState` mutex, so a
+//! manual and a scheduled run can't overlap and this stays testable.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -43,17 +39,14 @@ pub struct RunInputs<'a> {
     /// Set when the caller is a *scheduled* tick rather than a manual
     /// run — the only-on-change guard only applies in that case.
     pub is_scheduled: bool,
-    /// Cooperative cancellation flag. Polled between archive entries;
-    /// when set, the run aborts with `InkyCapError::Cancelled` and the
-    /// partially-written archive is removed. Cleared by the caller at
-    /// the start of each run (a stale `true` from a prior cancel would
-    /// otherwise immediately abort the next attempt).
+    /// Cancel flag, checked between entries; when set, the run fails with
+    /// `InkyCapError::Cancelled` and the partial archive is removed. The caller
+    /// clears it at the start of each run.
     pub cancel: Arc<AtomicBool>,
 }
 
-/// Run one backup. Returns `Ok(None)` when the only-on-change guard
-/// kicked in and we deliberately skipped without writing anything;
-/// `Ok(Some(report))` on success; `Err(...)` on real failures.
+/// Run one backup: `Ok(None)` when skipped because nothing changed,
+/// `Ok(Some(report))` on success, `Err(...)` on failure.
 pub fn run(inputs: RunInputs<'_>) -> Result<Option<BackupReport>> {
     let dest_root = match inputs.settings.path.as_ref() {
         Some(p) if !p.is_empty() => PathBuf::from(p),
@@ -65,10 +58,8 @@ pub fn run(inputs: RunInputs<'_>) -> Result<Option<BackupReport>> {
         }
     };
 
-    // Only-on-change guard — skip without touching anything if the
-    // notebox has had no writes since the last successful backup. We
-    // only consult the notebox tree (not the user-config folder) here
-    // because user-config changes alone don't justify a fresh archive.
+    // Skip if the notebox hasn't changed since the last success. Only the
+    // notebox counts; config changes alone don't need a new archive.
     let st = state::load(inputs.notebox_root);
     if inputs.is_scheduled && inputs.settings.only_on_change && st.last_success_unix > 0 {
         let max_mtime = newest_mtime_under(inputs.notebox_root).unwrap_or(0);
@@ -77,9 +68,8 @@ pub fn run(inputs: RunInputs<'_>) -> Result<Option<BackupReport>> {
         }
     }
 
-    // Ensure destination exists before composing the archive path —
-    // makes the "your chosen folder no longer exists" failure mode
-    // crisp instead of bubbling up from the zip writer.
+    // Create the destination first, so a missing folder gives a clear error
+    // rather than one from the zip writer.
     std::fs::create_dir_all(&dest_root).map_err(|e| {
         InkyCapError::BadRequest(format!(
             "Couldn't create backup folder {}: {e}",
@@ -97,10 +87,9 @@ pub fn run(inputs: RunInputs<'_>) -> Result<Option<BackupReport>> {
     let filename_str = filename::resolve(&inputs.settings.filename_pattern, notebox_name, now);
     let archive_path = dest_root.join(&filename_str);
 
-    // Windows long-path pre-flight. Without LongPathsEnabled the limit
-    // is 260 chars including the null terminator; we error out before
-    // calling `File::create` so the user sees a clear message instead
-    // of a low-level ERROR_PATH_NOT_FOUND from CreateFileW.
+    // Windows path length check: without LongPathsEnabled the limit is 260
+    // characters, so fail clearly here instead of with ERROR_PATH_NOT_FOUND
+    // from CreateFileW.
     #[cfg(target_os = "windows")]
     {
         if archive_path.as_os_str().len() >= 260 {
@@ -112,10 +101,8 @@ pub fn run(inputs: RunInputs<'_>) -> Result<Option<BackupReport>> {
         }
     }
 
-    // Resolve password from the keychain only if encryption is enabled.
-    // We treat "password_protected=true but no entry in keychain" as a
-    // hard error — silently dropping encryption would be a security
-    // foot-gun ("I set a password, why is my backup unencrypted?").
+    // With encryption on but no keychain password, fail: silently writing an
+    // unencrypted backup would be a security trap.
     let password_string;
     let password_ref = if inputs.settings.password_protected {
         match password::get()? {
@@ -150,21 +137,15 @@ pub fn run(inputs: RunInputs<'_>) -> Result<Option<BackupReport>> {
     }) {
         Ok(s) => s,
         Err(e) => {
-            // Best-effort cleanup of the partial archive on any error.
-            // Particularly important for `Cancelled`: leaving a corrupt
-            // half-zip lying around in the destination would confuse
-            // both the retention pruner and the restore browser.
+            // Remove the partial archive on any error (including cancel), so it
+            // doesn't confuse pruning or the restore browser.
             let _ = std::fs::remove_file(&archive_path);
             return Err(e);
         }
     };
 
-    // Retention prune. Keep the N most recent matching archives; the
-    // one we just wrote is included in the count, so a keep_count of 7
-    // means "this one plus the six previous". keep_count of 0 is
-    // treated as 1 (delete everything older than this one) rather than
-    // "delete all" — interpreting 0 as "delete every archive" would
-    // foot-gun a user who fat-fingered the input.
+    // Keep the `keep_count` newest archives, this one included. 0 counts as 1,
+    // rather than deleting everything.
     let keep = inputs.settings.keep_count.max(1) as usize;
     let archives = archive::list_matching_archives(&dest_root, &inputs.settings.filename_pattern)?;
     let mut pruned = 0;
@@ -205,10 +186,8 @@ pub fn run(inputs: RunInputs<'_>) -> Result<Option<BackupReport>> {
     }))
 }
 
-/// Record a failure into the persisted backup state for `notebox_root`
-/// without changing its `last_success_unix` timestamp. Used by the manual
-/// run and the scheduler tick so the settings UI can surface "Last attempt
-/// failed: <message>" for the notebox the attempt was made against.
+/// Record a failure in the notebox's backup state without changing
+/// `last_success_unix`, so Settings can show "Last attempt failed: <message>".
 pub fn record_failure(notebox_root: &Path, message: &str) {
     let mut st = state::load(notebox_root);
     st.last_status = Some(message.to_string());
@@ -223,15 +202,12 @@ fn newest_mtime_under(root: &Path) -> Option<i64> {
     let mut max = 0i64;
     let walker = walkdir::WalkDir::new(root).follow_links(true).into_iter();
     for entry in walker.flatten() {
-        // Skip dot-folders that we don't archive anyway, so a stale
-        // `.git` index doesn't keep triggering scheduled backups
-        // forever after a single commit.
+        // Ignore `.git`, which isn't archived, so a commit doesn't keep
+        // triggering scheduled backups.
         if entry.path().components().any(|c| c.as_os_str() == ".git") {
             continue;
         }
-        // walkdir::DirEntry::metadata returns walkdir::Result, but
-        // SystemTime modification returns io::Result — pulling them
-        // apart side-steps the "and_then with two error types" issue.
+        // Separate the walkdir and io errors.
         let meta = match entry.metadata() {
             Ok(m) => m,
             Err(_) => continue,

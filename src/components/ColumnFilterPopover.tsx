@@ -1,13 +1,10 @@
-// The type-aware quick filter that drops from a collection column header.
+// Typed quick filter that drops down from a collection column header, branching
+// on the column's filter kind (list / text / number / date / checkbox; see
+// column-filter.ts). It keeps only its editing state; `onApply` gives the
+// parent the resulting `FilterGroup` (or `null` to clear the column).
 //
-// One popover, branching on the column's resolved filter kind (list / text /
-// number / date / checkbox — see column-filter.ts). It owns only its in-flight
-// editing state; committing a filter is the parent's job via `onApply`, which
-// receives the lowered `FilterGroup` (or `null` to clear the column).
-//
-// Positioning reuses `anchorPanelMenu` (fixed-position, escapes the table's
-// overflow) and dismissal reuses the `clickOutside` directive — the same
-// machinery as the panel sort menus, so behaviour stays consistent.
+// Placed with `anchorPanelMenu` (fixed, escaping the table's overflow) and
+// closed by the `clickOutside` directive, as the panel sort menus are.
 
 import { Component, For, Show, createSignal } from "solid-js";
 import { Portal } from "solid-js/web";

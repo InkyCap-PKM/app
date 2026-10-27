@@ -1,13 +1,11 @@
 import type { Component } from "solid-js";
 
 /**
- * "Typst documentation" mark — a book glyph (Lucide's book-alert outline) with
- * a Typst "T" on the cover. Custom; lucide-solid has no Typst icon.
+ * "Typst documentation" icon: a book (Lucide's book-alert outline) with a Typst
+ * "T" on the cover.
  *
- * ⚠ Master lives at design-assets/typst-documentation.svg. Kept in sync BY
- * HAND — redraw one, redraw the other. The book is stroked and the "T" is a
- * filled glyph path; both render in `currentColor` so the icon matches the
- * surrounding toolbar/header glyphs and themes correctly.
+ * Master: design-assets/typst-documentation.svg, kept in step by hand. The book
+ * is stroked and the "T" filled, both in `currentColor`.
  */
 export const TypstDocIcon: Component<{ size?: number; class?: string }> = (
   props,

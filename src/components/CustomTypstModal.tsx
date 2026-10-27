@@ -1,15 +1,14 @@
 /**
- * CustomTypstModal — a focused editor for a collection's raw "Custom Typst".
+ * CustomTypstModal: an editor for a collection's "Custom Typst".
  *
- * The Style Overrides pane exposes a curated set of styling knobs; this is the
- * power-user escape hatch for anything Typst can do that the UI doesn't model
- * (custom `#show` rules, running headers, etc.). The value is injected verbatim
- * at export, after the generated style rules and any template, so it wins.
+ * Style Overrides offers a set of style options; this is for anything else
+ * Typst can do (custom `#show` rules, running headers, …). It is added as is at
+ * export, after the generated style rules and any template, so it wins.
  *
- * The sidebar is too narrow to author code in comfortably, so editing happens
- * here in a large modal with the app's Typst syntax highlighting (reusing the
- * source editor's parser/theme via `editableTypstExtensions`). InkyCap never
- * parses this back — Save just writes the buffer string to the `.collection`.
+ * The sidebar is too narrow for writing code, so this is a large dialog with
+ * Typst highlighting (the source editor's parser and theme, via
+ * `editableTypstExtensions`). The text is never parsed back; Save writes it to
+ * the `.collection`.
  */
 
 import { onMount, onCleanup, Show } from "solid-js";
@@ -26,9 +25,11 @@ interface CustomTypstModalProps {
   collectionName: string;
   onSave: (value: string) => void;
   onClose: () => void;
-  /** The collection's assigned Typst template spec, if any. When set, an
-   *  "Insert template setup" action reads the template's starter scaffold and
-   *  prepends its `#show: …` apply rule for the user to fill in. */
+  /**
+   * The collection's Typst template, if any. Then "Insert template setup" reads
+   * the template's starter scaffold and adds its `#show: …` rule at the top for
+   * the user to fill in.
+   */
   templateSpec?: string;
   /** When true (the Appearance tab's "Set up template…" path), insert the
    *  starter automatically on open if the template isn't applied yet. */
@@ -54,9 +55,8 @@ export default function CustomTypstModal(props: CustomTypstModalProps) {
       }),
       parent: editorParent,
     });
-    // Focus after the modal has laid out and painted so the caret is drawn
-    // immediately, rather than only appearing after the first keystroke forces
-    // a measure pass.
+    // Focus after the dialog is laid out and painted, so the caret shows at
+    // once rather than after the first keystroke.
     requestAnimationFrame(() => view?.focus());
     // Guided path: drop in the template's starter rule on open so the user
     // lands straight on the metadata to fill in.
@@ -89,9 +89,9 @@ export default function CustomTypstModal(props: CustomTypstModalProps) {
       return;
     }
     const current = view.state.doc.toString();
-    // Detect an existing application by the rule's leading `#show: <fn>` marker
-    // (everything before `.with`), so we don't re-insert once the user has
-    // edited the metadata — the full snippet would no longer match verbatim.
+    // Look for the rule's leading `#show: <fn>` (everything before `.with`), so
+    // it isn't inserted again after the user edited the arguments (when the
+    // full snippet would no longer match).
     const marker = snippet.split(".with")[0].trim();
     if (!current.includes(marker)) {
       const insert = current.trim().length > 0 ? `${snippet}\n\n` : `${snippet}\n`;

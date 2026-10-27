@@ -1,28 +1,25 @@
-//! Offline package handoff (Phase 7): collaborate with no hosted git server.
+//! Offline package handoff: collaborate without a git server.
 //!
-//! [`export`] writes a notebox's whole `.git` directory to a single
-//! (optionally AES-256-encrypted) zip; [`extract_to_temp`] unpacks a received
-//! package into a temporary staging repository that `git2` can clone or fetch
-//! from via a local filesystem path. Because the package carries the entire
-//! commit graph, the merge base travels with it, so importing reconciles
-//! through the very same 3-way merge as a server Sync (see `run_sync` in
-//! [`crate::commands::git`]) — the only new code here is the packaging itself.
+//! [`export`] writes a notebox's `.git` folder into one zip (optionally
+//! AES-256-encrypted); [`extract_to_temp`] unpacks a received package into a
+//! temporary repository that `git2` can clone or fetch from by path. The
+//! package carries the full history, including the merge base, so import uses
+//! the same 3-way merge as a server Sync (`run_sync` in
+//! [`crate::commands::git`]).
 //!
-//! **Only `.git` travels.** It is a complete repository: the working tree is
-//! reconstructed on import (clone or checkout), and the per-machine scratch a
-//! collaborative `.gitignore` excludes (`.inkycap/incoming`,
-//! `.inkycap/local.json`) is never committed, so it is correctly absent. Notes,
-//! attachments, the bundled `inkycap-notebox` library and the shared
-//! `.inkycap/settings.json` are all committed and so ride along.
+//! **Only `.git` is packaged.** The working files are rebuilt on import, and
+//! per-machine files the collaborative `.gitignore` excludes
+//! (`.inkycap/incoming`, `.inkycap/local.json`) are never committed. Notes,
+//! attachments, the `inkycap-notebox` library and `.inkycap/settings.json` are
+//! committed, so they come along.
 
 use std::path::{Component, Path, PathBuf};
 
 use crate::errors::{InkyCapError, Result};
 use crate::storage::zip_archive::{self, ZipBuilder};
 
-/// Interior prefix under which the repository is stored in a package zip.
-/// Fixing it makes extraction unambiguous and lets the importer reject any
-/// entry that is not part of the packaged repository.
+/// Folder the repository is stored under in a package zip; any other entry is
+/// rejected on import.
 const GIT_PREFIX: &str = ".git/";
 
 /// What an [`export`] wrote, for the success report.
@@ -32,10 +29,9 @@ pub struct PackageSummary {
     pub uncompressed_bytes: u64,
 }
 
-/// Zip the notebox's `.git` directory into `dest`, AES-256-encrypted when
+/// Zip the notebox's `.git` folder into `dest`, AES-256-encrypted when
 /// `password` is `Some`. `root` must be a git repository. The caller commits
-/// any pending working edits first (so the package carries the latest); this
-/// writes exactly what `.git` holds.
+/// pending edits first; this writes what `.git` holds.
 pub fn export(root: &Path, dest: &Path, password: Option<&str>) -> Result<PackageSummary> {
     let git_dir = root.join(".git");
     if !git_dir.is_dir() {
@@ -64,9 +60,8 @@ pub fn export(root: &Path, dest: &Path, password: Option<&str>) -> Result<Packag
         let interior = format!("{GIT_PREFIX}{}", interior_path(rel));
         let ft = entry.file_type();
         if ft.is_dir() {
-            // Record only empty directories; non-empty ones are implied by
-            // their files. Git keeps a few empty dirs (e.g. `refs/tags`), so
-            // preserving them keeps the extracted repo faithful.
+            // Record empty folders only (others are implied by their files);
+            // git keeps a few (e.g. `refs/tags`).
             let empty = std::fs::read_dir(path)
                 .map(|mut d| d.next().is_none())
                 .unwrap_or(false);
@@ -93,15 +88,14 @@ fn interior_path(rel: &Path) -> String {
         .join("/")
 }
 
-/// Extract a received package into a fresh temporary staging directory and
-/// return it. The result holds a `.git` directory — a complete repository
-/// `git2` can clone or fetch from via [`tempfile::TempDir::path`]. The caller
-/// keeps the returned `TempDir` alive for the import; it is removed on drop.
+/// Extract a received package into a new temporary folder holding a complete
+/// `.git` repository, which `git2` can clone or fetch from via
+/// [`tempfile::TempDir::path`]. Keep the `TempDir` for the import; it is
+/// deleted on drop.
 ///
-/// Defends against a malicious package: every entry must be under `.git/` and
-/// resolve to a path inside the staging dir (no `..`, no absolute components),
-/// and entries are always materialized as regular files/dirs — never as
-/// symlinks — so a crafted package cannot create a link to escape later.
+/// Guards against a malicious package: every entry must be under `.git/` and
+/// land inside the folder (no `..` or absolute parts), and entries are always
+/// written as regular files and folders, never symlinks.
 pub fn extract_to_temp(archive: &Path, password: Option<&str>) -> Result<tempfile::TempDir> {
     let entries = zip_archive::list_entries(archive)?;
     let staging = tempfile::tempdir()?;
@@ -144,9 +138,9 @@ pub fn extract_to_temp(archive: &Path, password: Option<&str>) -> Result<tempfil
     Ok(staging)
 }
 
-/// Join a forward-slash zip interior path onto `root`, rejecting empty/`.`/`..`
-/// and any non-plain component (absolute paths, Windows prefixes) so the result
-/// cannot escape `root`.
+/// Join a zip path (with `/`) onto `root`, rejecting empty, `.`, `..` and other
+/// non-plain parts (absolute paths, Windows prefixes), so the result stays
+/// inside `root`.
 fn safe_join(root: &Path, interior: &str) -> Result<PathBuf> {
     let mut out = root.to_path_buf();
     for part in interior.split('/') {

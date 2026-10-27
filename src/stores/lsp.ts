@@ -32,16 +32,13 @@ export async function startLsp(noteboxPath: string): Promise<void> {
   }
 }
 
-// tinymist writes its operational logs to stderr in the form
+// tinymist logs to stderr as
 //   [<timestamp> <LEVEL> <target>] <message>
-// where LEVEL is ERROR / WARN / INFO / DEBUG / TRACE. The whole stream used to
-// be forwarded at `console.warn`, so routine INFO chatter (server startup,
-// "did open file", a note that doesn't compile cleanly for the LSP, …) showed
-// up as a wall of warnings and buried any real problem. Route each line to the
-// matching console level instead: errors/warnings stay visible, and the routine
-// INFO/DEBUG/TRACE stream drops to `console.debug` (hidden unless the devtools
-// "Verbose" level is on). Our own transport-level failures (process error,
-// non-zero exit) carry no level token and are surfaced as errors.
+// with LEVEL ERROR / WARN / INFO / DEBUG / TRACE. Each line goes to the
+// matching console level: errors and warnings stay visible, INFO/DEBUG/TRACE go
+// to `console.debug` (shown only at the devtools "Verbose" level). Our own
+// transport failures (process error, non-zero exit) have no level and are shown
+// as errors.
 function routeLspLog(raw: string) {
   for (const line of raw.split("\n")) {
     const text = line.trim();

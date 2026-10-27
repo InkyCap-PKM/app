@@ -17,9 +17,8 @@ pub use crate::storage::traits::FileTreeNode;
 pub struct LinkInfo {
     pub path: String,
     pub name: String,
-    /// Unix epoch seconds. Zero when stat is unavailable (file deleted
-    /// between index time and IPC call) — the Links pane's mtime/ctime
-    /// sort treats 0 as "unknown" and pushes the entry to the bottom.
+    /// Unix seconds; zero when stat failed (e.g. the file was deleted
+    /// meanwhile). The Links pane sorts zeros last.
     pub modified_time: u64,
     pub created_time: u64,
     /// The linked note's `#note(zid:)`, when present. `None` for notes
@@ -70,10 +69,8 @@ pub async fn get_file_tree(
     let storage = session.get_storage().await?;
     let mut tree = storage.get_file_tree().await?;
 
-    // Enrich note nodes with their `zid` so the file tree can sort by it.
-    // The storage walk doesn't read note metadata; join against the property
-    // index here under a single brief read lock (a hashmap lookup per node,
-    // no extra file I/O).
+    // Add each note's `zid` from the property index, for sorting by it; one
+    // brief read lock, no file reads.
     {
         let index = session.property_index.read().await;
         enrich_tree_zids(&mut tree, &index);
@@ -99,16 +96,13 @@ fn enrich_tree_zids(
     }
 }
 
-/// Return parsed `#note(...)` metadata for a file.
+/// A file's `#note(...)` metadata.
 ///
-/// Answered from the property index once it is built. While the indexes are
-/// still being built after open, the answer comes from the metadata cache
-/// instead, when it holds a fresh entry for the file (the same entry the build
-/// will reuse), so the Properties panel does not wait behind the notebox-wide
-/// scan. With nothing trustworthy cached the call fails with `IndexNotReady`
-/// and the panel asks again on `notebox:index-ready`. After the build, a file
-/// the index does not know (created out-of-band) is read and indexed on
-/// demand.
+/// From the property index once built. While the indexes are still building,
+/// from the metadata cache if it has a fresh entry, so the Properties panel
+/// doesn't wait; otherwise `IndexNotReady`, and the panel retries on
+/// `notebox:index-ready`. After the build, a file the index doesn't know is
+/// read and indexed on demand.
 #[tauri::command]
 pub async fn get_file_metadata(
     path: String,
@@ -134,9 +128,8 @@ pub async fn get_file_metadata(
             .ok_or(InkyCapError::IndexNotReady);
     }
 
-    // Fallback: file isn't in the index (created out-of-band, or missed by the
-    // scan). Read it and reindex on demand so the panel doesn't stay
-    // permanently blank until the user edits the file.
+    // Not in the index (created outside the app, or missed): read and index it
+    // now.
     let storage = session.get_storage().await?;
     let content = storage.read_file(&path_buf).await?;
     session.reindex_note(&path_buf, &content).await;
@@ -149,12 +142,9 @@ pub async fn get_file_metadata(
         .ok_or(InkyCapError::FileNotFound(path))
 }
 
-/// Stat a list of linked notes into [`LinkInfo`] rows. The filesystem stats
-/// run on a blocking pool — never on the async worker, and never while holding
-/// the `link_index` / `property_index` read lock (a concurrent reindex needs
-/// the write lock). Callers snapshot the `(path, zid)` pairs off the indexes
-/// first, then call this; `zid` is read from the property index because it
-/// lives in the note's `#note(...)` metadata, not on the filesystem.
+/// [`LinkInfo`] rows for linked notes. Stats run on a blocking thread and never
+/// under an index lock (a reindex needs the write lock), so callers take the
+/// `(path, zid)` pairs from the indexes first.
 async fn link_infos_for(paths: Vec<(PathBuf, Option<String>)>) -> Vec<LinkInfo> {
     tauri::async_runtime::spawn_blocking(move || {
         paths
@@ -176,9 +166,7 @@ async fn link_infos_for(paths: Vec<(PathBuf, Option<String>)>) -> Vec<LinkInfo> 
     .unwrap_or_default()
 }
 
-/// Pair each path with the `zid` recorded in the property index, snapshotting
-/// under a brief read lock so no lock is held across the stat I/O that
-/// [`link_infos_for`] performs.
+/// Pair each path with its `zid`, under a brief read lock.
 async fn paths_with_zid(
     session: &NoteboxSession,
     paths: Vec<PathBuf>,
@@ -229,10 +217,9 @@ pub async fn get_forward_links(
     Ok(link_infos_for(paths_with_zid(&session, links).await).await)
 }
 
-/// Return the notes that use the notebox file at `path` (an image, PDF,
-/// media or data file) through `#image`, `#read`, `#bibliography`, `#video`
-/// or `#audio`. Paths built by code at compile time can't be seen, so a file
-/// used only that way is not listed.
+/// Notes that use the file at `path` through `#image`, `#read`,
+/// `#bibliography`, `#video` or `#audio`. Paths computed at compile time can't
+/// be seen.
 #[tauri::command]
 pub async fn get_attachment_references(
     path: String,
@@ -256,15 +243,9 @@ pub async fn get_attachment_references(
     Ok(link_infos_for(paths_with_zid(&session, notes).await).await)
 }
 
-/// One entry in the Outbound Links section of the right-panel Links tab.
-/// Combines wikilink-target resolution with file stat in one IPC so the
-/// frontend doesn't have to fan out per-target requests just to sort by
-/// modified/created time.
-///
-/// `path` / `modified_time` / `created_time` / `name` are populated only
-/// when the target resolves to a real note. For unresolved targets,
-/// `name` holds the raw wikilink text (for "Create" affordance) and
-/// `path` is empty.
+/// An Outbound Links row: the resolved target and its file times in one IPC, so
+/// the frontend can sort without a request per target. For an unresolved
+/// target, `path` is empty and `name` is the wikilink text (for "Create").
 #[derive(serde::Serialize)]
 pub struct OutboundLink {
     /// Raw wikilink target as authored in the source note.
@@ -280,10 +261,8 @@ pub struct OutboundLink {
     pub zid: Option<String>,
 }
 
-/// Return every wikilink target from the note's `#note(...)` metadata,
-/// resolved to a file when possible. Replaces the previous frontend
-/// loop of `getFileMetadata` → `resolveWikilink` per target so the
-/// Links pane can sort by mtime/ctime without N extra round-trips.
+/// Every wikilink target in the note's metadata, resolved to a file where
+/// possible, with file times for sorting.
 #[tauri::command]
 pub async fn get_outbound_links(
     path: String,
@@ -293,9 +272,8 @@ pub async fn get_outbound_links(
     let session = state.session(window.label()).await;
     let path_buf = sanitize_notebox_arg(&path)?;
 
-    // Read raw wikilink targets from the note's metadata, falling back to
-    // an on-demand reindex if the property index hasn't seen this file
-    // yet (matches `get_file_metadata`'s behaviour).
+    // From the metadata, indexing the file on demand if needed (as
+    // `get_file_metadata` does).
     let raw_targets: Vec<String> = {
         let prop_index = session.property_index.read().await;
         if let Some(meta) = prop_index.notes.get(&path_buf) {
@@ -398,9 +376,8 @@ pub async fn write_file_content(
 ) -> Result<(), InkyCapError> {
     let session = state.session(window.label()).await;
     if session.is_documentation() {
-        // Documentation notebox: keep the edit in the editor for the session
-        // but never persist it. A silent Ok keeps autosave seamless while
-        // nothing reaches disk, so reopening the manual is always pristine.
+        // Documentation notebox: keep the edit in the editor but never save it,
+        // so the manual stays pristine.
         return Ok(());
     }
     let storage = session.get_storage().await?;
@@ -433,11 +410,8 @@ pub async fn update_property(
     let path_buf = sanitize_notebox_arg(&path)?;
 
     let content = storage.read_file(&path_buf).await?;
-    // Ensure the inkycap-notebox import is present before the rewriter
-    // synthesizes a `#note(...)` call. Without this, a note that has no
-    // import yet gets a `#note(...)` call referencing an unbound symbol —
-    // `typst query` fails on reindex, and the new property never reaches
-    // the property index, leaving the panel blank after first add.
+    // Add the notebox import first, so the `#note(...)` the rewriter adds is
+    // defined; otherwise the reindex fails and the property never appears.
     let content = crate::notebox_package::ensure_import(&content);
     let updated = note_rewriter::update_note_property(&content, &key, &value);
     storage.write_file(&path_buf, &updated).await?;
@@ -448,12 +422,9 @@ pub async fn update_property(
     Ok(())
 }
 
-/// Set (or clear) a note's document-level recurrence rule
-/// (`#note(recurrence: (…))`). Passing `None` removes the argument. The rule is
-/// structured, not a generic scalar property, so it bypasses `update_property`
-/// and writes the Typst dict directly via the raw-argument upsert — keeping it
-/// out of the generic property surfaces while sharing the same round-trip-safe
-/// rewriter.
+/// Set or clear (`None`) a note's `#note(recurrence: (…))`. Structured, so it
+/// is written as a Typst dict through the raw-argument upsert rather than
+/// `update_property`.
 #[tauri::command]
 pub async fn set_note_recurrence(
     path: String,
@@ -483,12 +454,10 @@ pub async fn set_note_recurrence(
     Ok(())
 }
 
-/// Read a notebox media file as raw bytes, returned to the webview as an
-/// ArrayBuffer (no base64 inflation). The frontend wraps these in a `blob:`
-/// URL to play `#video` / `#audio`: WebKitGTK doesn't reliably stream media
-/// through Tauri's custom asset protocol (images work, media silently fails),
-/// but blob URLs play everywhere. `target` is a notebox-root-absolute path
-/// like `/Assets/clip.mp4`; traversal is blocked by `validate_notebox_path`.
+/// A media file's bytes, returned as an ArrayBuffer for a `blob:` URL that
+/// plays `#video` / `#audio` (WebKitGTK doesn't reliably stream media through
+/// the asset protocol). `target` is notebox-root-absolute (`/Assets/clip.mp4`);
+/// `validate_notebox_path` blocks traversal.
 #[tauri::command]
 pub async fn read_media_bytes(
     target: String,
@@ -496,9 +465,7 @@ pub async fn read_media_bytes(
     window: tauri::WebviewWindow,
 ) -> Result<tauri::ipc::Response, InkyCapError> {
     let session = state.session(window.label()).await;
-    // Clone the root and drop the lock before any filesystem work — media can
-    // be hundreds of MB, and we must not hold the notebox_root read lock (or
-    // block the async worker) across the read.
+    // Release the lock before reading; media can be hundreds of MB.
     let root = session
         .notebox_root
         .read()
@@ -518,10 +485,9 @@ pub async fn read_media_bytes(
     Ok(tauri::ipc::Response::new(bytes))
 }
 
-/// Largest file sent whole to the webview. The webview keeps several copies
-/// of a file while turning it into something it can display (the IPC
-/// transfer, the buffer, the blob), so a 900 MB video took over 2 GB and
-/// froze the app. Larger files open in the system's default application.
+/// Largest file sent to the webview whole. The webview holds several copies
+/// while displaying a file, so a 900 MB video used over 2 GB. Larger files open
+/// in the default application.
 const WEBVIEW_FILE_LIMIT_BYTES: u64 = 256 * 1024 * 1024;
 
 /// Refuse a file too large to send whole to the webview (see
@@ -535,19 +501,15 @@ async fn ensure_small_enough_for_webview(path: &std::path::Path) -> Result<(), I
     Ok(())
 }
 
-/// Resolve an embed target to an absolute notebox file path, or `None` when
-/// nothing matches. Two forms, mirroring how notes reference attachments:
+/// Resolve an embed target to an absolute path in the notebox, or `None`:
 ///
-/// - **Path form** (`/Assets/foo.png`, `Assets/foo.png`): a notebox-root-
-///   relative path with the leading slash optional, matching Typst's own
-///   `#image("/Assets/foo.png")` semantics. Resolved directly; `..` traversal
-///   is rejected by `validate_notebox_path`.
-/// - **Bare filename** (`foo.png`): searched across the whole notebox by name
+/// - **Path** (`/Assets/foo.png` or `Assets/foo.png`): notebox-relative,
+///   leading slash optional, as in Typst's `#image`. `validate_notebox_path`
+///   rejects `..`.
+/// - **Bare file name** (`foo.png`): searched across the notebox
 ///   (case-insensitive, shortest path wins).
 ///
-/// Shared by [`resolve_embed_path`] (hands the path string to the frontend) and
-/// [`read_embed_bytes`] (streams the bytes to the webview) so both honour the
-/// exact same resolution rules.
+/// Shared by [`resolve_embed_path`] and [`read_embed_bytes`].
 async fn resolve_embed_target(
     target: &str,
     storage: &crate::storage::local::LocalNoteboxStorage,
@@ -623,15 +585,11 @@ pub async fn resolve_embed_path(
     Ok(resolved.map(|p| to_frontend_string(&p)))
 }
 
-/// Read an embedded image as raw bytes, returned to the webview as an
-/// ArrayBuffer the visual editor wraps in a `blob:` URL.
-///
-/// Tauri's asset protocol is switched off (it was unreliable for media on
-/// WebKitGTK and for images on Windows), so this command and
-/// [`read_media_bytes`] are the only way notebox files reach the webview. A
-/// blob URL renders identically on every OS. `target` accepts the same path /
-/// bare-filename forms as [`resolve_embed_path`]; `validate_notebox_path`
-/// blocks traversal and symlinks out of the notebox.
+/// An embedded image's bytes as an ArrayBuffer, for a `blob:` URL in the visual
+/// editor. The asset protocol is off (unreliable on WebKitGTK and Windows), so
+/// this and [`read_media_bytes`] are how notebox files reach the webview.
+/// `target` takes the forms [`resolve_embed_path`] does;
+/// `validate_notebox_path` blocks traversal and symlinks out of the notebox.
 #[tauri::command]
 pub async fn read_embed_bytes(
     target: String,
@@ -698,14 +656,10 @@ pub async fn resolve_wikilink(
     Ok(Some(to_frontend_string(matches[0])))
 }
 
-/// Find an existing note anywhere in the notebox whose wikilink stem matches
-/// `name` (case-insensitively), returning the shortest-path match.
-///
-/// Note filenames are unique across the whole notebox: wikilinks resolve by
-/// stem (see [`crate::link_index`]), so the same stem in two different folders
-/// makes `[[Name]]` ambiguous and surfaces the note twice. The note-creation
-/// paths use this to open the existing note instead of writing a duplicate.
-/// `name` may carry a trailing `.typ`; it is normalized through `note_stem`.
+/// An existing note whose stem matches `name` (case-insensitive), shortest path
+/// first. Note names are unique across the notebox, since wikilinks resolve by
+/// stem (see [`crate::link_index`]); note creation uses this to open the
+/// existing note instead of duplicating it. `name` may end in `.typ`.
 pub(crate) async fn existing_note_with_stem(
     session: &NoteboxSession,
     name: &str,
@@ -723,15 +677,10 @@ pub(crate) async fn existing_note_with_stem(
         .cloned()
 }
 
-/// Create a new note file. Returns the full path of the created file.
-/// If scaffold_content is provided, it is used as the initial content.
-/// Otherwise the file starts with the inkycap-notebox import line.
-///
-/// Filenames are notebox-globally unique (wikilinks resolve by stem; see
-/// [`existing_note_with_stem`]). Re-creating a note at the exact same path
-/// opens it. A name that collides with a note in a *different* folder returns
-/// [`InkyCapError::NoteNameConflict`] (carrying the existing path) instead of
-/// duplicating — the frontend prompts the user to open it or rename.
+/// Create a note and return its path, with `scaffold_content` or just the
+/// notebox import. The same path again opens the existing note. A name used by
+/// a note in another folder returns [`InkyCapError::NoteNameConflict`] with
+/// that path, so the frontend can offer to open it or rename.
 #[tauri::command]
 pub async fn create_note(
     name: String,
@@ -769,11 +718,8 @@ pub async fn create_note(
     if file_path.exists() {
         return Ok(to_frontend_string(&file_path));
     }
-    // A note with this name living in a *different* folder is a real conflict:
-    // filenames are notebox-globally unique (wikilinks resolve by stem), so a
-    // second one would make `[[Name]]` ambiguous. Don't decide for the user —
-    // signal the conflict with the existing path so the frontend can ask
-    // whether to open it or pick a different name.
+    // A note with this name in another folder would make `[[Name]]` ambiguous;
+    // return the conflict so the frontend can ask.
     if let Some(existing) = existing_note_with_stem(&session, &filename).await {
         return Err(InkyCapError::NoteNameConflict(to_frontend_string(
             &existing,
@@ -841,11 +787,8 @@ pub async fn get_note_headings(
     Ok(extract_headings(&content))
 }
 
-/// Project the parser's headings onto the shape the frontend consumes.
-///
-/// Which lines are headings is [`source_structure::headings`]'s call — the
-/// same parser the compiler runs — so `= Example` inside a ``` fence never
-/// reaches heading autocomplete as if it were a section.
+/// The headings for the frontend, as found by [`source_structure::headings`],
+/// so `= Example` in a code block isn't offered.
 fn extract_headings(content: &str) -> Vec<HeadingInfo> {
     source_structure::headings(content)
         .into_iter()
@@ -867,10 +810,9 @@ pub struct LabelInfo {
     pub context: String,
 }
 
-/// Get the standalone labels in a note — the ones a writer attached to prose, a
-/// figure, or an equation, as opposed to a heading's own label, which
-/// [`get_note_headings`] already reports. Drives the wikilink picker's label
-/// list, so `[[Note::` can link to any anchor in the target note.
+/// A note's standalone labels (on prose, figures, equations); heading labels
+/// come from [`get_note_headings`]. Used by the wikilink picker after
+/// `[[Note::`.
 #[tauri::command]
 pub async fn get_note_labels(
     path: String,
@@ -890,9 +832,8 @@ pub async fn get_note_labels(
         .collect())
 }
 
-/// Ensure a heading in the target note has a `<label>` tag. If the heading
-/// exists but lacks a label, one is auto-inserted. Returns the label that
-/// was applied (existing or newly generated).
+/// Make sure a heading in the target note has a `<label>`, adding one if
+/// needed. Returns the label.
 #[tauri::command]
 pub async fn ensure_heading_label(
     path: String,
@@ -928,13 +869,9 @@ pub async fn ensure_heading_label(
     Ok(Some(label))
 }
 
-/// Write ` <label>` onto the end of `heading`, returning the new source.
-///
-/// The insertion point is the byte offset the parser reports for the end of
-/// the heading — no re-finding the line by prefix, so a look-alike line
-/// elsewhere in the note can't be hit by mistake, and the rest of the file is
-/// copied through byte for byte. Trailing spaces before the line break are
-/// absorbed, so the result reads `= Title <label>`, not `= Title <label>   `.
+/// Append ` <label>` to `heading` at the end offset the parser reports, so a
+/// similar line elsewhere can't be hit, and copy the rest byte for byte.
+/// Trailing spaces are dropped (`= Title <label>`).
 fn insert_heading_label(
     content: &str,
     heading: &source_structure::SourceHeading,
@@ -1031,9 +968,8 @@ pub struct NoteIdentifiers {
     pub zid: Option<String>,
 }
 
-/// Title and zid of every note that has at least one of them. Read from the
-/// in-memory property index (no file I/O), so it is cheap enough to call each
-/// time Quick Open is shown. Empty until the index finishes building.
+/// Title and zid of every note that has one, from the property index (no file
+/// reads), for Quick Open. Empty until the index is built.
 #[tauri::command]
 pub async fn get_note_identifiers(
     state: State<'_, AppState>,
@@ -1059,10 +995,9 @@ pub async fn get_note_identifiers(
         .collect())
 }
 
-/// The note whose `zid` property is `zid`, for `inkycap://` links that name a
-/// note by zid. When several notes share a zid, the one with the fewest path
-/// components wins, as for wikilinks. `None` when no note has it, including
-/// while the index is still being built, so callers wait for the index first.
+/// The note with this `zid`, for `inkycap://` links. With several, the shortest
+/// path wins, as for wikilinks. `None` if none, including while the index
+/// builds.
 #[tauri::command]
 pub async fn find_note_by_zid(
     state: State<'_, AppState>,
@@ -1090,9 +1025,8 @@ fn preferred_path<'a>(paths: impl Iterator<Item = &'a PathBuf>) -> Option<&'a Pa
     })
 }
 
-/// Trim trailing whitespace and truncate to a printable character budget,
-/// appending an ellipsis when the original was longer. UTF-8 safe: works
-/// on `chars()` so a multi-byte glyph at the boundary isn't sliced.
+/// Trim trailing whitespace and cut to `max_chars` characters with an ellipsis,
+/// by `chars()`.
 fn trim_snippet(line: &str, max_chars: usize) -> String {
     let trimmed = line.trim_end();
     let char_count = trimmed.chars().count();
@@ -1104,17 +1038,13 @@ fn trim_snippet(line: &str, max_chars: usize) -> String {
     out
 }
 
-/// One entry in the "Potential Links" list shown beneath Outbound Links
-/// in the right-panel Links tab. Returned by [`get_potential_links`]:
-/// a note that mentions the current note's name but does not have a
-/// resolved wikilink to it.
+/// A Potential Links row: a note that mentions this note's name without linking
+/// to it (see [`get_potential_links`]).
 #[derive(serde::Serialize)]
 pub struct PotentialLink {
     pub path: String,
     pub name: String,
-    /// First matching line (trimmed). Empty string when the search engine
-    /// returned a filter-only hit with no text match — those still satisfy
-    /// the phrase predicate but have nothing useful to render.
+    /// First matching line, trimmed; empty for a filter-only hit.
     pub line: String,
     /// `(start, end)` ranges of `line` where the note's name was found, in
     /// UTF-16 code units for the webview's highlight.
@@ -1128,14 +1058,9 @@ pub struct PotentialLink {
     pub zid: Option<String>,
 }
 
-/// Find notes that mention the current note's filename stem as a phrase but
-/// don't yet wikilink to it. Useful for surfacing missed link opportunities.
-///
-/// Strategy: phrase-search the notebox for the stem via the existing inverted
-/// index, then filter out (a) the current note itself, (b) any note already
-/// known to link to it (resolved or unresolved targets that match by stem),
-/// and (c) results whose only "match" is the wikilink call we'd otherwise
-/// suggest creating. Result count is capped to keep the panel snappy on
+/// Notes that mention this note's name as a phrase but don't link to it.
+/// Phrase-search the index for the name, then drop this note, notes already
+/// linking to it, and hits whose only match is a wikilink call. Capped for
 /// large noteboxes.
 #[tauri::command]
 pub async fn get_potential_links(
@@ -1242,10 +1167,7 @@ pub async fn get_potential_links(
             marks,
             context_before,
             context_after,
-            // SearchResult uses i64 (Tantivy/Hayagriva legacy); clamp to
-            // u64 to match the surrounding LinkInfo / FileTreeNode shape.
-            // Negative timestamps would only appear for pre-1970 ctime
-            // values, which we never see for notebox files.
+            // Clamp to u64; negative times only occur before 1970.
             modified_time: r.modified_time.max(0) as u64,
             created_time: r.created_time.max(0) as u64,
             zid: zid_by_path.get(&p).cloned().flatten(),
@@ -1254,10 +1176,8 @@ pub async fn get_potential_links(
     Ok(out)
 }
 
-/// Thin wrapper kept for the benefit of other command modules that
-/// historically called this symbol. New call sites should prefer
-/// `session.reindex_note(...)` directly — this helper exists only to avoid a
-/// sprawling rename.
+/// Shorthand for `session.reindex_note(...)`, for other command modules. Prefer
+/// the method in new code.
 pub async fn reindex_note_public(path: &std::path::Path, content: &str, session: &NoteboxSession) {
     session.reindex_note(path, content).await;
 }
@@ -1308,9 +1228,8 @@ mod heading_tests {
 
     #[test]
     fn insert_heading_label_absorbs_trailing_spaces_and_keeps_the_rest_byte_for_byte() {
-        // Trailing whitespace on the heading line goes; a CRLF line ending
-        // further down stays, because the rest of the file is copied, not
-        // re-joined line by line.
+        // Trailing spaces on the heading line are removed; CRLF endings
+        // elsewhere are kept.
         let content = "= Intro   \r\nbody\r\n";
         let heading = &source_structure::headings(content)[0];
         assert_eq!(
@@ -1321,8 +1240,8 @@ mod heading_tests {
 
     #[test]
     fn insert_heading_label_targets_the_parsed_heading_not_a_look_alike_line() {
-        // The fence holds a line identical to the real heading. Splicing by
-        // byte range can't hit it; the old prefix search could.
+        // The fence holds a line identical to the real heading; splicing by
+        // byte range must not touch it.
         let content = "```\n= Intro\n```\n\n= Intro\n";
         let heading = &source_structure::headings(content)[0];
         assert_eq!(

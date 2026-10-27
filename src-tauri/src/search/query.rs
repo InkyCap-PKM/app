@@ -1,14 +1,11 @@
 // Search query parser: text → AST.
 //
 // Supports terms, "phrases", AND/OR/NOT, wildcards (`*`), regex (`/pattern/`),
-// proximity operators (W/N, N/N), and a unified family of bare-prefix
-// filters that mirror Obsidian: `path:`, `file:`, `tag:`, `section:`,
-// `property:`, `annotation:`, `collection:`. Filter values are single
-// non-whitespace tokens; quote
-// (`property:author="Jane Doe"`) when the value contains spaces. Property
-// filters take a `key=value` form — `property:status=draft` matches notes
-// whose `status` property contains `draft`. The bare `property:key` form
-// matches any note that defines `key` regardless of value.
+// proximity (W/N, N/N) and Obsidian-style filters: `path:`, `file:`, `tag:`,
+// `section:`, `property:`, `annotation:`, `collection:`. A filter value is one
+// token; quote it if it has spaces (`property:author="Athena Otlet"`).
+// `property:status=draft` matches notes whose `status` contains `draft`;
+// `property:key` matches notes that define `key`.
 
 use std::fmt;
 
@@ -52,14 +49,13 @@ pub enum FilterKind {
     /// `property:name` — notes whose `#note(...)` call contains the named key.
     /// `property:name=value` — notes whose `name` property contains `value`.
     Property,
-    /// `annotation:keyword` — notes that carry an `#annotation[…]` or
-    /// `#suggestion[…]` whose body text contains `keyword`. A bare
-    /// `annotation:` (empty value) matches any note with an annotation.
+    /// `annotation:keyword`: notes with an `#annotation[…]` or `#suggestion[…]`
+    /// whose text contains `keyword`. An empty value matches any note with an
+    /// annotation.
     Annotation,
-    /// `collection:name` — scopes results to notes that belong to the
-    /// collection whose name (the `.collection` file stem, case-insensitive)
-    /// matches `name`. Membership is resolved from the collection's filters
-    /// by the command layer; the engine receives the precomputed member set.
+    /// `collection:name`: notes in the collection whose name (`.collection`
+    /// file stem, case-insensitive) matches. The command layer resolves the
+    /// members; the engine gets the set.
     Collection,
 }
 
@@ -93,9 +89,8 @@ impl fmt::Display for FilterKind {
     }
 }
 
-/// Collect the values of every `collection:` filter referenced anywhere in a
-/// parsed query (including inside boolean groups). The command layer uses
-/// these names to resolve each collection's member set before searching.
+/// The values of every `collection:` filter in a query (including within
+/// groups), so the command layer can resolve their members before searching.
 pub fn collection_filter_values(node: &QueryNode) -> Vec<String> {
     let mut out = Vec::new();
     collect_collection_values(node, &mut out);
@@ -182,12 +177,10 @@ fn tokenize(input: &str) -> Vec<Token> {
             continue;
         }
 
-        // NOTE: `/pattern/` is intentionally NOT auto-detected as a regex.
-        // Regex search is opt-in via the toolbar toggle (which routes through
-        // `QueryNode::Regex` directly in commands/search.rs); treating a bare
-        // `/` as a regex delimiter would mangle ordinary queries that contain
-        // slashes (paths, "and/or", dates). A leading `/` now just falls into
-        // the word reader below and is searched literally.
+        // `/pattern/` isn't treated as a regex here; regex search is the
+        // toolbar toggle (`QueryNode::Regex` in commands/search.rs). Otherwise
+        // queries with slashes (paths, "and/or", dates) would break. A leading
+        // `/` is read as part of a word.
 
         // Minus (NOT shorthand) — only if followed by a non-space character
         if chars[i] == '-' && i + 1 < len && !chars[i + 1].is_whitespace() {
@@ -196,19 +189,16 @@ fn tokenize(input: &str) -> Vec<Token> {
             continue;
         }
 
-        // Try filter prefix: identifier ':' value. Filter prefixes match
-        // path:, file:, tag:, section:, property: (case-insensitive). The
-        // value is either a quoted string (consumed verbatim, allowing
-        // spaces) or runs to the next whitespace / paren — single-token
-        // values match Obsidian's behavior and avoid accidental capture
-        // of subsequent filters.
+        // Filter prefix: identifier ':' value, for path:, file:, tag:,
+        // section:, property: (case-insensitive). The value is a quoted string
+        // (spaces allowed) or runs to the next whitespace or paren, as in
+        // Obsidian, so it doesn't swallow the next filter.
         if let Some((kind_len, kind)) = match_filter_prefix(&chars, i) {
             i += kind_len + 1; // past "<kind>:"
-                               // Read the value as a sequence of segments. A segment is either
-                               // a quoted run (`"..."` — spaces allowed inside) or an unquoted
-                               // run terminated by whitespace or a paren. Adjacent segments
-                               // concatenate, which makes `property:status="in progress"`
-                               // produce the value `status=in progress`.
+                               // The value is a run of segments, quoted (`"..."`, spaces
+                               // allowed) or unquoted (ending at whitespace or a paren),
+                               // joined together: `property:status="in progress"` gives
+                               // `status=in progress`.
             let mut value = String::new();
             let mut have_segment = false;
             loop {
@@ -561,9 +551,8 @@ mod tests {
 
     #[test]
     fn slash_query_is_literal_not_regex() {
-        // Regex is opt-in via the toolbar toggle; a slash-delimited query
-        // typed into the normal box must be searched literally, not parsed
-        // as a regex pattern.
+        // Regex is the toolbar toggle; a slash-delimited query in the search
+        // box is searched literally.
         let q = parse_query("/hel+o/").unwrap();
         assert!(
             matches!(q, QueryNode::Term(ref s) if s == "/hel+o/"),

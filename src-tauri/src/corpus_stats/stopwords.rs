@@ -1,34 +1,26 @@
-//! Layered stopword system for the corpus statistics engine.
+//! Stopwords for corpus statistics, in three layers:
 //!
-//! Three layers:
-//! 1. Built-in English + French natural-language stopwords (embedded consts).
-//!    Markup keywords are NOT filtered here — see the note below build_stopwords.
-//! 2. User custom stopwords (<notebox>/.inkycap/mycelial-stopwords.txt)
-//! 3. User dictionary (<notebox>/.inkycap/dictionary.txt) — force-includes
+//! 1. Built-in English and French stopwords. Markup keywords aren't filtered (see
+//!    the note below).
+//! 2. The user's stopwords (<notebox>/.inkycap/mycelial-stopwords.txt).
+//! 3. The user dictionary (<notebox>/.inkycap/dictionary.txt), whose words are
+//!    always included.
 //!
-//! Source for EN/FR lists: stopwords-iso (MIT) — https://github.com/stopwords-iso
+//! EN/FR lists from stopwords-iso (MIT): https://github.com/stopwords-iso
 
 use std::collections::HashSet;
 use std::path::Path;
 
 use super::stopwords_data::{STOPWORDS_EN, STOPWORDS_FR};
 
-// There is deliberately no built-in Typst-keyword denylist. Such a list once
-// lived here ("set", "show", "page", "state", "table", "text", …) to suppress
-// markup tokens, but the corpus is built from `search::text_projection`, which
-// walks the parsed Typst AST and emits only `Text` leaves — `#set`, `#show`,
-// `#state(...)` and friends never reach the token stream *as markup* in the
-// first place. The denylist therefore only ever filtered the *prose* senses of
-// those words ("the mental state", "body text", "the next page"), silently
-// dropping legitimate concepts from the Mycelial View with no way for the user
-// to tell. Trusting the parser we already run (Typst-first) is both simpler and
-// correct; per-notebox over-filtering is still available via
-// `mycelial-stopwords.txt`.
+// There's no list of Typst keywords to filter: the corpus comes from
+// `search::text_projection`, which emits only the text of the parsed note, so
+// `#set`, `#show` and the like never appear as markup. Such a list would only
+// drop the ordinary words ("the mental state", "body text"), and users can add
+// their own in `mycelial-stopwords.txt`.
 
-/// Build the complete stopword set from built-in lists + user files.
-///
-/// The user dictionary overrides stopwords — any word in the dictionary
-/// is removed from the exclusion set even if it appears in a built-in list.
+/// Build the full stopword set from the built-in lists and user files. Words in
+/// the user dictionary are removed from it, even if in a built-in list.
 pub fn build_stopwords(notebox_root: Option<&Path>) -> HashSet<String> {
     let mut set = HashSet::with_capacity(STOPWORDS_EN.len() + STOPWORDS_FR.len());
 
@@ -75,11 +67,10 @@ fn remove_dictionary_entries(set: &mut HashSet<String>, notebox_root: &Path) {
     }
 }
 
-/// True when `word` is in one of the bundled built-in stopword lists (EN/FR).
-/// Used to attribute a suppressed Mycelial term to the layer that filtered it:
-/// a built-in stopword is rescued by force-including it via `dictionary.txt`,
-/// whereas a user-added stopword is rescued by removing its line from
-/// `mycelial-stopwords.txt`. `word` is expected pre-lowercased (corpus form).
+/// Whether `word` (already lowercase) is in a built-in list (EN/FR). Used to
+/// tell the user how to include a filtered Mycelial term: a built-in stopword
+/// is added to `dictionary.txt`, a user stopword is removed from
+/// `mycelial-stopwords.txt`.
 pub fn is_builtin_stopword(word: &str) -> bool {
     STOPWORDS_EN.contains(&word) || STOPWORDS_FR.contains(&word)
 }

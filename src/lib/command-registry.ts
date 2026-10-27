@@ -20,10 +20,11 @@ export type CommandCategory =
   | "Collaboration"
   | "Creation Rules";
 
-/** Command category id (stable English, the grouping/sort key) → i18n key for
- *  its displayed header. Mirrors the `CommandCategory` union and doubles as the
- *  canonical category display order (object key order). Shared by the command
- *  palette and the Help panel so both group and label categories identically. */
+/**
+ * Command category id (stable English, used for grouping and sorting) → i18n key
+ * of its heading. The key order is the display order. Shared by the command
+ * palette and Help panel.
+ */
 export const CATEGORY_LABEL_KEYS: Record<CommandCategory, string> = {
   File: "command.cat.file",
   Edit: "command.cat.edit",
@@ -45,15 +46,16 @@ export interface Command {
   id: string;
   title: string;
   category: CommandCategory;
-  /** Global hotkey(s) that fire this command. Accept multiple aliases to
-   *  cover combos that produce different `e.key` values across keyboards
-   *  (e.g. `Ctrl+=` vs. `Ctrl+Shift+=` vs. numpad `Ctrl++` all mean
-   *  "zoom in"). The palette displays only the first entry. */
+  /**
+   * Global hotkeys for the command. Several can be given for keys that report
+   * different `e.key` values (`Ctrl+=`, `Ctrl+Shift+=` and numpad `Ctrl++` all
+   * zoom in). The palette shows the first.
+   */
   keybinding?: string | string[];
-  /** Inline typing shortcut (e.g. `*…*`, `+++`, `[[…]]`) shown at the
-   *  right edge of the row in the command palette. Purely informational
-   *  — the trigger is implemented in the editor's input handlers, not
-   *  in the command registry. */
+  /**
+   * Typing shortcut (e.g. `*…*`, `+++`, `[[…]]`) shown at the right of the
+   * palette row. Display only; the editor implements it.
+   */
   shortcut?: string;
   execute: () => void | Promise<void>;
 }
@@ -74,20 +76,16 @@ interface ScoredCommand {
 const commands = new Map<string, Command>();
 const [commandVersion, setCommandVersion] = createSignal(0);
 
-// ── Keybinding override layer ────────────────────────────────────────
+// ── Keybinding overrides ────────────────────────────────────────
 //
-// A command's `keybinding` as declared in `commands.ts` is its *default*.
-// Users can rebind global shortcuts; those deltas live here as an override
-// map (command id → combo, or `null` for "explicitly unbound"). The
-// registry keeps `Command.keybinding` set to the *effective* binding
-// (override ?? default), so the global dispatcher, command palette, and
-// Help panel all read the resolved value without knowing overrides exist.
+// A command's `keybinding` in `commands.ts` is its default. User rebindings are
+// kept here (command id → combo, or `null` for unbound), and
+// `Command.keybinding` holds the effective binding (override ?? default), so
+// the dispatcher, palette and Help panel need not know about overrides.
 //
-// This module stays dependency-free — the settings store never leaks in.
-// The controller in `src/lib/shortcuts.ts` bridges persisted overrides to
-// `setKeybindingOverrides`. Because `registerCommand` re-resolves on every
-// (re-)registration, the locale-switch re-registration path preserves
-// overrides automatically.
+// This module doesn't depend on the settings store; `src/lib/shortcuts.ts`
+// passes saved overrides to `setKeybindingOverrides`. `registerCommand` applies
+// overrides each time, so re-registering on a language switch keeps them.
 const defaultKeybindings = new Map<string, string | string[]>();
 let keybindingOverrides = new Map<string, string | null>();
 
@@ -101,9 +99,10 @@ function resolveKeybinding(id: string): string | string[] | undefined {
   return defaultKeybindings.get(id);
 }
 
-/** Register a command. Overwrites any existing command with the same id.
- *  The declared `keybinding` is recorded as the command's default and then
- *  replaced in place with the effective (possibly user-overridden) binding. */
+/**
+ * Register a command, replacing any with the same id. Its `keybinding` is
+ * recorded as the default and replaced with the effective binding.
+ */
 export function registerCommand(cmd: Command): void {
   if (cmd.keybinding !== undefined) {
     defaultKeybindings.set(cmd.id, cmd.keybinding);
@@ -113,9 +112,11 @@ export function registerCommand(cmd: Command): void {
   setCommandVersion((v) => v + 1);
 }
 
-/** Replace the full set of user keybinding overrides and re-resolve every
- *  registered command's effective binding. Called by `shortcuts.ts` after
- *  the settings store loads and whenever the user edits or resets a binding. */
+/**
+ * Replace all user keybinding overrides and update every command's binding.
+ * Called by `shortcuts.ts` after settings load and when a binding is edited or
+ * reset.
+ */
 export function setKeybindingOverrides(overrides: Map<string, string | null>): void {
   keybindingOverrides = new Map(overrides);
   for (const cmd of commands.values()) {
@@ -152,12 +153,11 @@ export function getAllCommands(): Command[] {
   return Array.from(commands.values());
 }
 
-/** Find a command whose `keybinding` matches `combo` (case-insensitive),
- *  optionally excluding a single command by id. Used by:
- *   - the global keyboard dispatcher (no exclude) to fire the bound action
- *   - the rule editor's conflict UI (excludes the rule being edited) to
- *     warn against assigning a combo that's already taken
- *  Centralized so both call sites agree on what counts as a conflict. */
+/**
+ * Find the command bound to `combo` (case-insensitive), optionally excluding
+ * one id. Used by the keyboard dispatcher and by the rule editor's conflict
+ * warning (excluding the rule being edited), so both agree on conflicts.
+ */
 export function findCommandByKeybinding(
   combo: string,
   excludeId?: string,
@@ -199,9 +199,9 @@ export function searchCommands(query: string, maxResults = 30): ScoredCommand[] 
     const combined = `${command.category}: ${command.title}`;
     const combinedMatch = substringMatch(query, combined);
     if (combinedMatch) {
-      // Adjust ranges to only cover the title portion. Kept a "substring"
-      // match even when the combined string is exactly the query, so it can
-      // never outrank a command whose own title the user typed.
+      // Highlight only the title part. Still a "substring" match when the
+      // combined string equals the query, so it never outranks a command whose
+      // own title was typed.
       scored.push({
         command,
         match: { score: combinedMatch.score - 5, ranges: [], kind: "substring" },

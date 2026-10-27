@@ -4,11 +4,10 @@ import { EditorView } from "@codemirror/view";
 import { codeFolding, foldedRanges, foldEffect } from "@codemirror/language";
 import { typstKeymap } from "./keymaps";
 
-// Shift-Alt-Arrow reorders a list item AND its nested subtree: a parent moves
-// as a group, a leaf moves alone (issue #24 outliner move). It swaps places
-// with the adjacent same-indent sibling's whole subtree, keeps explicit `N.`
-// numbers in document order, and consumes the key (no page scroll) at a list
-// edge. Parser-independent, so no Typst language is configured here.
+// Shift-Alt-Arrow moves a list item with everything nested under it (issue
+// #24): it swaps with the neighbouring sibling's whole subtree, keeps explicit
+// `N.` numbers in order, and handles the key at a list edge (no page scroll).
+// No parser needed.
 
 const views: EditorView[] = [];
 afterEach(() => {

@@ -1,11 +1,9 @@
-/* Column header quick-filter popover.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Column header filter popover. Part of layout.css, whose import order (see
+   ../layout.css) keeps the cascade. */
 
 /* ── Column header quick-filter popover ───────────────────────────────────
-   A floating, transient surface (a menu by role), so it uses the --popup-*
-   tokens and sits at the --z-menu tier. Anchored under the header funnel by
-   `anchorPanelMenu`. */
+   A menu by role, so it uses the --popup-* tokens and the --z-menu tier.
+   Placed under the header funnel by `anchorPanelMenu`. */
 .column-filter {
   animation: surface-in var(--dur-fast) var(--ease-out);
   position: fixed;
@@ -73,11 +71,10 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  /* The list is a flex column inside a max-height + overflow-y:auto container.
-     Without this the rows keep the default flex-shrink:1 and get compressed to
-     fit the cap instead of overflowing, squashing each row below its text
-     height (the lines overlapped) and leaving nothing to scroll. Holding their
-     natural height lets the container scroll as intended. */
+  /* The list is a flex column in a container with max-height and
+     overflow-y:auto. With the default flex-shrink:1 the rows would be
+     squashed to fit (overlapping lines, nothing to scroll); keeping their
+     height lets the container scroll. */
   flex-shrink: 0;
 }
 

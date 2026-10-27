@@ -1,17 +1,13 @@
-// Shared "press a key combo" record button.
+// "Press a key combo" record button.
 //
-// Encapsulates the one fiddly part of hotkey capture that must be identical
-// everywhere it's used: while recording, the button carries
-// `data-hotkey-recording="true"` so the global dispatcher in `lib/keyboard.ts`
-// suppresses command firing (otherwise pressing e.g. Ctrl+N would both record
-// the combo AND fire "New Note"). Explicit `focus()` on click is required
-// because WebKit (Tauri's webview) does not auto-focus <button> on click on
-// every platform.
+// While recording, the button has `data-hotkey-recording="true"`, so the
+// dispatcher in `lib/keyboard.ts` doesn't fire commands (otherwise Ctrl+N would
+// both record the combo and create a note). It's focused on click explicitly,
+// because WebKit doesn't always focus a clicked <button>.
 //
-// Behaviour only: the button reports captured combos, clears, and conflicts
-// through callbacks. Each call site owns its own conflict display and any
-// toast, since they differ (creation-rule editor vs. shortcut customization).
-// Used by CreationRuleEditor and the Help panel's shortcut rows.
+// Behaviour only: captured combos, clearing and conflicts are reported through
+// callbacks, and each caller shows conflicts its own way. Used by
+// CreationRuleEditor and the Help panel's shortcut rows.
 
 import { Component, createSignal } from "solid-js";
 import { formatKeyCombo } from "../lib/keybindings";

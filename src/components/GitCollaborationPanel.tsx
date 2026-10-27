@@ -1,14 +1,7 @@
-// Left-sidebar Git Collaboration pane (Phase 5: the Sync model).
-//
-// Two states, chosen by whether the open notebox carries a git config:
-//   • not collaborative → a setup form (remote, branch, sign-in, identity).
-//   • collaborative     → status + the two gestures: Sync (pull + merge + push)
-//     and Check for updates (pull + merge, no push).
-//
-// After a sync, a non-blocking digest lists what collaborators changed. When a
-// merge conflicts, the conflicted notes are listed and open as staged tabs
-// (the existing suggestion pills + the right-panel Annotations pane resolve
-// them); "Finalize" then commits the merged result and — for a Sync — pushes.
+// Left-sidebar Git Collaboration pane. Without a git config it shows a setup
+// form (remote, branch, sign-in, identity); with one, the status and the two
+// actions: Sync (pull, merge, push) and Check for updates (fetch only). After a
+// sync, the notes it changed are listed for review.
 
 import { Component, Show, For, createSignal, createResource, onMount, onCleanup } from "solid-js";
 import {
@@ -99,15 +92,13 @@ function changeLabel(newPath: string, oldPath?: string | null): string {
 }
 
 const GitCollaborationPanel: Component = () => {
-  // Re-check git status whenever the panel opens, so a state change made
-  // outside the app (e.g. the `.git` dir deleted) is reflected without a
-  // notebox reopen.
+  // Re-check git status when the panel opens, so outside changes (e.g. `.git`
+  // deleted) show without reopening the notebox.
   onMount(() => {
     if (collaborative()) void refreshStatus();
   });
-  // Collapse the Manage section when the user leaves the collaboration view, so
-  // it always reopens collapsed (the Settings › Configure entry still expands it
-  // explicitly, after this unmounts).
+  // Collapse Manage when leaving the view, so it reopens collapsed (Settings ›
+  // Configure expands it explicitly afterwards).
   onCleanup(() => setManageOpen(false));
   return (
     <div class="left-sidebar__pane">
@@ -141,9 +132,8 @@ const SetupForm: Component = () => {
   // of a username + password. Pre-checked when the existing remote is an SSH URL.
   const [useSsh, setUseSsh] = createSignal(looksLikeSshRemote(existing?.remote ?? ""));
 
-  // Pre-fill the identity from the one InkyCap would use (your git config), and
-  // the saved sign-in username for this remote (if any), so neither is a mystery
-  // blank — edit them to use different values here.
+  // Pre-fill the identity InkyCap would use (from git config) and any saved
+  // username for this remote; both can be changed here.
   onMount(async () => {
     const id = await getDefaultIdentity();
     if (id) {
@@ -358,15 +348,15 @@ const SetupForm: Component = () => {
 
 const SyncView: Component = () => {
   const cfg = () => noteboxSettings.git;
-  // The action + config block (the gestures + the review toggle) is expanded by
-  // default so the Sync / Import / Export controls are reachable at a glance.
-  // Its open/closed state is a persisted UI preference (see `actionsOpen` in the
-  // store) that survives notebox switches and restarts. Same in package and
-  // server modes.
+  // The actions block (Sync / Import / Export and the review toggle) is expanded
+  // by default; its state is a saved preference (`actionsOpen` in the store),
+  // the same in both modes.
 
-  /** Human-readable sync state line. Outgoing state is qualitative ("Changes to
-   *  share") rather than a commit count — counts confuse (commits ≠ files) and,
-   *  in package mode, never reset since there's no remote to push to. */
+  /**
+   * The sync status line. Outgoing changes are described ("Changes to share")
+   * rather than counted: commits aren't files, and in package mode the count
+   * never resets.
+   */
   function statusLine(): string {
     const s = gitStatus();
     if (!s) return "";
@@ -481,9 +471,8 @@ const PackageActions: Component = () => {
   // One optional password, shared by export + import. Empty = no encryption.
   // The recipient must receive it out-of-band; it is never stored in a keychain.
   const [password, setPassword] = createSignal("");
-  // Which gesture is running, so only its button shows the animated working
-  // state (both share `gitSyncing`, which can't tell them apart). Parity with
-  // the server-mode Sync button's "Syncing…" indicator.
+  // Which action is running, so only its button shows the busy state
+  // (`gitSyncing` is shared).
   const [busy, setBusy] = createSignal<"import" | "export" | null>(null);
 
   async function doExport() {
@@ -545,17 +534,8 @@ const PackageActions: Component = () => {
 
 // ─────────── "Changes since last sync" (merge-first incoming review) ────────
 
-/** Lists the notes the last Sync / import folded incoming changes into,
- *  relative to the recorded pre-sync baseline — the merge-first review surface.
- *  The model never pauses, so incoming changes are already in the working tree;
- *  these rows let the user open a note to review the per-hunk diff (in the
- *  Changes pane) or revert the whole note back to their version. Take-theirs
- *  (conflicted) notes are flagged and sort first. Rendered most prominent so
- *  the riskiest incoming changes surface immediately after a sync. */
-/** Open a note for review and reveal its Changes pane. Reuses the active tab
- *  only when it's an empty "New tab" — otherwise a new tab, so a note the user is
- *  reading isn't clobbered. An already-open tab for the note is focused either
- *  way (openTab's path-match shortcut). */
+/** Open a note for review with its Changes pane. Reuses the active tab only if
+ *  it is an empty "New tab"; an already open tab for the note is focused. */
 function openNoteForReview(path: string, title: string) {
   const reuseEmpty = getActiveTab()?.type === "empty";
   openTab({ type: "file", title, path }, { forceNewTab: !reuseEmpty });
@@ -563,6 +543,10 @@ function openNoteForReview(path: string, title: string) {
   setRightPanelTab("annotations");
 }
 
+/** The notes the last Sync or import changed, compared with the pre-sync
+ *  baseline. The changes are already in the working tree; each row opens the
+ *  note's per-hunk diff (Changes pane) or reverts the whole note. Notes that
+ *  took the incoming side over a local edit are flagged and listed first. */
 const ChangesSinceSyncView: Component = () => {
   function openForReview(entry: { path: string; relPath: string }) {
     const basename = entry.relPath.split("/").pop() ?? entry.relPath;
@@ -583,16 +567,12 @@ const ChangesSinceSyncView: Component = () => {
     if (ok) void revertNoteSinceSync(entry.path);
   }
 
-  // Author of the changes the most recent sync brought in, when known — folded
-  // in here (it used to live in a second, redundant "Changes merged from …"
-  // digest block) so there is a single place that reports what a sync changed.
+  // Author of the changes the last sync brought in, if known.
   const incomingAuthor = () => syncOutcome()?.incoming?.author_name;
 
-  // Open-suggestion count for a since-sync note, matched against the persistent
-  // unresolved list. When a note both changed in the sync AND carries tracked
-  // changes awaiting a decision, it shows once here with a "suggestions await
-  // feedback" cue rather than appearing a second time under "Changes to
-  // resolve" — UnresolvedView drops the overlap (see there).
+  // Open suggestions for a note the sync changed. Such a note is shown once
+  // here with a "suggestions await feedback" note, and UnresolvedView leaves it
+  // out.
   const suggestionCount = (path: string) =>
     unresolvedFiles().find((u) => pathEquals(u.path, path))?.count ?? 0;
 
@@ -666,25 +646,19 @@ const ChangesSinceSyncView: Component = () => {
 
 // ──────────────── "Changes to resolve" (unresolved tracked changes) ─────────
 
-/** Lists the notebox's notes that still carry unresolved `#suggestion(...)`
- *  tracked changes awaiting an accept/reject decision. Unlike the digest (which
- *  is informational and dismissable) these rows are CLICKABLE and actionable —
- *  clicking opens the real note with the Changes & History pane so the user can
- *  resolve each change. Persistent: reads `unresolvedFiles()` (refreshed on open
- *  / pull / save), independent of the dismissable post-sync digest. Rendered
- *  first in the panel so outstanding work is the most prominent block. */
+/**
+ * Notes with unresolved `#suggestion(...)` changes. Each row opens the note with
+ * Changes & History to resolve them. Reads `unresolvedFiles()` (refreshed on
+ * open, pull and save). Shown first, since it is outstanding work.
+ */
 const UnresolvedView: Component = () => {
   function openForReview(entry: { path: string; relPath: string }) {
     const basename = entry.relPath.split("/").pop() ?? entry.relPath;
     openNoteForReview(entry.path, basename);
   }
 
-  // Notes the last sync also changed already appear in ChangesSinceSyncView,
-  // each carrying a "suggestions await feedback" cue — so drop them here to
-  // avoid listing the same note twice right after a sync. What remains is the
-  // persistent backlog: notes with open suggestions the most recent sync didn't
-  // touch, which stay visible even after the transient since-sync list clears
-  // (on the next edit / reopen).
+  // Leave out notes the last sync also changed; ChangesSinceSyncView lists them
+  // with a suggestions cue.
   const pending = () =>
     unresolvedFiles().filter(
       (u) => !changesSinceSync().some((c) => pathEquals(c.path, u.path)),
@@ -732,15 +706,14 @@ const UnresolvedView: Component = () => {
 
 // ──────────────────── "Changes to share" (what's outgoing) ──────────────────
 
-/** Lists the files an export/sync would carry to collaborators, so the user
- *  sees *what* they're about to share before doing it — the outgoing
- *  counterpart of the post-sync digest. Refetches whenever the git status
- *  changes (saves refresh it), so it tracks the working tree without its own
- *  watcher. Read-only, like the digest. */
+/**
+ * Files a share would send, so the user sees what they're about to share.
+ * Refetched when the git status changes (saves refresh it). Read-only.
+ */
 const ChangesToShareView: Component = () => {
-  // A status fingerprint as the resource source: changes whenever HEAD moves or
-  // the dirty/unshared flags flip. Empty (falsy) when there's no status yet, so
-  // the resource doesn't fetch.
+  // Status fingerprint for the resource: changes when HEAD moves or the dirty /
+  // unshared flags change. Empty before there is a status, so nothing is
+  // fetched.
   const statusKey = () => {
     const s = gitStatus();
     return s ? `${s.head ?? ""}:${s.dirty}:${s.unshared}` : "";
@@ -784,18 +757,11 @@ const ChangesToShareView: Component = () => {
   );
 };
 
-// The post-sync "what landed" digest used to live here as a separate block, but
-// it duplicated the persistent, actionable "Files changed from last sync" view
-// (`ChangesSinceSyncView`) — `run_sync` records the review baseline for every
-// incoming sync (fast-forward and merge alike), so that view always reports the
-// same changes. The only unique bit, the incoming author, now appears in that
-// view's heading. One status surface instead of two.
-
 // ─────────────────────────── Manage (collapsible) ──────────────────────────
 
 const ManageSection: Component = () => {
-  // Pre-filled from the current config so every field the setup form had stays
-  // editable after setup (remote URL + branch were previously unreachable).
+  // Pre-filled from the current config, so every field of the setup form
+  // (including remote URL and branch) stays editable after setup.
   const [remote, setRemote] = createSignal(noteboxSettings.git?.remote ?? "");
   const [branch, setBranch] = createSignal(noteboxSettings.git?.branch ?? "main");
   const [username, setUsername] = createSignal("");
@@ -804,11 +770,9 @@ const ManageSection: Component = () => {
   const [email, setEmail] = createSignal("");
   const [busy, setBusy] = createSignal(false);
   const [useSsh, setUseSsh] = createSignal(looksLikeSshRemote(noteboxSettings.git?.remote ?? ""));
-  // Offline package handoff vs a hosted git server, initialised from the
-  // notebox's current mode (an empty remote = package mode). Exposing this in
-  // Manage — not only in the initial setup form — lets the user switch
-  // collaboration methods after setup, and hides the server connection fields
-  // while offline (they don't apply to package handoff).
+  // Package handoff or a git server, starting from the notebox's mode (empty
+  // remote = package mode). Offered in Manage, not only at setup, so the method
+  // can be changed later; the server fields are hidden while offline.
   const [offline, setOffline] = createSignal(packageMode());
 
   // Show the identity that will actually be used (per-notebox choice, else git
@@ -826,11 +790,9 @@ const ManageSection: Component = () => {
     }
   });
 
-  // One Save applies the whole config — remote/branch/identity/username, plus
-  // the password only when re-entered (left blank, the saved one is kept). Both
-  // setup paths are idempotent (adopt the existing repo). The Offline toggle
-  // chooses the mode: offline switches to (or stays in) package handoff;
-  // online keeps (or promotes the notebox to) a server-backed remote.
+  // Save applies the whole config (remote, branch, identity, username, and the
+  // password only if re-entered). Both setup paths adopt an existing repo.
+  // Offline means package mode; online keeps or switches to a server remote.
   async function save() {
     if (!offline() && !remote().trim()) {
       toastError(t("git.manage.saveFailed"), t("git.setup.remoteRequired"));

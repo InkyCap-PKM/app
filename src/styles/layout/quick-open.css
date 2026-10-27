@@ -1,6 +1,5 @@
-/* Quick-open palette and folder picker.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Quick open palette and folder picker. Part of layout.css, whose import
+   order (see ../layout.css) keeps the cascade. */
 
 /* Quick-open command palette */
 .quick-open__overlay {

@@ -1,19 +1,14 @@
-// Growth pane for the Mycelial View's right panel.
+// Growth pane in the Mycelial View's right panel, for the two gap signals kept
+// out of the graph:
 //
-// The panel home of the two gap signals that stay out of the graph on
-// purpose (secondary data lives in panels, not the graph):
-//   1. Under-developed pages — neighbourhood notes referenced often but
-//      barely written (high backlink count, low word count). Clicking one
-//      opens the note, ready to expand.
-//   2. Open questions — question sentences the user left across the
-//      neighbourhood's prose. Clicking one deep-links to the exact spot.
+//   1. Under-developed pages: neighbourhood notes linked to often but barely
+//      written (many backlinks, few words). Clicking opens the note.
+//   2. Open questions: questions left in the neighbourhood's text. Clicking
+//      goes to the exact spot.
 //
-// Data flows in via the mycelial store (MycelialView publishes both lists
-// when it loads). Rows reuse the Links pane's `.sidebar-item` +
-// `.link-context` structure so the two panels read identically: clickable
-// note names as accent-styled rows, read-only detail indented beneath.
-// Section explanations hide behind a HelpButton (the Settings pattern)
-// instead of permanent hint paragraphs.
+// Both lists come from the mycelial store (published by MycelialView on load).
+// Rows use the Links pane's `.sidebar-item` and `.link-context` structure, so
+// the two panels look alike. Section explanations are behind a HelpButton.
 
 import { Component, For, Show, createSignal } from "solid-js";
 import { Sprout, FileText, ChevronDown, ChevronRight, SquarePen } from "lucide-solid";

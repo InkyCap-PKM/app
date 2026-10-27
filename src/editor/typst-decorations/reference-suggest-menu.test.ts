@@ -66,7 +66,7 @@ describe("the @ menu after a word", () => {
   });
 
   it("selects nothing when nothing matches, so Enter goes on to the editor", async () => {
-    view = mk("joshua@phydeau.org");
+    view = mk("athena@inkycap.org");
     await settle();
     expect(rowNames()).toEqual(["E-mail address", "Plain text"]);
     expect(selectedRow()).toBeNull();
@@ -75,27 +75,27 @@ describe("the @ menu after a word", () => {
   });
 
   it("reaches the extra rows with the arrow keys", async () => {
-    view = mk("joshua@phydeau.org");
+    view = mk("athena@inkycap.org");
     await settle();
     press(view, "ArrowDown");
     expect(selectedRow()?.textContent).toContain("E-mail address");
   });
 
   it("writes an email link with the caret at the end of the address", async () => {
-    view = mk("joshua@phy");
+    view = mk("athena@ink");
     await settle();
     clickRow("E-mail address");
     const doc = view.state.doc.toString();
-    expect(doc).toBe('#link("mailto:joshua@phy")');
+    expect(doc).toBe('#link("mailto:athena@ink")');
     expect(view.state.selection.main.head).toBe(doc.length - 2);
   });
 
   it("escapes the @ for plain text", async () => {
-    view = mk("joshua@phy");
+    view = mk("athena@ink");
     await settle();
     clickRow("Plain text");
-    expect(view.state.doc.toString()).toBe("joshua\\@phy");
-    expect(view.state.selection.main.head).toBe("joshua\\@phy".length);
+    expect(view.state.doc.toString()).toBe("athena\\@ink");
+    expect(view.state.selection.main.head).toBe("athena\\@ink".length);
   });
 });
 

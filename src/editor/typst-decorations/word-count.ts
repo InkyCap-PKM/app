@@ -35,10 +35,9 @@ export const wordCountTracker = ViewPlugin.fromClass(
     }
     update(update: ViewUpdate) {
       if (!update.docChanged) return;
-      // Debounced: the status bar's word count doesn't need per-keystroke
-      // precision, and recomputing it means a full-document `toString()` +
-      // whitespace split on every key — expensive on a long note. Snapshot
-      // the immutable doc and recompute once typing settles.
+      // Debounced: recounting means turning the whole document into a string
+      // and splitting it, too slow per keystroke on a long note. Recount once
+      // typing pauses.
       if (this.timer) clearTimeout(this.timer);
       const doc = update.state.doc;
       this.timer = setTimeout(() => {

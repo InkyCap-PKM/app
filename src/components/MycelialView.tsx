@@ -1,9 +1,7 @@
 /**
- * Mycelial View — surfaces where a notebox wants to grow next.
- *
- * The graph shows the inner growth region: the center note, latent links,
- * emergent concepts, and source notes. Context notes (wikilink neighbors
- * with no signal) are shown in the right panel as a clickable list.
+ * Mycelial View: shows where a notebox could grow next. The graph holds the
+ * centre note, latent links, emergent concepts and source notes; context notes
+ * (linked neighbours with no signal) are listed in the right panel.
  */
 
 import {
@@ -106,10 +104,11 @@ function highlightParts(
   ];
 }
 
-/** How each kind's box border is drawn. The legend swatch uses the same
- *  pattern, and each kind's pattern differs from the others', so kinds can be
- *  told apart without relying on colour. Must match `.mycelial-box--<kind>`
- *  in mycelial.css. */
+/**
+ * How each kind's border is drawn, also used by its legend swatch. Each kind's
+ * pattern differs, so kinds can be told apart without colour. Must match
+ * `.mycelial-box--<kind>` in mycelial.css.
+ */
 type LegendPattern = "thick" | "solid" | "dashed" | "dotted" | "double";
 
 const LEGEND: { kind: BoxKind; labelKey: string; color: string; pattern: LegendPattern }[] =
@@ -146,9 +145,8 @@ export default function MycelialView(props: MycelialViewProps) {
   const [layout, setLayout] = createSignal<MycelialLayout | null>(null);
   const [loading, setLoading] = createSignal(true);
   const [hoveredBox, setHoveredBox] = createSignal<string | null>(null);
-  // Per-instance graph state. Local (not module-global) so two Mycelial Views
-  // in split panes keep separate context lists; an effect publishes these to
-  // the tab-keyed store for the right panel to read.
+  // Graph state per view, so split Mycelial Views keep separate context lists;
+  // an effect publishes it to the tab-keyed store for the right panel.
   const [contextNotes, setContextNotes] = createSignal<MycelialContextNote[]>([]);
   const [contextEdges, setContextEdges] = createSignal<FlowEdge[]>([]);
   const [excludedTerms, setExcludedTerms] = createSignal<ExcludedTerm[]>([]);
@@ -159,19 +157,16 @@ export default function MycelialView(props: MycelialViewProps) {
   const [maxDepth, setMaxDepth] = createSignal(2);
   const [centerPath, setCenterPath] = createSignal(props.path);
   const [history, setHistory] = createSignal<string[]>([]);
-  // The legend is a visibility filter: every box kind is shown by default,
-  // and a kind listed here has been switched off by the user. This lets the
-  // user remove the kinds they don't want and keep several visible at once,
-  // rather than only being able to isolate a single kind.
+  // The legend filters: every kind shows by default, and kinds listed here are
+  // switched off, so several can be shown at once.
   const [hidden, setHidden] = createSignal<Set<BoxKind>>(new Set());
 
   // "What am I looking at?" help panel, opened from the legend's info icon.
   const [helpOpen, setHelpOpen] = createSignal(false);
 
-  // Anchor-note spotlight — the legend's "Anchor note" item pulses the
-  // center box rather than filtering it (it's always present, never hidden).
-  // When the anchor is off-screen, an edge beacon is shown instead, pinned to
-  // the viewport edge in its direction so the user knows which way to scroll.
+  // The legend's "Anchor note" item pulses the centre box instead of filtering
+  // it. If the anchor is off-screen, a beacon at the viewport edge shows which
+  // way it is.
   const [pulsing, setPulsing] = createSignal(false);
   const [edgeBeacon, setEdgeBeacon] = createSignal<{
     x: number;
@@ -219,10 +214,10 @@ export default function MycelialView(props: MycelialViewProps) {
     setPanY((ch - l.height * z) / 2);
   }
 
-  /** Spotlight the anchor note without moving the graph. If the anchor is
-   *  within the viewport it pulses in place; if it's scrolled off-screen, a
-   *  pulsing beacon is pinned to the viewport edge in its direction instead,
-   *  so the user can see which way to scroll to reach it. */
+  /**
+   * Highlight the anchor note without moving the graph: it pulses in place if
+   * visible, otherwise a beacon pulses at the edge in its direction.
+   */
   function spotlightCenter() {
     const l = layout();
     const center = l?.boxes.find((b) => b.kind === "center");
@@ -243,9 +238,8 @@ export default function MycelialView(props: MycelialViewProps) {
       if (onScreen) {
         setPulsing(true);
       } else {
-        // Land the beacon flush on the viewport edge — the canvas clips its
-        // outer half, so it reads as a diffuse glow bleeding in from beyond
-        // the edge rather than a pin marking an exact spot.
+        // Put the beacon on the edge; the canvas clips its outer half, so it
+        // reads as a glow from beyond the edge.
         setEdgeBeacon({
           x: clamp(sx, 0, cw),
           y: clamp(sy, 0, ch),
@@ -349,10 +343,8 @@ export default function MycelialView(props: MycelialViewProps) {
     });
   }
 
-  // Load (or restore) the graph whenever the bound note changes. This must
-  // be an effect, not `onMount`: the Mycelial View tab is repointed at a new
-  // note in place (the component instance is reused), so a once-only
-  // `onMount` would leave the graph stuck on the previously opened note.
+  // Load (or restore) the graph whenever the note changes. An effect, since the
+  // tab is repointed in place and the component reused.
   let loadedPath: string | null = null;
   createEffect(() => {
     const path = props.path;
@@ -387,18 +379,16 @@ export default function MycelialView(props: MycelialViewProps) {
     });
   });
 
-  // Recompute when the Filtering pane changes stopwords or note-exclusion
-  // rules — the graph changes for every note, so drop all cached views
-  // rather than restoring stale ones when the user navigates back.
+  // When stopwords or exclusion rules change, every note's graph changes, so
+  // drop all cached views.
   const onMycelialReload = () => {
     viewCache.clear();
     loadData();
   };
   document.addEventListener("inkycap:mycelial-reload", onMycelialReload);
 
-  // Mirror this view's context list and excluded terms into the tab-keyed store
-  // so the right panel can render the *focused* mycelial tab's data. Re-runs
-  // whenever either signal changes; the panel reads back via mycelialStateFor.
+  // Copy this view's context list and excluded terms to the tab-keyed store, so
+  // the right panel shows the focused view's data (read with mycelialStateFor).
   createEffect(() => {
     publishMycelialState(props.tabId, {
       contextNotes: contextNotes(),
@@ -446,13 +436,9 @@ export default function MycelialView(props: MycelialViewProps) {
     return m;
   });
 
-  // Boxes render in a STABLE document order — deliberately *not* reordered to
-  // float the hovered box last. The layout's `resolveOverlaps` pass already
-  // guarantees no two boxes overlap, so document order never causes occlusion.
-  // Reordering the array on hover forced WebKitGTK (the Tauri webview) to move
-  // a `<foreignObject>` inside a transformed `<g>` on every hover, and its
-  // foreignObject repaint bug left a stale "phantom" copy of the box behind.
-  // Keeping the order fixed eliminates that DOM mutation entirely.
+  // Boxes stay in a fixed order rather than putting the hovered one last.
+  // `resolveOverlaps` already prevents overlaps, and reordering on hover made
+  // WebKitGTK leave a ghost copy of the box behind.
 
   const adjacency = createMemo(() => {
     const m = new Map<string, Set<string>>();
@@ -478,9 +464,8 @@ export default function MycelialView(props: MycelialViewProps) {
     return m;
   });
 
-  // When the legend leaves exactly one kind visible, the graph's real
-  // connections (which run between kinds) all but vanish — so fall back to
-  // synthesized "pathway" edges among that surviving kind.
+  // With one kind left visible, real connections (which run between kinds)
+  // mostly vanish, so use generated "pathway" edges within that kind.
   const soloKind = createMemo<BoxKind | null>(() => {
     const v = visibleKinds();
     return v.length === 1 ? v[0] : null;
@@ -497,11 +482,9 @@ export default function MycelialView(props: MycelialViewProps) {
     });
   });
 
-  // When the legend filters to one kind, the graph's real connections are
-  // hidden — so synthesize "pathway" edges between the surviving boxes via
-  // their shared provenance: two concepts that emerged from / are mentioned
-  // in the same note are linked. Source notes already carry real wikilink
-  // edges among themselves, so those are reused directly.
+  // Pathway edges for a single visible kind: two boxes that came from or are
+  // mentioned in the same note are linked. Source notes reuse their real
+  // wikilink edges.
   const derivedConnections = createMemo<MycelialConnection[]>(() => {
     const iso = soloKind();
     const l = layout();
@@ -622,9 +605,8 @@ export default function MycelialView(props: MycelialViewProps) {
       return;
     }
     if (box.kind === "emergent" && box.emergent) {
-      // A short concept (1–3 words) is already a usable page title — create
-      // it directly. A longer stitched run is a recurring phrase, not a
-      // title, so open the namer popup to let the user trim it first.
+      // A short concept (1–3 words) is a usable title, so create it directly; a
+      // longer phrase opens the namer to trim it first.
       const wordCount = box.emergent.term.trim().split(/\s+/).length;
       if (wordCount > 3) {
         setNamerDraft(titleCase(box.emergent.term));
@@ -659,9 +641,8 @@ export default function MycelialView(props: MycelialViewProps) {
     const bullets = concept.mentions
       .map((m) => `- #wikilink(${JSON.stringify(m.name)})`)
       .join("\n");
-    // Mirror the new-note scaffold: when Zettelkasten IDs are enabled, stamp
-    // the freshly created concept page with its own zid so it's a first-class
-    // notebox citizen, not a property-poor page born outside the normal flow.
+    // As the new-note scaffold does, give the concept page its own zid when
+    // Zettelkasten IDs are on.
     const noteProps = [`title: ${JSON.stringify(title)}`];
     if (settings.files.zettelkasten_enabled) {
       try {
@@ -688,9 +669,8 @@ export default function MycelialView(props: MycelialViewProps) {
         notes: concept.mentions.map((m) => ({ path: m.path, name: m.name })),
       });
     } catch (err) {
-      // A note with this name already lives in another folder. Let the user
-      // open it or pick a different name (then rebuild the page under that
-      // name) rather than silently failing.
+      // A note with this name exists in another folder: offer to open it or
+      // choose another name.
       if (errorCode(err) === "note-name-conflict") {
         const existing = errorDetail(err);
         if (existing) {
@@ -729,18 +709,21 @@ export default function MycelialView(props: MycelialViewProps) {
     }
   }
 
-  /** The on-disk note a box represents, if any: the anchor itself, a source
-   *  or kindred note (whose box id is its path), or a latent link's existing
-   *  target page. Emergent concepts have no page yet. */
+  /**
+   * The note a box stands for, if any: the anchor, a source or kindred note
+   * (whose id is its path), or a latent link's target. Emergent concepts have
+   * none.
+   */
   function boxNotePath(box: MycelialBox): string | null {
     if (box.kind === "emergent") return null;
     if (box.kind === "latent") return box.latent?.target_path ?? null;
     return box.id;
   }
 
-  /** Right-click "Open in new tab": review the note's content in the editor
-   *  instead of the left-click action (recenter / picker) — e.g. to read a
-   *  kindred note and see what makes it kindred. */
+  /**
+   * Right-click "Open in new tab": open the note in the editor instead of the
+   * left-click action, e.g. to read a kindred note.
+   */
   function openBoxNote(box: MycelialBox) {
     const path = boxNotePath(box);
     if (!path) return;
@@ -904,12 +887,10 @@ export default function MycelialView(props: MycelialViewProps) {
     );
   };
 
-  // Boxes are plain HTML positioned in the `.mycelial-view__nodes` overlay —
-  // deliberately NOT `<foreignObject>` inside the SVG. WebKitGTK (the Tauri
-  // webview) repaints foreignObject content while ignoring the ancestor
-  // `<g>`'s `scale()` transform, so on a content change a box ghosts at its
-  // native un-zoomed size near the cursor. An HTML layer carrying the same
-  // pan/zoom transform via CSS has no such bug.
+  // Boxes are HTML in the `.mycelial-view__nodes` overlay, not
+  // `<foreignObject>` in the SVG: WebKitGTK repaints foreignObject content
+  // ignoring the parent `scale()`, so boxes ghosted at their unzoomed size. The
+  // overlay uses the same pan and zoom through CSS.
   const renderBox = (box: MycelialBox) => (
     <Show when={boxVisible(box.kind)}>
       <div

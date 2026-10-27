@@ -1,6 +1,5 @@
-/* Shared context menu: items, submenus, explanatory lines.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Shared context menu: items, submenus, explanation lines. Part of
+   layout.css, whose import order (see ../layout.css) keeps the cascade. */
 
 /* Context menu (shared by view tabs and sidebar) */
 .context-menu {
@@ -34,15 +33,13 @@
   background: var(--bg-hover);
 }
 
-/* Keyboard cursor. The arrow keys walk focus through a menu (lib/menu-nav.ts),
-   which marks the item it lands on with `.is-kbd-active` — the same class the
-   file tree and list panels use for their cursor. The item reads like a
-   hovered one, with an accent edge saying which one the keys will act on.
+/* Keyboard cursor. The arrow keys move through a menu (lib/menu-nav.ts),
+   marking the item with `.is-kbd-active`, the class the file tree and lists
+   use. It looks hovered, with an accent edge.
 
-   The class is what's styled rather than `:focus-visible` because a browser
-   answers "no" to focus-visible for focus moved by script after a mouse
-   click, which is exactly this case: the menu was opened with the pointer.
-   That left the arrow keys moving an invisible cursor. */
+   The class is styled rather than `:focus-visible`, which browsers don't
+   apply to focus moved by script after a mouse click, as happens when the
+   menu was opened with the pointer. */
 .context-menu__item.is-kbd-active,
 .context-menu__item:focus-visible {
   background: var(--bg-hover);
@@ -50,13 +47,11 @@
   outline: none;
 }
 
-/* One cursor at a time. While the arrows drive a menu it carries
-   `.is-kbd-nav` (lib/menu-nav.ts), and the row the mouse happens to be
-   resting on stops reading as hovered, so the keyboard's row is the only
-   highlighted one. Moving the mouse removes the class and hover returns.
-   This rule covers every menu surface the controller drives — the item
-   classes here mirror its MENU_SURFACES registry — so each surface's own
-   hover rule needs no counterpart. */
+/* One cursor at a time: while the keys drive a menu it has `.is-kbd-nav`
+   (lib/menu-nav.ts), and the row under the mouse stops looking hovered.
+   Moving the mouse removes the class. The item classes here match
+   MENU_SURFACES in menu-nav.ts, so other menus' hover rules need nothing
+   extra. */
 .is-kbd-nav :is(
   .context-menu__item,
   .cm-typst-pill-menu-item,
@@ -69,10 +64,8 @@
   box-shadow: none;
 }
 
-/* Icon + label menu items (e.g. the New-note dropdown's
-   "Folder" / "Upload into notebox" entries). Uses flex so the icon
-   sits inline with the label rather than inheriting the default
-   block layout. */
+/* Menu items with an icon and label (e.g. the New note dropdown's "Folder" /
+   "Upload into notebox"), in a row. */
 .context-menu__item--icon {
   display: flex;
   align-items: center;

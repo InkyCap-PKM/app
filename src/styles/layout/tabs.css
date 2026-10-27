@@ -1,6 +1,5 @@
-/* Editor tab bar: tabs, close affordance, journal/synced-pair glyphs.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Editor tab bar: tabs, close button, journal and synced-pair icons. Part of
+   layout.css, whose import order (see ../layout.css) keeps the cascade. */
 
 /* Tabs */
 .tab {
@@ -17,22 +16,16 @@
   color: var(--fg-muted);
   font-size: var(--text-md);
   white-space: nowrap;
-  /* Compress before the strip scrolls (the browser-tab model): tabs give up
-     title width down to this floor, and only then does the row overflow.
-     The floor is on the tab rather than on the title so the flex algorithm
-     respects it — a floor on the title alone would let the tab's box shrink
-     past its own contents and slide the close × over the text. `ch` keeps it
-     proportional to the user's text size: the fixed chrome (icons, ×,
-     padding) plus roughly ten characters. Don't lower it without checking how
-     it feels at a wide window — the floor is also what decides when the row
-     starts to overflow, so a smaller one silently pushes the scroll arrows out
-     of reach and squeezes titles past the point of being recognizable. A tab
-     whose title is shorter than the floor is held open to it, as browser tabs
-     are; `.tab__title` grows into that slack so the × still lands on the tab's
-     right edge rather than floating mid-tab.
-     Spacing between tabs is `gap` on the track, not a margin here — a
-     trailing margin is omitted from a scroll container's scrollWidth in
-     WebKit, which used to hide a few pixels of overflow from measurement. */
+  /* Tabs shrink before the strip scrolls, as browser tabs do, down to this
+     minimum. It is on the tab rather than the title so the × can't slide
+     over the text, and in `ch` so it follows the text size (fixed parts plus
+     about ten characters). It also decides when the row starts scrolling, so
+     check a wide window before lowering it. A tab with a short title is held
+     at the minimum, and `.tab__title` grows to fill it, keeping the × at the
+     right edge.
+
+     Spacing between tabs is `gap` on the track: WebKit leaves a trailing
+     margin out of a scroll container's scrollWidth. */
   flex: 0 1 auto;
   min-width: 16ch;
   /* Settle state changes instead of snapping, so hover/active read as a
@@ -45,23 +38,19 @@
 }
 
 .tab--active {
-  /* All three cues come from tokens, because how they divide the work
-     changes per theme — see the --tab-active-* block in themes.css. The fill
-     leads wherever the palette gives it room; the edge and shadow are
-     support, kept faint so the tab sits forward rather than being outlined.
-     Note the fill is NOT --bg-primary: the page colour is the darker of the
-     two surfaces in the dark palettes, so it would sink the tab. */
+  /* All three cues come from tokens, since their balance differs per theme
+     (see --tab-active-* in themes.css): mainly the fill, with a faint edge
+     and shadow. The fill isn't --bg-primary, which is the darker surface in
+     dark palettes and would sink the tab. */
   background: var(--tab-active-bg);
   color: var(--fg-primary);
   border-color: var(--tab-active-border);
   box-shadow: var(--tab-active-shadow);
 }
 
-/* Hover matches the other buttons in the top row (the pane menu, the toolbar
-   icon buttons): a quiet neutral wash and a firmer text colour, with no accent
-   outline. The tab keeps its transparent border so nothing shifts, and the
-   highlight reads as the same "button under the pointer" cue used elsewhere in
-   the row rather than a colour the tab shouts on its own. */
+/* Hover matches the other buttons in the top row (pane menu, toolbar icons):
+   a quiet neutral background and stronger text, no accent outline. The
+   border stays transparent so nothing shifts. */
 .tab:hover:not(.tab--active),
 .pane:not(.pane--focused) .tab--active:hover {
   color: var(--fg-primary);
@@ -72,13 +61,10 @@
 .tab__title {
   overflow: hidden;
   text-overflow: ellipsis;
-  /* Absorbs the tab's compression in both directions: `min-width: 0` lets it
-     ellipsize (the floor that stops the shrinking lives on `.tab`), and
-     `flex-grow: 1` lets it take up any slack when the tab is held open at
-     that floor by a short title — otherwise the slack collects between the
-     title and the close ×, leaving the × stranded in the middle of the tab.
-     The cap is `ch` rather than the old fixed 180px so it tracks the user's
-     text size. */
+  /* Takes up the tab's shrinking and stretching: `min-width: 0` lets it
+     truncate (the minimum is on `.tab`), and `flex-grow: 1` fills a tab held
+     open by a short title, so the × stays at the right edge. The cap is in
+     `ch` to follow the text size. */
   flex: 1 1 auto;
   min-width: 0;
   max-width: 25ch;
@@ -97,9 +83,9 @@
   height: 13px;
 }
 
-/* Link glyph marking the two tabs of a synced editor+preview pair. Accent
-   colour keeps the tie between the panes legible without competing with the
-   active/hover tab states, which already colour the tab border. */
+/* Link icon on the two tabs of a synced editor and preview. The accent
+   colour shows they're paired without competing with the active and hover
+   borders. */
 .tab__icon--sync {
   color: var(--accent);
 }
@@ -114,10 +100,8 @@
   font-size: var(--text-xl);
   width: 18px;
   height: 18px;
-  /* Hold that size when the tab compresses. As a flex item the × would
-     otherwise shrink along with the title, so a tab with a long (truncated)
-     title ended up with a visibly smaller × and hover area than a tab with a
-     short one. Only `.tab__title` gives up width; the chrome stays fixed. */
+  /* Keep that size when the tab shrinks; only `.tab__title` gives up width,
+     so every tab's × is the same size. */
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;

@@ -1,6 +1,5 @@
-// Quick-open command palette (Ctrl+O).
-// Fuzzy searches the notebox's notes by file name, `title`, and `zid`, and
-// opens the selected one.
+// Quick open (Ctrl+O): fuzzy search of notes by file name, `title` and `zid`,
+// opening the chosen one.
 
 import {
   Component,
@@ -54,10 +53,10 @@ function compareScored(a: ScoredEntry, b: ScoredEntry): number {
 }
 
 /**
- * The best way `query` matches a note, or null if nothing does. The title
- * matches loosely like the name; the zid only as an unbroken run, since
- * loose matching of digits would hit nearly every timestamp-style zid. A
- * title or zid identical to the name is skipped so it doesn't repeat.
+ * The best way `query` matches a note, or null. The title matches loosely, like
+ * the name; the zid only as an unbroken run, since loose digit matching would
+ * hit almost every timestamp zid. A title or zid equal to the name is skipped
+ * so it doesn't repeat.
  */
 function matchNote(
   query: string,
@@ -80,10 +79,11 @@ function matchNote(
   return candidates.sort(compareScored)[0] ?? null;
 }
 
-/** Rows rendered initially, and added each time the user scrolls (or arrows)
- *  near the bottom. The full result set is never capped — this only bounds how
- *  many rows live in the DOM at once, so a notebox of thousands of notes stays
- *  responsive while the user can still scroll through every match. */
+/**
+ * Rows shown at first, and added each time the user scrolls or arrows near the
+ * bottom. Results aren't capped; this only limits rows in the DOM, so thousands
+ * of notes stay responsive.
+ */
 const PAGE_SIZE = 50;
 
 /** A note's name as shown to the user — without the `.typ` extension. */
@@ -104,9 +104,8 @@ const QuickOpen: Component<QuickOpenProps> = (props) => {
   let resultsEl: HTMLDivElement | undefined;
   const hover = createHoverGuard();
 
-  // Each note's title and zid, keyed by normalized path. Fetched fresh from
-  // the backend's in-memory index every time the picker opens (so it is never
-  // stale) and dropped when it closes.
+  // Each note's title and zid by normalized path, fetched from the backend's
+  // index each time the picker opens and dropped when it closes.
   const [identifiers, setIdentifiers] = createSignal(
     new Map<string, NoteIdentifiers>(),
   );
@@ -127,12 +126,11 @@ const QuickOpen: Component<QuickOpenProps> = (props) => {
     ),
   );
 
-  // Keep the selected row visible as the selection moves past either edge of
-  // the scroll viewport. `block: "nearest"` scrolls the minimum amount. We
-  // track the query (to snap back to the top on a new search) but deliberately
-  // NOT the window size — growing it by scrolling must not yank the view back
-  // to the selected row. `moveSelection` grows the window before setting the
-  // index, so the target row is already rendered when this runs.
+  // Keep the selected row visible as the selection passes either edge (`block:
+  // "nearest"` scrolls the least). Tracks the query (a new search returns to
+  // the top) but not the window size, so loading more rows by scrolling doesn't
+  // jump back. `moveSelection` grows the window before setting the index, so
+  // the row exists when this runs.
   createEffect(() => {
     const idx = selectedIndex();
     query(); // re-run on a new search so row 0 scrolls into view
@@ -176,10 +174,8 @@ const QuickOpen: Component<QuickOpenProps> = (props) => {
       if (m) scored.push(m);
     }
 
-    // Kind first: text that spells the query out in order beats text that
-    // merely has those letters sprinkled through it, and text that *is* the
-    // query tops both. Tiebreak by recency so equally-good matches list the
-    // more recently edited note first.
+    // By kind first (the query exactly, then in order, then scattered), then by
+    // recency, so equal matches list the most recently edited note first.
     scored.sort(
       (a, b) =>
         compareScored(a, b) || b.entry.modified_time - a.entry.modified_time,

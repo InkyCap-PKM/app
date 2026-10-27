@@ -1,8 +1,7 @@
-/* Loads the font binaries shipped under src-tauri/assets/fonts/ into the
-   visual editor's DOM. Same files the Typst compile pipeline picks up via
-   include_bytes!. Vite resolves these relative paths at build time and
-   fingerprints the binaries into the bundle. font-display: block keeps
-   the editor from briefly painting in a fallback face on first load. */
+/* Loads the fonts in src-tauri/assets/fonts/ (the same files the Typst
+   pipeline embeds with include_bytes!) for the editor. Vite resolves these
+   paths at build time. font-display: block avoids briefly showing a fallback
+   font on first load. */
 
 @font-face {
   font-family: "Inter";
@@ -91,10 +90,9 @@
   src: url("../../src-tauri/assets/fonts/JuliaMono-BoldItalic.ttf") format("truetype");
 }
 
-/* iA Writer Duo S — four static cuts. Matches what the Typst pipeline
-   loads (see inkycap_bundled_fonts in fonts.rs); kept on statics rather
-   than the variable file because typst 0.14 doesn't interpolate variable
-   axes in compiled output. */
+/* iA Writer Duo S: four static styles, matching what the Typst pipeline
+   loads (inkycap_bundled_fonts in fonts.rs). Statics rather than the
+   variable font, because Typst doesn't interpolate variable axes in output. */
 @font-face {
   font-family: "iA Writer Duo S";
   font-style: normal;

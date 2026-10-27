@@ -1,19 +1,13 @@
-// Notebox-scoped alias index for the wikilink autocomplete.
+// Alias index for wikilink suggestions in the current notebox.
 //
-// Aliases are derived from each note's `aliases` property; the Rust
-// `PropertyIndex` keeps the canonical map, and `refreshAliases()` pulls
-// a snapshot over IPC.
+// Aliases come from each note's `aliases` property; the Rust `PropertyIndex`
+// holds the map, and `refreshAliases()` fetches a copy.
 //
-// Two pieces of bookkeeping keep the snapshot honest:
-//
-//   • A trailing debounce coalesces bursts of refresh triggers (every
-//     property write currently asks for a refresh; without this we'd
-//     do N IPC roundtrips per save).
-//
-//   • A generation counter tracks the active notebox — if the user
-//     switches noteboxes mid-flight, a stale response from the previous
-//     notebox is discarded instead of overwriting the new notebox's list.
-//     `bumpAliasGeneration()` is called on every notebox open.
+//   - A trailing debounce merges bursts of refresh requests (every property
+//     write asks for one).
+//   - A generation counter tracks the notebox, so a late reply for the previous
+//     notebox after a switch is discarded. `bumpAliasGeneration()` is called on
+//     every notebox open.
 
 import { createSignal } from "solid-js";
 import type { AliasEntry } from "../lib/ipc";
@@ -39,9 +33,8 @@ export function bumpAliasGeneration(): void {
   setAliases([]);
 }
 
-/// Schedule a refresh of the alias index. Returns a promise that
-/// resolves when the next refresh completes (or when the request is
-/// superseded by a notebox switch).
+/// Schedule an alias refresh. The promise resolves when the next refresh
+/// finishes (or is cancelled by a notebox switch).
 export function refreshAliases(): Promise<void> {
   return new Promise((resolve) => {
     pendingResolvers.push(resolve);

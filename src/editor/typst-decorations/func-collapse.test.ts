@@ -6,16 +6,13 @@ import { AnnotationPillWidget, FuncChipWidget, FuncPillWidget } from "./visual-w
 
 // Collapse rules for a generic `#func(...)` call in the visual editor.
 //
-// The motivating regression (issue #20): typing `#test_function(` in visual
-// mode made the call vanish. `closeBrackets()` auto-inserts the `)` as soon as
-// the `(` is typed, so a half-written call is already a *syntactically
-// complete* FuncCall with the caret parked between the parens — and the
-// arguments-only branch used to replace that range with a chip unconditionally,
-// swallowing the caret before any argument had been typed.
+// Issue #20: typing `#test_function(` in visual mode made the call vanish.
+// `closeBrackets()` inserts the `)` as soon as `(` is typed, so the unfinished
+// call is already a complete FuncCall with the caret between the parentheses,
+// and it must not collapse into a chip before any argument is typed.
 //
-// `handleFuncCall` reads the sliced source text rather than the syntax tree, so
-// these run against a plain `EditorState` with no language configured — no
-// syntax tree, and none needed.
+// `handleFuncCall` reads the source text rather than the syntax tree, so these
+// use a plain `EditorState` with no language.
 
 /** Run the decorator over the whole of `doc`, with carets at `cursors`. */
 function decorate(doc: string, cursors: number[]) {
@@ -81,11 +78,9 @@ describe("arguments-only #func(...) collapse", () => {
 
 describe("named calls that replace their whole range obey the same caret rule", () => {
   // `figure`, `line` and `bibliography` each have their own branch that
-  // replaces the call's full source range with a chip or block widget. Each
-  // reached that replace without consulting the caret, so hand-typing any of
-  // them hit the identical mid-typing collapse the generic branch did — the
-  // `/` palette's insertion path (which dispatches expandFunc) was the only
-  // one that stayed open. Pinned per-name because each lives in its own case.
+  // replaces the call with a chip or block widget, so each needs the same check
+  // against collapsing while typed by hand (the `/` palette inserts them
+  // expanded). Tested by name since each is its own case.
   const CALLS = ["#figure()", "#line()", "#bibliography()"];
 
   it("stays raw source while the caret is between the parens", () => {
@@ -124,9 +119,9 @@ describe("named calls that replace their whole range obey the same caret rule", 
 });
 
 describe("content-bracket #func[...] collapse is unchanged", () => {
-  // A call with a `[…]` body keeps its established behaviour: pill + visible
-  // body on the caret's line, markup hidden when away. Pinned here so the
-  // arguments-only fix above can't be generalized into this branch by mistake.
+  // A call with a `[…]` body keeps its behaviour: pill and visible body on the
+  // caret's line, markup hidden elsewhere. Tested so the arguments-only rule
+  // above isn't applied here.
   const CALL = "#unknownfunc[body text]";
 
   it("shows a pill and leaves the body live while on the caret line", () => {

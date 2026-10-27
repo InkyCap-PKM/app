@@ -15,9 +15,9 @@ interface InlineAction {
   titleKey: string;
   wrap: [string, string];
   /**
-   * Typst function backing this format, for the two shorthand markers whose
-   * `wrap` pair only works outside a word. Set it and the action routes
-   * through `applyToggleEmphasis`, which picks the form Typst can read here.
+   * The Typst function for this format, for the two shorthand markers that only
+   * work outside a word. When set, the action uses `applyToggleEmphasis`, which
+   * picks a form Typst reads here.
    */
   emphasisFunc?: string;
   styleBold?: boolean;
@@ -59,9 +59,10 @@ const ICON_FOOTNOTE = `<svg viewBox="0 0 24 24" width="14" height="14" fill="cur
 /* ── Dropdown block/structure items ─────────────────────── */
 
 interface DropdownItem {
-  /** Stable English identifier — also drives per-item styling (heading-level
-   *  parsing below), so it must NOT be localized. Display text comes from
-   *  `labelKey`. */
+  /**
+   * Fixed English identifier, also used for per-item styling (heading level,
+   * below), so it must not be translated. Display text comes from `labelKey`.
+   */
   label: string;
   /** i18n key for the displayed label, resolved at DOM-build time. */
   labelKey?: string;
@@ -70,17 +71,13 @@ interface DropdownItem {
   separator?: boolean;
 }
 
-// Existing block-prefix markup the line-prefix actions strip before applying a
-// new one: headings (`= `), list markers (`- ` / `+ ` / explicit `1. `), and
-// task checkboxes. Stripping explicit enum markers too means an ordered list
-// the user hand-numbered converts cleanly to a bullet list (no `- 1. item`).
+// Line-prefix markup removed before applying another: headings, list markers
+// (including `1. `) and task boxes, so a numbered list becomes bullets without
+// `- 1. item`.
 const BLOCK_PREFIX = /^(=+ |[+\-] |\d+\. |\[[ x]\] )/;
 
-// Apply `transform` to every line the selection touches, as a single
-// transaction. The block-type actions (lists, headings, regular text) are
-// per-line operations, so a multi-line selection must convert *all* the lines
-// it spans — not just the one under the selection anchor. Each transform keeps
-// the line's leading whitespace intact so nested list items stay nested.
+// Apply `transform` to every line the selection touches, in one transaction,
+// keeping each line's indentation so nested items stay nested.
 function eachSelectedLine(view: EditorView, transform: (rest: string, indent: string) => string) {
   const { from, to } = view.state.selection.main;
   const startLine = view.state.doc.lineAt(from).number;
@@ -185,18 +182,13 @@ let dropdown: HTMLElement | null = null;
 let alignPopup: HTMLElement | null = null;
 let activeView: EditorView | null = null;
 
-// The toolbar/dropdown/popup DOM is built once and cached. Their labels are
-// resolved at build time via `t()`, so on a UI-locale switch the cached nodes
-// would keep the old language. Track the locale version they were built under
-// and tear them down when it changes, so the next `showToolbar` rebuilds them
-// in the new locale. (CM6 extensions live outside Solid's reactive scope, so
-// this version check is the out-of-band refresh hook — mirrors how the editor
-// search panel refreshes via `relocalize`.)
+// The toolbar, dropdown and popup DOM is built once, with labels from `t()`.
+// Record the locale version it was built with and discard it when the language
+// changes, so `showToolbar` rebuilds it (CM6 extensions are outside Solid's
+// reactivity; the search panel uses `relocalize` likewise).
 let builtLocaleVersion = -1;
 
-// The dismissal listeners on the document belong to the module, not to one
-// build of the toolbar: a locale switch rebuilds the DOM but must not add a
-// second copy of them.
+// Document listeners belong to the module, so a rebuild doesn't add them twice.
 let documentListenersInstalled = false;
 
 function ensureFreshLocale() {
@@ -280,9 +272,8 @@ function getToolbar(): HTMLElement {
     }
 
     /* ── Superscript / subscript / footnote ──
-     * Content-bracket inserts wrapping the selection. `applyToggleWrap` toggles
-     * them off when the selection already carries the markup, matching B/I/U/S —
-     * so they sit alongside the other inline character formatting. */
+     * Content-bracket wrappers around the selection. `applyToggleWrap`
+     * removes them when already present, as for B/I/U/S. */
     const wrapButtons: { svg: string; titleKey: string; wrap: [string, string] }[] = [
       { svg: ICON_SUPERSCRIPT, titleKey: "selToolbar.superscript", wrap: ["#super[", "]"] },
       { svg: ICON_SUBSCRIPT, titleKey: "selToolbar.subscript", wrap: ["#sub[", "]"] },
@@ -308,9 +299,8 @@ function getToolbar(): HTMLElement {
       e.preventDefault();
       closeAllPopups();
       if (!activeView) return;
-      // Drop the caret inside the empty URL string (`#link("⎸")[label]`) so the
-      // user can type or paste the address straight away; the selection becomes
-      // the link label.
+      // Put the caret in the empty URL (`#link("⎸")[label]`); the selection
+      // becomes the label.
       applyToggleWrap(activeView, '#link("")[', "]", '#link("'.length);
     });
     toolbar.appendChild(linkBtn);
@@ -385,9 +375,8 @@ function installDocumentListeners(): void {
   if (documentListenersInstalled) return;
   documentListenersInstalled = true;
 
-  /* Escape closes them, like every other menu in the app. Claimed only when
-   * there is something to close, so an idle Escape still reaches the handlers
-   * further along (Escape-to-editor, distraction-free mode). */
+  /* Escape closes them, as for other menus. Only when one is open, so Escape
+   * still reaches later handlers otherwise. */
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape" || !anyPopupOpen()) return;
     e.preventDefault();
@@ -470,9 +459,8 @@ function getDropdown(): HTMLElement {
         e.preventDefault();
         run();
       });
-      // Keyboard activation arrives as a click with no mousedown before it
-      // (lib/menu-nav.ts); `detail === 0` is what marks a click the pointer
-      // did not make, so a real click can't run the action twice.
+      // Keyboard activation is a click with no mousedown (lib/menu-nav.ts);
+      // `detail === 0` marks it, so a real click doesn't run twice.
       row.addEventListener("click", (e) => {
         if (e.detail !== 0) return;
         run();
@@ -532,11 +520,9 @@ function toggleAlignPopup(anchorBtn: HTMLElement) {
     ap.style.display = "none";
     return;
   }
-  // Line up horizontally with the button, but vertically with the toolbar's
-  // edges — not the button's — so the popup clears the toolbar with the same
-  // gap as the block-type dropdown. The button sits inside the toolbar's
-  // padding, so anchoring vertically to it would leave the popup all but
-  // touching the toolbar (and, when flipped upward, overlapping it).
+  // Align horizontally with the button but vertically with the toolbar's edges,
+  // so the popup has the same gap as the block-type dropdown instead of nearly
+  // touching (or, upward, overlapping) the toolbar.
   const btnRect = anchorBtn.getBoundingClientRect();
   const tbRect = toolbar?.getBoundingClientRect();
   positionPopupAtAnchor(
@@ -594,12 +580,9 @@ function showToolbar(view: EditorView) {
     return;
   }
 
-  // Anchor to the selection's bounding box. The toolbar centres on it and
-  // opens above by default, flipping below the last selected line when the
-  // selection sits at the top of the viewport — either way it stays clear of
-  // the text being formatted, and the shared helper clamps it inside the left
-  // and right margins. The 8px gap matches the spacing the previous hardcoded
-  // `top - 44` produced, without baking in the toolbar's height.
+  // Anchor to the selection's bounds: centred above it, or below the last line
+  // when the selection is near the top, staying off the text; the helper keeps
+  // it within the margins.
   positionPopupAtAnchor(
     el,
     {
@@ -614,17 +597,11 @@ function showToolbar(view: EditorView) {
 
 /* ── User-gesture gate ───────────────────────────────────── */
 
-// Tracks whether the current non-empty selection was produced by an explicit
-// user gesture (mouse drag, double/triple-click, shift+arrow, etc.) versus a
-// programmatic dispatch (search reveal, "go to line", reveal-by-label, …).
-// CM6 tags pointer- and keyboard-driven selection transactions with a
-// `select.*` userEvent; everything else is treated as programmatic. The
-// in-page find/replace is a special case — it tags its match-reveal
-// selections `select.search`, so those are excluded explicitly: a search
-// should highlight matches without summoning the format toolbar. The flag is
-// preserved across doc edits so that clicking a toolbar button (which
-// dispatches changes + a new selection without a userEvent) does not dismiss
-// the toolbar mid-format.
+// Whether the current selection came from the user (drag, double or triple
+// click, Shift+arrow) rather than code (a search reveal, go-to-line, …). CM6
+// tags user selections `select.*`; find's `select.search` is excluded so
+// searching doesn't bring up the toolbar. Kept through edits, so clicking a
+// toolbar button (which dispatches without a userEvent) doesn't hide it.
 const userSelectionField = StateField.define<boolean>({
   create: () => false,
   update(value, tr) {

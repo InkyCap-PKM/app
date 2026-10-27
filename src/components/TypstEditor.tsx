@@ -102,9 +102,8 @@ const AUTOSAVE_DEBOUNCE_MS = 1500;
 
 type TypstMode = "source" | "live" | "reading";
 
-/// Select a search-match range and scroll it into view. The CodeMirror
-/// selection itself acts as the visual highlight, which is the cheapest
-/// and most native way to draw the user's eye to the match.
+/// Select a search match and scroll it into view; the selection is the
+/// highlight.
 function scrollToMatch(
   handle: TypstEditorHandle,
   match: { line: number; charStart: number; charEnd: number },
@@ -125,10 +124,9 @@ function scrollToMatch(
 }
 
 /**
- * Scroll to the anchor a wikilink points at. Tries, in order: the heading
- * carrying this label, a heading whose *text* is the label (links written
- * before the heading was labelled), then any other label definition — the case
- * where the writer tagged a line of prose, a figure, or an equation.
+ * Scroll to a wikilink's anchor: the heading with this label, then a heading
+ * whose text is the label, then any other label definition (prose, figure,
+ * equation).
  */
 function scrollToLabel(handle: TypstEditorHandle, doc: string, label: string) {
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -146,11 +144,9 @@ function scrollToLabel(handle: TypstEditorHandle, doc: string, label: string) {
 }
 
 /**
- * Overflow container for the editor header's control cluster. When the pane is
- * too narrow for the controls to sit inline, they collapse into this single
- * "⋯" button, which drops the same controls into a menu (priority+ pattern).
- * Children are rendered lazily — only while the menu is open — so the controls
- * exist in exactly one place at a time (inline OR here, never both).
+ * Overflow "⋯" button for the header controls when the pane is too narrow.
+ * Children render only while the menu is open, so the controls exist in one
+ * place at a time.
  */
 const HeaderOverflowMenu: Component<{ children: JSX.Element }> = (props) => {
   const [open, setOpen] = createSignal(false);
@@ -202,29 +198,21 @@ const HeaderOverflowMenu: Component<{ children: JSX.Element }> = (props) => {
 };
 
 const TypstEditor: Component<TypstEditorProps> = (props) => {
-  // Reading-view render format is a per-tab override (so two panes showing
-  // the same note in reading mode can differ), falling back to the user's
-  // default. Reactive via the tab store.
+  // Reading-view format is per tab (two panes of one note can differ),
+  // defaulting to the user's setting.
   const readingFormat = () => tabReadingFormat(props.tabId);
   const setReadingFormat = (fmt: "svg" | "html") =>
     setTabReadingFormat(props.tabId, fmt);
 
-  // Reading-view zoom, likewise per-tab. Applies to both render formats: the
-  // SVG view scales its page boxes (the vector output stays crisp at any
-  // factor, so no re-compile is needed), and the HTML view uses CSS `zoom`,
-  // which scales layout rather than just type — so the measure and images
-  // grow together and text still reflows to the pane.
+  // Reading-view zoom, also per tab. The SVG view scales its pages (no
+  // recompile); the HTML view uses CSS `zoom`, which scales the layout so text
+  // still reflows.
   const readingZoom = () => tabReadingZoom(props.tabId);
 
-  // Toolbar overflow: when the pane is too narrow for the header's control
-  // cluster to sit inline, it collapses into a single "⋯" menu (priority+
-  // pattern). Driven by the observed header width against a mode-dependent
-  // threshold — reading mode carries extra controls (format + zoom) so it needs
-  // more room before it fits. A width breakpoint (not content measurement)
-  // keeps this stable: collapsing changes the content but not the header width,
-  // so there's no expand/collapse oscillation. Thresholds are px because the
-  // rendered controls are icon/glyph-sized and locale-stable (SVG/HTML labels
-  // don't translate); tune here if the cluster changes.
+  // Below these header widths the controls collapse into the "⋯" menu; reading
+  // mode has more controls, so needs more room. A width breakpoint, rather than
+  // measuring the content, avoids flicker, since collapsing doesn't change the
+  // header width. Pixels are fine because the controls are icons.
   const COMPACT_TOOLBAR_READING_PX = 540;
   const COMPACT_TOOLBAR_EDIT_PX = 340;
   const [headerWidth, setHeaderWidth] = createSignal(0);
@@ -371,10 +359,9 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
 
   // ── CodeMirror lifecycle ──────────────────────────────
 
-  // True for the first file-load reconciliation after we restored editor
-  // state from the per-tab cache. The createEffect that watches the disk
-  // content uses this to skip the setText() that would otherwise clobber the
-  // cached doc (and reset history) when the tab is reactivated.
+  // True for the first file load after the editor was restored from the per-tab
+  // cache, so that load doesn't `setText()` over the cached doc and reset its
+  // history.
   let usedCachedState = false;
 
   function mountEditor() {
@@ -401,12 +388,10 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
       restoreState: cached,
       restoreScroll,
     });
-    // Remember the scroll offset continuously (rAF-throttled) so returning to
-    // this editor — from reading mode or another tab — lands where the user left
-    // off. This must be live, not snapshotted at teardown: destroyEditor runs
-    // from a createEffect, which fires after Solid's render effects have already
-    // removed the editor div, so a teardown snapshot reads a detached scroller
-    // and captures the top. Mirrors the reading view's attachReadingScrollMemory.
+    // Track the scroll offset continuously (once per frame), so returning to this
+    // editor lands where the user left off. Captured live because by teardown the
+    // editor div is already detached and reads as scrolled to the top. Like the
+    // reading view's attachReadingScrollMemory.
     {
       const scroller = editorHandle.view.scrollDOM;
       let queued = false;
@@ -423,12 +408,8 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
         { passive: true },
       );
     }
-    // Re-assert the restored scroll once layout has settled. The constructor's
-    // `scrollTo` is applied while the editor container is being swapped back in
-    // (e.g. returning from reading mode), before it has a measured height — so
-    // CM scrolls a zero-height scroller and the position is lost. Redispatching
-    // the (document-anchored) snapshot on the next frame, once the container is
-    // laid out, restores the user's place.
+    // Re-apply the restored scroll on the next frame: the first `scrollTo` runs
+    // before the container has a height.
     if (restoreScroll) {
       const handle = editorHandle;
       requestAnimationFrame(() => {
@@ -440,22 +421,17 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
       usedCachedState = true;
       currentPath = props.path;
       setDocText(editorHandle.getText());
-      // A restored buffer that is known to be saved counts as saved, so an
-      // editor hidden again before the note is read from disk doesn't write
-      // this older text over a newer file (a rename's link rewrite, say).
+      // A restored buffer known to be saved counts as saved, so it doesn't
+      // overwrite a newer file if hidden again before the note is read.
       const savedText = getCachedSavedText(props.tabId, props.path);
       if (savedText !== undefined && savedText === editorHandle.getText()) {
         lastSaved = savedText;
       }
       if (currentMode() === "live") {
-        // Parse-aware full rebuild, not a bare ensureParsed(). The restored
-        // state re-runs visualField.create() against a tree the (just-started)
-        // parser hasn't finished, so the decorations can latch onto a stale or
-        // partial structure — e.g. a note left mid-edit with an unterminated
-        // code fence stays stuck as raw red source, the wikilinks dead, even
-        // after the source on disk is correct. rebuildVisual() waits for the
-        // tree to span the doc, then forces a clean rebuild. (Mirrors
-        // reloadFromDisk.)
+        // A full rebuild rather than `ensureParsed()`: the restored state's
+        // decorations can be built from an unfinished tree and stay stuck as
+        // raw source. `rebuildVisual()` waits for the tree to cover the doc
+        // first, as reloadFromDisk does.
         editorHandle.rebuildVisual();
       }
     }
@@ -464,11 +440,9 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
 
   function destroyEditor() {
     if (editorHandle) {
-      // Snapshot doc + selection + undo history before tearing the view down so
-      // the next mount of this tab restores them. Scroll is NOT captured here —
-      // by the time this createEffect-driven teardown runs, Solid's render
-      // effects have already detached the editor div, so the scroller reads 0.
-      // Scroll is tracked live in mountEditor instead (see setCachedScroll).
+      // Save doc, selection and undo history so the next mount of this tab
+      // restores them. Scroll is tracked live in mountEditor (see
+      // setCachedScroll), since the editor div is already detached here.
       if (currentPath) {
         try {
           const path = currentPath;
@@ -495,13 +469,10 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
   });
 
   onCleanup(() => {
-    // Fire any pending edit to disk before unmounting. flushSave()
-    // registers the write in `pendingWrites` keyed by path, so a
-    // subsequent mount of the same path (via createResource below)
-    // awaits this completion before reading — preventing the
-    // stale-read-then-overwrite race that loses in-progress edits. If the
-    // note was just renamed or moved, `currentPath` already names its new
-    // location (see onPathMoved), so this save lands there.
+    // Save any pending edit before unmounting. `flushSave()` registers the
+    // write in `pendingWrites`, and the next mount of the same path waits for
+    // it before reading, so edits aren't lost. After a rename or move,
+    // `currentPath` already names the new location (see onPathMoved).
     void flushSave();
     cleanupDiagnostics?.();
     lspCloseDocument();
@@ -510,11 +481,8 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
 
   // ── Mode handling ──────────────────────────────────────
 
-  // Tooling files (scaffolds, package manifests, package lib.typ) live
-  // under `.inkycap/scaffolds/` and `.inkycap/packages/`. They are author-
-  // facing source artifacts, not user notes — visual/reading modes and the
-  // tab back/forward stack don't apply, so we hide the editor header for
-  // them and lock to source mode.
+  // Tooling files (`.inkycap/scaffolds/`, `.inkycap/packages/`) aren't notes:
+  // no editor header, no back/forward, source mode only.
   const isToolingFile = createMemo(() => {
     const p = props.path;
     return /[/\\]\.inkycap[/\\](scaffolds|packages)[/\\]/.test(p);
@@ -550,14 +518,10 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
     }),
   );
 
-  // Journal Scroll replaces the editor for this tab. Toggling scroll does
-  // not remount this component — only the <Show> blocks in the render swap
-  // the editor's mount node in and out of the DOM. So when scroll turns on
-  // we must tear down the CodeMirror handle ourselves; otherwise it keeps
-  // pointing at a now-detached DOM node, the re-rendered editor shows blank,
-  // and operations on the stale handle can crash. When scroll turns back
-  // off, the mount node's ref callback re-runs and re-creates the editor
-  // (editorHandle is undefined again), restoring the cached doc + history.
+  // Journal Scroll replaces the editor without remounting this component, so
+  // tear down the CodeMirror handle when it turns on; otherwise it points at a
+  // detached node. When it turns off, the mount ref re-creates the editor from
+  // the cached doc and history.
   createEffect(
     on(
       () => isScrollEnabled(props.tabId),
@@ -577,8 +541,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
   createEffect(
     on(
       // `currentMode` is a dependency, not an argument: the handle decides
-      // whether either setting applies to the mode it is in, so the gate
-      // lives in one place. Switching modes just re-applies the settings.
+      // whether the settings apply to its mode.
       [() => settings.editor.focus_mode, () => settings.editor.focus_dim, currentMode],
       ([mode, dim]) => {
         editorHandle?.setFocusMode(mode, dim);
@@ -588,19 +551,16 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
 
   createEffect(
     on([() => settings.editor.typewriter_mode, currentMode], ([enabled, editorMode]) => {
-      // Typewriter scrolling only applies in the visual editor; the handle
-      // gates on its own visual-mode flag, but we also pass the live setting
-      // through so toggling it (or switching modes) reconfigures immediately.
+      // Typewriter scrolling only applies in the visual editor; pass the
+      // setting so toggling it, or switching modes, applies at once.
       editorHandle?.setTypewriterMode(enabled && editorMode === "live");
     }),
   );
 
-  // Spellcheck: build a Hunspell-backed checker from the active dictionaries +
-  // the notebox user dictionary, then install it on the editor. Rebuilds when
-  // the toggle or language set changes, or when the dictionary file changes
-  // (Mycelial rescue / "Add to dictionary" dispatch `inkycap:dictionary-changed`).
-  // A generation counter discards a stale async build if settings change again
-  // before it finishes.
+  // Spellcheck: build a Hunspell checker from the active dictionaries and the
+  // notebox's user dictionary. Rebuilds when the toggle or languages change, or
+  // the dictionary file changes (`inkycap:dictionary-changed`). A generation
+  // counter drops a stale async build.
   let spellGen = 0;
   async function rebuildSpellChecker() {
     const gen = ++spellGen;
@@ -610,9 +570,8 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
       editorHandle.setSpellChecker(null);
       return;
     }
-    // The status-bar chip narrows checking to one language, or "all" (union of
-    // enabled). A stale active code (its dictionary was disabled) falls back to
-    // the full enabled set.
+    // The status-bar chip limits checking to one language or "all" enabled
+    // ones. A disabled language falls back to all.
     const active = settings.editor.spellcheck_active || "all";
     const codes =
       active !== "all" && enabled.includes(active) ? [active] : enabled;
@@ -687,29 +646,25 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
     }),
   );
 
-  // Refresh editor-owned translated UI when the user switches UI language.
-  // `defer: true` skips the initial run — the editor is built with the active
-  // locale already, so only subsequent switches need a refresh.
+  // Refresh the editor's translated UI when the language changes. `defer: true`
+  // skips the first run.
   createEffect(
     on(localeVersion, () => editorHandle?.relocalize(), { defer: true }),
   );
 
   // ── File loading ───────────────────────────────────────
-  // The component is keyed on `path` in MainContent, so it remounts for
-  // each file. We load the file content once on mount.
+  // MainContent keys this component on `path`, so the file loads once per
+  // mount.
 
   const [content] = createResource(
     () => props.path,
     async (path) => {
-      // If a previous editor instance for this path is still flushing
-      // an in-progress save, wait for it before reading from disk —
-      // otherwise we'd read the pre-flush content and a subsequent edit
-      // would clobber the just-written changes.
+      // Wait for a previous editor's pending save of this path before reading,
+      // so the read isn't stale.
       await awaitPendingWrite(path);
-      // Add the InkyCap import to a note that lacks it (or ask first) before
-      // reading, so the editor loads the fixed text. Skipped when the tab is
-      // restoring its in-memory state: that buffer may hold unsaved edits
-      // that would overwrite a change made on disk now.
+      // Add the InkyCap import to a note without it (or ask first) before
+      // reading. Skipped when restoring the in-memory state, whose unsaved
+      // edits would overwrite the fix.
       if (getCachedEditorState(props.tabId, path) === undefined) {
         await ensureNoteboxImport(path);
       }
@@ -723,10 +678,8 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
     },
   );
 
-  // Issue 3A: highlight ALL of the opened file's search matches, not just the
-  // clicked line. The search store records every match for the path when a
-  // result is opened; mark them here. Source/live only — the char positions are
-  // source offsets (same constraint as scrollToMatch); reading mode clears them.
+  // Highlight every search match in the opened file, not just the clicked one.
+  // Source and visual modes only, since the positions are source offsets.
   function applySearchHighlights() {
     if (!editorHandle) return;
     const hl = searchHighlights();
@@ -758,12 +711,9 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
       currentPath = path;
       lastSaved = doc;
 
-      // When the editor was restored from cache, the buffer already holds
-      // the user's most recent doc (possibly with unsaved edits and a live
-      // undo stack). Don't call setText() — that would reset history and
-      // discard those edits. Just reconcile the dirty flag against disk.
-      // A restored buffer is set aside when its text had been saved and the
-      // note on disk has changed since: the disk version is newer.
+      // A buffer restored from cache already holds the latest doc and undo
+      // history; don't `setText()`, just compare with disk for the dirty flag.
+      // A saved buffer is discarded if the file on disk has changed since.
       const savedText = getCachedSavedText(props.tabId, path);
       const changedWhileAway = savedText !== undefined && savedText !== doc;
       const restoredFromCache = usedCachedState && !changedWhileAway;
@@ -780,11 +730,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
           if (editorHandle) {
             editorHandle.setText(doc);
             if (currentMode() === "live") {
-              // Parse-aware rebuild after setText (see reloadFromDisk): a bare
-              // ensureParsed() leaves visualField anchored to the pre-setText
-              // tree, so stale Replace widgets mask the freshly-loaded content
-              // and a note that was saved in a broken-parse state never
-              // recovers on reopen. rebuildVisual() reparses, then rebuilds.
+              // Full rebuild after `setText`, as in reloadFromDisk.
               editorHandle.rebuildVisual();
             }
           }
@@ -803,9 +749,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
         const pendingHeading = consumePendingHeadingLabel(props.tabId);
         const pendingMatch = consumePendingMatch(props.tabId);
         if (pendingMatch) {
-          // Two rAFs let CM6 finish layout before we scroll, matching the
-          // heading-jump path. Without this the line measurements are
-          // pre-layout and scrollIntoView lands in the wrong spot.
+          // Wait two frames for layout before scrolling, as heading jumps do.
           requestAnimationFrame(() => {
             requestAnimationFrame(() => {
               if (!editorHandle) return;
@@ -836,10 +780,8 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
         }
       }
 
-      // The doc is now loaded for this path; mark its search matches (if this
-      // file is the one a search result was opened from). Reads are untracked
-      // here because the enclosing effect uses `on`, so this doesn't subscribe
-      // the file-load effect to the search store.
+      // Mark this file's search matches. Untracked, since the enclosing effect
+      // uses `on`.
       applySearchHighlights();
     }),
   );
@@ -875,10 +817,10 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
   );
 
   // ── Save on request ─────────────────────────────────────
-  // `flushEditorsAt` (a rename, move or property edit about to touch this
-  // note on disk) and `flushAllEditors` (before the app stops) ask for an
-  // immediate save. The write registers with `trackWrite` synchronously, so
-  // the caller's wait covers it.
+  // `flushEditorsAt` (before a rename, move or property edit touches this note)
+  // and `flushAllEditors` (before quitting) ask for an immediate save. The
+  // write registers with `trackWrite` synchronously, so the caller can wait for
+  // it.
   const onFlushRequest = (e: Event) => {
     const path = (e as CustomEvent<{ path: string }>).detail?.path;
     if (!path || !currentPath || !pathStartsWith(currentPath, path)) return;
@@ -892,10 +834,8 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
   onCleanup(() => document.removeEventListener("inkycap:flush-all-editors", onFlushAll));
 
   // ── Follow a renamed or moved note ──────────────────────
-  // The tab is about to switch to the note's new path, which rebuilds this
-  // editor. Take the new path first, so the save made on teardown (and the
-  // cached editor state) go to the note's new location rather than
-  // recreating the old file.
+  // The tab is switching to the new path. Take it first, so the teardown save
+  // and cached state go to the new location.
   const onPathMoved = (e: Event) => {
     const detail = (e as CustomEvent<{ from: string; to: string }>).detail;
     if (!detail || !currentPath || !pathEquals(currentPath, detail.from)) return;
@@ -904,16 +844,13 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
   document.addEventListener(EDITOR_PATH_MOVED_EVENT, onPathMoved);
   onCleanup(() => document.removeEventListener(EDITOR_PATH_MOVED_EVENT, onPathMoved));
 
-  // Re-read the open file from disk and replace the CM6 buffer when it differs.
-  // Shared by the sidebar property-edit reload and the post-sync reload. The
-  // buffer-equality check makes a no-change reload a cheap no-op (so a file
-  // whose content didn't actually move never churns the editor).
+  // Re-read the file and replace the buffer if it differs. Used after property
+  // edits and syncs; a reload with no change does nothing.
   async function reloadFromDisk() {
     if (!currentPath) return;
     const path = currentPath;
-    // Compare against the actual editor buffer (not the cached docText
-    // signal) — otherwise transient signal updates can make the early-return
-    // fire when the buffer is still stale.
+    // Compare with the editor buffer itself, not the `docText` signal, which
+    // can lag.
     const readBuffer = () => editorHandle?.getText() ?? docText();
     const bufferBeforeRead = readBuffer();
     try {
@@ -934,11 +871,8 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
         setDocText(freshContent);
         if (editorHandle) {
           editorHandle.setText(freshContent);
-          // Visual mode reloads need a parse-aware rebuild. setText alone
-          // runs visualField's update against a possibly-partial tree, so
-          // pre-existing Replace widgets can mask the new content and the
-          // editor renders blank. rebuildVisual() retries until the tree
-          // spans the new doc, then dispatches the rebuild effect.
+          // Visual mode needs a parse-aware rebuild, or old widgets can hide
+          // the new content.
           if (currentMode() === "live") {
             editorHandle.rebuildVisual();
           }
@@ -953,9 +887,8 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
   }
 
   // ── External property edits (sidebar) ──────────────────
-  // When the sidebar property editor writes to disk, reload the file so the
-  // CM6 buffer reflects the updated #note(...) call. The sidebar flushes the
-  // editor before writing, so reloading here never drops unsaved work.
+  // Reload after the sidebar writes a property. The sidebar saves the editor
+  // first, so nothing is lost.
   const onPropChanged = (e: Event) => {
     const detail = (e as CustomEvent).detail;
     if (detail?.path !== currentPath) return;
@@ -966,12 +899,8 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
   onCleanup(() => document.removeEventListener("inkycap:note-property-changed", onPropChanged));
 
   // ── Post-sync reload ───────────────────────────────────
-  // A git Sync / Check for updates can rewrite the open note on disk (a merged
-  // or fast-forwarded version). Reload it so the buffer isn't stale — but only
-  // when the buffer is clean: a dirty buffer holds unsaved edits we must not
-  // clobber (those edits stay, and merge on the next Sync). Path-agnostic: every
-  // editor re-reads its own file, and the buffer-equality guard makes untouched
-  // files a no-op.
+  // A sync can rewrite the open note. Reload only a clean buffer; unsaved edits
+  // stay and merge on the next sync.
   const onNoteboxSynced = () => {
     if (!currentPath || dirty) return;
     cancelPendingSave();
@@ -981,14 +910,10 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
   onCleanup(() => document.removeEventListener("inkycap:notebox-synced", onNoteboxSynced));
 
   // ── External file change (another window / external editor) ─────
-  // The same note can be open in another window, or edited by an external
-  // tool. The notebox file watcher reports it as `notebox:file-changed`, or as
-  // `notebox:file-created` when the tool saves by writing a new file and
-  // renaming it over the note. Reload the buffer so it doesn't go stale — but
-  // only when it's clean: a dirty buffer holds unsaved edits we must not
-  // clobber (this window keeps them; they win on its next save). The
-  // buffer-equality guard inside reloadFromDisk makes this editor's *own*
-  // save a cheap no-op.
+  // Reload when the watcher reports the note changed (`notebox:file-changed`),
+  // or replaced by a new file (`notebox:file-created`). Only a clean buffer;
+  // unsaved edits stay and win on the next save. This editor's own saves are a
+  // no-op.
   const onNoteReplacedOnDisk = (payload: { path: string }) => {
     if (!currentPath || dirty) return;
     if (!pathEquals(payload.path, currentPath)) return;
@@ -1012,11 +937,8 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
 
   // ── Reading-mode compile ───────────────────────────────
 
-  // Reading/preview panes compile from disk, so they must recompile whenever
-  // the note is saved elsewhere — e.g. the editor half of a "Split with
-  // preview" pair, or any autosave. Bump a revision the compile resources
-  // depend on, scoped to this tab's path so unrelated saves don't churn it.
-  // (Fixes stale reading views after a save generally, not just synced panes.)
+  // Reading and preview panes compile from disk, so bump a revision on each
+  // save of this tab's path to make them recompile.
   const [savedRevision, setSavedRevision] = createSignal(0);
   const onExternalSave = (e: Event) => {
     const savedPath = (e as CustomEvent).detail?.path as string | undefined;
@@ -1061,17 +983,13 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
 
   createEffect(() => {
     const s = settings.editor;
-    // These vars are read by both the editor and the journal-scroll view,
-    // so they live on documentElement rather than the per-editor container.
-    // When readable-line-length is on, max-width caps the content and
-    // side-padding-min floors the gap so narrow panes still keep some
-    // breathing room — the floor scales with viewport so wider windows
-    // get a more generous gutter. When off, both collapse to a no-op and
-    // content goes edge-to-edge.
+    // Set on the document element because the editor and the Journal Scroll
+    // both use them. With readable line length on, the content width is capped
+    // and the side padding has a floor that grows with the window; off, content
+    // runs edge to edge.
     const root = document.documentElement;
-    // --md-body-font and --verse-font are owned by applyFontSettings()
-    // in stores/theme.ts, driven by UserSettings.fonts. Editor body
-    // size is independent (numeric editor preference, not a family).
+    // The font variables are set by applyFontSettings() in stores/theme.ts; the
+    // body size is a separate editor setting.
     root.style.setProperty("--md-body-size", `${s.body_font_size}px`);
     root.style.setProperty(
       "--md-max-width",
@@ -1079,9 +997,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
     );
     root.style.setProperty(
       "--md-side-padding-min",
-      // With the comfortable measure off the text runs full-width; keep a
-      // one-character gutter on each edge so it isn't flush against the panel
-      // borders. `ch` tracks the body font so the breathing room scales.
+      // Full width still keeps a one-character gutter from the panel edges.
       s.readable_line_length ? "clamp(16px, 4vw, 64px)" : "1ch",
     );
   });
@@ -1107,16 +1023,14 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
     );
   };
 
-  // The editor header's right-hand control cluster: the Mycelial button (not
-  // in scroll), the scroll's Timeline/Neighbourhood toggle (scroll only), the
-  // Journal Scroll pill, the reading-format + zoom toggles (reading mode
-  // only), and the source/live/reading mode toggle. Rendered inline when there's room,
-  // or inside the overflow menu when the pane is narrow (see `compactToolbar`).
+  // The header's right-hand controls: Mycelial button (not in scroll),
+  // Timeline/Neighbourhood toggle (scroll only), Journal Scroll pill, reading format
+  // and zoom (reading mode only) and the mode toggle. Inline when there is room,
+  // otherwise in the overflow menu (see `compactToolbar`).
   const RightControls: Component<{ layout?: "inline" | "menu" }> = (rc) => {
     const inMenu = rc.layout === "menu";
-    // In the overflow menu each control becomes a labelled row (muted label
-    // left, control right) so the ragged icon cluster reads as a tidy settings
-    // panel. Inline, Row is transparent — the controls sit bare in the toolbar.
+    // In the overflow menu each control gets a labelled row; inline, Row adds
+    // nothing.
     const Row: Component<{ label: string; children: JSX.Element }> = (rp) =>
       inMenu ? (
         <div class="editor-header__menu-row">
@@ -1293,10 +1207,8 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
           </Show>
         }
         right={
-          /* When the pane is too narrow to hold the control cluster inline,
-             collapse it into a single "⋯" menu (priority+). RightControls
-             mounts in exactly one branch, so there's never a duplicate live
-             instance. */
+          /* In a narrow pane the controls collapse into the "⋯" menu;
+             RightControls mounts in only one branch. */
           <Show when={compactToolbar()} fallback={<RightControls />}>
             <HeaderOverflowMenu>
               <RightControls layout="menu" />
@@ -1362,13 +1274,11 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
 /** CSS pixels per Typst point (96 px per inch / 72 pt per inch). */
 export const PT_TO_CSS_PX = 4 / 3;
 
-/** Persist and restore the scroll offset of a reading-mode container across
- *  tab switches. The `.typst-reading` div is the scroll surface and is
- *  unmounted/remounted whenever the active tab changes, so — like the CM6
- *  editor — it would otherwise snap back to the top. We remember the user's
- *  place (rAF-throttled, one write per frame) keyed by tab + path, and re-apply
- *  it once the compiled content has laid out. The cached offset lives until the
- *  tab is closed (see `closeTab`), matching source/live mode. */
+/**
+ * Remember and restore a reading view's scroll offset across tab switches,
+ * keyed by tab and path, as source and visual modes do. Applied once the
+ * compiled content has laid out; kept until the tab closes (see `closeTab`).
+ */
 function attachReadingScrollMemory(
   el: HTMLElement,
   tabId: string,
@@ -1412,12 +1322,9 @@ interface TypstReadingViewProps {
 }
 
 const TypstReadingView: Component<TypstReadingViewProps> = (props) => {
-  // The SVG reading view renders Typst's own paged output, where a wikilink is a
-  // plain `link("<name>.typ")` — an `<a>` with no class/data-target (unlike the
-  // HTML target). Without interception the webview follows that href and
-  // navigates away from the app (notebox reopens / open-notebox dialog). Detect
-  // wikilinks by their `.typ` destination and route them through the same in-app
-  // navigation the visual editor uses; external links (no `.typ`) pass through.
+  // In the SVG view a wikilink is a plain `<a>` to `<name>.typ`, which the
+  // webview would follow out of the app. Detect the `.typ` target and use in-app
+  // navigation.
   const onWikilinkClick = (e: MouseEvent) => {
     const a = (e.target as Element | null)?.closest("a");
     if (!a) return;
@@ -1426,11 +1333,9 @@ const TypstReadingView: Component<TypstReadingViewProps> = (props) => {
     // A URL can end in `.typ` too (`inkycap://open?…&file=Note.typ`), so a
     // scheme rules out a wikilink before the extension is checked.
     if (startsWithSchemeAndSlashes(href) || !/\.typ$/i.test(pathPart)) {
-      // Not a wikilink — an external URL or a notebox file link authored via
-      // `#link(...)`. Without interception the webview would follow the href
-      // and navigate away from the app. Route it through `openLink` so URLs
-      // open in the OS browser and file links in the system default app. The
-      // native context menu is left alone so "Copy link" etc. still work.
+      // Other links (URLs, `#link(...)` to files) go through `openLink`, so
+      // they open in the browser or default app rather than navigating the
+      // webview. The context menu is left alone so "Copy link" works.
       if (e.type === "contextmenu") return;
       const target = href.trim();
       if (target) {
@@ -1489,11 +1394,9 @@ const TypstReadingView: Component<TypstReadingViewProps> = (props) => {
                   <div
                     class="typst-reading__page"
                     style={{
-                      // Scaling the page box (rather than transforming it) keeps
-                      // the pages in normal flow, so the column still centres and
-                      // the container scrolls to the zoomed extent. The inline
-                      // SVG is `width/height: 100%`, and vector output redraws
-                      // crisply at any size — no re-compile involved.
+                      // Resize the page box rather than transforming it, so the
+                      // column stays centred and the container scrolls to the
+                      // zoomed size.
                       width: `${frame.width_pt * PT_TO_CSS_PX * props.zoom}px`,
                       height: `${frame.height_pt * PT_TO_CSS_PX * props.zoom}px`,
                     }}
@@ -1526,11 +1429,9 @@ interface TypstHtmlReadingViewProps {
   path: string;
 }
 
-/// typst-html emits `#video`/`#audio` as `<video src="/Assets/clip.mp4">` with
-/// a notebox-root-absolute path, which the webview can't load directly. Replace
-/// each src with a `blob:` URL of the file's bytes so the players work in the
-/// HTML reading view (WebKitGTK won't stream media from the asset protocol —
-/// see media-src.ts). srcs that already carry a scheme are left untouched.
+/// Replace the notebox-root paths typst-html writes for `#video` / `#audio`
+/// with `blob:` URLs, since WebKitGTK won't stream media from the asset
+/// protocol (see media-src.ts). Sources with a scheme are left alone.
 async function resolveMediaSources(root: HTMLElement): Promise<void> {
   const media = Array.from(root.querySelectorAll<HTMLMediaElement>("video[src], audio[src]"));
   for (const el of media) {
@@ -1543,26 +1444,16 @@ async function resolveMediaSources(root: HTMLElement): Promise<void> {
   }
 }
 
-// Note: images need no frontend src resolution here. typst-html inlines every
-// `#image(...)` as a self-contained base64 `data:` URI (typst-html's IMAGE_RULE
-// → `convert_image_to_base64_url`), so `<img>` tags already render. Only
-// `<video>`/`<audio>` (not inlined) need the blob resolution above. Aligned
-// images are handled on the backend via the `#show align: html-align` shim
-// (typst-html otherwise drops `align()` blocks).
+// Images need nothing here: typst-html inlines them as `data:` URIs. Aligned
+// images are handled by the backend's `html-align` shim.
 
 const TypstHtmlReadingView: Component<TypstHtmlReadingViewProps> = (props) => {
-  // Font size is intentionally left to CSS (--md-body-size) so the editor's
-  // body-size preference still sets the baseline here. Only the font family
-  // is pinned from settings.
+  // Font size comes from CSS (`--md-body-size`); only the family is set here.
   //
-  // Reading zoom rides on top of that baseline as CSS `zoom`, not a font-size
-  // multiplier: `zoom` scales the whole layout box, so the `max-width` measure,
-  // images, tables, and code blocks all grow together and the text still
-  // reflows to the pane — which is what "zoom" means to a reader. A font-size
-  // change would grow the type inside a fixed-px measure, squeezing the
-  // line length tighter the further you zoom in. `transform: scale()` was the
-  // other candidate and is wrong here: it doesn't affect layout, so the
-  // container wouldn't scroll to the scaled content's extent.
+  // Zoom uses CSS `zoom`, which scales the whole layout so the measure and
+  // images grow with the text and it still reflows. A font-size change would
+  // squeeze the line length, and `transform: scale()` doesn't affect layout, so
+  // the container wouldn't scroll to the full size.
   const contentStyle = () => {
     const s: Record<string, string> = {};
     if (props.documentFont) {
@@ -1572,22 +1463,16 @@ const TypstHtmlReadingView: Component<TypstHtmlReadingViewProps> = (props) => {
     return s;
   };
 
-  // Wikilinks compile to plain `<a class="inkycap-wikilink" href="<name>.typ"
-  // data-target="<name>">`. Without interception the browser would follow that
-  // href and navigate the webview away from the app (which manifests as the
-  // notebox reopening or the open-notebox dialog). Delegate clicks on the
-  // container and route them through the same in-app navigation the visual
-  // editor uses, so reading view browses the notebox like every other mode.
+  // Wikilinks compile to `<a class="inkycap-wikilink" data-target="<name>">`;
+  // route clicks through in-app navigation instead of letting the webview
+  // follow the href.
   const onWikilinkClick = (e: MouseEvent) => {
     const a = (e.target as HTMLElement | null)?.closest<HTMLAnchorElement>(
       "a.inkycap-wikilink",
     );
     if (!a) {
-      // Any other anchor in the compiled body — an external URL or a notebox
-      // file link authored via `#link(...)` — would otherwise navigate the
-      // webview away from the app. Route it through `openLink` so URLs open in
-      // the OS browser and file links in the system default app. The native
-      // context menu is left alone so "Copy link" etc. still work.
+      // Other links go through `openLink` (browser or default app). The context
+      // menu is left alone so "Copy link" works.
       if (e.type === "contextmenu") return;
       const other = (e.target as HTMLElement | null)?.closest<HTMLAnchorElement>(
         "a[href]",
@@ -1648,9 +1533,8 @@ const TypstHtmlReadingView: Component<TypstHtmlReadingViewProps> = (props) => {
                 class="typst-reading__html-content"
                 style={contentStyle()}
                 ref={(el) => {
-                  // This element is kept across recompiles (a new result
-                  // doesn't recreate it), so refill it whenever the HTML
-                  // changes rather than only once when it is created.
+                  // This element survives recompiles, so refill it whenever the
+                  // HTML changes.
                   createEffect(() => {
                     const html = r().html;
                     // Release any object URLs from the previous render first.

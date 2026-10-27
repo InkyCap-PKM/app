@@ -62,31 +62,31 @@ describe("typing a URL in the visual editor", () => {
 
   it("turns mailto: into a #link call", () => {
     const v = mk("");
-    type(v, "mailto:joshua@phydeau.org");
-    expect(doc(v)).toBe('#link("mailto:joshua@phydeau.org")');
+    type(v, "mailto:athena@inkycap.org");
+    expect(doc(v)).toBe('#link("mailto:athena@inkycap.org")');
     v.destroy();
   });
 
   it("links an email address when the word ends with a space", () => {
     const v = mk("Write to ");
-    type(v, "joshua.c+notes@phydeau.org now");
-    expect(doc(v)).toBe('Write to #link("mailto:joshua.c+notes@phydeau.org") now');
+    type(v, "athena.o+notes@inkycap.org now");
+    expect(doc(v)).toBe('Write to #link("mailto:athena.o+notes@inkycap.org") now');
     v.destroy();
   });
 
   it("links an email address before Enter, leaving sentence punctuation outside", () => {
     const v = mk("Write to (");
-    type(v, "joshua@phydeau.org).");
+    type(v, "athena@inkycap.org).");
     pressEnter(v);
-    expect(doc(v)).toBe('Write to (#link("mailto:joshua@phydeau.org")).\n');
+    expect(doc(v)).toBe('Write to (#link("mailto:athena@inkycap.org")).\n');
     v.destroy();
   });
 
   it("undoes an email link to the escaped plain address", () => {
     const v = mk("Write to ");
-    type(v, "joshua@phydeau.org ");
+    type(v, "athena@inkycap.org ");
     undo(v);
-    expect(doc(v)).toBe("Write to joshua\\@phydeau.org ");
+    expect(doc(v)).toBe("Write to athena\\@inkycap.org ");
     v.destroy();
   });
 
@@ -101,9 +101,9 @@ describe("typing a URL in the visual editor", () => {
     ["a citation straight after a word", "results@smith2020 ", "results@smith2020 "],
     ["a citation after a space", "see @smith2020 ", "see @smith2020 "],
     ["a lone handle, which reads as a citation", "@person ", "@person "],
-    ["an escaped @", "joshua\\@phydeau.org ", "joshua\\@phydeau.org "],
+    ["an escaped @", "athena\\@inkycap.org ", "athena\\@inkycap.org "],
     ["a citation after a CJK word", "参见@smith2020 ", "参见@smith2020 "],
-    ["an address still being typed", "joshua@phydeau", "joshua@phydeau"],
+    ["an address still being typed", "athena@inkycap", "athena@inkycap"],
   ])("leaves %s alone", (_name, typed, expected) => {
     const v = mk("");
     type(v, typed);
@@ -120,8 +120,8 @@ describe("typing a URL in the visual editor", () => {
 
   it("leaves an address in inline raw text alone", () => {
     const v = mk("``", 1);
-    type(v, "joshua@phydeau.org ");
-    expect(doc(v)).toBe("`joshua@phydeau.org `");
+    type(v, "athena@inkycap.org ");
+    expect(doc(v)).toBe("`athena@inkycap.org `");
     v.destroy();
   });
 

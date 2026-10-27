@@ -1,8 +1,8 @@
-// Unit tests for the per-column filter builders and the Agenda date predicate.
-// These pin the lowering rules the backend relies on: list multi-select →
-// OR-of-equality, commalist → OR-of-contains, numeric "between" / date "within"
-// → two relational comparisons ANDed, and the day-boundary date semantics
-// shared between the table (expression strings) and the Agenda (predicate).
+// Tests for the column filter builders and the Agenda date check, covering what
+// the backend relies on: list multi-select → OR of equalities, commalist → OR
+// of contains, numeric "between" and date "within" → two comparisons ANDed, and
+// the day-boundary date rules shared by the table (expressions) and the Agenda
+// (predicate).
 
 import { describe, it, expect } from "vitest";
 import {

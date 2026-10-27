@@ -1,6 +1,5 @@
-/* Editor host, properties panel, property editor, custom date picker.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Editor host, properties panel, property editor, date picker. Part of
+   layout.css, whose import order (see ../layout.css) keeps the cascade. */
 
 /* Typst editor (CodeMirror container) */
 .typst-editor-container {
@@ -10,12 +9,11 @@
   flex-direction: column;
 }
 
-/* Everything below the toolbar: the gutter panel, holding whichever body the
-   current mode renders. Its own element so the gutter is a rounded rectangle
-   on all four corners rather than a region squared off by the toolbar above
-   it. Anything that fills it and paints a background (the editor card's
-   backdrop, reading views, the journal scroll) repeats the same corners, since
-   overflow:hidden here would clip the toolbar's overflow menu. */
+/* Everything below the toolbar: the gutter panel holding the current mode's
+   body, separate so it is rounded on all four corners. Anything filling it
+   with a background (editor card, reading views, journal scroll) repeats the
+   corners, since overflow:hidden here would clip the toolbar's overflow
+   menu. */
 .typst-editor-body {
   flex: 1;
   min-height: 0;
@@ -25,10 +23,10 @@
   border-radius: var(--editor-surface-radius-outer);
 }
 
-/* The writing surface (source and visual modes) is a rounded card sitting
-   on the chrome colour. `overflow: hidden` was already here to contain
-   CodeMirror; it now also clips the content, gutter and scrollbars to the
-   rounded box. Geometry comes from --editor-surface-* in themes.css. */
+/* The writing surface (source and visual modes) is a rounded card on the
+   chrome colour. `overflow: hidden` contains CodeMirror and clips content,
+   gutter and scrollbars to the rounded box. Sizes come from
+   --editor-surface-* in themes.css. */
 .typst-editor {
   flex: 1;
   min-height: 0;
@@ -38,9 +36,9 @@
   margin: var(--editor-surface-inset);
 }
 
-/* The radius repeats on the CodeMirror root: WebKitGTK does not reliably
-   clip a scrolling descendant to a rounded ancestor, so the scroller needs
-   the corner itself or the bottom corners square off once content scrolls. */
+/* The radius repeats on the CodeMirror root: WebKitGTK doesn't reliably clip
+   a scrolling child to a rounded parent, so the bottom corners would turn
+   square on scroll. */
 .typst-editor .cm-editor {
   height: 100%;
   border-radius: var(--editor-surface-radius);
@@ -118,10 +116,8 @@
   gap: var(--space-2);
 }
 
-/* Built-in InkyCap properties are tagged "system"; user-created properties
-   carry no label. (Reversed from the prior "custom" tag — most properties
-   are user-created in real noteboxes, so the label noise belongs on the
-   smaller built-in set.) */
+/* Built-in properties are labelled "system"; user properties have no label,
+   since most properties are the user's. */
 .property-row--system .property-row__key::after {
   content: "system";
   font-size: var(--text-2xs);
@@ -136,9 +132,8 @@
   width: 100%;
 }
 
-/* Display value reads as a clickable affordance: hovering reveals a faint
-   1px underline so users notice the cell is editable. The cursor: text
-   hint matches what they get once an input replaces it. */
+/* The value shows a faint underline on hover so it reads as editable; the
+   text cursor matches the input that replaces it. */
 .property-editor__value {
   display: inline-block;
   font-size: var(--text-md);
@@ -344,12 +339,11 @@
 }
 
 /* ── Multi-select picker (MultiSelectPicker.tsx) ──────────────────────────
-   The chips row plus checkable dropdown behind list properties (tags,
-   aliases, …) and the collection assignment. One block of styles because
-   one component draws both.
+   The chips row and checkable dropdown for list properties (tags, aliases,
+   …) and collection assignment.
 
-   The filter box is pinned and only the option list scrolls, so arrowing
-   down the list never carries the box the writer is typing in out of view. */
+   The filter box stays put and only the options scroll, so moving down the
+   list never scrolls the box out of view. */
 .multi-select {
   position: relative;
 }

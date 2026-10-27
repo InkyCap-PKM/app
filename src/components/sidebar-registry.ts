@@ -1,10 +1,7 @@
-// Left-sidebar registry — the additive seam for contributing extra sidebar
-// modes (a toolbar button + its pane) at runtime: plugins, and the declarative
-// manifest loader's saved query-views.
-//
-// Additive, like the right-panel and palette registries: built-in modes
-// (filetree, search, tags, collections, …) are untouched. When nothing is
-// registered, the toolbar and sidebar render exactly as before.
+// Left sidebar registry: lets plugins and the declarative manifest loader's
+// saved query views add sidebar modes (a toolbar button and its pane) at
+// runtime, beside the built-in ones (filetree, search, tags, collections, …),
+// like the right panel and palette registries.
 
 import { createSignal, type Component } from "solid-js";
 

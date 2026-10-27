@@ -1,14 +1,11 @@
-// Right-click menu for an attachment embedded in a note: the file behind an
-// `#image(...)`, `#video(...)` or `#audio(...)` call.
+// Right-click menu for a file embedded in a note with `#image(...)`,
+// `#video(...)` or `#audio(...)`.
 //
-// Attachments live somewhere in the notebox (Typst only reads files under the
-// project root, which InkyCap sets to the notebox root), but nothing else in
-// the app points from the note back to the file: global search covers notes,
-// and the file tree cannot know which image the writer is looking at. The menu
-// closes that gap with the same two "find this file" actions the File Actions
-// menu offers for the note itself, plus opening the file in its own tab, where
-// the right panel lists every note that uses it, either in place of the note
-// or in a new tab.
+// Nothing else leads from the note to the file (search covers notes, and the
+// file tree can't know which image is meant), so the menu offers the File
+// Actions menu's two "find this file" actions, plus opening the file in its own
+// tab (in place of the note or in a new tab), where the right panel lists every
+// note that uses it.
 
 import * as ipc from "./ipc";
 import { t } from "./i18n";
@@ -21,10 +18,9 @@ import { openFileInDefaultApp } from "./open-link";
 import { deleteActiveFileInteractive } from "./delete-file";
 
 /**
- * Show the attachment menu at viewport coordinates `(x, y)` for `target`, the
- * path exactly as written in the call (root-absolute, relative, or a bare
- * filename — every form `resolve_embed_path` accepts). A target that does not
- * resolve to a file in the notebox gets an explanatory line instead of actions.
+ * Show the attachment menu at viewport position `(x, y)` for `target`, the path
+ * as written in the call (any form `resolve_embed_path` accepts). A target that
+ * isn't a file in the notebox gets an explanation instead of actions.
  */
 export async function showAttachmentContextMenu(
   x: number,
@@ -61,10 +57,9 @@ export async function showAttachmentContextMenu(
 }
 
 /**
- * Open the notebox file named by `target` (any form `resolve_embed_path`
- * accepts) in an attachment tab, brought to the front. Used where the user
- * asks for the file itself, such as a PDF image's open button in the visual
- * editor.
+ * Open the file named by `target` (any form `resolve_embed_path` accepts) in an
+ * attachment tab in front, for example from a PDF image's open button in the
+ * visual editor.
  */
 export async function openAttachmentInTab(target: string): Promise<void> {
   let path: string | null = null;
@@ -80,9 +75,11 @@ export async function openAttachmentInTab(target: string): Promise<void> {
   openResolved(path, "new-tab-in-front");
 }
 
-/** Open the notebox file named by `target` (any form `resolve_embed_path`
- *  accepts) in the system's default application. Used by an embed's open
- *  button when the file can't be shown inside InkyCap. */
+/**
+ * Open the file named by `target` (any form `resolve_embed_path` accepts) in
+ * the default application, for an embed's open button when InkyCap can't show
+ * it.
+ */
 export async function openAttachmentExternally(target: string): Promise<void> {
   let path: string | null = null;
   try {
@@ -97,10 +94,11 @@ export async function openAttachmentExternally(target: string): Promise<void> {
   openExternally(path);
 }
 
-/** Where `openResolved` shows a file: in place of the current tab (whose
- *  back arrow returns to the note), in a new tab that follows the "Switch to
- *  new tabs immediately" setting like every other "Open in new tab", or in a
- *  new tab brought to the front regardless. */
+/**
+ * Where `openResolved` shows a file: in place of the current tab (its back
+ * arrow returns to the note), in a new tab following the "Switch to new tabs
+ * immediately" setting, or in a new tab in front.
+ */
 type OpenPlace = "here" | "new-tab" | "new-tab-in-front";
 
 /** Open the resolved file `path` in an attachment tab. */
@@ -126,10 +124,9 @@ async function showInFileManager(path: string): Promise<void> {
 }
 
 /**
- * Show the file actions for an attachment open in tab `tabId` at viewport
- * coordinates `(x, y)`: open it in the default application, find it, or
- * delete it. Used by the attachment view's right-click and the right
- * panel's File Actions button.
+ * Show the file actions for the attachment open in tab `tabId` at `(x, y)`:
+ * open in the default application, find it, or delete it. Used by the
+ * attachment view's right-click and the right panel's File Actions button.
  */
 export function showAttachmentFileMenu(x: number, y: number, path: string, tabId: string): void {
   showContextMenu(x, y, [

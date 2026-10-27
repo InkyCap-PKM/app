@@ -1,47 +1,32 @@
-// The one place InkyCap asks "where are this document's headings?".
+// Finds a document's headings.
 //
-// Per CLAUDE.md's Typst-first principle the answer comes from Typst's own
-// parser — the `syntaxTree` the editor already keeps in sync — not from a line
-// regex. A regex only sees the start of a line, so it can't know that the `=`
-// it matched sits inside a raw block, a comment, a string, or a math block.
-// That is how `= Not a headliner`, written inside a ``` fence, ended up in the
-// outline pane and cut heading folding short (issue #21). The parser draws
-// that boundary already: it emits a `Heading` node only where Typst itself
-// renders one, so asking the tree retires the whole class of false positives
-// rather than patching the fence case.
+// Per CLAUDE.md's Typst-first principle the answer comes from Typst's parser
+// (the editor's `syntaxTree`), not a line pattern, which can't tell an `=`
+// inside a raw block, comment, string or math from a heading (issue #21). The
+// parser emits `Heading` nodes only where Typst renders one.
 //
-// ── Why the scan is index-then-confirm rather than a tree walk ──
+// ── Index, then confirm ──
 //
-// The obvious implementation — iterate the whole tree and collect `Heading`
-// nodes — is too slow to run on a keystroke. The Typst parser hands CodeMirror
-// a plain `Tree` whose markup children are one long flat list, and lezer's
-// traversal helpers are linear in that list (`nextChild` scans siblings one by
-// one, with a `MountedTree` WeakMap lookup each). Measured on a 277 KB note
-// (8 000 lines, ~84 000 nodes), per scan:
+// Walking the whole tree is too slow per keystroke: the Typst tree's markup
+// children are one long flat list, and lezer's traversal is linear in it. On a
+// 277 KB note (8,000 lines, ~84,000 nodes), per scan:
 //
 //     tree.iterate over the document      ~230 ms
 //     …pruned to heading containers       ~104 ms
 //     one tree.resolveInner call            ~9 ms
 //     line regex over the document          ~5 ms
 //
-// The heading fold rebuilds its decorations on every document change, so a
-// full walk would put a ~100 ms stall on every keypress in a long note.
+// The heading fold rebuilds on every change, so a full walk would stall every
+// keypress. Instead a line pattern proposes candidates and the tree confirms
+// each, reached by binary search down the child lists (O(log n) per level). The
+// parser still decides what is a heading.
 //
-// So the scan splits the question in two. A line regex proposes *candidates*
-// — cheap, and it only has to be permissive — and the tree *rules* on each
-// one, reached by binary-searching the child lists down to the position
-// instead of scanning them. Candidates are few, the descent is O(log n) per
-// level, and the parser still decides what counts as a heading.
+// The backend answers the same question (book export, PDF/UA checks, heading
+// completion, Markdown export) in
+// `src-tauri/src/typst_pipeline/source_structure.rs` with the same parser.
 //
-// The backend answers the same question for merged book export, PDF/UA
-// linting, heading autocomplete, and Markdown export in
-// `src-tauri/src/typst_pipeline/source_structure.rs`, against the same parser
-// compiled natively.
-//
-// One consequence worth knowing: only headings that open their own line are
-// indexed. `#callout[= Aside]` is a heading to Typst, but both callers work in
-// whole lines — the fold hides a run of them, the outline scrolls to one — so
-// a heading with no line of its own has nothing to offer either.
+// Only headings that start their own line are found. `#callout[= Aside]` is a
+// heading to Typst, but both users (folding, the outline) work in whole lines.
 
 import { syntaxTree } from "@codemirror/language";
 import type { EditorState, Text } from "@codemirror/state";
@@ -61,20 +46,19 @@ export interface HeadingSpan {
   text: string;
 }
 
-/** A line that *might* open a heading: `=` markers first thing on the line,
- *  followed by whitespace or nothing. Deliberately looser than Typst's rule —
- *  the tree decides; this only says where to look. */
+/**
+ * A line that might start a heading: `=` markers first on the line, then
+ * whitespace or the end. Looser than Typst's rule; the tree decides.
+ */
 const CANDIDATE_RE = /^[ \t]*(=+)(?=[ \t]|$)/;
 
 /** Strips the `=` markers and the whitespace separating them from the text. */
 const MARKER_RE = /^=+[ \t]*/;
 
 /**
- * Index of the child of `tree` whose range contains `pos`, or -1 when `pos`
- * falls in a gap between children (lezer trees don't have to be gapless).
- *
- * `positions` is ascending and children don't overlap, so this is a binary
- * search — which is the entire performance argument for this module.
+ * Index of the child of `tree` containing `pos`, or -1 in a gap between
+ * children. `positions` is ascending and children don't overlap, so this is a
+ * binary search, which is the point of this module.
  */
 function childIndexAt(tree: Tree, offset: number, pos: number): number {
   const { children, positions } = tree;
@@ -91,16 +75,12 @@ function childIndexAt(tree: Tree, offset: number, pos: number): number {
 }
 
 /**
- * The innermost node starting exactly at `pos` whose type name is in `names`,
- * or null if the parser sees something else there — raw text, a comment, a
- * string, plain markup. Uses the same O(log n) binary-search descent as the
- * heading scan, so it stays cheap even when called once per line of a
- * list-heavy outline (see list-scan.ts).
- *
- * Container types not in `names` are descended into, so a leaf marker nested a
- * few levels down (e.g. a `ListMarker` inside a `ListItem`) is still reached.
- * A node whose type *is* in `names` but does not start exactly at `pos` yields
- * null — `pos` sits inside such a node, not at its opening.
+ * The innermost node starting exactly at `pos` whose type is in `names`, or
+ * null if the parser sees something else there (raw text, a comment, a string,
+ * plain markup). Uses the same binary-search descent, so it is cheap even once
+ * per line (see list-scan.ts). Other container types are descended into, so a
+ * nested marker (a `ListMarker` in a `ListItem`) is found. A node in `names`
+ * that doesn't start at `pos` gives null.
  */
 export function nodeStartingAt(
   tree: Tree,
@@ -114,10 +94,8 @@ export function nodeStartingAt(
     if (i < 0) return null;
     const child = node.children[i];
     const from = offset + node.positions[i];
-    // A `TreeBuffer` packs small leaf subtrees into a flat array with a
-    // different shape. The Typst parser builds its trees node by node and
-    // emits none today; if that ever changes, lezer's own resolver is the
-    // correct (if slower) answer rather than a wrong one.
+    // A `TreeBuffer` packs small subtrees differently. The Typst parser doesn't
+    // produce them, but if it ever does, fall back to lezer's slower resolver.
     if (!(child instanceof Tree)) {
       let n: SyntaxNode | null = tree.resolveInner(pos, 1);
       while (n && !names.has(n.name)) n = n.parent;

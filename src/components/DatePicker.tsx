@@ -3,14 +3,11 @@ import { Portal } from "solid-js/web";
 import { ChevronLeft, ChevronRight } from "lucide-solid";
 import { useI18n, localeCode } from "../lib/i18n";
 
-// A self-contained calendar date picker.
-//
-// This replaces the native `<input type="date">`, whose WebKitGTK
-// implementation is unreliable inside the Tauri webview: it needs two
-// clicks to open, does not close when a day is clicked, and ignores
-// Enter. This component is a plain DOM popup, so its behaviour is
-// identical on every platform: one click opens it, clicking a day
-// commits and closes, Enter commits the keyboard cursor, Escape closes.
+// A calendar date picker, used instead of `<input type="date">`, which in
+// WebKitGTK needs two clicks to open, doesn't close when a day is clicked, and
+// ignores Enter. This one behaves the same everywhere: one click opens it,
+// clicking a day picks it and closes, Enter picks the highlighted day, Escape
+// closes.
 
 export interface DatePickerProps {
   /** "" | "YYYY-MM-DD" | "YYYY-MM-DDTHH:MM" */
@@ -98,10 +95,9 @@ const DatePicker: Component<DatePickerProps> = (props) => {
   const [cursor, setCursor] = createSignal<YMD>(selected() ?? today());
   const [time, setTime] = createSignal(parseTime(props.value));
 
-  // Keep the popup fully on screen. Width/height match the CSS box
-  // (.date-picker__popup is a fixed 238px wide); the popup flips above
-  // the trigger when it would overflow the bottom, and its left edge is
-  // clamped into the viewport so it never spills off the right.
+  // Keep the popup on screen. The size matches the CSS (.date-picker__popup is
+  // 238px wide); it opens above the trigger when there's no room below, and its
+  // left edge stays within the window.
   const POPUP_WIDTH = 238;
   function place() {
     if (!triggerRef) return;

@@ -11,9 +11,10 @@ interface CitationPickerProps {
   onClose: () => void;
   onSelect?: (entry: BibEntry) => void;
   placeholder?: string;
-  /** Optional pre-filter applied before searching. Used by the
-   * "import note text" picker to restrict the list to entries that
-   * actually have notes attached. */
+  /**
+   * Optional filter applied before searching, e.g. by the "import note text"
+   * picker to list only entries with notes.
+   */
   filter?: (entry: BibEntry) => boolean;
 }
 
@@ -27,8 +28,7 @@ const CitationPicker: Component<CitationPickerProps> = (props) => {
   const hover = createHoverGuard();
   let resultsEl: HTMLDivElement | undefined;
 
-  // Keep the keyboard-selected row in view (this picker previously had no
-  // scroll-follow, so arrowing past the fold lost the selection off-screen).
+  // Keep the keyboard-selected row in view.
   createEffect(() => {
     const idx = selectedIndex();
     query();

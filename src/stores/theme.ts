@@ -15,16 +15,11 @@ const [resolvedTheme, setResolvedTheme] = createSignal<ResolvedTheme>("light");
 
 let mediaQuery: MediaQueryList | null = null;
 let mediaHandler: ((e: MediaQueryListEvent) => void) | null = null;
-// Tauri's native window theme-change subscription, a second channel beside the
-// `prefers-color-scheme` media query. Both call
-// `applyTheme(resolveTheme("system"))`, which is idempotent, so whichever fires
-// first wins.
-//
-// On Linux this event never arrives: the window layer (tao) sends it with a
-// placeholder window id that Tauri doesn't match to any window. There the
-// media query does all the work. WebKitGTK updates it as soon as the desktop
-// changes, and also whenever `applyNativeWindowTheme` sets the window's theme,
-// so on Linux the query reports the app's own last choice as well as the OS.
+// Tauri's window theme-change event, alongside the `prefers-color-scheme`
+// query. Both call the idempotent `applyTheme(resolveTheme("system"))`. On
+// Linux the event never arrives (tao sends it with a window id Tauri doesn't
+// match), so the query does the work; WebKitGTK updates it when the desktop
+// changes and when `applyNativeWindowTheme` sets the window theme.
 let tauriThemeUnlisten: (() => void) | null = null;
 
 /** Resolve "system" to the actual dark/light value. */
@@ -48,15 +43,10 @@ function applyTheme(resolved: ResolvedTheme) {
 }
 
 /**
- * Keep the parts of the window that the OS draws (the Linux header bar,
- * the Windows title bar, the macOS appearance) on the same side as the
- * app's own theme. Without this, choosing InkyCap's dark theme on a light
- * desktop leaves a light title bar above a dark app.
- *
- * Always pass the resolved value rather than `null` for "system": on Linux
- * the window layer treats `null` as "light" until the next OS theme change,
- * and the app already tracks the OS itself through `setupSystemListener`,
- * so re-sending the resolved value on each change keeps both in step.
+ * Keep what the OS draws (Linux header bar, Windows title bar, macOS
+ * appearance) on the same side as the app's theme, so a dark app on a light
+ * desktop doesn't get a light title bar. Pass the resolved theme, not `null`
+ * for "system": on Linux `null` means light until the next OS change.
  */
 function applyNativeWindowTheme(resolved: ResolvedTheme) {
   getCurrentWindow()
@@ -88,16 +78,14 @@ function applyColourblindFriendly() {
 }
 
 /**
- * Apply the accent color according to the current `accent_source`:
- * - "default" — clear the inline `--accent-color` so the CSS fallback in
- *   themes.css (`var(--accent-color, #1D7874)`) takes effect.
- * - "custom"  — set inline `--accent-color` to the user-chosen hex.
- * - "os"      — query the OS accent via IPC; on `null` (unsupported DE)
- *   silently fall back to default and toast once.
- *
- * The "os" path is async; the call is fire-and-forget to keep the call
- * sites synchronous. We start by clearing the inline value so the user
- * never sees a stale custom color while the IPC roundtrip is in flight.
+ * Apply the accent per `accent_source`:
+ *   - "default": clear the inline `--accent-color`, so the fallback in
+ *     themes.css applies.
+ *   - "custom": set `--accent-color` to the chosen colour.
+ *   - "os": ask the OS through IPC; on `null` (unsupported desktop) fall back
+ *     to default and show a toast once.
+ * The OS query is async and not awaited; the inline value is cleared first so
+ * an old custom colour doesn't show meanwhile.
  */
 function applyAccent() {
   const source = settings.appearance.accent_source;
@@ -130,9 +118,8 @@ function applyAccent() {
   }
 }
 
-// Bundled InkyCap families (loaded via @font-face in styles/bundled-fonts.css)
-// are appended as last-resort fallbacks before the generic keyword. Guards
-// against fontconfig/gsettings returning a non-installed name on the host.
+// InkyCap's bundled fonts (styles/bundled-fonts.css) as fallbacks before the
+// generic keyword, in case the system reports a font that isn't installed.
 const SANS_FALLBACK = '"Inter", system-ui, sans-serif';
 const MONO_FALLBACK = '"JuliaMono", ui-monospace, monospace';
 
@@ -167,8 +154,8 @@ export function applyEditorFont(font: string) {
 }
 
 /**
- * Resolve the four CSS-facing roles from `FontSettings` (using cached
- * OS defaults) and push them into the root CSS variables.
+ * Resolve the four CSS font roles from `FontSettings` (with cached OS defaults)
+ * and set the root variables.
  */
 export async function applyFontSettings(fonts: import("../lib/types").FontSettings) {
   const { resolveRole, getSystemFontDefaults } = await import("../lib/fontResolver");
@@ -242,20 +229,16 @@ export function initTheme() {
 }
 
 /**
- * Toggle between dark and light for this session only. When the persisted
- * preference is "system", the flip is visual-only — it doesn't overwrite
- * the stored setting, so on next launch the app resumes following the OS.
- * When the preference is already explicit ("light" or "dark"), the toggle
- * persists as before since the user has already opted out of auto-follow.
+ * Toggle dark and light. When the setting is "system", the change is for this
+ * session only, so the next launch follows the OS again; with "light" or "dark"
+ * set, the new value is saved.
  */
 export function toggleTheme() {
   const current = resolvedTheme();
   const next: ResolvedTheme = current === "dark" ? "light" : "dark";
   if (settings.appearance.theme === "system") {
-    // Session-only flip: apply the visual change and tear down the system
-    // listeners so the OS doesn't immediately flip it back, but don't
-    // persist to settings. `initTheme()` on next launch will re-read the
-    // stored "system" preference and resume auto-following.
+    // Session-only: apply the change and stop following the OS, without saving;
+    // `initTheme()` resumes following it next launch.
     if (mediaQuery && mediaHandler) {
       mediaQuery.removeEventListener("change", mediaHandler);
       mediaHandler = null;
@@ -279,10 +262,8 @@ export function setThemePreference(pref: ThemePreference) {
 }
 
 /**
- * Set a custom accent color and persist it. Selecting a color implies the
- * "custom" source — the segmented control and this setter stay in sync so
- * picking a color from the wheel doesn't silently fail to take effect when
- * the source happens to be "default" or "os".
+ * Set and save a custom accent colour. Choosing a colour also switches the
+ * source to "custom", so it takes effect.
  */
 export function setAccentColor(color: string) {
   updateSetting("appearance", "accent_color", color);
@@ -293,10 +274,8 @@ export function setAccentColor(color: string) {
 }
 
 /**
- * Switch the accent source. "default" is also the reset — it clears any
- * inline custom color and lets the CSS fallback paint InkyCap's built-in
- * accent. "os" is accepted but, until PR 3 wires the OS-accent IPC call,
- * behaves like "default".
+ * Switch the accent source. "default" also clears any custom colour, letting
+ * the CSS fallback apply.
  */
 export function setAccentSource(source: AccentSource) {
   updateSetting("appearance", "accent_source", source);

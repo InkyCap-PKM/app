@@ -1,68 +1,52 @@
 // inkycap-notebox — Typst package for InkyCap notes.
-// Version is tracked solely by `notebox_package::VERSION` in the Rust backend
-// (a migration/diagnostics marker); it is deliberately not duplicated here.
+// Its version is tracked by `notebox_package::VERSION` in the Rust backend.
 //
 // Public API:
 //   #note(...)            document-level metadata
 //   #tag("name")          inline tag
 //   #task("body", ...)    inline checkbox task (emits <inkycap-agenda>)
 //   #due(date, label: ..., recurrence: ...) inline dated reminder
-//                         (emits <inkycap-agenda>; recurrence is an optional
-//                         repeat rule, see _fmt-recurrence)
+//                         (emits <inkycap-agenda>; see _fmt-recurrence)
 //   #wikilink("Name", display: ...)
-//   link-ref("Name")      link reference value (use inside note() fields)
+//   link-ref("Name")      link reference value (for note() fields)
 //   #callout("type", title: "…", color: …)[...] styled admonition block
-//   #annotation(body, ...)  margin comment on note content (reader/reviewer)
-//   #suggestion(body, kind: ..., ...)  inline tracked-change suggestion
-//                         (insert/delete/replace) — the suggesting-mode mark
+//   #annotation(body, ...)  margin comment on note content
+//   #suggestion(body, kind: ..., ...)  inline tracked change
+//                         (insert/delete/replace)
 //   #verse(body, ...)     whitespace-preserving free-form text with inline
-//                         markup (eval'd per line)
-//   #set-notebox(...)       per-document rendering toggles + verse-font
+//                         markup
+//   #set-notebox(...)     per-document rendering toggles and verse font
 //   #contributors-byline(roster)  title-page byline grouped by role
-//   #credit-statement(roster)     CRediT contributions statement (book export)
+//   #credit-statement(roster)     CRediT contributions statement
 //
-// Six queryable labels:
-//   <inkycap-note>   — at most one per file, attached to a metadata dict
-//   <inkycap-tag>    — one per #tag(...) call, dict (name:)
-//   <inkycap-link>   — one per outgoing link (body wikilinks + link-refs in metadata)
-//   <inkycap-agenda> — one per #task(...)/#due(...) call, dict
-//                      (kind, body, due, done, tags, recurrence)
-//   <inkycap-annotation> — one per #annotation(...) call, dict (by, on)
-//   <inkycap-suggestion> — one per #suggestion(...) call, dict
-//                      (kind, by, on)
+// Queryable labels:
+//   <inkycap-note>       — at most one per file, the metadata dict
+//   <inkycap-tag>        — one per #tag(...), dict (name:)
+//   <inkycap-link>       — one per outgoing link (wikilinks and link-refs)
+//   <inkycap-agenda>     — one per #task(...)/#due(...), dict
+//                          (kind, body, due, done, tags, recurrence)
+//   <inkycap-annotation> — one per #annotation(...), dict (by, on)
+//   <inkycap-suggestion> — one per #suggestion(...), dict (kind, by, on)
 
 // ---------------------------------------------------------------------------
-// apply-notebox-defaults / apply-collection-style: document-level styling hooks.
+// apply-notebox-defaults / apply-collection-style: document-level styling.
 //
-// The Rust side emits one or two `#show:` calls right after the package
-// import to apply app-level defaults and per-collection overrides. Using
-// `show: fn.with(...)` lets the function's `set` rules apply to the rest of
-// the document (a plain function call would scope the rules to the function
-// body and have no effect on the caller).
-//
-// Each parameter is `none` when the host hasn't configured that setting; the
-// function emits a `set` rule only for the parameters that are present, so a
-// default-free call is a true no-op.
-//
-// Usage (emitted by Rust):
+// Rust emits these as `#show:` rules right after the package import, so their
+// `set` rules apply to the rest of the document:
 //
 //   #show: apply-notebox-defaults.with(text-font: "Inter", text-size: 12pt)
 //   #show: apply-collection-style.with(page: (paper: "us-letter"))
 //
-// Both rules wrap the rest of the document; later show/set rules in the
-// document body still win via Typst's normal cascade.
+// A `none` parameter emits no `set` rule. Later rules in the document still
+// win through the normal cascade.
 // ---------------------------------------------------------------------------
 
-// `body` is the positional parameter `show:` invokes the function with —
-// it must live directly on the function (not behind a nested `body => ...`
-// closure) so that `apply-notebox-defaults.with(...)` returns a function that
-// still accepts the document body positionally.
+// `body` must be a direct parameter so that `.with(...)` still returns a
+// function taking the document body.
 //
-// A `set` rule only lasts until the end of the block it sits in, so it must
-// never be written inside an `if` block here: it would end with that block and
-// leave `body` untouched. The helpers below turn absent (`none`) settings into
-// an empty argument list instead, and each `set` rule sits directly in the
-// function body, where it covers `body`.
+// A `set` rule lasts only until the end of its block, so none may sit inside an
+// `if` here. The helpers below turn `none` settings into empty argument lists
+// instead, and each `set` rule sits directly in the function body.
 
 // Named arguments whose value is not `none`, as a dictionary ready to spread.
 #let _present(..args) = {
@@ -85,25 +69,19 @@
 ) = {
   set text(.._present(font: text-font, size: text-size))
   set page(.._present(paper: page-paper))
-  // Keep the same bullet at every nesting depth. Typst's default
-  // `list.marker` is the cycling tuple `([•], [‣], [–])`, so deeper items
-  // switch glyph each level; a single-content marker applies `•` uniformly.
+  // Use the same bullet at every depth; Typst's default cycles through `•`,
+  // `‣`, `–`.
   set list(marker: [•])
   show raw: set text(.._present(font: monospace-font))
   body
 }
 
-// Collection-level style overrides. Each section is an optional dict whose
-// keys mirror the corresponding Typst function arguments — the function
-// forwards them via spread (`set page(..page)`) so any field Typst's own
-// function accepts is accepted here without enumerating them.
+// Collection style overrides. Each section is an optional dict of the matching
+// Typst function's arguments, spread into it (`set page(..page)`). `none` or
+// `(:)` skips a section.
 //
-// Parameter names are deliberately distinct from the Typst built-in
-// element names (`page`, `text`, `heading`, `par`) so spreading the
-// captured dict into `set page(..)` etc. doesn't trip over a shadowed
-// identifier inside the function body.
-//
-// `none` for a section skips it entirely; `(:)` (empty dict) is also a no-op.
+// The parameter names differ from the built-in element names (`page`, `text`,
+// …) so they don't shadow them.
 #let apply-collection-style(
   page-args: none,
   text-args: none,
@@ -119,31 +97,20 @@
 }
 
 // ---------------------------------------------------------------------------
-// apply-bibliography: thin wrapper around Typst's `#bibliography(...)`.
-//
-// Rust calls this when the notebox has an auto-detected bibliography file and
-// the document doesn't declare one of its own. Keeping the call here (rather
-// than emitting `#bibliography(...)` from Rust) means Typst-specific concerns
-// like style coercion or per-notebox default titles can evolve without
-// touching the Rust side.
+// apply-bibliography: wrapper around `#bibliography(...)`. Rust calls it when
+// the notebox has a detected bibliography file and the document declares
+// none.
 // ---------------------------------------------------------------------------
 
 #let apply-bibliography(path, ..opts) = bibliography(path, ..opts)
 
 // ---------------------------------------------------------------------------
-// make-offset-numbering: page-numbering closure that hides numbers on early
-// pages and starts arabic counting once the document reaches `start-page`.
-//
-// Used by the merged-book exporter for the "no numbers until page N, then
-// 1, 2, 3…" preset. The closure shape `(..n) => str | none` matches what
-// `#set page(numbering: ...)` accepts.
-//
-// Usage (emitted by Rust):
+// make-offset-numbering: page numbering that shows no numbers before
+// `start-page` and counts from 1 there. Used by the book export:
 //
 //   #set page(numbering: make-offset-numbering(5))
 //
-// Page 5 of the PDF prints "1", page 6 prints "2", etc. Pages before
-// `start-page` print no number at all.
+// Page 5 prints "1", page 6 "2", and so on.
 // ---------------------------------------------------------------------------
 
 #let make-offset-numbering(start-page) = (..n) => {
@@ -152,17 +119,9 @@
 }
 
 // ---------------------------------------------------------------------------
-// outline-with-bare-page-numbers: render an outline whose entries always
-// show plain integer page numbers regardless of the body's page-numbering
-// pattern.
-//
-// Typst's default `outline.entry` formats each entry's page label using
-// the active page-numbering pattern. When the merged book uses a decorated
-// body pattern (e.g. "Page 1 of N", "-- 1 --"), that decoration leaks into
-// the TOC. This helper scopes a `show outline.entry` rule to a single
-// `outline(...)` call so the entries stay readable as a TOC.
-//
-// Used by the merged-book exporter:
+// outline-with-bare-page-numbers: an outline whose entries show plain page
+// numbers, so a decorated body pattern ("Page 1 of N") doesn't appear in the
+// table of contents. Used by the book export:
 //
 //   #outline-with-bare-page-numbers(depth: 3)
 // ---------------------------------------------------------------------------
@@ -185,30 +144,19 @@
 // State for per-document rendering toggles.
 // ---------------------------------------------------------------------------
 
-// Capture the built-in `label` function before any function in this module
-// can shadow it via a parameter of the same name (notably `wikilink(...,
-// label: ...)`). Inside such a function body, `label` refers to the
-// parameter, not the built-in, so we route built-in calls through this
-// alias instead.
+// The built-in `label`, saved before parameters named `label` (e.g. in
+// `wikilink`) shadow it.
 #let _make-label = label
 
-// Invisible, labeled anchor at a chapter's start, for in-book wikilink
-// resolution in the merged-book export. Built via the `label()` function
-// (`_make-label`) rather than `<...>` markup-label syntax so a chapter stem
-// containing spaces, parens, or other characters illegal in literal labels
-// still yields a valid, resolvable anchor — matching the
-// `_make-label("chap-" + name)` the merged-mode `wikilink` links to. The
-// Rust book wrapper emits `#chapter-anchor("<stem>")` at each chapter top.
+// Invisible anchor at a chapter's start, for resolving wikilinks in the book
+// export. Built with `label()` so any file stem gives a valid label. The book
+// wrapper emits `#chapter-anchor("<stem>")` at each chapter.
 #let chapter-anchor(stem) = [#metadata(none)#_make-label("chap-" + stem)]
 
-// chapter-bibliography: a per-chapter reference list for merged-book
-// PerChapter mode. Scopes its entries to the citations between this chapter's
-// `chapter-anchor` and the next chapter's (or the document end, for the last
-// chapter) with a label-bounded `cite` selector, and numbers each chapter's
-// list independently via `group: none`. Keeping the selector construction in
-// `.typ` (CLAUDE.md Typst-first) means the Rust book wrapper only emits a flat
-// `#chapter-bibliography("path", "stem", next-stem: "...")` call; `next-stem`
-// is `none` for the final chapter.
+// chapter-bibliography: a reference list for one chapter in the book export's
+// per-chapter mode. It lists the citations between this chapter's anchor and
+// the next one (`next-stem`, `none` for the last chapter), numbered separately
+// per chapter.
 #let chapter-bibliography(path, stem, next-stem: none, ..opts) = {
   let scope = selector(cite).after(_make-label("chap-" + stem))
   if next-stem != none {
@@ -222,15 +170,13 @@
 // Whether `annotation` draws its comment. On by default so exports and other
 // Typst tools show annotations; InkyCap's reading view turns it off.
 #let _show-annotations = state("inkycap-show-annotations", true)
-// Verse font override. When set (via `set-notebox(verse-font: "...")`), all
-// verse() calls without an explicit `font:` argument render in this font.
-// `none` means inherit the document body font.
+// Verse font from `set-notebox(verse-font: "...")`, used by verses without a
+// `font:` argument. `none` inherits the body font.
 #let _verse-font-state = state("inkycap-verse-font", none)
 
-// Merged-book compile context. When `active` is true, `wikilink` resolves
-// targets internally to per-chapter labels (`<chap-stem>`) instead of
-// emitting cross-file links. Set by the synthetic wrapper that the
-// "Export as book" action generates; never set by hand.
+// Book export context. When `active`, `wikilink` links to chapter labels
+// (`<chap-stem>`) instead of other files. Set only by the generated book
+// wrapper.
 #let _merged-context = state("inkycap-merged-context", (
   active: false,
   mode: "external",
@@ -269,9 +215,8 @@
 }
 
 // ---------------------------------------------------------------------------
-// link-ref: a value (not content) usable inside note(..) fields. The shape
-// `(kind: "link-ref", target: name)` is the wire format — the scanner pattern-
-// matches on `kind` to recognize a link reference inside metadata.
+// link-ref: a value (not content) for use in note() fields. The scanner
+// recognizes the shape `(kind: "link-ref", target: name)`.
 // ---------------------------------------------------------------------------
 
 #let link-ref(name) = {
@@ -303,13 +248,9 @@
 }
 
 // ---------------------------------------------------------------------------
-// _fmt-date: normalize a date argument to a stable `[year]-[month]-[day]`
-// string. Accepts a `datetime` (the native, recommended form) or a string
-// (tolerated when hand-authored). Returns `none` for `none`.
-//
-// Defined here, above `note()`, because `note()` calls `_fmt-recurrence`
-// (below) which calls this — Typst `#let` has no forward references, so a
-// helper must precede every function that uses it.
+// _fmt-date: normalize a date to a `[year]-[month]-[day]` string. Accepts a
+// `datetime` (preferred) or a string; `none` stays `none`. Defined before
+// note() because Typst has no forward references.
 // ---------------------------------------------------------------------------
 
 #let _fmt-date(v) = {
@@ -320,22 +261,18 @@
 }
 
 // ---------------------------------------------------------------------------
-// _fmt-recurrence: normalize a recurrence rule to a stable, queryable dict for
-// the `<inkycap-agenda>` / `<inkycap-note>` metadata. A recurrence says how a
-// dated reminder repeats; InkyCap expands occurrences against the current date
-// at view time (the note source is never rewritten), so this only stores the
-// *rule*, never materialized occurrences.
+// _fmt-recurrence: normalize a recurrence rule to a stable dict for the
+// `<inkycap-agenda>` / `<inkycap-note>` metadata. Only the rule is stored;
+// InkyCap works out occurrences when displaying.
 //
-// The rule is a plain Typst dict so any Typst tool can read or build it:
 //   (freq: "day"|"week"|"month"|"year",   // required; anything else → no rule
 //    interval: 1,                         // optional int ≥ 1, default 1
 //    by-day: ("mo","we"),                 // optional; weekly only (WKST = Mon)
 //    until: datetime | "YYYY-MM-DD",      // optional inclusive end
 //    count: 5)                            // optional occurrence cap
 //
-// Returns `none` for a missing or unrecognized rule (the item just doesn't
-// recur), so a malformed value degrades gracefully instead of breaking the
-// `typst query` that reads the dict back out.
+// Returns `none` for a missing or unrecognized rule, so a bad value doesn't
+// break the query that reads it.
 #let _recur-weekdays = ("mo", "tu", "we", "th", "fr", "sa", "su")
 
 #let _fmt-recurrence(v) = {
@@ -379,31 +316,20 @@
 // ---------------------------------------------------------------------------
 
 #let note(..args) = {
-  // Only explicitly-passed keys are emitted. This is intentional: the
-  // properties panel adds rows by writing the field with an empty default
-  // (e.g. `tags: ()`), and the panel reflects what's in the source. If we
-  // dropped empty-equals-default values here, those rows would vanish from
-  // the panel after every reindex.
+  // Only keys passed explicitly are emitted, even empty ones: the properties
+  // panel adds a row by writing an empty field (e.g. `tags: ()`) and shows what
+  // is in the source.
   //
-  // Known list-typed fields are coerced from a bare string to a 1-element
-  // array so a user typing `tags: "draft"` still works. Datetime values are
-  // stringified for stable downstream consumption.
-  // `list_fields`: bare-string → 1-element array coercion (e.g. typing
-  //   `tags: "draft"` becomes `("draft",)`).
-  // `comma_list_fields`: subset that *also* splits commas — for fields
-  //   where users author free-form strings and the comma is the natural
-  //   separator (currently just `aliases`). Tag-style fields are kept
-  //   off this list so tag values containing commas aren't silently
-  //   shredded.
+  // `list_fields`: a bare string becomes a 1-element array (`tags: "draft"` →
+  // `("draft",)`). `comma_list_fields`: these also split on commas. Tag-style
+  // fields aren't included, so tags containing commas stay whole.
   let list_fields = ("tags", "collection", "aliases")
   let comma_list_fields = ("aliases",)
   let data = (:)
   for (k, v) in args.named() {
     let coerced = if k == "recurrence" {
-      // Document-level recurrence on `#note(due: …, recurrence: (…))`.
-      // Normalize to the same queryable dict `#due` emits so the host reads
-      // both surfaces through one path. `none` (invalid/empty) still emits the
-      // key — InkyCap reads it back as "no recurrence" and the panel hides it.
+      // Normalize to the same dict `#due` emits. An invalid value still emits
+      // the key, which InkyCap reads as no recurrence.
       _fmt-recurrence(v)
     } else if k in list_fields {
       if type(v) == array { v }
@@ -453,10 +379,9 @@
 }
 
 // ---------------------------------------------------------------------------
-// task: an inline checkbox item. Always emits <inkycap-agenda> (kind "task")
-// so the Agenda pane can aggregate it; always renders (a task is real
-// content, unlike a tag). `due` accepts a datetime or string; `done` toggles
-// the checkbox glyph and strikethrough.
+// task: an inline checkbox. Always emits <inkycap-agenda> (kind "task") and
+// always renders. `due` takes a datetime or string; `done` checks the box and
+// strikes through the text.
 // ---------------------------------------------------------------------------
 
 #let task(body, due: none, done: false, tags: ()) = {
@@ -475,10 +400,9 @@
 }
 
 // ---------------------------------------------------------------------------
-// due: an inline dated reminder, attachable next to prose. Always emits
-// <inkycap-agenda> (kind "date"); renders a small date badge. `label` is the
-// text the Agenda pane shows for this item (the surrounding prose is not
-// captured); without it the Agenda falls back to the note title.
+// due: an inline dated reminder. Always emits <inkycap-agenda> (kind "date")
+// and renders a date badge. `label` is the text the Agenda shows; without it,
+// the note title.
 // ---------------------------------------------------------------------------
 
 #let due(date, label: none, recurrence: none) = {
@@ -547,12 +471,8 @@
     } else if _show-inline-wikilinks.get() {
       let dest = name + ".typ"
       if label != none { dest = dest + "#" + label }
-      // In HTML target, emit an explicit `<a>` with `class` and
-      // `data-target` so the Journal Scroll view (and any future HTML
-      // surface) can intercept clicks and route them — Typst's built-in
-      // `link()` produces an `<a href>` but no way to attach our class
-      // or carry the raw wikilink name through. The paged/SVG path keeps
-      // the standard `link()` so PDF export keeps its native behaviour.
+      // For HTML, emit an `<a>` with a class and `data-target` so the Journal
+      // Scroll can intercept the click. Paged output keeps `link()`.
       if target() == "html" {
         html.elem(
           "a",
@@ -573,14 +493,10 @@
 }
 
 // ---------------------------------------------------------------------------
-// video / audio: embed a media file. Native Typst has no audio/video element,
-// so these are inkycap-notebox extensions (CLAUDE.md Typst-first, tier 2). In
-// HTML export we emit a real <video>/<audio controls> element via html.elem;
-// in paged output (PDF/SVG), which cannot play media, we render an honest
-// placeholder naming the file. The visual editor replaces both with a live
-// player. Paths are notebox-root-absolute (e.g. "/Assets/clip.mp4"), like
-// #image — the surfaces that load the media (visual editor, HTML reading view)
-// resolve them to the real file.
+// video / audio: embed a media file. Typst has no media element, so HTML
+// export emits <video>/<audio controls> and paged output shows a placeholder
+// naming the file. Paths are notebox-root-absolute (e.g. "/Assets/clip.mp4"),
+// like #image.
 // ---------------------------------------------------------------------------
 
 #let _media-placeholder(kind, path) = block(
@@ -616,23 +532,16 @@
 }
 
 // ---------------------------------------------------------------------------
-// html-align: typst-html still (verified on 0.15) has no show rule for
-// `align()`, so an aligned block — most visibly a centred or right-aligned
-// #image — is dropped entirely from the HTML output (only its surrounding
-// paragraph survives). Re-emit it as a <div> carrying the matching CSS
-// `text-align` so it renders in the reading view and HTML export. Installed as
-// `#show align: html-align` only on the HTML compile path (see
-// `inject_html_align_shim` in style_injection.rs); paged output (PDF/SVG) keeps
-// native `align()` and is untouched. (0.15 did align box/block with paged
-// output and auto-exports MathML for equations — neither covers `align()`, so
-// this shim stays. Re-test on the next bump: a one-line `#align(center)[x]` to
-// HTML should contain the text iff upstream now renders it.)
+// html-align: typst-html (as of 0.15) has no output for `align()`, so an
+// aligned block such as a centred #image is dropped from HTML. This re-emits
+// it as a <div> with CSS `text-align`. Installed as `#show align: html-align`
+// on the HTML compile path only (see `inject_html_align_shim` in
+// style_injection.rs). Re-test when Typst is upgraded: if `#align(center)[x]`
+// compiled to HTML contains the text, this can go.
 // ---------------------------------------------------------------------------
 
 #let html-align(it) = {
-  // Reduce the (possibly 2-D) alignment to its horizontal component — the only
-  // part with a CSS `text-align` analogue. `align()` from the editor is
-  // horizontal-only; a hand-authored `center + horizon` keeps just `center`.
+  // Keep only the horizontal part, which is all CSS `text-align` can express.
   let a = it.alignment
   let h = if type(a) == alignment and a.x != auto { a.x } else { a }
   let css = if h == right { "right" } else if h == center { "center" } else if h == start { "start" } else if h == end { "end" } else { "left" }
@@ -645,9 +554,9 @@
 // abstract, info, todo, success, question, failure, danger, bug.
 // ---------------------------------------------------------------------------
 
-// Default colour per kind. The editor draws its callout preview from a copy of
-// this table in src/editor/typst-decorations/callout-kinds.ts; a test compares
-// the two, so a colour changed here must be changed there as well.
+// Default colour per kind. The editor keeps a copy in
+// src/editor/typst-decorations/callout-kinds.ts, and a test checks the two
+// match.
 #let _callout-colors = (
   note: rgb("#448aff"),
   tip: rgb("#00bfa5"),
@@ -666,12 +575,10 @@
   bug: rgb("#f50057"),
 )
 
-// Localized heading labels per callout kind. The `kind` argument stays the
-// stable English key (it selects the colour, the HTML class, and is the public
-// `#callout("warning")` API); only the *rendered* heading is localized, chosen
-// from the document language (`text.lang`) at render time. Add a language entry
-// to extend coverage; any language not listed falls back to English, and any
-// kind not listed falls back to a capitalized form of its key.
+// Heading labels per kind and language. `kind` stays the English key (it picks
+// the colour and HTML class); only the shown heading follows `text.lang`.
+// Unlisted languages fall back to English, unlisted kinds to the capitalized
+// key.
 #let _callout-labels = (
   note: (en: "Note", fr: "Note"),
   tip: (en: "Tip", fr: "Astuce"),
@@ -701,22 +608,17 @@
   }
 }
 
-// `kind` selects the default colour and the default heading word. `title:`
-// replaces the word with anything the writer likes; `color:` replaces the
-// colour with any Typst colour. Both are overrides — the kind stays in the
-// source, so removing an override falls back to it.
+// `kind` sets the default colour and heading. `title:` and `color:` override
+// them while the kind stays in the source.
 #let callout(kind, title: none, color: none, body) = {
   assert(type(kind) == str, message: "callout: kind must be a string")
   let accent = if color != none { color } else {
     _callout-colors.at(kind, default: rgb("#448aff"))
   }
 
-  // Typst's `typst-html` emitter drops `block(fill:/stroke:/inset:/radius:)`
-  // box styling — it would emit only the title + body text with no admonition
-  // box. So on the HTML target we emit a semantic `<div>` carrying the kind and
-  // the resolved colour (as a CSS custom property) for a stylesheet to paint,
-  // mirroring the `<mark>` treatment in `highlight`. The paged/SVG path keeps
-  // the native `block` so PDF/reading-view output is unchanged.
+  // typst-html drops a block's fill, stroke and inset, so for HTML emit a
+  // `<div>` with the kind and the colour as a CSS custom property, as
+  // `highlight` does with `<mark>`. Paged output keeps `block`.
   context {
     // Localize the heading from the document language now that we're in a
     // context where `text.lang` is known. An explicit `title:` always wins.
@@ -734,13 +636,11 @@
         ).join(),
       )
     } else {
-      // The frame is a thin corner bracket with a rounded bend at the top-left
-      // and bottom-right: a rectangle stroked on two sides only, shifted out
-      // by the inset to the box's edge. A stroke is centred on its edge, so
-      // each bracket also moves in by half its weight to sit inside the box.
-      // The bracket is 70% transparent, so over the fill it lands 30% of the
-      // way from the fill to the full accent. Keep in step with
-      // `--callout-corner-strength` in the app's themes.css.
+      // The frame is a corner bracket at the top-left and bottom-right: a
+      // rectangle stroked on two sides, moved out to the box's edge by the
+      // inset and back in by half the stroke weight. The bracket is 70%
+      // transparent. Keep in step with `--callout-corner-strength` in
+      // themes.css.
       let inset-x = 12pt
       let inset-y = 8pt
       let across = 5em
@@ -772,19 +672,12 @@
 }
 
 // ---------------------------------------------------------------------------
-// annotation.
+// annotation: a reader's or collaborator's remark on note content, shown as a
+// tinted block. `set-notebox(show-annotations: false)` hides it and leaves
+// only the metadata.
 //
-// `#annotation[comment]` marks a reader's or collaborator's remark on note
-// content — a tinted block that reads as a distinct note, not body text.
-// `set-notebox(show-annotations: false)` leaves only the metadata, which is
-// how InkyCap's reading view keeps annotations out of the way. (Distinct from
-// the *collaboration change-review* workflow: that reviews a collaborator's
-// incoming edits as a whole-file diff; an annotation is a comment that lives in
-// the note.)
-//
-// Emits queryable metadata (`<inkycap-annotation>`). `by` is a collaborator
-// handle or display name; `on` accepts a datetime or a date string (normalized
-// via `_fmt-date`). `none` for either omits it from the rendered attribution.
+// Emits `<inkycap-annotation>`. `by` is a name or handle; `on` a datetime or
+// date string. `none` leaves either out of the attribution.
 // ---------------------------------------------------------------------------
 
 #let _annotation-color = rgb("#8b5cf6")
@@ -837,34 +730,20 @@
 }
 
 // ---------------------------------------------------------------------------
-// suggestion: an inline tracked-change mark — the InkyCap "suggesting mode"
-// primitive. A collaborator proposes a change *inline* (rather than as a
-// whole-file diff): `kind` is "insert" (proposed new text), "delete" (existing
-// text proposed for removal), or "replace" (old → new).
+// suggestion: an inline tracked change. `kind` is "insert" (new text),
+// "delete" (text proposed for removal) or "replace" (old → new).
 //
-// IN COMPILED OUTPUT (reading view, PDF, HTML) this renders the *resulting*
-// text — the change as if accepted — with no tracked-change styling: insert and
-// replace show the new `body`; delete shows nothing. The CriticMarkup /
-// Track-Changes face (green-underlined insertions, red-struck deletions, the
-// inline reviewer `note`) is an editorial convenience that belongs only in the
-// visual editor, where it is drawn by a CodeMirror decoration, not by this
-// function. A rendered document therefore reads as the proposed result, never
-// as marked-up intent. (Accept semantics mirror `typst_pipeline::suggestion`:
-// insert/replace → new `body`, delete → nothing.)
+// Compiled output shows the result as if accepted, without change styling:
+// insert and replace show `body`, delete shows nothing. The tracked-change
+// styling exists only in the visual editor.
 //
-// Storage is Typst-native: the source-of-truth stays a `.typ` that compiles
-// anywhere. Accepting/rejecting a suggestion is a source transform (host-side
-// `suggestion_rewriter`) that *unwraps* the call to clean Typst, so a published
-// document never carries suggestion marks even in source. The invisible
-// `#metadata` mark (`<inkycap-suggestion>`, dict kind/by/on/note) is still
-// emitted so `typst query` and the Suggestions/Annotations panel can find every
-// open suggestion; `by`/`on` attribute the author and `note` is a reviewer
-// comment, surfaced in the editor but kept out of rendered output.
+// Accepting or rejecting unwraps the call to plain Typst (in the host's
+// `suggestion_rewriter`). The `<inkycap-suggestion>` metadata (kind, by, on,
+// note) lets `typst query` find open suggestions; `note` is a reviewer
+// comment that isn't rendered.
 //
-// `body` (positional) is the inserted/new text; `old` (named content) is the
-// replaced text for kind == "replace" — it carries in the source for the
-// host-side reject transform but is not rendered (an accepted replace keeps the
-// new text, not the old).
+// `body` is the new text; `old` is the replaced text for "replace", kept for
+// rejecting but not rendered.
 // ---------------------------------------------------------------------------
 
 #let suggestion(body, kind: "insert", old: none, note: none, by: none, on: none) = {
@@ -883,27 +762,17 @@
 }
 
 // ---------------------------------------------------------------------------
-// highlight: thin wrapper around Typst's built-in `highlight` that fixes
-// the HTML output path. Typst's `typst-html` emitter renders `#highlight[…]`
-// as a bare `<mark>` element with no inline style, so the user's chosen
-// `fill` / `radius` is dropped and the browser default mark-yellow shows
-// regardless. We branch on `target() == "html"` and emit `<mark>` with
-// `background-color` / `border-radius` derived from the same arguments
-// the built-in accepts. The paged path forwards untouched.
-//
-// `stroke` is intentionally not translated — the pill UI only sets fill,
-// and `stroke` accepts compound forms (length, color, dict) that don't
-// have a clean single-property CSS analogue. Authors who set a stroke in
-// source still get correct paged output; the HTML view shows fill only.
+// highlight: wrapper around the built-in `highlight`. typst-html emits a bare
+// `<mark>`, losing `fill` and `radius`, so for HTML this emits `<mark>` with
+// matching CSS. Paged output uses the built-in unchanged. `stroke` isn't
+// translated to CSS.
 // ---------------------------------------------------------------------------
 
 // Capture the built-in before the let binding below shadows it for the
 // rest of the package.
 #let _std-highlight = highlight
 
-// `..rest` forwards any extra named args (e.g. parameters added in
-// future Typst versions) to the built-in on the paged path without
-// requiring this wrapper to track Typst's full signature.
+// `..rest` passes any other named arguments to the built-in.
 #let highlight(
   body,
   fill: rgb("#f2ed61"),
@@ -912,12 +781,9 @@
   ..rest,
 ) = context {
   if target() == "html" {
-    // Pin near-black text on the mark. The highlighter palette is
-    // fixed-light in both themes, so without an explicit colour the
-    // reading view's dark-mode light foreground inherits onto the light
-    // fill and the highlighted text becomes unreadable. This mirrors the
-    // `color: #1a1a1a` the visual editor pins on highlighted spans
-    // (visual-colors.ts / visual-theme.ts).
+    // Fix the text colour to near-black: the highlight colours are light in
+    // both themes, so dark mode's light text would be unreadable. Matches the
+    // visual editor (visual-colors.ts / visual-theme.ts).
     let parts = (
       "background-color: " + fill.to-hex() + ";",
       "color: #1a1a1a;",
@@ -945,55 +811,38 @@
 }
 
 // ---------------------------------------------------------------------------
-// verse: whitespace-preserving free-form text (poetry, lyrics, structured
-// blocks where layout matters). First-class element — not a code-block
-// derivative.
+// verse: whitespace-preserving free-form text (poetry, lyrics, layouts where
+// spacing matters).
 //
-// Body is a string. Each line is whitespace-preserved (every ASCII space
-// becomes a non-breaking space) and then evaluated as Typst markup, so
-// inline formatting works naturally:
+// The body is a string. Each line keeps its spacing and is evaluated as Typst
+// markup, so inline formatting works:
 //
 //   *bold*        _italic_         #strike[x]
 //   #highlight[x] #underline[x]    #link("…")[…]
 //
-// Backslash escapes any markup metacharacter for literal display:
-//   \*, \_, \#, \[, \\, etc.
+// A backslash shows a markup character literally: \*, \_, \#, \[, \\, etc.
 //
 // Arguments:
-//   font:       explicit font family (string). Overrides set-notebox's
-//               verse-font. When `none`, falls back to the verse-font
-//               state, then to document body font.
-//   weight:     text weight (integer 100–900 or named string like "bold").
-//               When `none`, inherits the document/verse-font default.
+//   font:       font family. Defaults to set-notebox's verse-font, then the
+//               body font.
+//   weight:     text weight (100–900 or a name like "bold"). `none` inherits.
 //   align-to:   left | center | right (alignment values, not strings).
 //   numbered:   show line numbers.
 //   numbering-pattern: pattern for numbered lines (default "1").
 //   leading:    line spacing within the verse.
-//   tracking:   letter-spacing (length, e.g. 0.05em).
-//   lang:       language code for shaping/hyphenation (e.g. "fr", "ar").
+//   tracking:   letter spacing (length, e.g. 0.05em).
+//   lang:       language for shaping and hyphenation (e.g. "fr", "ar").
 //   dir:        text direction (auto | ltr | rtl).
 // ---------------------------------------------------------------------------
 
-// Preserve a verse line's idiosyncratic spacing *without* making the whole
-// line unbreakable.
+// Keep a verse line's spacing while leaving it breakable:
+//   * a leading run of spaces stays non-breaking, so indentation is never split;
+//   * a trailing run stays non-breaking so it survives layout;
+//   * an interior run of N spaces becomes N-1 non-breaking spaces and one
+//     ordinary space: the same width, with one break opportunity per gap.
 //
-// Mapping every ASCII space to U+00A0 (what this used to do) keeps the
-// spacing, but it also removes every legal break opportunity — so a verse
-// line longer than the measure runs straight off the right margin instead of
-// wrapping, in the SVG preview and in exported PDFs alike.
-//
-// Instead:
-//   * a leading run stays fully non-breaking — indentation must never be
-//     split across lines, and plain leading spaces would be stripped by
-//     markup anyway;
-//   * a trailing run stays fully non-breaking so it survives layout;
-//   * every interior run of N spaces becomes N-1 non-breaking spaces plus one
-//     ordinary space: identical visual width, exactly one break opportunity
-//     per word gap, and no markup space-collapsing (only ever one plain space
-//     per run reaches `eval`).
-//
-// Each tab first becomes four spaces, the editor's tab width, because Typst
-// markup would otherwise collapse it like any other whitespace.
+// Each tab first becomes four spaces (the editor's tab width), since markup
+// would collapse it.
 #let _verse-preserve-spaces(line) = {
   let nbsp = "\u{00A0}"
   let out = line.replace("\t", "    ")
@@ -1020,11 +869,8 @@
   let _align = align
 
   context {
-    // Resolve font: explicit arg > set-notebox state > inherit (none →
-    // omit the font argument entirely so the document default applies).
-    // `text(font: auto)` is a type error in Typst — font must be string,
-    // dict, or array, never `auto` — so the argument has to be omitted
-    // rather than defaulted.
+    // Font: explicit argument, then the set-notebox state, else omit the
+    // argument so the document default applies (`font: auto` is a type error).
     let resolved-font = if font != none {
       font
     } else {
@@ -1040,13 +886,9 @@
     if lang != none { text-args.insert("lang", lang) }
     if dir != auto { text-args.insert("dir", dir) }
 
-    // HTML target uses a different rendering path. Typst's HTML
-    // backend doesn't reliably translate the paged-target constructs
-    // we use for paged output (`align()` blocks, `linebreak()` joining
-    // a content sequence, `grid()` for numbered rows) — they either
-    // get dropped or cause surrounding output to be cut off. Emit a
-    // flat `<div>` with `white-space: pre-wrap` and explicit `<br>`
-    // separators instead; that maps cleanly to HTML.
+    // HTML: typst-html drops or truncates the paged constructs used below
+    // (`align()`, `linebreak()` sequences, `grid()`), so emit a `<div>` with
+    // `white-space: pre-wrap` and `<br>` separators.
     if target() == "html" {
       let css-align = if align-to == center { "center" }
         else if align-to == right { "right" }
@@ -1093,13 +935,7 @@
         pieces.join(),
       )
     } else {
-      // ── Paged target (PDF, SVG, PNG) ──
-      // Build the rendered body as a single piece of content, then
-      // wrap it with an explicit `text(..text-args, body)` call so
-      // the verse font wins against any outer `#set text(font: ...)`
-      // rule (e.g., the document text font). `set text` inside
-      // `context { ... }` doesn't reliably override an outer set;
-      // explicit wrapping does.
+      // ── Paged output (PDF, SVG, PNG) ──
       set par(leading: leading)
       let lines = body.split("\n")
       let total = lines.len()
@@ -1132,9 +968,7 @@
         let acc = []
         for line in lines {
           n = n + 1
-          // Non-breaking spaces preserve idiosyncratic indentation and
-          // run-spacing through layout; one ordinary space per interior
-          // run keeps the line breakable. See _verse-preserve-spaces.
+          // See _verse-preserve-spaces.
           let preserved = _verse-preserve-spaces(line)
           // Empty line → single NBSP keeps the linebreak meaningful
           // (otherwise the layout collapses adjacent breaks).
@@ -1149,34 +983,26 @@
         acc
       }
 
-      // Wrap the rendered body in an explicit `text(..text-args, body)`
-      // call so the verse font wins against any outer document-level
-      // `#set text(font: ...)` rule (e.g., the style cascade injected
-      // by `inject_style_cascade`). A `set text` rule placed inside a
-      // `context { ... }` scope does not reliably override an outer
-      // set rule for content already constructed via `eval(..., mode:
-      // "markup")` — the eval'd content carries set-rule snapshots
-      // that bypass the inner scope. Explicit `text(...)` wrapping
-      // does override.
+      // Wrap in an explicit `text(...)` so the verse font overrides an outer
+      // `#set text(font: ...)`; a `set text` inside `context` doesn't override
+      // it for content built with `eval`.
       _align(align-to, text(..text-args, rendered))
     }
   }
 }
 
 // ---------------------------------------------------------------------------
-// contributors-byline / credit-statement: title-page byline + CRediT
-// contributions statement for the merged book export.
+// contributors-byline / credit-statement: title-page byline and CRediT
+// contributions statement for the book export.
 //
-// The Rust book wrapper emits the roster as an array of dicts:
-//   (name: "Joshua Chalifour", role: "author", credit: ("Conceptualization", …))
-// `role` is a CSL/Hayagriva bibliographic-role token; `credit` holds CRediT
-// labels already resolved host-side. Formatting lives here (Typst-first) so
-// the host only emits data + a single call.
+// The book wrapper passes the roster as an array of dicts:
+//   (name: "Athena Otlet", role: "author", credit: ("Conceptualization", …))
+// `role` is a CSL bibliographic-role token; `credit` holds resolved CRediT
+// labels.
 // ---------------------------------------------------------------------------
 
-// Byline phrasing per bibliographic role. Authors form the leading "by …";
-// every other role gets its own prefixed line. Unknown roles fall back to a
-// title-cased "<Role> by".
+// Byline phrasing per role. Authors form the opening "by …"; other roles get
+// their own line. Unknown roles become "<Role> by".
 #let _byline-prefix = (
   editor: "Edited by",
   translator: "Translated by",

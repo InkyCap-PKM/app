@@ -46,11 +46,10 @@ export function computeProtectedRanges(
     ranges.push({ from, to: hideEnd });
   }
 
-  // Typst comments sit behind a pill in the visual editor and are locked
-  // until the pill is clicked to reveal them. (These protected-range
-  // extensions are visual-mode-only, so the source editor still shows and
-  // edits comments normally.) Syntax-tree based, so a `//` line inside a
-  // raw/code block — not a comment node — stays visible as example content.
+  // Typst comments are behind a pill in the visual editor and locked until it's
+  // clicked. (These ranges apply only in visual mode; the source editor edits
+  // comments normally.) Based on the syntax tree, so a `//` line in a code
+  // block, which isn't a comment, stays visible.
   let runEnd = -1;
   syntaxTree(state).iterate({
     from: 0,
@@ -80,14 +79,12 @@ export function isInProtectedRange(pos: number, ranges: ProtectedRange[]): boole
 }
 
 /**
- * Move `pos` out of the protected range it falls in, in the direction the
- * caret was travelling (`dir`: -1 backward, 1 forward). Backward lands on the
- * position just before the range (or on `from` itself when the caret may sit
- * there); forward, or backward when nothing comes before, lands on the range's
- * end. Pushing the caret the way it came would leave it stuck: arrowing left
- * from below a range steps onto the range's last line, and a forward push puts
- * it straight back. Repeats in case the new position falls in a neighbouring
- * range.
+ * Move `pos` out of the protected range it's in, in the caret's direction
+ * (`dir`: -1 back, 1 forward). Back goes just before the range (or to `from`
+ * when the caret may sit there); forward, or back with nothing before, goes to
+ * its end. Pushing the caret the way it came would trap it: arrowing left from
+ * below steps onto the range's last line, and a forward push puts it straight
+ * back. Repeats in case it lands in a neighbouring range.
  */
 export function pushOutOfProtected(pos: number, ranges: ProtectedRange[], dir: -1 | 1 = 1): number {
   for (let step = 0; step <= ranges.length; step++) {

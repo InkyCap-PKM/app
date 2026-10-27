@@ -1,6 +1,5 @@
-// Working out what a half-typed `tag:`, `path:`, `collection:` or `property:`
-// filter in the search box could be completed with. Pure string work, kept out of the panel so the
-// offsets are testable on their own.
+// Completions for a half-typed `tag:`, `path:`, `collection:` or `property:` filter in the search
+// box. Plain string work, separate from the panel so the offsets can be tested.
 
 /** What a completion offers: folders, tag names, collection names, property
  *  keys, or property values. */
@@ -18,11 +17,9 @@ export interface SearchCompletionContext {
 }
 
 /**
- * The filter value the caret sits in, or null when it is somewhere else.
- *
- * The prefix has to start at a token boundary so a stray "tag:" inside a word
- * doesn't trigger, and a leading `-` (or a preceding `NOT`/`(`) is allowed
- * because those are how the query language negates and groups a filter.
+ * The filter value the caret is in, or null. The prefix must start a token, so
+ * "tag:" inside a word doesn't count; a leading `-` (or a preceding `NOT`/`(`)
+ * is allowed, since that is how filters are negated and grouped.
  */
 const FILTER_AT_CARET =
   /(?:^|[\s(])-?(path|tag|collection|property):((?:[^\s()"]|"[^"]*"?)*)$/i;
@@ -66,21 +63,19 @@ export function completionContext(
 }
 
 /**
- * Whether a value can be written into a filter at all. The query language has
- * no way to escape a double quote — a quote always opens or closes a run — so
- * a tag or property value containing one cannot be searched for by name, and
- * offering it would only produce a filter for some other string.
+ * Whether a value can be written into a filter. The query language can't escape
+ * a double quote, so a value containing one can't be searched for, and offering
+ * it would search for something else.
  */
 export function canComplete(value: string): boolean {
   return !value.includes('"');
 }
 
 /**
- * Replace the filter value with `value`, quoting it when it contains anything
- * that would otherwise end the token. `suffix` is appended outside the quotes —
- * a chosen property key carries its `=` so the value can be typed next.
- * Returns the new query text and where the caret belongs in it. `value` must
- * pass `canComplete`.
+ * Replace the filter value with `value`, quoted if it contains anything that
+ * would end the token. `suffix` goes after the quotes (a property key gets its
+ * `=` so the value can be typed next). Returns the new query and the caret
+ * position. `value` must pass `canComplete`.
  */
 export function applyCompletion(
   query: string,
@@ -97,9 +92,9 @@ export function applyCompletion(
 }
 
 /**
- * Where the token starting at `start` ends. Whitespace and the grouping
- * parentheses end a token, except inside quotes — `property:author="Jane Doe"`
- * is one value, spaces and all.
+ * Where the token starting at `start` ends: at whitespace or a grouping
+ * parenthesis, except within quotes (`property:author="Athena Otlet"` is one
+ * value).
  */
 function tokenEnd(query: string, start: number): number {
   let pos = start;

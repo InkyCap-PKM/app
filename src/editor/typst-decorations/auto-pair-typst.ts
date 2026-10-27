@@ -1,30 +1,20 @@
-// Typing behaviour for the Typst formatting delimiters *, _, `, $.
+// Typing behaviour for the Typst delimiters *, _, ` and $.
 //
-// Selection wrap (all four): typing a delimiter with text selected wraps the
-// selection (e.g. "word" → "*word*"), matching the selection toolbar and
-// Mod-b / Mod-i shortcuts which "close around" the selected text.
+// - With text selected, any of them wraps the selection ("word" → "*word*"),
+//   like the toolbar and Mod-b / Mod-i.
+// - *, _ and $ don't auto-close: closing them made fixing markup surprising
+//   (after "d" in "*bol*d", typing "*" gave "*bol*d**"). Zettlr and Obsidian
+//   behave the same.
+// - ` auto-closes like CodeMirror's closeBrackets does for ( and [: "`" gives
+//   "`|`", typing "`" before the inserted close steps over it, and Backspace in
+//   an empty pair deletes both. An unclosed backtick swallows the rest of the
+//   line as raw, so pairing is the safer default. It isn't handled by
+//   closeBrackets, which treats it as a quote and closes it only after some
+//   characters.
+// - Three backticks expand to a code block template: "`" → "`|`", "`" → "``|"
+//   (stepping over), "`" → the block.
 //
-// *, _, $ — no auto-close on a bare keystroke. We deliberately do NOT close
-// these on every keystroke: auto-closing made fixing existing markup
-// surprising — e.g. with the cursor after the "d" in "*bol*d", typing "*" to
-// add a closing star produced "*bol*d**". Zettlr and Obsidian behave this way
-// and it is far more predictable.
-//
-// ` (backtick) — auto-closes into a pair, exactly like CodeMirror's
-// closeBrackets does for ( and [. Typing "`" inserts "`|`" with the caret
-// between the pair; typing "`" again immediately before the auto-inserted
-// closing backtick steps over it instead of adding a stray one; Backspace
-// between an empty pair deletes both. Backtick is worth closing because, unlike
-// the other delimiters, an unclosed one parses as a raw span that swallows the
-// rest of the line, so pairing it is the less surprising default. Backtick does
-// NOT go through closeBrackets: that treats it as a quote and only closes it
-// after certain characters, which reads as inconsistent next to ( and [.
-//
-// Triple backtick still expands to a code-block template (a deliberate 3-char
-// gesture, also what Zettlr/Obsidian do). It composes with the pairing above:
-// "`" → "`|`", "`" → "``|" (steps over the close), "`" → the block template.
-//
-// All of this respects the auto_pair_typst setting.
+// All of this follows the auto_pair_typst setting.
 
 import { EditorView, keymap } from "@codemirror/view";
 import { EditorSelection, type Extension } from "@codemirror/state";
@@ -33,11 +23,9 @@ import { dispatchVisible } from "./dispatch-visible";
 
 const PAIR_CHARS = new Set(["*", "_", "`", "$"]);
 
-// Characters the caret may sit before and still have a backtick auto-close.
-// Mirrors closeBrackets' `before` set (closing brackets, punctuation) plus the
-// prose punctuation a writer commonly types inline code ahead of. When the next
-// character is a word character instead, we insert a single backtick so we
-// don't split a word the user is typing through.
+// Characters before which a backtick still auto-closes: closeBrackets' `before`
+// set plus common prose punctuation. Before a word character a single backtick
+// is inserted, so a word isn't split.
 const CLOSE_BEFORE = ")]}>:;,.!?\"'";
 
 const autoPairInput = EditorView.inputHandler.of(
@@ -62,16 +50,10 @@ const autoPairInput = EditorView.inputHandler.of(
     // *, _, $ never auto-close on a bare keystroke — insert a single delimiter.
     if (text !== "`") return false;
 
-    // Triple backtick: when two backticks already precede the cursor, insert
-    // the third plus a code-block template.
-    //
-    // The caret lands immediately *after* the opening fence, not on the body
-    // line — the language tag is the next thing a writer types, and it belongs
-    // on the fence (` ```typ `). Dropping into the body first forced a
-    // backspace-and-retype to name the language, which is the whole point of
-    // fencing a block. Enter on the fence line then steps down into the body
-    // rather than adding another blank line (see typstKeymap's Enter binding),
-    // so the full gesture is: ``` → language → Enter → code.
+    // Third backtick after two: insert it and a code block template. The caret
+    // goes right after the opening fence, where the language goes (` ```typ `);
+    // Enter there then steps into the body (see typstKeymap's Enter), so the
+    // gesture is ``` → language → Enter → code.
     const before = state.doc.sliceString(Math.max(0, from - 2), from);
     if (before === "``") {
       dispatchVisible(view, {
@@ -90,10 +72,8 @@ const autoPairInput = EditorView.inputHandler.of(
       return true;
     }
 
-    // Auto-close into a pair when the caret sits at a natural boundary — end of
-    // line, before whitespace, or before closing punctuation — the same rule
-    // closeBrackets applies to ( and [. Mid-word, fall through to a single
-    // backtick so we don't split what the user is writing.
+    // Auto-close at a boundary (line end, before whitespace or closing
+    // punctuation), as closeBrackets does; mid-word, insert a single backtick.
     if (next === "" || /\s/.test(next) || CLOSE_BEFORE.includes(next)) {
       dispatchVisible(view, {
         changes: { from, to, insert: "``" },
@@ -107,9 +87,8 @@ const autoPairInput = EditorView.inputHandler.of(
   },
 );
 
-// Backspace between an empty backtick pair deletes both, matching how
-// closeBrackets' deleteBracketPair handles ( ) and [ ]. closeBrackets only
-// tracks its own bracket set, so we handle the backtick pair here.
+// Backspace in an empty backtick pair deletes both, as closeBrackets does for
+// its own brackets.
 const deleteBacktickPair = keymap.of([
   {
     key: "Backspace",

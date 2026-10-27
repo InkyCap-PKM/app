@@ -32,15 +32,13 @@ import ReadingZoomControl, { attachReadingZoomWheel } from "./ReadingZoomControl
 import { PT_TO_CSS_PX } from "./TypstEditor";
 
 /**
- * Read-only view of a notebox file that isn't a note: an image, PDF, audio or
- * video file. Images and media load as `blob:` URLs, like embeds in the
- * visual editor; PDF pages are drawn by Typst (see `commands/pdf_view.rs`)
- * and shown with reading mode's page styling, one page at a time as they
- * scroll into view. Images and PDFs zoom with the tab's reading zoom, like
- * a note in reading mode. Right-clicking anywhere shows the attachment's file
- * actions in place of the webview's own menu, whose items (open in a new
- * window, save, …) do nothing in the app. The right panel lists the notes
- * that use the file.
+ * Read-only view of a notebox file that isn't a note: image, PDF, audio or
+ * video. Images and media load as `blob:` URLs, as in the visual editor; PDF
+ * pages are drawn by Typst (see `commands/pdf_view.rs`) with reading mode's
+ * page style, one page at a time as they come into view. Images and PDFs follow
+ * the tab's reading zoom. Right-click shows the attachment's file actions
+ * instead of the webview's menu (whose items don't work in the app). The right
+ * panel lists the notes that use the file.
  */
 const AttachmentView: Component<{ path: string; tabId: string }> = (props) => {
   const t = useI18n();
@@ -125,9 +123,11 @@ const AttachmentView: Component<{ path: string; tabId: string }> = (props) => {
 
 type Fallback = (detail?: string) => ReturnType<Component>;
 
-/** Load a `blob:` URL for the view's lifetime and release it afterwards,
- *  including when the load only finishes after the view has closed. A failed
- *  load leaves the reason in the resource's `error`. */
+/**
+ * Load a `blob:` URL for the view's lifetime and release it afterwards, even if
+ * loading finishes after the view closed. A failure leaves the reason in the
+ * resource's `error`.
+ */
 function useObjectUrl(load: () => Promise<string>) {
   let closed = false;
   const [url] = createResource(async () => {
@@ -243,11 +243,12 @@ const MediaView: Component<{ source: string; video: boolean; fallback: Fallback 
   );
 };
 
-/** Each PDF page is drawn when it comes within a screen of the visible part
- *  of the scroller, and its drawing is let go again once it moves further
- *  away, so a long PDF holds only the pages around the view. Until drawn, a
- *  page holds the first page's proportions so the scroll length is about
- *  right from the start. */
+/**
+ * Each PDF page is drawn when it comes within a screen of the visible area and
+ * released when it moves further away, so a long PDF keeps only nearby pages.
+ * Undrawn pages take the first page's proportions, so the scroll length is
+ * about right from the start.
+ */
 const PdfView: Component<{
   path: string;
   tabId: string;
@@ -320,11 +321,12 @@ const PAGE_RANGE_EVENT = "attachment-view:page-range";
 
 type PageQueue = ReturnType<typeof createPageQueue>;
 
-/** Draws a PDF's pages one at a time, in the order they were asked for.
- *  Pages share the compiler with the note being edited, so drawing them one
- *  by one keeps live preview from waiting behind a whole screen of pages.
- *  A page that leaves drawing range before its turn is dropped, and nothing
- *  more is drawn once the view closes. */
+/**
+ * Draws PDF pages one at a time, in the order requested. Pages share the
+ * compiler with the note being edited, so live preview doesn't wait behind a
+ * screen of pages. A page that leaves range before its turn is dropped, and
+ * drawing stops when the view closes.
+ */
 function createPageQueue(path: string) {
   const waiting = new Map<number, (frame: TypstFrame | Error) => void>();
   let busy = false;

@@ -1,10 +1,7 @@
-// Agenda panel: left-sidebar mode that aggregates tasks and dated reminders
-// from across the whole notebox. Items come from two sources — document-level
-// `#note(...)` properties (task / due) and inline `#task` /
-// `#due` markers — flattened by the `get_agenda_items` backend command.
-//
-// This component is a thin data shell: it fetches and delegates rendering to
-// the shared `AgendaList` (also used by the Collection Agenda view).
+// Agenda panel: a left-sidebar mode listing tasks and dated reminders from the
+// whole notebox, from `#note(...)` properties (task / due) and inline `#task` /
+// `#due` calls, as returned by the `get_agenda_items` command. It only fetches;
+// the shared `AgendaList` (also used by the Collection Agenda view) draws them.
 
 import { Component, createResource } from "solid-js";
 import * as ipc from "../lib/ipc";
@@ -25,9 +22,8 @@ const AgendaPanel: Component<AgendaPanelProps> = (props) => {
       info: noteboxInfo(),
       tick: props.refreshTick,
       pv: propertyVersion(),
-      // `fileTreeVersion` bumps on create/delete/rename — agenda items
-      // are keyed by file path, so a rename has to refetch or the
-      // sidebar keeps showing the old filename.
+      // `fileTreeVersion` changes on create, delete and rename. Items are keyed
+      // by path, so a rename must refetch.
       fv: fileTreeVersion(),
     }),
     async ({ info }) => {

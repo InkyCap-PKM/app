@@ -15,26 +15,22 @@ pub struct SearchResult {
     pub line_text: String,
     /// Character offset ranges within `line_text` that matched.
     pub match_ranges: Vec<(usize, usize)>,
-    /// Character offset ranges within `file_name` that matched, for
-    /// highlighting the term where it appears in the file name (the result
-    /// group header). Empty unless the query's text hit the file name.
+    /// Character ranges in `file_name` that matched, for highlighting in the
+    /// result group header. Empty unless the query matched the file name.
     pub file_name_ranges: Vec<(usize, usize)>,
     /// Relevance score (higher is better).
     pub score: f64,
-    /// File modification time as a Unix timestamp in seconds. 0 if unknown.
-    /// Surfaced so the UI can offer "Modified time" sort orders without a
-    /// second round-trip through the IPC layer.
+    /// Modification time (Unix seconds, 0 if unknown), so the UI can sort by
+    /// modified time without another IPC call.
     pub modified_time: i64,
     /// File creation time as a Unix timestamp in seconds. Falls back to
     /// `modified_time` on platforms that don't expose creation time.
     pub created_time: i64,
-    /// The note's `#note(zid:)`, when it has one. Filled by the command
-    /// layer from the property index (the engine indexes text, not note
-    /// metadata), so search sorts by zid exactly as the file tree does.
+    /// The note's `#note(zid:)`, if any, filled in by the command layer from
+    /// the property index (the engine indexes text, not metadata), so search
+    /// sorts by zid as the file tree does.
     pub zid: Option<String>,
-    /// Lines immediately before `line_text` (max 2). The notebox-library
-    /// import line is filtered out so users never see auto-injected
-    /// preamble in search results.
+    /// Up to two lines before `line_text`. The notebox import line is left out.
     pub context_before: Vec<String>,
     /// Lines immediately after `line_text` (max 2), with the same
     /// import-line filter applied.

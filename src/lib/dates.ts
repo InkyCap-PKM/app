@@ -1,12 +1,8 @@
-// Shared date-display helpers.
+// Date display helpers. User-facing dates (Agenda due dates, backup times)
+// all go through here, so the Appearance > Date format setting controls them.
 //
-// User-facing date strings (Agenda due dates, backup timestamps,
-// last-success indicators) all funnel through this module so a single
-// Appearance > Date format setting controls them.
-//
-// The token grammar matches the Zettelkasten ID pattern (see
-// `scaffolds::moment_to_chrono_format` in the Rust backend) so users only
-// have one syntax to learn:
+// The tokens are the same as the Zettelkasten ID pattern's
+// (`scaffolds::moment_to_chrono_format` in Rust), so there is one syntax:
 //
 //   YYYY  4-digit year (2026)
 //   YY    2-digit year (26)
@@ -27,9 +23,8 @@
 //   ss    second, padded (03)
 //   s     second, no padding (3)
 //
-// Any character that isn't a token is kept verbatim. Multi-character tokens
-// are matched before single-character ones so `MMMM` isn't partially
-// consumed as `MMM` + `M`.
+// Other characters are kept as they are. Longer tokens match first, so `MMMM`
+// isn't read as `MMM` + `M`.
 
 import { settings } from "../stores/settings";
 import { localeCode } from "./i18n";
@@ -38,12 +33,11 @@ import { localeCode } from "./i18n";
  *  on the Rust side so the two can't drift. */
 export const DEFAULT_DATE_FORMAT = "D MMM YYYY";
 
-// Month and weekday NAMES come from the active UI locale, not a hardcoded
-// English table, so `MMMM`/`dddd` render "juin"/"jeudi" under French and so on.
-// `Intl.DateTimeFormat` instances are cached per (locale, field) — constructing
-// one is comparatively expensive and these run on every date render. The Rust
-// side localizes the same tokens via `chrono::format_localized` (see
-// `scaffolds::moment_to_chrono_format`), so generated-in-file dates match.
+// Month and weekday names come from the UI language (`MMMM`/`dddd` give
+// "juin"/"jeudi" in French). Formatters are cached per (locale, field), since
+// creating one is slow and this runs for every date shown. Rust localizes the
+// same tokens (`scaffolds::moment_to_chrono_format`), so dates written into
+// files match.
 const nameFormatterCache = new Map<string, Intl.DateTimeFormat>();
 function localizedName(
   d: Date,
@@ -96,9 +90,11 @@ function applyPattern(d: Date, pattern: string, locale: string): string {
   return out;
 }
 
-/** Resolve `input` to a `Date`. ISO strings (YYYY-MM-DD) are parsed in the
- *  local zone — using `new Date("2024-11-08")` would shift overnight in
- *  negative-UTC locales. */
+/**
+ * Resolve `input` to a `Date`. ISO dates (YYYY-MM-DD) are read in local time;
+ * `new Date("2024-11-08")` would read UTC and show the previous day west of
+ * UTC.
+ */
 function toDate(input: Date | string | number): Date | null {
   if (input instanceof Date) {
     return Number.isNaN(input.getTime()) ? null : input;
@@ -115,10 +111,10 @@ function toDate(input: Date | string | number): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-/** Format a date using the user's configured pattern (or `override` if
- *  given). Returns the raw string form of `input` when it can't be parsed,
- *  so display surfaces gracefully degrade rather than showing "Invalid
- *  Date". */
+/**
+ * Format a date with the user's pattern (or `override`). Returns `input` as a
+ * string if it can't be parsed, rather than "Invalid Date".
+ */
 export function formatUserDate(
   input: Date | string | number,
   override?: string,
@@ -129,9 +125,10 @@ export function formatUserDate(
   return applyPattern(d, pattern || DEFAULT_DATE_FORMAT, localeCode());
 }
 
-/** Format a date-time using the user's date pattern followed by a
- *  locale-appropriate time. Used for places that show both a date and the
- *  time of day (backup mtime, last-backup indicator). */
+/**
+ * Format a date and time: the user's date pattern followed by the locale's time
+ * format (backup times, last-backup indicator).
+ */
 export function formatUserDateTime(input: Date | string | number): string {
   const d = toDate(input);
   if (!d) return typeof input === "string" ? input : String(input);

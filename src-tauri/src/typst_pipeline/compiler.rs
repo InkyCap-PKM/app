@@ -1,13 +1,10 @@
-//! Public-facing compile API. Holds a [`NoteboxWorld`] and exposes per-document
-//! `compile_svg` (Phase 1), `compile_pdf` (Phase 9b), and query hooks.
+//! The compile API: holds a [`NoteboxWorld`] and offers `compile_svg`,
+//! `compile_pdf`, HTML and query hooks.
 //!
-//! Design notes:
-//! - One compiler instance per open notebox. Re-used across compiles so comemo
-//!   memoization stays warm.
-//! - All rendering goes through `typst::compile(&world)` where the world's
-//!   "main" file pointer has been swapped to the document we want.
-//! - SVG is per-page, not merged. The frontend is page-aware (reading-mode
-//!   shows pages stacked with separators) so we hand it the array.
+//! - One compiler per open notebox, reused so comemo memoization stays warm.
+//! - Every compile is `typst::compile(&world)` with the world's main file set
+//!   to the document.
+//! - SVG is returned per page; the reading view stacks the pages.
 
 use std::path::{Path, PathBuf};
 
@@ -20,12 +17,8 @@ use crate::typst_pipeline::diagnostic::TypstDiagnostic;
 use crate::typst_pipeline::recovery::{self, RecoveryStyle};
 use crate::typst_pipeline::world::NoteboxWorld;
 
-/// Lightweight timer for the `typst::compile` hot path. CLAUDE.md asks for
-/// compile-time instrumentation "from the outset"; this logs the elapsed time
-/// of each compile at `debug` level (off in release/normal runs, so zero cost
-/// to users) so a compile-time regression surfaces in a dev log rather than
-/// only when a user notices. Logs the file name only — not the full path —
-/// to keep the local-first privacy stance.
+/// Logs each compile's duration at `debug` level, so regressions show in dev
+/// logs. Only the file name is logged, not the path.
 struct CompileTimer {
     label: &'static str,
     file: String,
@@ -57,24 +50,17 @@ impl CompileTimer {
     }
 }
 
-/// Generations of `comemo` memoization to retain across compiles.
-///
-/// The compiler is reused for a notebox's lifetime so its memo cache stays
-/// warm (sub-ms recompiles), but without bounding it the cache grows for the
-/// whole session: every note compiled during the open-time indexing pass, plus
-/// every interactive recompile, leaves evaluated-module and layout artifacts
-/// that are otherwise never reclaimed. [`comemo::evict`] drops entries not
-/// touched in the last `N` compile cycles. The active document re-touches its
-/// own entries on each compile, so its warm path survives; only artifacts that
-/// have gone untouched for `N` compiles (stale notes from indexing, abandoned
-/// edits) are freed. typst-cli uses 10 in its watch loop; we keep a more
-/// generous window since interactive editing revisits recent documents.
+/// How many compile cycles a `comemo` entry may go untouched before
+/// [`comemo::evict`] drops it. The compiler lives as long as the notebox, so
+/// without eviction the cache would keep artifacts from every note indexed or
+/// edited. The active document touches its entries on each compile, so its fast
+/// path survives. typst-cli uses 10; editing revisits recent documents, so this
+/// is larger.
 const COMEMO_MAX_AGE: usize = 30;
 
-/// Evicts stale `comemo` entries when dropped. Held as a `let _guard` at the
-/// top of each public compile method so eviction runs once the method's work
-/// (including rendering/export, which itself re-enters memoized functions) has
-/// finished, regardless of which return path it takes.
+/// Evicts stale `comemo` entries when dropped. Held as `let _guard` at the top
+/// of each public compile method, so eviction runs after all its work,
+/// whichever way it returns.
 struct EvictComemoOnDrop;
 
 impl Drop for EvictComemoOnDrop {
@@ -83,20 +69,14 @@ impl Drop for EvictComemoOnDrop {
     }
 }
 
-/// PDF standard presets exposed to the frontend. Each variant maps to a
-/// combination of [`PdfStandard`] flags passed to the `typst-pdf` crate.
+/// PDF standard presets offered to the frontend, each mapped to [`PdfStandard`]
+/// flags for `typst-pdf`.
 ///
-/// typst-pdf 0.15 lifted the 0.14 restriction that only one PDF substandard
-/// could be active at a time, so [`PdfStandardPreset::PdfA2aUa1`] can now request
-/// archival *and* accessibility conformance in a single file. The pairing is
-/// PDF/A-2a, not the standalone `PdfA4`: PDF/UA-1 is locked to PDF 1.7, while
-/// PDF/A-4 requires PDF 2.0, so the two share no common PDF version and typst-pdf
-/// rejects them together. PDF/A-2a is the PDF-1.7-based archival level whose
-/// Level-A conformance mandates the same full document tagging PDF/UA-1 needs —
-/// the natural archival+accessible combination. The standalone variants stay for
-/// users who want exactly one conformance level. Adding a preset means one new
-/// entry here plus the frontend type in `ipc.ts` and the select options in
-/// `ExportDialog.tsx` / `CollectionExportPane.tsx`.
+/// [`PdfStandardPreset::PdfA2aUa1`] combines archival and accessible conformance.
+/// It uses PDF/A-2a, not PDF/A-4: PDF/UA-1 requires PDF 1.7 and PDF/A-4 requires
+/// PDF 2.0, so typst-pdf rejects that pair, while PDF/A-2a's tagging matches what
+/// PDF/UA-1 needs. A new preset also needs the frontend type in `ipc.ts` and the
+/// options in `ExportDialog.tsx` / `CollectionExportPane.tsx`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum PdfStandardPreset {
@@ -107,17 +87,14 @@ pub enum PdfStandardPreset {
     PdfA4,
     /// PDF/UA-1 — Universal Accessibility with full tagged structure.
     PdfUa1,
-    /// PDF/A-2a + PDF/UA-1 — archival *and* accessibility in one file. PDF/A-2a's
-    /// Level-A tagging is the PDF-1.7 base PDF/UA-1 shares; A-4 (PDF 2.0) can't
-    /// pair with UA-1.
+    /// PDF/A-2a + PDF/UA-1: archival and accessible in one file.
     PdfA2aUa1,
 }
 
 impl PdfStandardPreset {
-    /// Whether an export in this format may bypass errors by keeping errored
-    /// markup as plain text. Archival and accessible formats may not: an
-    /// error can hide exactly the structure (alt text, headings, language)
-    /// those formats exist to guarantee.
+    /// Whether this format allows keeping errored markup as plain text.
+    /// Archival and accessible formats don't: an error can hide the structure
+    /// (alt text, headings, language) they guarantee.
     pub fn allows_bypassing_errors(self) -> bool {
         matches!(self, Self::Standard)
     }
@@ -136,10 +113,8 @@ impl PdfStandardPreset {
         }
     }
 
-    /// True when the preset includes PDF/UA-1 accessibility conformance, so the
-    /// accessibility requirements (alt text, gap-free headings, tagged
-    /// structure, heading normalization) apply. Covers both the standalone
-    /// `PdfUa1` and the combined `PdfA2aUa1`.
+    /// True when the preset includes PDF/UA-1 (`PdfUa1` or `PdfA2aUa1`), so the
+    /// accessibility requirements apply.
     pub fn includes_ua1(self) -> bool {
         matches!(self, Self::PdfUa1 | Self::PdfA2aUa1)
     }
@@ -155,18 +130,16 @@ impl PdfStandardPreset {
     }
 }
 
-/// Compile output ready for IPC. SVG strings travel through Tauri as plain
-/// JSON; for the 4-page bench-doc this is ~700KB total — well under the
-/// payload size we care about.
+/// Compile output for IPC. SVG strings travel as JSON.
 #[derive(Debug, Clone, Serialize)]
 pub struct TypstCompileResult {
-    /// True if a `PagedDocument` compiled cleanly (no errors). Diagnostics may
-    /// still contain warnings even on success. When false, see `recovered`:
-    /// `frames` may still be populated by the error-tolerant recovery pass.
+    /// True if the document compiled without errors (warnings are possible).
+    /// When false, `frames` may still hold output from the recovery pass (see
+    /// `recovered`).
     pub ok: bool,
-    /// True when the document failed to compile but the recovery pass salvaged
-    /// renderable output by dropping the errored span(s). `frames` is populated
-    /// and `diagnostics` still carries the real errors. See [`recovery`].
+    /// True when the document failed but the recovery pass produced output by
+    /// dropping the errored spans. `diagnostics` still has the real errors. See
+    /// [`recovery`].
     ///
     /// [`recovery`]: crate::typst_pipeline::recovery
     pub recovered: bool,
@@ -241,10 +214,9 @@ impl TypstCompiler {
         self.world.forget_cached_files();
     }
 
-    /// Borrow the underlying World. Used by on-demand package resolution
-    /// ([`crate::typst_pipeline::package_fetch`]) to drain the set of packages
-    /// a compile pass failed to resolve, so they can be downloaded and the
-    /// compile retried.
+    /// The World, used by package fetching
+    /// ([`crate::typst_pipeline::package_fetch`]) to collect packages a compile
+    /// couldn't resolve.
     pub fn world(&self) -> &NoteboxWorld {
         &self.world
     }
@@ -258,19 +230,10 @@ impl TypstCompiler {
         self.world.system_fonts_loaded()
     }
 
-    /// Load system fonts on first compile, unconditionally.
-    ///
-    /// This used to gate on which font settings were configured, but every
-    /// gate we added eventually missed a setting (verse_font, monospace
-    /// stack, future ones) — the symptom is always the same `unknown font
-    /// family` warning from Typst. Loading fonts is a one-time ~100ms cost
-    /// per session (subsequent calls short-circuit on `system_fonts_loaded`),
-    /// so the trade is "always pay once" vs "occasionally render the wrong
-    /// font and surface a warning the user has no way to act on". Pay once.
-    ///
-    /// The `_settings` arg is kept so call sites stay stable and so a
-    /// future variant (e.g. opt-in lazy mode for users with multi-thousand
-    /// font collections) can re-introduce gating without changing the API.
+    /// Load system fonts before the first compile, always. Deciding from the
+    /// font settings kept missing cases and produced `unknown font family`
+    /// warnings; loading costs about 100ms once per session. `_settings` is
+    /// kept for a possible opt-in lazy mode.
     pub fn ensure_system_fonts_for_settings(&mut self, _settings: &crate::settings::UserSettings) {
         if self.system_fonts_loaded() {
             return;
@@ -278,9 +241,8 @@ impl TypstCompiler {
         self.ensure_system_fonts();
     }
 
-    /// Compile to a `PagedDocument` without rendering to SVG. Used by the
-    /// query module for metadata extraction where we only need the
-    /// introspector, not rendered frames.
+    /// Compile to a `PagedDocument` without rendering, for queries that only
+    /// need the introspector.
     pub fn compile_document(&mut self, abs_path: &Path, source: String) -> Option<PagedDocument> {
         let _evict = EvictComemoOnDrop;
         if self.world.set_main(abs_path, source).is_err() {
@@ -293,28 +255,17 @@ impl TypstCompiler {
         warned.output.ok()
     }
 
-    /// Like [`compile_document`], but on a *localized* failure runs the
-    /// error-tolerant [`recovery`] pass — dropping the errored spans (a stray
-    /// token, a broken `#include`) and recompiling — so body-derived metadata
-    /// can still be queried from the salvageable parts of the document.
+    /// Like [`compile_document`], but on a localized failure runs the
+    /// [`recovery`] pass (dropping errored spans such as a broken `#include`)
+    /// so metadata can still be read from the rest. Without this, one broken
+    /// span would hide every inline `#task` / `#due` from the Agenda.
     ///
-    /// Used by the metadata pipeline (`compile_and_query`): without it, a
-    /// single broken span anywhere in the body (e.g. `#include "/missing.typ"`)
-    /// makes the whole compile return `None`, the query falls back to a
-    /// preamble-only recompile, and every inline `#task` / `#due` marker
-    /// vanishes from the Agenda — even though the markers themselves are fine.
-    /// Document-level `#note(...)` metadata survives the preamble fallback,
-    /// which is why properties (and document-level recurrence) kept showing
-    /// while inline markers did not.
+    /// Recovery rewrites the world's main source, so the original is restored
+    /// before returning, as in [`compile_svg`]. `None` only when recovery can't
+    /// make progress.
     ///
-    /// The recovery pass rewrites the world's main source in place, so the
-    /// user's original source is restored before returning (matching
-    /// [`compile_svg`]). Returns `None` only when recovery can't make progress
-    /// within its pass budget.
-    ///
-    /// [`compile_document`]: Self::compile_document
-    /// [`compile_svg`]: Self::compile_svg
-    /// [`recovery`]: crate::typst_pipeline::recovery
+    /// [`compile_document`]: Self::compile_document [`compile_svg`]:
+    /// Self::compile_svg [`recovery`]: crate::typst_pipeline::recovery
     pub fn compile_document_recovering(
         &mut self,
         abs_path: &Path,
@@ -355,21 +306,13 @@ impl TypstCompiler {
         self.world.invalidate(abs_path);
     }
 
-    /// Compile the note at `abs_path` to per-page SVG. The source is supplied
-    /// by the caller (typically read via [`NoteboxStorage`], which validates the
-    /// path is inside the notebox); this keeps the compiler out of the I/O path
-    /// for the main file and ensures all reads go through the trait that
-    /// enforces the notebox sandbox. Imported files (`#import "/..."`) are still
-    /// read by the underlying `World` directly — that's a separate threat
-    /// surface tracked as a follow-up.
+    /// Compile the note at `abs_path` to per-page SVG. The caller supplies the
+    /// source, normally read through [`NoteboxStorage`], which keeps the main
+    /// file inside the notebox. Imported files are still read by the `World`
+    /// directly.
     ///
-    /// `abs_path` MUST be a canonicalized absolute path inside the notebox root
-    /// the compiler was constructed with; the caller is responsible for that
-    /// guarantee.
-    ///
-    /// Uses `&mut self` so we have a single-writer guarantee; the underlying
-    /// World is `Sync` and could in principle be shared, but compile is hot
-    /// enough at ~20ms that we don't gain anything from concurrent compiles.
+    /// `abs_path` must be a canonical absolute path inside the compiler's
+    /// notebox root.
     ///
     /// [`NoteboxStorage`]: crate::storage::traits::NoteboxStorage
     pub fn compile_svg(
@@ -384,9 +327,7 @@ impl TypstCompiler {
             .set_main(abs_path, source.clone())
             .map_err(|err| CompileError::SetMain(abs_path.to_path_buf(), format!("{err:?}")))?;
 
-        // typst::compile returns a Warned<SourceResult<PagedDocument>>:
-        //   - .output: Result<PagedDocument, EcoVec<SourceDiagnostic>>
-        //   - .warnings: EcoVec<SourceDiagnostic>
+        // `.output` is the document or errors; `.warnings` the warnings.
         let _t = CompileTimer::start("compile_svg", abs_path);
         let warned = typst::compile::<PagedDocument>(&self.world);
         _t.done();
@@ -410,9 +351,9 @@ impl TypstCompiler {
                         .iter()
                         .map(|d| crate::typst_pipeline::diagnostic::from_source(d, &self.world)),
                 );
-                // Error-tolerant fallback for the reading view: salvage a
-                // renderable document by dropping the errored spans. The
-                // diagnostics above still report the real errors verbatim.
+                // Reading-view fallback: recover a renderable document by
+                // dropping errored spans. The diagnostics still report the real
+                // errors.
                 let recovered = recovery::recover::<PagedDocument>(
                     &self.world,
                     abs_path,
@@ -452,12 +393,11 @@ impl TypstCompiler {
             .map(|out| out.bytes)
     }
 
-    /// Like [`compile_pdf`](Self::compile_pdf), with the option to bypass
-    /// errors. When `bypass_errors` is true and the note fails to compile, the
-    /// markup holding each error is kept as plain literal text (see
-    /// [`RecoveryStyle::LiteralText`]) and [`PdfOutput::bypassed`] is set.
-    /// Errors that recovery can't get past are still returned, and so are all
-    /// errors when the format doesn't allow bypassing them (see
+    /// Like [`compile_pdf`](Self::compile_pdf), optionally bypassing errors:
+    /// with `bypass_errors`, a failing note's errored markup is kept as plain
+    /// text (see [`RecoveryStyle::LiteralText`]) and [`PdfOutput::bypassed`] is
+    /// set. Errors recovery can't get past are still returned, as are all
+    /// errors for formats that don't allow bypassing (see
     /// [`PdfStandardPreset::allows_bypassing_errors`]).
     pub fn compile_pdf_with(
         &mut self,
@@ -474,11 +414,9 @@ impl TypstCompiler {
             })
     }
 
-    /// Like [`compile_pdf_with`](Self::compile_pdf_with) but returns the
-    /// structured diagnostics on failure instead of a flattened string. The
-    /// book exporter uses this so it can map each error's source offset back
-    /// to the originating note (see `book_wrapper::describe_book_diagnostics`);
-    /// a flattened message can't be traced to a chapter.
+    /// Like [`compile_pdf_with`](Self::compile_pdf_with), but returns
+    /// structured diagnostics on failure, so the book export can trace each
+    /// error to its note (see `book_wrapper::describe_book_diagnostics`).
     pub fn compile_pdf_diagnostics(
         &mut self,
         abs_path: &Path,
@@ -580,10 +518,9 @@ impl TypstCompiler {
         result
     }
 
-    /// Compile the note at `abs_path` to HTML using Typst's native HTML backend.
-    /// Produces semantic HTML suitable for a flowing reading view or export.
-    /// Failed compiles are salvaged with warning markers
-    /// ([`RecoveryStyle::Marker`]); see [`compile_html_with`](Self::compile_html_with).
+    /// Compile the note at `abs_path` to HTML with Typst's HTML backend. Failed
+    /// compiles are recovered with warning markers ([`RecoveryStyle::Marker`]); see
+    /// [`compile_html_with`](Self::compile_html_with).
     pub fn compile_html(
         &mut self,
         abs_path: &Path,
@@ -593,8 +530,8 @@ impl TypstCompiler {
     }
 
     /// Like [`compile_html`](Self::compile_html), choosing how a failed compile
-    /// is salvaged. When salvage succeeds, `ok` is false, `recovered` is true
-    /// and `html` holds the recovered page.
+    /// is recovered. On recovery, `ok` is false, `recovered` true and `html`
+    /// the recovered page.
     pub fn compile_html_with(
         &mut self,
         abs_path: &Path,
@@ -621,13 +558,9 @@ impl TypstCompiler {
 
         match warned.output {
             Ok(document) => {
-                // `HtmlOptions::default()` → `pretty: false` (0.15 minifies by
-                // default). Deliberate for every HTML surface we emit: the
-                // reading-view preview is rendered by the webview, and HTML /
-                // site exports are shipped artifacts where a smaller payload
-                // wins. We have no human-edited HTML-source surface that would
-                // want `pretty: true`. Spreading the default also keeps any
-                // future additive `HtmlOptions` field free (CLAUDE.md).
+                // Default options (minified). The reading view and HTML exports
+                // don't need readable HTML source, and using the default picks
+                // up new fields.
                 match typst_html::html(&document, &HtmlOptions::default()) {
                     Ok(html) => Ok(TypstHtmlResult {
                         ok: true,
@@ -636,9 +569,8 @@ impl TypstCompiler {
                         diagnostics,
                     }),
                     Err(errs) => {
-                        // The document compiled; HTML generation itself
-                        // failed. Not a span-localized error, so the recovery
-                        // pass doesn't apply — report it as before.
+                        // HTML generation itself failed; not a span error, so
+                        // recovery doesn't apply.
                         diagnostics.extend(
                             errs.iter()
                                 .map(|d| {
@@ -748,9 +680,8 @@ mod tests {
     use std::fs;
     use tempfile::tempdir;
 
-    /// Tempdirs may not be canonical on every platform (`/tmp` is a symlink
-    /// to `/private/tmp` on macOS). The compile pipeline assumes a canonical
-    /// notebox root so the symlink-escape check holds — tests must do the same.
+    /// Temp dirs aren't always canonical (`/tmp` links to `/private/tmp` on
+    /// macOS), but the pipeline expects a canonical root.
     fn canonical_tempdir() -> (tempfile::TempDir, std::path::PathBuf) {
         let dir = tempdir().expect("tempdir");
         let root = canonicalize_root(dir.path()).expect("canonicalize tempdir");
@@ -781,14 +712,10 @@ mod tests {
 
     #[test]
     fn combined_pdf_a2a_ua1_standard_compiles() {
-        // typst-pdf 0.15 lifted the 0.14 single-substandard restriction, so the
-        // archival+accessible pair must both construct without panicking (the
-        // `.expect` in `to_pdf_standards`) and produce a real PDF. The pairing is
-        // PDF/A-2a, not A-4: UA-1 is PDF 1.7, A-4 is PDF 2.0, and typst-pdf
-        // rejects version-incompatible standards together. Regression guard: if
-        // a future bump re-tightens the validation, this fails loudly here rather
-        // than at a user's export. A conformant doc carries title, language, and
-        // a document date (all PDF/A + PDF/UA prerequisites).
+        // The archival-plus-accessible preset (PDF/A-2a + PDF/UA-1) must build
+        // and produce a PDF. If a Typst upgrade rejects the pair, this fails here
+        // rather than in a user's export. The document has a title, language and
+        // date, as both standards require.
         let (_dir, root) = canonical_tempdir();
         let note_path = root.join("combined.typ");
         let source = "#set document(title: \"Combined standards\", \
@@ -808,12 +735,9 @@ mod tests {
         );
     }
 
-    /// A note that `#include`s a syntactically broken file should still render
-    /// its own content. Recovery can't patch another file, but it drops the
-    /// failing `#include` statement (replacing it with the error marker) so the
-    /// host doesn't blank out, and the included-file error is still surfaced.
-    /// Regression for the silent-blank reading view when a transcluded note has
-    /// a parse error (a lone `/` term-list marker, "expected colon").
+    /// A note that `#include`s a broken file still renders its own content: the
+    /// `#include` is replaced with the error marker and the included file's
+    /// error is reported.
     #[test]
     fn recovers_from_a_broken_include_by_dropping_it() {
         let (_dir, root) = canonical_tempdir();
@@ -850,9 +774,9 @@ mod tests {
         );
     }
 
-    /// Bypassing errors keeps the errored markup as plain text: a stray
-    /// reference stays readable, a function call with a bad argument appears
-    /// whole as written, and a `(` right after it stays ordinary text.
+    /// Bypassing keeps errored markup as text: a stray reference stays
+    /// readable, a call with a bad argument appears as written, and a following
+    /// `(` stays text.
     #[test]
     fn bypassing_errors_keeps_the_literal_source_text() {
         let (_dir, root) = canonical_tempdir();
@@ -931,9 +855,8 @@ mod tests {
         }
     }
 
-    /// `#video` / `#audio` compile in both targets: a placeholder in paged
-    /// output (which can't play media) and a real `<video>` / `<audio
-    /// controls>` element in HTML export.
+    /// `#video` / `#audio` compile for both targets: a placeholder in paged
+    /// output and `<video>` / `<audio controls>` in HTML.
     #[test]
     fn video_and_audio_render_in_both_targets() {
         let (_dir, root) = canonical_tempdir();
@@ -987,10 +910,8 @@ mod tests {
 
     #[test]
     fn compiles_phase_0_spike_fixture() {
-        // The Phase 0 spike fixture exercises the full inkycap-notebox package
-        // (note metadata, wikilinks, tags, verse). The fixture lives at the
-        // repository root, two levels above src-tauri; we only run it when
-        // the path resolves so this test still passes outside a checkout.
+        // The spike fixture uses the whole notebox package. It lives at the
+        // repository root; skip when it isn't there.
         let workspace = match std::env::var("CARGO_MANIFEST_DIR") {
             Ok(d) => std::path::PathBuf::from(d).join("..").canonicalize().ok(),
             Err(_) => None,
@@ -1014,10 +935,8 @@ mod tests {
 
     #[test]
     fn recovers_renderable_output_around_a_localized_error() {
-        // A literal `@2025-09-15` in prose is parsed as a cross-reference to a
-        // label that doesn't exist — a hard error that would otherwise blank
-        // the whole reading view. Recovery should drop the errored span and
-        // still render the surrounding content.
+        // A literal `@2025-09-15` is a reference to a missing label; recovery
+        // should drop it and render the rest.
         let (_dir, root) = canonical_tempdir();
         let note_path = root.join("recover.typ");
         let source =

@@ -1,9 +1,8 @@
-// "Check for updates" control for Settings → Overview. A check asks the backend
-// whether a newer release exists; if so it offers Download (always) and, for
-// copies installed by InkyCap's own installers, Upgrade: download and verify →
-// install → Restart now. A check only runs on click (or on startup, if opted
-// in); an upgrade only on click. A copy updated by the software centre it came
-// from (Flathub) shows a note instead of any of this.
+// "Check for updates" in Settings → Overview. A check asks the backend whether
+// there's a newer release; if so it offers Download and, for copies from
+// InkyCap's own installers, Upgrade (download and verify, install, Restart
+// now). Checks run only on click (or at startup, if chosen), upgrades only on
+// click. A copy updated by its software centre (Flathub) shows a note instead.
 import { Show, Switch, Match, onMount } from "solid-js";
 import { useI18n } from "../lib/i18n";
 import * as ipc from "../lib/ipc";
@@ -25,9 +24,8 @@ import {
   restartIntoUpdate,
 } from "../stores/updater";
 
-// The download and releases links come from the backend's release feed (see
-// stores/updater), not from constants here, so they survive a move to a
-// different code forge without an app release.
+// The download and release links come from the backend's release feed (see
+// stores/updater), so moving the project needs no app release.
 
 export default function UpdateChecker() {
   const t = useI18n();
@@ -54,9 +52,8 @@ export default function UpdateChecker() {
     }
   };
 
-  // Status copy is only worth showing once a check is in flight or has a
-  // result — the idle hint ("check whether a newer version is available") is
-  // redundant next to a button that says exactly that, so it's suppressed.
+  // Status text shows only during or after a check; the idle hint would just
+  // repeat the button.
   const showStatus = () => status() !== "idle";
   const upgradeBusy = () => upgradePhase() === "downloading" || upgradePhase() === "installing";
 
@@ -143,10 +140,8 @@ export default function UpdateChecker() {
   );
 }
 
-// Release notes for an available update. Rendered as a full-width block in the
-// Overview's left column — kept out of the right-aligned `UpdateChecker` cluster
-// so the notes wrap as ordinary text rather than stretching to one long line
-// behind the logo.
+// Release notes for an available update, as a full-width block in the Overview's
+// left column (not in the right-aligned checker), so they wrap as normal text.
 export function UpdateReleaseNotes() {
   return (
     <Show when={updateStatus() === "available" && updateNotes()}>

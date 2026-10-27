@@ -1,8 +1,6 @@
 /**
- * Typst colour parsing and highlight-mark construction.
- *
- * Extracted from visual-plugin.ts so that colour logic can be reused
- * without pulling in the full decoration plugin.
+ * Typst colour parsing and highlight marks, separate from visual-plugin.ts so
+ * they can be used without the whole plugin.
  */
 
 import { Decoration } from "@codemirror/view";
@@ -56,14 +54,10 @@ export function parseTypstColor(raw: string): string | null {
 export const highlight = Decoration.mark({ class: "cm-typst-highlight" });
 
 /**
- * The fixed highlighter palette (see `HIGHLIGHT_COLORS` in pill-options.ts)
- * maps each preset fill to a themed CSS variable. The Typst source keeps the
- * literal light-mode colour — that is what compiles to PDF/HTML on white
- * paper — but the *editor* renders the preset through a `--hl-*` variable so
- * the dark theme can substitute a less-glaring equivalent. The visual editor
- * is a WYSIWYM authoring aid, not a faithful renderer, so a theme-tuned
- * appearance here is by design. Custom (non-preset) fills are rendered with
- * their literal value, unchanged.
+ * Preset highlight fills (see `HIGHLIGHT_COLORS` in pill-options.ts) mapped to
+ * themed `--hl-*` variables. The source keeps the light colour, which is what
+ * prints, while the editor uses the variable so dark mode can show a softer
+ * one. Custom fills use their literal value.
  */
 const PRESET_HIGHLIGHT_VARS: Record<string, string> = {
   "#ff9f97": "--hl-red",
@@ -87,15 +81,9 @@ function themedHighlightFill(fill: string): string {
 export function extractHighlightParams(text: string): { fill?: string; stroke?: string; radius?: string } {
   const params: { fill?: string; stroke?: string; radius?: string } = {};
 
-  // The value pattern allows either bare tokens (`red`, `#fff`) or a single
-  // function call (`rgb("#fff3a3")`, `luma(80)`). The earlier `[^,)\]]+`
-  // form stopped at the first `)`, so it captured `rgb("#fff3a3"` and
-  // parseTypstColor's rgb regex (which requires a trailing `)`) failed
-  // silently — every non-default colour fell through to the unparameterized
-  // yellow mark. The paren-group alternative must come FIRST so the engine
-  // tries it before the single-char one — otherwise the simple alternative
-  // greedily eats the opening `(` (it's not in the exclusion set) and the
-  // compound alternative never gets a chance to fire.
+  // A value is a bare token (`red`, `#fff`) or one function call
+  // (`rgb("#fff3a3")`, `luma(80)`). The parenthesized alternative comes first,
+  // or the simple one would consume the `(`.
   const VALUE = /((?:\([^)]*\)|[^,)\]])+)/;
 
   const fillMatch = text.match(new RegExp(`fill\\s*:\\s*${VALUE.source}`));
@@ -121,14 +109,11 @@ export function extractHighlightParams(text: string): { fill?: string; stroke?: 
 }
 
 /**
- * Inline CSS declarations that paint a `#highlight(…)` call's fill, stroke and
- * radius. `text` may be the whole call or just its argument list. Returns null
- * when the call carries none of them, so the caller can fall back to the plain
- * `.cm-typst-highlight` class.
- *
- * `pinTextColor` forces near-black text for readability on the light pastel
- * fills (see `.cm-typst-highlight` in visual-theme.ts). Callers that paint a
- * link-like element pass false so the link keeps its own colour.
+ * Inline CSS for a `#highlight(…)` call's fill, stroke and radius; `text` is
+ * the call or its argument list. Null without any, so the caller uses the plain
+ * `.cm-typst-highlight` class. `pinTextColor` forces near-black text on the
+ * light fills (see `.cm-typst-highlight` in visual-theme.ts); link-like
+ * elements pass false to keep their colour.
  */
 export function highlightInlineStyle(text: string, pinTextColor: boolean): string | null {
   const params = extractHighlightParams(text);
@@ -142,32 +127,28 @@ export function highlightInlineStyle(text: string, pinTextColor: boolean): strin
   parts.push(`border-radius: ${params.radius ?? "2px"}`);
   parts.push("padding: 0 2px");
   if (pinTextColor) {
-    // Custom user fills could theoretically be dark, in which case this reads
-    // against the user; the highlight palette itself is fixed-light, so the
-    // trade-off is worth making for the dark-mode common case.
+    // A custom fill could be dark, but the presets are all light, so this suits
+    // the usual case.
     parts.push("color: #1a1a1a");
   }
 
   return parts.join("; ");
 }
 
-/** Build a `Decoration.mark` for a `#highlight(…)` call, applying inline
- *  styles for any custom fill/stroke/radius parameters. Falls back to the
- *  base `highlight` class mark when no parameters are present. */
+/**
+ * A `Decoration.mark` for a `#highlight(…)` call with any custom fill, stroke
+ * or radius, or the plain highlight mark without them.
+ */
 export function buildHighlightMark(text: string): Decoration {
   const style = highlightInlineStyle(text, true);
   return style ? Decoration.mark({ attributes: { style } }) : highlight;
 }
 
 /**
- * Highlight state carried into a replace widget (wikilink, link, …). CM6
- * renders a replace widget outside any mark decoration that spans it, so a
- * widget inside `#highlight(fill: …)[…]` gets no highlight of its own unless
- * the surrounding call's styling is handed to it explicitly.
- *
- * `null` means "not inside a highlight". An empty string means the default
- * yellow (class only); any other string is the inline CSS for a custom
- * fill/stroke/radius, as produced by `highlightInlineStyle`.
+ * Highlight state passed to a replace widget (wikilink, link, …), which renders
+ * outside the highlight's mark and must paint itself. `null`: not highlighted;
+ * empty string: the default yellow (class only); otherwise the inline CSS from
+ * `highlightInlineStyle`.
  */
 export type WidgetHighlight = string | null;
 
@@ -177,9 +158,10 @@ export function widgetHighlightFor(callText: string): WidgetHighlight {
   return highlightInlineStyle(callText, false) ?? "";
 }
 
-/** Paint a widget's element as highlighted: the shared class first, so the
- *  default colour and the `::selection` rules apply, then any custom
- *  fill/stroke/radius on top. No-op when the widget isn't highlighted. */
+/**
+ * Paint a widget as highlighted: the shared class (default colour,
+ * `::selection` rules), then any custom styling. Nothing if not highlighted.
+ */
 export function applyWidgetHighlight(el: HTMLElement, highlight: WidgetHighlight): void {
   if (highlight === null) return;
   el.classList.add("cm-typst-highlight");

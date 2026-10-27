@@ -1,17 +1,14 @@
-// Editing one table cell, and drawing the cells that are not being edited.
+// Editing one table cell, and drawing the cells not being edited.
 //
 // An idle cell is painted from the note's own state: the inline-only visual
-// decorations for the cell's source range, turned into plain DOM. The cell
-// being edited hosts a small CodeMirror view over a mirrored copy of the
-// note, with everything outside the cell hidden and locked (cell-scope.ts),
-// so wikilinks, emphasis, the `/` palette, suggestions and spell-check all
-// work inside a cell exactly as they do in the note body.
+// decorations for its source range, as plain DOM. The cell being edited hosts a
+// small CodeMirror view over a copy of the note, with everything outside the
+// cell hidden and locked (cell-scope.ts), so wikilinks, emphasis, the `/`
+// palette, suggestions and spell-check work as in the note.
 //
-// Edits flow both ways. A change made in the cell editor is re-dispatched to
-// the note; a change made in the note (undo, an edit elsewhere) is mirrored
-// into the cell editor. Both directions carry the `cellSync` annotation so a
-// change is never echoed back. The note stays the single source of truth —
-// the cell editor never holds text the note does not.
+// Changes go both ways: the cell editor's are sent to the note, and the note's
+// (undo, edits elsewhere) are copied into the cell editor. Both carry
+// `cellSync` so nothing echoes back. The note remains the only source of truth.
 
 import {
   Annotation,
@@ -34,8 +31,8 @@ import { parseClipboardAsGrid } from "./table-parser";
 export const cellSync = Annotation.define<boolean>();
 
 /**
- * What a cell editor needs from the note editor. Provided as a facet by the
- * editor setup so this module stays free of the editor's own dependencies.
+ * What a cell editor needs from the note editor, provided as a facet so this
+ * module doesn't depend on the editor's setup.
  */
 export interface CellEditorConfig {
   /** Extensions for a cell editor: language, theme, the inline-only visual
@@ -78,9 +75,9 @@ const outsideScope = [
 ];
 
 /**
- * Keeps edits and the selection inside the editable range. A change that
- * reaches outside it is dropped; a selection that lands outside it is
- * clamped. Mirrored changes from the note are exempt — they are the truth.
+ * Keep edits and the selection inside the editable range: changes reaching
+ * outside are dropped, selections outside are clamped. Changes mirrored from
+ * the note are exempt.
  */
 const scopeGuard = EditorState.transactionFilter.of((tr) => {
   const before = tr.startState.field(scopeRangeField);
@@ -113,19 +110,15 @@ const scopeGuard = EditorState.transactionFilter.of((tr) => {
 });
 
 /**
- * Whether the caret is already on the cell's top (`up`) or bottom (`down`)
- * visual line, with nowhere further to go inside the cell.
+ * Whether the caret is on the cell's top (`up`) or bottom (`down`) visual line.
+ * While editing, the arrow keys stay in the cell, moving through its text
+ * (wrapped rows included) and stopping at its edges; moving between cells is
+ * for navigation mode (Escape, then arrows), and Tab and Enter move on
+ * directly.
  *
- * While a cell is being edited the arrow keys stay in it: they move through
- * its text — including the rows a wrapped cell takes — and stop at its edges
- * rather than carrying the caret into a neighbouring cell. Moving between
- * cells is what navigation mode is for (Escape leaves editing, and the arrows
- * then step from cell to cell), and Tab and Enter still move on directly.
- *
- * Measured with the editor's own vertical motion so wrapped lines count, and
- * with the same goal column the caret would keep. Everything outside the cell
- * is hidden and collapsed onto the cell's own visual lines, so a target that
- * falls outside the cell's range means there was nowhere left to go.
+ * Measured with the editor's own vertical motion and goal column, so wrapped
+ * lines count. Everything outside the cell is collapsed onto its lines, so a
+ * target outside its range means there was nowhere left to go.
  */
 function atCellEdge(view: EditorView, direction: "up" | "down"): boolean {
   const scope = view.state.field(scopeRangeField);
@@ -165,11 +158,9 @@ function cellPaste(nav: CellNavigation): Extension {
 }
 
 /**
- * The cell editor sits inside a table cell: no chrome, no padding, no
- * centred column, and the cell's own font and line height. The note's theme
- * rules also match this nested editor (it is a descendant of the note's
- * editor), so these carry a class of their own for specificity and the
- * highest precedence for order.
+ * The cell editor has no chrome, padding or centred column, and uses the cell's
+ * font and line height. The note's theme also matches this nested editor, so
+ * these rules use their own class and the highest precedence.
  */
 const CELL_EDITOR_CLASS = "cm-typst-cell-editor";
 const cellTheme = [
@@ -195,8 +186,8 @@ const cellTheme = [
 ];
 
 /**
- * The CodeMirror view editing one cell. Create it when a cell becomes
- * active, mount it in that cell, and destroy it when the cell is left.
+ * The CodeMirror view editing one cell: created when a cell becomes active,
+ * mounted in it, destroyed when it is left.
  */
 export class CellEditor {
   readonly view: EditorView;
@@ -250,19 +241,18 @@ export class CellEditor {
     if (hadFocus && !this.hasFocus) this.restoreFocus();
   }
 
-  /** Whether this editor's content is the document's active element. Keyed
-   *  on the active element rather than `hasFocus`, which also asks whether
-   *  the window itself is focused. */
+  /**
+   * Whether this editor's content is the active element (`hasFocus` also checks
+   * window focus).
+   */
   get hasFocus(): boolean {
     return this.view.dom.ownerDocument.activeElement === this.view.contentDOM;
   }
 
   /**
-   * Give the editor focus and put the browser's selection where the state
-   * says. Focusing alone is not enough: WebKit puts the caret at the start
-   * of a freshly focused editable, and CodeMirror's cached DOM selection
-   * (the same nodes, back in place) still matches the state, so it would
-   * not rewrite it — and the next character would land at the start.
+   * Focus the editor and put the browser selection where the state says. WebKit
+   * puts the caret at the start of a freshly focused editable, and CodeMirror's
+   * cached DOM selection still matches its state, so it wouldn't fix it.
    */
   restoreFocus() {
     if (!this.view.dom.isConnected) return;
@@ -328,19 +318,14 @@ export interface RenderedCell {
 }
 
 /**
- * Paint a cell's source range as it looks in the visual editor: inline marks
- * become spans, inline widgets (wikilinks, links, pills) their own DOM, and
- * hidden markup is left out. Every text run carries `data-from`, the source
- * offset of its first character, so a click can be mapped back to a caret
- * position (see `sourcePosAt`).
+ * Paint a cell's source as the visual editor shows it: marks become spans,
+ * inline widgets (wikilinks, links, pills) their own DOM, and hidden markup is
+ * left out. Each text run has `data-from`, its source offset, so a click maps
+ * back to a position (see `sourcePosAt`).
  *
- * Each source line of the cell becomes a line element of its own, carrying
- * whatever line decoration the visual layer gave it — the list indent, above
- * all. Without it a bullet's hanging indent has nothing to hang from and the
- * marker escapes through the cell's left border.
- *
- * `matches` paints the find panel's hits (see cell-search.ts); they are marks
- * like any other, so they simply join the decorations being drawn.
+ * Each source line becomes its own element with its line decoration (notably
+ * the list indent the bullet hangs from). `matches` are the find panel's hits
+ * (see cell-search.ts), drawn as marks.
  */
 export function renderIdleCell(
   main: EditorView,
@@ -388,9 +373,10 @@ export function destroyRenderedCell(rendered: RenderedCell) {
   rendered.widgets.length = 0;
 }
 
-/** Mark decorations for the find panel's hits, wearing CodeMirror's own
- *  search classes so the editor theme (and its "All" toggle) styles them
- *  exactly as it styles matches in the note body. */
+/**
+ * Mark decorations for find hits, with CodeMirror's own search classes so the
+ * theme (and its "All" toggle) styles them as in the note.
+ */
 function searchMarks(matches: readonly CellMatch[]): DecorationSet {
   return Decoration.set(
     matches.map((m) =>
@@ -415,10 +401,8 @@ function isLineDecoration(deco: Decoration): boolean {
 const CELL_LINE_CLASS = "cm-typst-cell-line";
 
 /**
- * Builds a cell's content one line element at a time. A cell's source can run
- * over several lines, and each needs its own box to carry the line-level
- * styling the note gives it (list indents) and to break where the source
- * breaks.
+ * Builds a cell's content a line at a time, so each source line has its own box
+ * for line styling (list indents) and breaks where the source does.
  */
 class CellLines {
   private line: HTMLElement;
@@ -487,8 +471,8 @@ function runSpan(text: string, from: number, marks: readonly Decoration[]): HTML
 }
 
 /**
- * The source offset under a point in an idle cell, or null when the point
- * is not over the cell's text. A point over a widget maps to its start.
+ * The source offset under a point in an idle cell, or null if not over its
+ * text. A point over a widget maps to its start.
  */
 export function sourcePosAt(container: HTMLElement, x: number, y: number): number | null {
   const doc = container.ownerDocument as Document & {

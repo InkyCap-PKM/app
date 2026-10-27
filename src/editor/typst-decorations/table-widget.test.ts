@@ -15,10 +15,10 @@ import {
 import { buildDecorations, typstVisualMode } from "./visual-plugin";
 import { cellEditorConfig } from "./table-cell-editor";
 
-// The visual layer maps the table's decoration through edits made elsewhere
-// in the note, but the widget instance keeps the offsets it was built with.
-// Every write back to the source has to resolve the live range, or a row
-// insert after typing a paragraph above the table lands on the wrong text.
+// The table's decoration is mapped through edits elsewhere in the note, but the
+// widget keeps the offsets it was built with. Every write back to the source
+// must use the current range, or adding a row after typing above the table
+// edits the wrong text.
 
 const TABLE = "#table(\n  columns: (auto, auto, auto),\n  [a], [b], [c],\n  [d], [e], [f],\n)";
 
@@ -200,9 +200,9 @@ describe("TableWidget", () => {
     view.destroy();
   });
 
-  // Home and End move the cell selection along the row, and with Ctrl to the
-  // table's corners, the way a spreadsheet does. Left to the browser they
-  // scroll the page and take focus off the table, so they are always claimed.
+  // Home and End move the cell selection along the row (with Ctrl, to the
+  // table's corners), as in a spreadsheet. Otherwise the browser would scroll
+  // the page and take focus from the table, so they're always handled.
   describe("Home and End in navigation mode", () => {
     function selectCell(view: EditorView, row: number, col: number): HTMLElement {
       const wrap = view.dom.querySelector<HTMLElement>(".cm-typst-table-wrap")!;
@@ -372,10 +372,10 @@ describe("TableWidget", () => {
     view.destroy();
   });
   it("keeps a list's bullets inside the cell that holds them", () => {
-    // Each source line of the cell is painted as its own box, so the list
-    // line's indent is there for the bullet's hanging indent to hang from.
-    // The indentation the cell's source sits at inside the `#table(...)` call
-    // is not nesting, so only the genuinely nested item is stepped in.
+    // Each source line of the cell is its own box, so a list line's indent is
+    // where the bullet's hanging indent hangs from. The indentation of the
+    // cell's source inside `#table(...)` isn't nesting, so only the truly
+    // nested item is indented.
     const view = mount(
       "#table(\n  columns: (auto, auto),\n  [\n    - one\n    - two\n      - nested\n  ], [b],\n)",
       true,

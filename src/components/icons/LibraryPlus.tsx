@@ -2,13 +2,10 @@ import type { Component } from "solid-js";
 import { lucideFrame } from "./frame";
 
 /**
- * "Library +" glyph for the New Collection button. lucide-solid has no
- * library-plus icon, so this is a local SVG: the lucide `library-big` book
- * spine with a plus mark in place of the second volume.
+ * "Library +" icon for the New Collection button: Lucide's `library-big` with a
+ * plus in place of the second volume.
  *
- * ⚠ Master lives at design-assets/library-plus.svg. That file and this
- * component are kept in sync BY HAND — if you redraw the glyph, edit both,
- * or the editable master and the shipped icon will silently diverge.
+ * Master: design-assets/library-plus.svg, kept in step by hand.
  */
 export const LibraryPlusIcon: Component<{ size?: number; class?: string }> = (
   props,

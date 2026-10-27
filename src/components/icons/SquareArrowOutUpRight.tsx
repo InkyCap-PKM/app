@@ -2,12 +2,10 @@ import type { Component } from "solid-js";
 import { lucideFrame } from "./frame";
 
 /**
- * Custom "square-arrow-out-up-right" — an arrow leaving the box toward the
- * upper right. Used for the "links to the anchor" badge in Journal Scroll.
+ * An arrow leaving a box toward the upper right, for the "links to the anchor"
+ * badge in Journal Scroll.
  *
- * ⚠ Master lives at design-assets/square-arrow-out-up-right.svg. That file
- * and this component are kept in sync BY HAND — if you redraw the glyph,
- * edit both, or the editable master and the shipped icon will diverge.
+ * Master: design-assets/square-arrow-out-up-right.svg, kept in step by hand.
  */
 export const SquareArrowOutUpRight: Component<{
   size?: number;

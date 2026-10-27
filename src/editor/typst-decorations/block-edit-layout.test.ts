@@ -7,13 +7,11 @@ import {
   correctedFuncCallEnd,
 } from "./visual-plugin";
 
-// Block quotes, callouts and fenced code blocks each have a rendered widget
-// (caret away) and an in-place edit state (caret inside). The edit state must
-// show exactly the rows the widget shows, or the block changes height as the
-// caret enters and leaves and everything below it shifts. These tests pin the
-// row accounting behind that invariant. They are pure string/line-position
-// helpers, so they run without the WASM Typst parser (which Vitest's Node
-// environment can't load).
+// Block quotes, callouts and code blocks have a rendered widget (caret away)
+// and an edit state (caret inside). Both must show the same rows, or the block
+// changes height as the caret enters and leaves and everything below moves.
+// These test the row counting; they're string and line helpers, so they need no
+// Typst parser.
 
 function layout(doc: string) {
   const state = EditorState.create({ doc });
@@ -133,12 +131,11 @@ describe("rawBlockEditLineClasses", () => {
   });
 });
 
-// `correctedFuncCallEnd` is the single source of truth for where a block call
-// ends — shared by the decoration builder and the incremental dirty-range
-// expander. If lezer truncates a multi-line call at an inner `)` (as it does
-// for `#quote(block: true)[…]`), both consumers must still agree on the real
-// end past the closing `]`; otherwise a cursor move strands a stale editing
-// border behind the rendered widget (a doubled / "nested" bar).
+// `correctedFuncCallEnd` is the one definition of where a block call ends,
+// shared by the decoration builder and the incremental range expander. When
+// lezer ends a multi-line call at an inner `)` (as for `#quote(block:
+// true)[…]`), both must agree on the real end after the `]`, or a cursor move
+// leaves a stale edit border behind the widget (a doubled bar).
 function callEnd(doc: string, funcFrom: number, lezerTo: number) {
   return correctedFuncCallEnd(EditorState.create({ doc }), funcFrom, lezerTo);
 }
@@ -177,10 +174,9 @@ describe("correctedFuncCallEnd", () => {
   });
 
   it("treats a `[[` inside inline raw as literal, not an unbalanced bracket", () => {
-    // The body documents the wikilink shortcut by showing a literal `[[`
-    // inside backticks. A naive bracket count would never rebalance and the
-    // call end would overshoot (dropping the callout to raw source); the
-    // raw-aware matcher must end the call right after the body's `]`.
+    // The body shows a literal `[[` in backticks. Simple bracket counting would
+    // never balance and run past the end (showing the callout as raw source);
+    // the raw-aware matcher must end the call after the body's `]`.
     const doc = '#callout("example")[Type `[[` then pick a note]\nnext para';
     const truncated = doc.indexOf(")") + 1;
     expect(callEnd(doc, 0, truncated)).toBe(doc.indexOf("]") + 1);

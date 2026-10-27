@@ -1,12 +1,12 @@
-// Checks that this computer is ready to cut an InkyCap release, and says in
-// plain words how to fix anything that isn't. Run it first on a new computer:
+// Checks that this computer is ready to make an InkyCap release, and explains
+// how to fix anything that isn't. Run it first on a new computer:
 //
 //   npm run release:check-setup
 //
-// release-feeds.mjs runs the "signing" checks itself before it starts.
-// The private key lives outside the repository, at ~/.config/inkycap-release/
-// updater.key (made with `npm run tauri signer generate -- -w <that path>`);
-// its public half is `plugins.updater.pubkey` in src-tauri/tauri.conf.json.
+// release-feeds.mjs runs the "signing" checks itself. The private key is
+// outside the repository, at ~/.config/inkycap-release/updater.key (made with
+// `npm run tauri signer generate -- -w <that path>`); its public half is
+// `plugins.updater.pubkey` in src-tauri/tauri.conf.json.
 
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";

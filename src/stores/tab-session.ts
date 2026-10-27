@@ -1,21 +1,18 @@
-// Records which tabs are open so the "Open previous tabs" startup behaviour can
-// put them back, the way a web browser reopens the tabs you left.
+// Records the open tabs so "Open previous tabs" can restore them, as a browser
+// does.
 //
-// Recording is reactive rather than tied to app quit, since nothing runs on the
-// frontend when the window closes. Which tabs are open, in what order, and
-// which is in front is written as soon as it changes, so quitting right after
-// opening a note still leaves that note in the record; how a tab is being
-// viewed (its mode, format and zoom) is written a moment later, so a run of
-// zoom steps is one write. Nothing is recorded unless the user has chosen the
-// "previous tabs" startup behaviour, and switching away from it forgets what
-// was stored for every notebox. The record lives on this machine only — see
-// `src-tauri/src/tab_sessions.rs`.
+// Nothing runs when the window closes, so recording happens as tabs change:
+// which tabs are open, their order and which is in front are written at once;
+// how each is viewed (mode, format, zoom) a moment later, so a run of zoom
+// steps is one write. Nothing is recorded unless the "previous tabs" startup
+// option is chosen, and switching it off forgets the records for every notebox.
+// Stored on this machine only (see `src-tauri/src/tab_sessions.rs`).
 //
-// A reopen has to prove it worked: the backend marks it in progress, and the
-// mark is cleared here only once the window has kept drawing smoothly for a
-// while. If a reopened tab freezes or crashes the app, the mark survives, and
-// the next start holds the tabs back (`heldBackTabs`) for the user to reopen
-// by hand from the empty tab, instead of freezing again.
+// A reopen must prove it worked: the backend marks it in progress, and the mark
+// is cleared here only after the window has drawn smoothly for a while. If a
+// reopened tab freezes or crashes the app, the mark remains, and the next start
+// holds the tabs back (`heldBackTabs`) for the user to reopen from the empty
+// tab.
 
 import { batch, createEffect, createSignal, onCleanup } from "solid-js";
 import * as ipc from "../lib/ipc";
@@ -34,24 +31,27 @@ import {
   type Tab,
 } from "./tabs";
 
-/** Tab types worth restoring. An empty tab has nothing to restore, and a
- *  version-diff is a transient compare view whose version metadata doesn't
- *  survive a {type, title, path} record. */
+/**
+ * Tab types worth restoring. Empty tabs have nothing to restore; a
+ * version-diff's version doesn't fit the record.
+ */
 const RESTORABLE: readonly Tab["type"][] = ["file", "collection", "mycelial", "attachment"];
 
-/** How long to wait after a change to how a tab is viewed before writing, so
- *  a run of zoom steps is one write. Changes to which tabs are open are
- *  written at once. */
+/**
+ * Delay before writing a change in how a tab is viewed, so a run of zoom steps
+ * is one write. Changes to which tabs are open are written at once.
+ */
 const WRITE_DELAY_MS = 500;
 
 let writeTimer: ReturnType<typeof setTimeout> | undefined;
 /** The shape last written, or scheduled: which tabs, in what order, which in
  *  front. A change here is written immediately. */
 let lastShape: string | null = null;
-/** Set while there is no settled notebox to record for: before the first one
- *  opens, and while a switch tears the old one's tabs down. Without it, the
- *  empty workspace those moments pass through would be recorded as "the user
- *  closed everything". Starts true, since nothing is open at launch. */
+/**
+ * True while there is no settled notebox: before the first opens, and while a
+ * switch closes the old one's tabs. Otherwise the empty workspace in between
+ * would be recorded. Starts true.
+ */
 let suspended = true;
 
 function isRestorable(type: Tab["type"]): boolean {
@@ -66,14 +66,12 @@ function asEditingMode(value: string | null): EditingMode | undefined {
     : undefined;
 }
 
-/** The open tabs in display order across every pane. Pane layout itself is
- *  session-only (see `stores/panes.ts`), so a restore lays the tabs out in one
- *  pane in this order.
- *
- *  The same note can be open in two panes at once — an editor beside its
- *  preview, say. A restore opens one tab per note, so only one record is kept
- *  for it: the one in front if either is, otherwise the first. Keeping both
- *  would let the second overwrite the first's editor mode on restore. */
+/**
+ * The open tabs in display order across all panes. Pane layout isn't saved (see
+ * `stores/panes.ts`), so a restore puts them in one pane. A note open in two
+ * panes (an editor beside its preview) gets one record, the one in front if
+ * either is, else the first, so the second doesn't overwrite the first's mode.
+ */
 function snapshot(): SessionTab[] {
   const active = activeTabId();
   const out: SessionTab[] = [];
@@ -110,9 +108,10 @@ function shapeOf(tabsNow: SessionTab[]): string {
   return JSON.stringify(tabsNow.map((t) => [t.kind, t.path, t.active]));
 }
 
-/** Write the tabs as they stand right now. Safe to call at any time — it is a
- *  no-op unless the user has asked for the behaviour, and a failure (no notebox
- *  open yet, unwritable config dir) is logged rather than surfaced. */
+/**
+ * Write the tabs as they are now. Safe any time: does nothing unless the option
+ * is on, and failures (no notebox yet, config folder not writable) are logged.
+ */
 export async function recordTabSession(): Promise<void> {
   if (settings.startup.behavior !== "previous-tabs") return;
   clearTimeout(writeTimer);
@@ -141,9 +140,10 @@ function recordOnChange(): void {
   }, WRITE_DELAY_MS);
 }
 
-/** Pause recording across a notebox switch. The workspace is emptied before the
- *  new notebox loads, and that empty state must not overwrite either notebox's
- *  record. */
+/**
+ * Pause recording during a notebox switch, so the emptied workspace isn't
+ * recorded for either notebox.
+ */
 export function suspendTabSessionRecording(): void {
   suspended = true;
   // Held-back tabs belong to the notebox being left.
@@ -157,8 +157,8 @@ export function resumeTabSessionRecording(): void {
 }
 
 /**
- * Start watching the open tabs. Called once from the app root, where it has a
- * reactive owner to live under.
+ * Start watching the open tabs. Called once from the app root, under its
+ * reactive owner.
  */
 export function installTabSessionRecorder(): void {
   let previousBehavior: string | null = null;
@@ -169,10 +169,8 @@ export function installTabSessionRecorder(): void {
     previousBehavior = behavior;
 
     if (behavior !== "previous-tabs") {
-      // Turning the behaviour off forgets what was stored, for every notebox,
-      // rather than leaving a record of open files behind for a preference no
-      // longer in use. Nothing below reads the tabs, so while the behaviour is
-      // off this effect does not re-run as they change.
+      // Turning the option off forgets the records for every notebox. While it
+      // is off, this effect doesn't read the tabs and doesn't re-run.
       if (wasRecording) {
         clearTimeout(writeTimer);
         lastShape = null;
@@ -192,16 +190,18 @@ export function installTabSessionRecorder(): void {
   onCleanup(() => clearTimeout(writeTimer));
 }
 
-/** How long the window must keep drawing without a stall before a reopen
- *  counts as having worked, and how long a gap between frames counts as a
- *  stall. A frozen window draws nothing, so its reopen never counts. */
+/**
+ * How long the window must draw without a stall for a reopen to count as
+ * working, and how long a gap counts as a stall. A frozen window draws nothing,
+ * so its reopen never counts.
+ */
 const SETTLE_MS = 10_000;
 const STALL_MS = 2_000;
 
 /**
- * Call `onSettled` once the window has drawn frames for `SETTLE_MS` with no
- * gap longer than `STALL_MS`. A stall starts the count again, and a hidden
- * window (which draws nothing) simply waits. `frame` is injectable for tests.
+ * Call `onSettled` once the window has drawn for `SETTLE_MS` with no gap over
+ * `STALL_MS`. A stall restarts the count; a hidden window just waits. `frame`
+ * can be replaced in tests.
  */
 export function whenWindowSettles(
   onSettled: () => void,
@@ -230,9 +230,11 @@ function confirmReopenWhenSettled(noteboxPath: string): void {
   });
 }
 
-/** Tabs that were not reopened at startup, offered on the empty tab instead,
- *  and why: the last reopen never finished, or InkyCap was started with
- *  `--no-restore`. `null` when nothing is held back. */
+/**
+ * Tabs not reopened at startup, offered on the empty tab, and why: the last
+ * reopen never finished, or InkyCap was started with `--no-restore`. `null`
+ * when none.
+ */
 export interface HeldBackTabs {
   noteboxPath: string;
   reason: TabRestoreHeldBack;
@@ -242,9 +244,10 @@ export interface HeldBackTabs {
 const [heldBack, setHeldBack] = createSignal<HeldBackTabs | null>(null);
 export const heldBackTabs = heldBack;
 
-/** Open recorded tabs, putting back how each was viewed and which was in
- *  front. The first takes over a placeholder empty tab rather than leaving it
- *  behind as a stray. */
+/**
+ * Open recorded tabs with their view settings and front tab. The first reuses
+ * an empty placeholder tab.
+ */
 function openRecordedTabs(records: SessionTab[], newTab = false): void {
   let reuseActive = !newTab && getActiveTab()?.type === "empty";
   let activeId: string | null = null;
@@ -272,10 +275,9 @@ function openRecordedTabs(records: SessionTab[], newTab = false): void {
 }
 
 /**
- * Reopen the tabs recorded for the notebox at `noteboxPath`, which just
- * opened, or hold them back when the backend says the last reopen never
- * finished (or InkyCap was started with `--no-restore`). Does nothing when
- * there is no record, leaving the fresh notebox's empty workspace as it is.
+ * Reopen the tabs recorded for the notebox just opened at `noteboxPath`, or
+ * hold them back when the last reopen never finished (or with `--no-restore`).
+ * Does nothing without a record.
  */
 export async function restorePreviousTabs(noteboxPath: string): Promise<void> {
   let restore;
@@ -302,10 +304,9 @@ export async function restorePreviousTabs(noteboxPath: string): Promise<void> {
 }
 
 /**
- * Reopen held-back tabs by hand: `record` alone, or all of them when omitted.
- * Guarded like a startup reopen, so a tab that freezes the app again is held
- * back again at the next start. Ctrl/Cmd-click (`newTab`) keeps the current
- * tab.
+ * Reopen held-back tabs by hand: `record`, or all of them. Guarded like a
+ * startup reopen, so a tab that freezes the app again is held back next time.
+ * Ctrl/Cmd-click (`newTab`) keeps the current tab.
  */
 export async function reopenHeldBackTabs(record?: SessionTab, newTab = false): Promise<void> {
   const held = heldBack();

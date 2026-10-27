@@ -4,10 +4,10 @@ import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
 import { typst } from "codemirror-lang-typst";
 import { headingsInTree, scanHeadings } from "./heading-scan";
 
-// Headings are whatever Typst's parser calls a heading — nothing more. The
-// motivating case (issue #21) is `= Not a headliner` written inside a ```
-// fence: a line regex sees a heading, the parser sees raw text, and the parser
-// is right. These editors therefore carry the real Typst language.
+// Headings are exactly what Typst's parser calls headings. Issue #21: `= Not a
+// headliner` inside a ``` fence looks like a heading to a regex but is raw text
+// to the parser, and the parser is right. So these editors use the real Typst
+// language.
 
 function mk(doc: string): EditorState {
   const state = EditorState.create({ doc, extensions: [typst()] });
@@ -106,12 +106,11 @@ describe("headingsInTree", () => {
 });
 
 
-// The scan reaches its answers by binary-searching the tree's child lists (see
-// heading-scan.ts for why lezer's own linear traversal is too slow here). This
-// pins that shortcut against the slow-but-obvious traversal it replaces: walk
-// the whole tree, keep the `Heading` nodes that open their line, and the two
-// must agree — on every document below, and on any the parser's shape changes
-// under us.
+// The scan finds its answers by binary search over the tree's child lists (see
+// heading-scan.ts for why lezer's linear walk is too slow). This compares it
+// with the simple way, walking the whole tree and keeping `Heading` nodes that
+// start their line, on every document below, so a change in the parser's tree
+// shape is caught.
 function referenceHeadings(state: EditorState): { from: number; to: number }[] {
   const out: { from: number; to: number }[] = [];
   syntaxTree(state).iterate({

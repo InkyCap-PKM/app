@@ -1,17 +1,15 @@
-// Quick-fixes for the Typst diagnostics raised when an `@reference` points at
-// something `#ref` cannot render.
+// Quick fixes for Typst errors when an `@reference` points at something `#ref`
+// can't show.
 //
-// There are two shapes. "cannot reference heading without numbering" (and the
-// equivalent for equations) means the target *kind* can be numbered but this
-// document doesn't number it — so enabling numbering fixes it. Plain "cannot
-// reference text" means the label tags something that has no number at all,
-// usually prose, and no `#set` rule will ever help.
+// "cannot reference heading without numbering" (or equation) means the kind can
+// be numbered but this document doesn't, so turning on numbering fixes it.
+// "cannot reference text" means the label tags something with no number,
+// usually prose.
 //
-// Both are answered by the same alternative: `#link(<label>)[text]`, which
-// points at any label and shows words instead of a number. See
-// [reference-form.ts](../typst-decorations/reference-form.ts) for the shared
-// rules; Typst's own hint already covers the numbering side, so InkyCap's job
-// here is the one-click actions.
+// Both can use `#link(<label>)[text]`, which links to any label and shows words
+// instead of a number. See
+// [reference-form.ts](../typst-decorations/reference-form.ts) for the rules;
+// Typst's own hint covers numbering, so this adds the one-click actions.
 
 import type { Action } from "@codemirror/lint";
 import type { EditorView } from "@codemirror/view";
@@ -21,28 +19,26 @@ import { scanDocumentLabels } from "../typst-decorations/document-labels";
 import { linkReference, setRuleForElement } from "../typst-decorations/reference-form";
 import { noteBodyStart } from "../typst-decorations/note-header";
 
-// "cannot reference heading without numbering" — the element kind can be
-// numbered, this document just doesn't. Tolerant of surrounding text so a
-// future Typst wording tweak still hits.
+// The element kind can be numbered; this document doesn't. Not anchored, so
+// small wording changes in Typst still match.
 const NUMBERING_REF_RE = /cannot reference (\w+) without numbering/i;
 
 // "cannot reference text" — the label tags something unnumberable.
 const UNREFERENCEABLE_RE = /cannot reference (\w+)/i;
 
 /**
- * Quick-fix actions for a failed-reference diagnostic, or `undefined` if the
- * message isn't one. The diagnostic is attached to the `@reference` span, so
- * each action's `apply` receives that span as `(from, to)`.
+ * Quick fixes for a failed-reference error, or `undefined` if the message isn't
+ * one. The error covers the `@reference`, so each `apply` gets that span as
+ * `(from, to)`.
  */
 export function referenceActions(message: string): Action[] | undefined {
   const numbering = NUMBERING_REF_RE.exec(message);
   if (numbering) {
     const element = numbering[1].toLowerCase();
     const actions: Action[] = [enableNumberingAction(element)];
-    // Heading references have a graceful alternative that needs no numbering:
-    // link to the heading by its text. Other numbered kinds (equations, and
-    // figures/tables when Typst gains the same message) read as a number in
-    // prose, so swapping in their label name would not be an improvement.
+    // A heading can be linked by its text without numbering. Other numbered
+    // kinds (equations, and figures or tables once Typst reports them the same
+    // way) read as numbers in prose, so their label name wouldn't help.
     if (element === "heading") actions.push(textLinkAction());
     return actions;
   }
@@ -76,10 +72,9 @@ function enableNumberingAction(element: string): Action {
 }
 
 /**
- * Rewrite the failing `@name` into `#link(<name>)[text]`, leaving the display
- * text selected so the writer can type their own wording straight away. The
- * default wording is the label's display text — a heading's own words where we
- * have them, otherwise the label name as a placeholder.
+ * Rewrite `@name` as `#link(<name>)[text]` with the text selected, so the user
+ * can type their own wording. The default text is a heading's own words where
+ * known, otherwise the label name.
  */
 function textLinkAction(): Action {
   return {

@@ -10,14 +10,17 @@ import {
   serializeFilterRow,
 } from "../lib/filter-expr";
 
-/** Operators available in the filter builder. Labels resolve through i18n at
- *  render time (see `labelKey`). The relational operators (< ≤ > ≥) compare
- *  numerically or, for ISO dates, chronologically — see the Rust evaluator. */
+/**
+ * Operators in the filter builder; labels are translated when shown (see
+ * `labelKey`). < ≤ > ≥ compare as numbers or, for ISO dates, by date (see the
+ * Rust evaluator).
+ */
 const OPERATORS = FILTER_OPERATORS;
 
-/** Group combinators, mapped to the backend `and`/`or`/`not` keys. The UI
- *  labels them All / Any / None, following the convention in the reference
- *  filter UIs (and reading naturally as "All of the following are true"). */
+/**
+ * Group types, mapped to the backend's `and`/`or`/`not`. Shown as All / Any /
+ * None ("All of the following are true").
+ */
 type Combinator = "and" | "or" | "not";
 
 const COMBINATORS: { value: Combinator; labelKey: string }[] = [
@@ -30,20 +33,21 @@ const COMBINATORS: { value: Combinator; labelKey: string }[] = [
  *  levels is already more than any realistic collection query needs. */
 const MAX_DEPTH = 3;
 
-// The editor works on a tree of nodes rather than raw expression strings so
-// that nested groups can be added, edited, and removed in place. A node is
-// either a leaf row (one property/operator/value triple) or a group with its
-// own combinator and child nodes. The tree round-trips to the backend
-// `FilterGroup` shape on save.
+// The editor works on a tree of nodes, not expression strings, so nested groups
+// can be added, edited and removed in place. A node is a row (property,
+// operator, value) or a group with its type and children. It converts to the
+// backend's `FilterGroup` on save.
 type LeafNode = { kind: "leaf"; row: FilterRow };
 type GroupNode = { kind: "group"; combinator: Combinator; members: BuilderNode[] };
 type BuilderNode = LeafNode | GroupNode;
 
 // ── Tree ⇄ FilterGroup conversion ─────────────────────────────────────
 
-/** Read a backend `FilterGroup` into an editable group node. The builder
- *  presents one combinator per group, so the first present of and/or/not
- *  wins — which is exactly what the builder ever writes back. */
+/**
+ * Read a backend `FilterGroup` into an editable group. The builder shows one
+ * type per group, so the first of and/or/not present is used, which is all the
+ * builder writes.
+ */
 function groupToNode(group: FilterGroup | null | undefined): GroupNode {
   let combinator: Combinator = "and";
   let members: FilterNode[] = [];
@@ -90,11 +94,12 @@ function groupToFilter(node: GroupNode): FilterGroup | null {
 
 // ── Leaf row editor ───────────────────────────────────────────────────
 
-/** Build the property-picker options for a leaf row. `file.*` keys get their
- *  friendly label (matching the column headers); user-authored properties show
- *  verbatim. The two are split into "Properties" and "File" groups, and the
- *  row's current property is injected if it isn't in `allKeys` — so editing a
- *  filter that references a since-removed property never silently drops it. */
+/**
+ * Property choices for a row. `file.*` keys get their display labels (as in
+ * column headers); user properties are shown as named. They're grouped as
+ * "Properties" and "File", and the row's current property is added if it isn't
+ * in `allKeys`, so a filter on a removed property isn't lost.
+ */
 function propertyOptions(
   allKeys: string[],
   current: string,
@@ -191,9 +196,8 @@ const FilterGroupEditor: Component<{
     });
 
   const addLeaf = () => {
-    // Insert the new row just before the first nested group (or at the end if
-    // there are none), so a group's own filter rows stay grouped together
-    // above its sub-groups — order doesn't affect evaluation, only clarity.
+    // Insert the new row before the first nested group (or at the end), so a
+    // group's rows stay above its subgroups. Order only affects readability.
     const members = props.group.members;
     const firstGroupIdx = members.findIndex((m) => m.kind === "group");
     const insertAt = firstGroupIdx === -1 ? members.length : firstGroupIdx;

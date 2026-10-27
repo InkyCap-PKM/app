@@ -1,17 +1,13 @@
-//! Convert HTML — typically what a web browser puts on the clipboard when the
-//! user copies part of a page — into Typst markup for pasting into a note.
+//! Convert HTML (usually what a browser copies from a page) into Typst markup
+//! for pasting. Recognized elements (headings, paragraphs, lists, term lists,
+//! quotes, code, tables, links, inline formatting including the
+//! `style="font-weight: …"` spans word processors like Google Docs produce)
+//! become their Typst equivalent; others contribute only their content. Text is
+//! escaped so Typst markup characters stay literal.
 //!
-//! The converter walks the parsed DOM and writes the Typst equivalent of each
-//! element it recognizes: headings, paragraphs, lists, term lists, block
-//! quotes, code, tables, links, and inline formatting (including the
-//! `style="font-weight: …"` spans that word processors such as Google Docs
-//! produce). Layout wrappers, spans, and unknown tags contribute only their
-//! content. Text is escaped so characters with markup meaning in Typst appear
-//! literally.
-//!
-//! Remote images become links rather than `#image(...)` calls: Typst only
-//! loads images from files in the notebox, and fetching them would make a
-//! network request on the user's behalf.
+//! Remote images become links rather than `#image(...)`: Typst only loads
+//! images from notebox files, and fetching one would make a network request for
+//! the user.
 
 use dom_query::{Document, NodeRef};
 use typst::syntax::link_prefix;
@@ -27,9 +23,8 @@ const SKIPPED: &[&str] = &[
     "select", "textarea", "option", "datalist", "map", "area",
 ];
 
-/// Convert an HTML document or fragment into Typst markup, without the
-/// package import preamble. Never fails: markup the converter doesn't
-/// recognize is reduced to its text.
+/// Convert HTML into Typst markup, without the package import. Never fails;
+/// unrecognized markup is reduced to its text.
 pub fn html_to_typst(html: &str) -> String {
     let doc = Document::from(html);
     let mut w = Writer::root();
@@ -40,9 +35,8 @@ pub fn html_to_typst(html: &str) -> String {
     w.finish()
 }
 
-/// Convert plain text into Typst markup that renders the same text: markup
-/// characters are escaped, blank lines separate paragraphs, and single line
-/// breaks are kept as Typst line breaks.
+/// Plain text as Typst markup: markup characters escaped, blank lines between
+/// paragraphs, single line breaks kept.
 pub fn plain_text_to_typst(text: &str) -> String {
     let mut w = Writer::root();
     let mut after_blank = true;
@@ -85,9 +79,9 @@ enum Tail {
     /// A function call such as `#link("…")[…]`. A following `(` or `.` would
     /// be parsed as more arguments or a field access.
     Call,
-    /// Strong or emphasis written with `*…*` / `_…_`, starting at byte
-    /// `start`. A following letter would stop the closing delimiter from
-    /// counting, so the span is rewritten into `#strong[…]` / `#emph[…]`.
+    /// Strong or emphasis written as `*…*` / `_…_` from byte `start`. A
+    /// following letter would stop the closing delimiter counting, so then it
+    /// is rewritten as `#strong[…]` / `#emph[…]`.
     Delim {
         start: usize,
         name: &'static str,
@@ -97,9 +91,8 @@ enum Tail {
 struct Writer {
     out: String,
     pending: Pending,
-    /// Nothing has been written since the writer started or since the last
-    /// list marker, so block breaks are dropped instead of opening an empty
-    /// line.
+    /// Nothing written since the start or the last list marker, so block breaks
+    /// are dropped rather than adding an empty line.
     fresh: bool,
     /// The next text begins a line (or a content block), where `=`, `-`,
     /// `+`, `/`, and `1.` would start a heading or list.
@@ -254,9 +247,8 @@ impl Writer {
         self.line_start = true;
     }
 
-    /// Write `inner` between `*` or `_` delimiters, or as `#strong[…]` /
-    /// `#emph[…]` when a letter directly before it would stop the opening
-    /// delimiter from counting.
+    /// Write `inner` between `*` or `_`, or as `#strong[…]` / `#emph[…]` when a
+    /// letter right before it would stop the opening delimiter counting.
     fn delimited(&mut self, delim: char, name: &'static str, inner: &str) {
         self.flush();
         let prev_wordy = self.out.chars().next_back().is_some_and(is_wordy);
@@ -585,9 +577,8 @@ fn link(node: &NodeRef, w: &mut Writer, cx: Ctx) {
     }
 }
 
-/// Whether `url` is an absolute web address (or a `mailto:` address when
-/// `allow_mailto`). Relative links and in-page anchors point back into the
-/// page the content was copied from, so they aren't kept.
+/// Whether `url` is an absolute web address (or `mailto:` with `allow_mailto`).
+/// Relative links and anchors point into the copied page, so they aren't kept.
 fn is_remote_url(url: &str, allow_mailto: bool) -> bool {
     let lower = url.to_ascii_lowercase();
     lower.starts_with("https://")
@@ -655,9 +646,9 @@ fn inline_raw(w: &mut Writer, code: &str) {
     }
 }
 
-/// MathML. Pages that render LaTeX (Wikipedia, MathJax, KaTeX) keep the
-/// source in a TeX annotation or `alttext`; it is kept as raw LaTeX, as the
-/// Markdown importer does without mitex. Otherwise the math's text is used.
+/// MathML. Pages rendering LaTeX (Wikipedia, MathJax, KaTeX) keep the source in
+/// a TeX annotation or `alttext`; it is kept as raw LaTeX, as the Markdown
+/// importer does without mitex. Otherwise the math's text is used.
 fn math(node: &NodeRef, w: &mut Writer) {
     let tex = node
         .descendants_it()
@@ -891,9 +882,9 @@ fn fenced(lang: &str, code: &str) -> String {
     format!("{fence}{lang}\n{code}\n{fence}")
 }
 
-/// The code language from the class names highlighters put on the `<pre>`,
-/// its `<code>` child, or its wrapper (`language-rust`, `lang-rust`,
-/// GitHub's `highlight-source-rust`).
+/// The code language from highlighter class names on the `<pre>`, its `<code>`
+/// or its wrapper (`language-rust`, `lang-rust`, GitHub's
+/// `highlight-source-rust`).
 fn code_language(pre: &NodeRef) -> String {
     let candidates = [Some(*pre), pre.first_element_child(), pre.parent()];
     for node in candidates.into_iter().flatten() {
@@ -1106,13 +1097,10 @@ fn table_cell(cell: &NodeRef, header: bool, w: &Writer, indent: &str, cx: Ctx) -
 // Escaping
 // ---------------------------------------------------------------------------
 
-/// Escape text so Typst renders it literally. `line_start` means the text
-/// begins a line or content block, where a leading `=`, `-`, `+`, `/`, or
-/// `1.` would start a heading or list.
-///
-/// Bare `http://` / `https://` URLs are copied verbatim, using Typst's own
-/// rule for where an automatic link ends, since Typst links them and an
-/// escape inside one would break it.
+/// Escape text so Typst shows it literally. `line_start` means it starts a line
+/// or block, where a leading `=`, `-`, `+`, `/` or `1.` would start a heading
+/// or list. Bare `http://` / `https://` URLs are copied as is (ending where
+/// Typst ends an automatic link), since an escape inside one would break it.
 fn escape_markup(text: &str, line_start: bool) -> String {
     let chars: Vec<(usize, char)> = text.char_indices().collect();
     let first = chars.first().map(|&(_, c)| c);

@@ -1,10 +1,8 @@
-// The editor's callout table and the notebox library's must agree.
-//
-// `inkycap-notebox/lib.typ` decides what a compiled callout looks like; this
-// module's copy decides what the visual editor draws while you write. When the
-// two drifted apart, six kinds rendered one colour on screen and a different
-// one in the exported PDF. These tests read lib.typ and compare, so the next
-// change to either side has to touch both.
+// The editor's callout table must match the notebox library's.
+// `inkycap-notebox/lib.typ` decides how compiled callouts look; this module's
+// copy decides what the visual editor draws, and if they differ a callout shows
+// one colour on screen and another in the PDF. These tests read lib.typ and
+// compare, so a change to either side must update both.
 
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";

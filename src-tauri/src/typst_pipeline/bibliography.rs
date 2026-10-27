@@ -1,15 +1,9 @@
-//! Notebox-default bibliography auto-injection and bib file parsing.
+//! Default bibliography injection and bibliography file parsing.
 //!
-//! Per [TYPST_PIVOT.md](../../TYPST_PIVOT.md) §8 #5 (and the Phase 0 decision
-//! recorded in PHASE_0_NOTES.md): if a note doesn't already declare its own
-//! `#bibliography(...)` AND the notebox has a default bibliography file, the
-//! compile pipeline injects a `#bibliography("/<path>")` directive
-//! immediately after the `inkycap-notebox` import line. The on-disk file is
-//! never modified — augmentation happens to an in-memory copy that becomes
-//! the main source.
-//!
-//! Phase 6 adds bibliography entry parsing via the `hayagriva` crate, which
-//! handles both BibTeX (`.bib`) and Hayagriva YAML (`.yml`) formats.
+//! When a note declares no `#bibliography(...)` and the notebox has a default
+//! bibliography file, the compile pipeline adds one to an in-memory copy of the
+//! note; the file on disk is never changed. Entries are parsed with
+//! `hayagriva`, which reads BibTeX (`.bib`) and Hayagriva YAML (`.yml`).
 
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
@@ -21,14 +15,12 @@ use serde::Serialize;
 use crate::typst_pipeline::book_wrapper::escape_typst_markup;
 use crate::typst_pipeline::syntax::{ast, parse, LinkedNode, SyntaxKind};
 
-/// Names tried in order when no `bibliographyPath` setting is configured.
-/// `.bib` (BibTeX) wins over `.yml` (Hayagriva) when both exist; the caller
-/// is expected to surface a warning in that case.
+/// File names tried, in order, when no `bibliographyPath` is set. `.bib` wins
+/// over `.yml`; the caller should warn when both exist.
 const DEFAULT_BIB_FILES: &[&str] = &["references.bib", "references.yml", "references.json"];
 
-/// Resolve which bibliography file (if any) should auto-load for the notebox.
-/// `override_path`, when set, comes from `.inkycap/settings.json
-/// bibliographyPath` and is treated as notebox-relative.
+/// The bibliography file to load for the notebox, if any. `override_path` is
+/// the notebox-relative `bibliographyPath` from `.inkycap/settings.json`.
 pub fn detect_default(notebox_root: &Path, override_path: Option<&str>) -> Option<PathBuf> {
     if let Some(rel) = override_path {
         let candidate = notebox_root.join(rel);
@@ -43,42 +35,28 @@ pub fn detect_default(notebox_root: &Path, override_path: Option<&str>) -> Optio
     None
 }
 
-/// Return `true` if the source already has a `#bibliography(...)` call. The
-/// scan is deliberately permissive — any uncommented occurrence at any depth
-/// counts. Typst itself errors on a duplicate bibliography call, so a
-/// false-positive that suppresses our injection is harmless; a false-negative
-/// would inject a duplicate and cause a compile error, which is worse.
+/// True if the source already has an uncommented `#bibliography(...)` call.
+/// Errs towards true: a false positive only skips the injection, while a false
+/// negative adds a duplicate, which Typst rejects.
 ///
-/// Per CLAUDE.md's Typst-first principle: the obvious native alternative
-/// here is to parse with `typst::syntax` and look for a `FuncCall` whose
-/// callee is `bibliography`. We deliberately stay at the substring level
-/// because this check runs on every save, on user content that may be
-/// mid-edit and unparseable. A regex that recognises the call shape gives
-/// the right answer on broken source where the AST walk would either fail
-/// or omit the call from the tree. `note_rewriter` uses the AST because it
-/// rewrites — it can't operate without parsing — but this predicate only
-/// needs to *detect*, and the conservative-failure mode (false-positive
-/// suppresses injection) is exactly what we want for half-typed input.
+/// Per CLAUDE.md's Typst-first principle, an AST check was considered, but this
+/// runs on every save against text that may be mid-edit and unparseable, where
+/// a pattern match is more reliable. `note_rewriter` uses the AST because it
+/// rewrites.
 pub fn already_declares_bibliography(source: &str) -> bool {
-    // Strip line comments (`// ...`) before searching so a `// #bibliography`
-    // example in a docstring doesn't trip us. Block comments `/* */` are a
-    // niche case in Typst and we ignore them — the false-positive failure
-    // mode is preferable.
+    // Ignore `//` comments. Block comments aren't handled; a false positive is
+    // acceptable.
     let stripped = strip_line_comments(source);
     bib_re().is_match(&stripped)
 }
 
-/// Build the augmented source for compile. Returns the input unchanged if
-/// there's nothing to inject; otherwise appends a call to the notebox
-/// package's [`apply-bibliography`] (a thin wrapper around Typst's own
-/// `#bibliography(...)`) at the end of the source. Citation collection in
-/// Typst is whole-document, so the appended call is purely about *where*
-/// the bibliography list renders — conventionally at the end.
+/// The source to compile: unchanged if there is nothing to inject, otherwise
+/// with a call to the package's [`apply-bibliography`] appended. Typst collects
+/// citations across the whole document, so placement only decides where the
+/// list renders.
 ///
-/// `style`, when provided, is forwarded as the `style:` argument. Both
-/// built-in style names ("apa", "ieee") and CSL paths ("foo.csl",
-/// "/styles/foo.csl") flow through identically — Typst itself decides how
-/// to interpret the value.
+/// `style`, when given, is passed as `style:`; Typst interprets both built-in
+/// names ("apa") and CSL paths ("/styles/foo.csl").
 pub fn augment(
     source: &str,
     notebox_root: &Path,
@@ -118,9 +96,7 @@ fn strip_line_comments(source: &str) -> String {
     for line in source.split_inclusive('\n') {
         if let Some(idx) = line.find("//") {
             out.push_str(&line[..idx]);
-            // Preserve the trailing newline so byte offsets stay stable
-            // enough for the regex match. (We don't use the offsets for
-            // anything other than presence-checking.)
+            // Keep the trailing newline.
             if line.ends_with('\n') {
                 out.push('\n');
             }
@@ -149,14 +125,11 @@ pub struct BibEntry {
     /// `zotero://select/library/items/<key>` URIs. `None` for file-based entries.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub zotero_item_key: Option<String>,
-    /// True if the source has user notes/annotations attached. Used by the
-    /// "import note text" picker to filter out entries with nothing to show.
-    /// Computed once at load time so the picker doesn't pay per-entry SQL
-    /// or parse costs.
+    /// True if the source has user notes attached, so the note-import picker
+    /// can hide entries without any. Computed once at load.
     pub has_notes: bool,
-    /// Extra BibTeX fields (publisher, journal, volume, pages, doi, url, etc.)
-    /// captured from Zotero for the exported `.bib` file. Empty for file-based
-    /// entries (the user's `.bib` already has all fields).
+    /// Extra BibTeX fields (publisher, journal, volume, pages, doi, url, …)
+    /// from Zotero, for the exported `.bib`. Empty for file-based entries.
     #[serde(skip)]
     pub extra_fields: std::collections::HashMap<String, String>,
 }
@@ -167,15 +140,12 @@ pub struct RefNote {
     pub content: String,
 }
 
-/// Cached parse output: entries for the picker plus per-key notes. Both come
-/// from a single parse pass so the picker and the note importer don't pay
-/// the parse cost twice.
+/// One parse pass: entries for the picker and notes per key.
 #[derive(Debug, Clone)]
 struct ParsedBibliography {
     entries: Vec<BibEntry>,
-    /// Aligned by index with `entries`. Notes are pre-extracted because the
-    /// underlying `biblatex::Bibliography` / `hayagriva::Library` are
-    /// non-`Send`/non-`Clone` and can't live in the cache directly.
+    /// Aligned with `entries`. Notes are extracted up front because the parsed
+    /// library types aren't `Send` or `Clone` and can't be cached.
     notes: Vec<Vec<RefNote>>,
     /// Count of entries skipped because of conversion/type errors. Surfaced
     /// to the UI so users notice silent data loss.
@@ -210,9 +180,8 @@ pub fn last_parse_skipped_count() -> u32 {
         .unwrap_or(0)
 }
 
-/// Load the parsed bibliography for `path`, using an mtime+size keyed cache.
-/// The cache holds a single slot — noteboxes have one active bibliography file
-/// at a time, and an LRU would just add bookkeeping.
+/// The parsed bibliography for `path`, cached by mtime and size in a single
+/// slot (a notebox has one active bibliography file).
 fn load_cached(path: &Path) -> Result<ParsedBibliography, String> {
     let meta =
         std::fs::metadata(path).map_err(|e| format!("Failed to stat bibliography file: {e}"))?;
@@ -260,9 +229,7 @@ pub fn parse_bibliography(path: &Path) -> Result<Vec<BibEntry>, String> {
     Ok(load_cached(path)?.entries)
 }
 
-/// Extract notes from a parsed bibliography for the given key. Reuses the
-/// cached parse from `parse_bibliography` so a `RefNotePicker` open after
-/// the picker pays nothing.
+/// Notes for `key`, from the cached parse.
 pub fn get_entry_notes(path: &Path, key: &str) -> Result<Vec<RefNote>, String> {
     let parsed = load_cached(path)?;
     let idx = parsed.entries.iter().position(|e| e.key == key);
@@ -276,11 +243,9 @@ fn parse_bibtex(content: &str) -> Result<ParsedBibliography, String> {
     let mut notes = Vec::new();
     let mut skipped: u32 = 0;
     for raw in bib.iter() {
-        // Pull annotation/annote/note as raw fields before the hayagriva
-        // conversion — Zotero's BibTeX export puts user annotations in
-        // `annotation` (not `note`, which carries bibliographic provenance
-        // like "Online resource"), and biblatex+hayagriva's `Entry::note()`
-        // only surfaces `note`.
+        // Read annotation, annote and note directly: Zotero puts user
+        // annotations in `annotation`, and hayagriva's `Entry::note()` only
+        // exposes `note`.
         let entry_notes = collect_bibtex_notes(raw);
 
         let converted: Result<hayagriva::Entry, _> = raw.try_into();
@@ -324,10 +289,8 @@ fn parse_bibtex(content: &str) -> Result<ParsedBibliography, String> {
     })
 }
 
-/// Pull user-note fields (`annotation`, `annote`, `note`) from a raw biblatex
-/// entry. Zotero exports stash user annotations in `annotation`; classic
-/// BibTeX uses `annote`; `note` is the standard bibliographic-note field.
-/// Returned in priority order so the most-useful note is first.
+/// User-note fields from a raw entry, most useful first: `annotation` (Zotero),
+/// `annote` (classic BibTeX), then `note`.
 fn collect_bibtex_notes(raw: &biblatex::Entry) -> Vec<RefNote> {
     use biblatex::ChunksExt;
     let mut out = Vec::new();
@@ -478,11 +441,11 @@ fn parse_csl_json(content: &str) -> Result<ParsedBibliography, String> {
     })
 }
 
-/// Sanitize a BibTeX field value for safe embedding inside `{...}`.
+/// Make a BibTeX field value safe inside `{...}`:
 ///
-/// - Collapses newlines to single spaces (multi-line values with `@` at
-///   the start of a continuation line confuse hayagriva's parser).
-/// - Escapes unbalanced `{` / `}` so the entry structure stays intact.
+/// - newlines become spaces (an `@` starting a continuation line confuses
+///   hayagriva);
+/// - unbalanced `{` / `}` are escaped.
 fn sanitize_bibtex_value(value: &str) -> std::borrow::Cow<'_, str> {
     let needs_newline_fix = value.contains('\n');
     let has_braces = value.contains('{') || value.contains('}');
@@ -538,9 +501,8 @@ fn sanitize_bibtex_value(value: &str) -> std::borrow::Cow<'_, str> {
     std::borrow::Cow::Owned(result)
 }
 
-/// Export bibliography entries to BibTeX format for the Typst compile pipeline.
-/// Used when the citation source is Zotero — Typst's `#bibliography()` needs a
-/// real file on disk, so we generate one from the Zotero database contents.
+/// Entries as BibTeX for the compiler. Used for the Zotero source, since
+/// `#bibliography()` needs a file.
 pub fn export_entries_to_bibtex(entries: &[BibEntry]) -> String {
     let mut out = String::new();
     let mut seen_keys = std::collections::HashSet::new();
@@ -566,12 +528,9 @@ pub fn export_entries_to_bibtex(entries: &[BibEntry]) -> String {
         if let Some(ref year) = entry.year {
             out.push_str(&format!("  year = {{{}}},\n", year));
         }
-        // `extra_fields` is a HashMap, whose iteration order is randomized per
-        // process run. Emit fields in a stable (alphabetical) order so the
-        // exported .bib is byte-for-byte deterministic — otherwise every
-        // re-export reshuffles every entry, churning the working tree (spurious
-        // "dirty" state, needless commits) and turning the shared bibliography
-        // into a perpetual merge-conflict source under collaboration.
+        // Emit fields in alphabetical order so the `.bib` is identical across
+        // runs; HashMap order would make every export a change, and a merge
+        // conflict when collaborating.
         let mut fields: Vec<(&String, &String)> = entry.extra_fields.iter().collect();
         fields.sort_by(|a, b| a.0.cmp(b.0));
         for (field, value) in fields {
@@ -601,12 +560,10 @@ pub fn write_zotero_export(notebox_root: &Path, entries: &[BibEntry]) -> Result<
     Ok("/.inkycap/zotero-export.bib".to_string())
 }
 
-/// Write `entries` as a BibTeX file at `rel_path` (notebox-root-relative, with
-/// or without a leading `/`) inside the notebox, creating parent dirs as needed.
-/// Used to materialize a collection's cited-works bibliography fresh at export
-/// so a template's `bibliography("…")` argument resolves to current data.
-/// Returns the leading-slash notebox-relative path written. Rejects any path
-/// that would escape the notebox root.
+/// Write `entries` as BibTeX at `rel_path` in the notebox (leading `/`
+/// optional), creating folders as needed. Used at export so a template's
+/// `bibliography("…")` reads current data. Returns the path with a leading
+/// slash; rejects paths outside the notebox.
 pub fn write_bibliography_file(
     notebox_root: &Path,
     rel_path: &str,
@@ -652,16 +609,13 @@ fn zotero_type_to_bibtex(zotero_type: &str) -> &str {
     }
 }
 
-/// Extract citation keys from Typst source, in order of first appearance and
-/// without duplicates. Both forms count: the `@key` shorthand and the
-/// `cite(<key>)` function call (in markup or code).
+/// Citation keys in Typst source, in order of first appearance, without
+/// duplicates: both `@key` and `cite(<key>)`.
 ///
-/// This walks the parsed syntax tree, so anything Typst itself would not read
-/// as a citation is skipped: escaped `\@`, raw/code spans, string literals and
-/// comments. Keys follow Typst's own label rules, so a key starting with a
-/// digit (Zotero item keys such as `5VX4GJ8Q`) is found too. Every `@target`
-/// is returned, including references to labels in the note; callers match the
-/// keys against the bibliography.
+/// Walks the syntax tree, so escaped `\@`, raw text, strings and comments are
+/// skipped, and keys follow Typst's label rules (Zotero keys like `5VX4GJ8Q`
+/// included). References to labels in the note are returned too; callers match
+/// against the bibliography.
 pub fn extract_citations(source: &str) -> Vec<String> {
     let root = parse(source);
     let mut keys = Vec::new();
@@ -706,31 +660,19 @@ fn cite_call_key(call: ast::FuncCall<'_>) -> Option<String> {
     })
 }
 
-/// Escape references whose target resolves to neither a bibliography entry
-/// nor a label defined in the document, so Typst renders them as literal
-/// text instead of erroring on an unknown reference. The motivating case is
-/// an email address: Typst parses the `@domain` in `user@domain.com` as a
-/// reference, and without a `<domain>` label it would fail to compile.
+/// Escape references that match neither a bibliography entry nor a label in the
+/// document, so Typst shows them as text instead of failing. The usual case is
+/// an email address: Typst reads the `@domain` of `user@domain.com` as a
+/// reference.
 ///
-/// Per CLAUDE.md's Typst-first principle this walks the real `typst::syntax`
-/// AST rather than scanning with a regex. That matters for correctness, not
-/// just style: only genuine `Ref` nodes are considered, so an `@` inside a
-/// string literal, code span, or comment is never touched — the parser
-/// already excluded it — and, crucially, a legitimate `@intro` pointing at a
-/// `= Heading <intro>` is recognized as a label reference and left alone.
-/// The previous regex compared only against `valid_keys` (bibliography
-/// keys), so it silently rewrote every cross-reference to a heading, figure,
-/// or equation into `\@...` whenever a bibliography was present — breaking
-/// the reference in the rendered output.
+/// Per CLAUDE.md's Typst-first principle this walks the `typst::syntax` tree,
+/// so only real `Ref` nodes are considered (not `@` in strings, code or
+/// comments), and `@intro` pointing at `= Heading <intro>` is kept.
 ///
-/// An unresolved `@` glued to the tail of an email local part (an email or
-/// handle, e.g. `athena@inkycap.org`) is always escaped, even with no
-/// bibliography loaded. Typst does lex it as a reference, but InkyCap reads
-/// that shape as an address on every surface (see [`is_email_like_at`]), and
-/// escaping it can only rescue a compile that would otherwise fail. A
-/// *standalone* unresolved `@key` is only escaped when `valid_keys` is
-/// non-empty; with none loaded it may be a transiently unresolved citation and
-/// is left untouched.
+/// An unresolved `@` straight after an email-style character
+/// (`athena@inkycap.org`) is always escaped (see [`is_email_like_at`]). A
+/// standalone unresolved `@key` is escaped only when `valid_keys` is non-empty;
+/// otherwise it may be a citation not loaded yet.
 pub fn escape_invalid_citations(
     source: &str,
     valid_keys: &std::collections::HashSet<String>,
@@ -738,10 +680,8 @@ pub fn escape_invalid_citations(
     let root = parse(source);
     let link = LinkedNode::new(&root);
 
-    // Phase 1: collect every label defined anywhere in the document and the
-    // byte position + target of every reference. A label can be defined *after*
-    // the reference that points at it (`@intro` … `= Heading <intro>`), so the
-    // whole document must be seen before deciding which references are unresolved.
+    // First collect every label and every reference: a label can be defined after
+    // the reference to it.
     let mut labels: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut refs: Vec<(usize, String)> = Vec::new();
     collect_refs_and_labels(&link, &mut labels, &mut refs);
@@ -749,32 +689,22 @@ pub fn escape_invalid_citations(
         return source.to_string();
     }
 
-    // Phase 2: a reference is valid when its target is a bibliography key or a
-    // label defined in this document; anything else (an email's `@domain`, a
-    // typo) is escaped by inserting a backslash before its `@`.
+    // Then escape each reference whose target is neither a key nor a label, by
+    // inserting `\` before its `@`.
     refs.sort_by_key(|(pos, _)| *pos);
     let bytes = source.as_bytes();
     let mut out = Vec::with_capacity(source.len() + 16);
     let mut last = 0;
     for (pos, target) in &refs {
-        // A reference whose target is a real bibliography key or a label
-        // defined in this document is genuine — leave it untouched whether or
-        // not it's attached to a preceding word.
+        // A real key or label: leave it.
         if valid_keys.contains(target) || labels.contains(target) {
             continue;
         }
-        // An unresolved `@` right after an email character — `athena@inkycap.org`
-        // — is an address, not a citation, and is safe to render literally
-        // whether or not a bibliography is loaded. UTF-8-safe: `*pos` is the
-        // byte offset of the ASCII `@`, so slicing to it lands on a char
-        // boundary and `next_back()` yields the whole preceding char.
+        // An unresolved `@` after an email character is an address. `*pos` is the
+        // byte offset of the ASCII `@`, so the slice ends on a char boundary.
         let attached_to_word = is_email_like_at(source[..*pos].chars().next_back());
-        // A *standalone* stray `@` is only escaped when we have keys to compare
-        // against. With none loaded (a failed or not-yet-loaded bibliography)
-        // we can't tell a real, transiently-unresolved citation from a typo, so
-        // we leave it — the original guard's rationale, now scoped to this
-        // ambiguous case instead of aborting the whole pass and letting stray
-        // emails through.
+        // With no keys loaded, a standalone `@` might be a citation not
+        // resolved yet, so leave it.
         if !attached_to_word && valid_keys.is_empty() {
             continue;
         }
@@ -789,23 +719,18 @@ pub fn escape_invalid_citations(
     String::from_utf8(out).unwrap_or_else(|_| source.to_string())
 }
 
-/// Whether an `@` preceded by `char_before` is the join of an email address or
-/// handle rather than the start of a reference. Typst lexes an `@` as a
-/// reference wherever a label character follows it, even mid-word, so
-/// `athena@inkycap.org` is text plus a reference to `<inkycap.org>`. InkyCap
-/// reads that shape as an address instead, with one rule on every surface: the
-/// `@` suggestion popup does not open, the visual editor shows plain text, and
-/// this pass escapes it. The set is ASCII-only on purpose — an email's local
-/// part is ASCII, and a citation written directly after a CJK word
-/// (`参见@smith2020`) is a real reference that must keep working. The frontend
-/// twin is `isEmailLikeAt` in `reference-form.ts`; keep the two in step.
+/// Whether an `@` after `char_before` joins an email address or handle rather
+/// than starting a reference. Typst reads `athena@inkycap.org` as text plus a
+/// reference to `<inkycap.org>`; InkyCap treats it as an address everywhere: no
+/// `@` popup, plain text in the visual editor, escaped here. ASCII only, so a
+/// citation right after a CJK word (`参见@smith2020`) still works. Keep in step
+/// with `isEmailLikeAt` in `reference-form.ts`.
 fn is_email_like_at(char_before: Option<char>) -> bool {
     char_before.is_some_and(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '+' | '-'))
 }
 
-/// Recursively gather every `<label>` definition and `@target` reference in
-/// the parsed AST. Labels go into `labels`; references are recorded as
-/// `(byte position of the `@`, target string)`.
+/// Collect every `<label>` and `@target` in the tree. References are recorded
+/// as (byte position of `@`, target).
 fn collect_refs_and_labels(
     node: &LinkedNode<'_>,
     labels: &mut std::collections::HashSet<String>,
@@ -830,27 +755,20 @@ fn collect_refs_and_labels(
 }
 
 // ---------------------------------------------------------------------------
-// Static bibliography rendering (the "copy formatted bibliography" feature).
+// Static bibliography rendering ("copy formatted bibliography").
 //
-// A live `#bibliography(...)` is resolved at compile time against the whole
-// document's citations. This path produces the *opposite*: a frozen Typst-
-// markup snapshot of the references cited in one note, formatted in the user's
-// citation style, that can be pasted into any other note and render identically
-// without re-running citation resolution.
+// Produces a fixed Typst-markup copy of the references cited in one note, in
+// the user's citation style, that renders the same when pasted elsewhere.
 //
-// Per CLAUDE.md's Typst-first principle: Typst's own `#bibliography` is driven
-// by hayagriva, and that is exactly what we call here — we do not hand-format
-// references. The only thing Typst can't natively give us is a *static* render
-// of a live bibliography, which is the whole reason this code exists. We map
-// hayagriva's rendered `ElemChild` formatting tree onto the equivalent Typst
+// Per CLAUDE.md's Typst-first principle, formatting is done by hayagriva, as
+// in Typst's own `#bibliography`; Typst has no way to output a bibliography as
+// static text. hayagriva's formatted output is mapped to the equivalent Typst
 // markup (`_italic_`, `*bold*`, `#super[...]`, `#smallcaps[...]`,
-// `#underline[...]`, `#link(...)`), so the pasted output carries the same
-// emphasis the compiled bibliography would.
+// `#underline[...]`, `#link(...)`).
 // ---------------------------------------------------------------------------
 
 /// Parse a bibliography file into a hayagriva [`Library`](hayagriva::Library)
-/// for rendering. Unlike [`parse_bibliography`], which returns display-only
-/// [`BibEntry`] rows, this keeps the full hayagriva entries that the CSL
+/// for rendering. Unlike [`parse_bibliography`], keeps the full entries the CSL
 /// renderer needs.
 pub fn load_library(path: &Path) -> Result<hayagriva::Library, String> {
     let content = std::fs::read_to_string(path)
@@ -860,9 +778,8 @@ pub fn load_library(path: &Path) -> Result<hayagriva::Library, String> {
         "bib" => parse_library_bibtex(&content),
         "yml" | "yaml" => hayagriva::io::from_yaml_str(&content)
             .map_err(|e| format!("Hayagriva YAML parse error: {e}")),
-        // CSL JSON has no native hayagriva reader; the live `#bibliography`
-        // path doesn't support it as a render source either, so we surface a
-        // clear error rather than silently dropping fields.
+        // CSL JSON can't be read by hayagriva (nor rendered by
+        // `#bibliography`), so report it clearly.
         "json" => {
             Err("CSL JSON bibliographies can't be rendered to static Typst markup yet".to_string())
         }
@@ -870,9 +787,8 @@ pub fn load_library(path: &Path) -> Result<hayagriva::Library, String> {
     }
 }
 
-/// Parse a BibTeX string into a hayagriva [`Library`](hayagriva::Library).
-/// Used for the Zotero source, which is materialized as BibTeX first (the same
-/// shape the live compile pipeline feeds Typst).
+/// Parse BibTeX into a hayagriva [`Library`](hayagriva::Library). Used for the
+/// Zotero source, which is exported as BibTeX first.
 pub fn parse_library_bibtex(content: &str) -> Result<hayagriva::Library, String> {
     hayagriva::io::from_biblatex_str(content).map_err(|errs| {
         let joined = errs
@@ -884,10 +800,9 @@ pub fn parse_library_bibtex(content: &str) -> Result<hayagriva::Library, String>
     })
 }
 
-/// Resolve the CSL style to render with, mirroring the live compile pipeline's
-/// precedence (see `NoteboxSession::open_notebox_fast`): a per-notebox custom
-/// `.csl` file wins, otherwise the user-global named style, defaulting to
-/// `chicago-author-date`.
+/// The CSL style to render with, in the same order as compiling (see
+/// `NoteboxSession::open_notebox_fast`): the notebox's custom `.csl`, else the
+/// global named style, else `chicago-author-date`.
 pub fn resolve_style(
     notebox_root: &Path,
     custom_csl_path: Option<&str>,
@@ -918,11 +833,9 @@ pub fn resolve_style(
     }
 }
 
-/// Render the references for `keys` as static Typst markup, formatted with the
-/// given CSL `style`. Returns one paragraph per reference (blank-line
-/// separated), in the style's own sort order. Keys not present in `library`
-/// (e.g. typos or non-bibliographic `@`-tokens) are skipped. Returns an empty
-/// string when no key resolves to an entry.
+/// The references for `keys` as static Typst markup in CSL `style`, one
+/// paragraph each in the style's order. Keys not in `library` are skipped.
+/// Empty when none resolve.
 pub fn render_cited_bibliography(
     library: &hayagriva::Library,
     keys: &[String],
@@ -991,19 +904,16 @@ fn elem_child_to_typst(child: &hayagriva::ElemChild, out: &mut String) {
                 &formatted.formatting,
             ));
         }
-        // Block-vs-inline display only matters for hanging indents in the
-        // rendered list; inside a single pasted reference we keep everything on
-        // one paragraph, so recurse inline regardless of `display`.
+        // Within one pasted reference everything stays in one paragraph, so
+        // recurse inline whatever the `display`.
         ElemChild::Elem(elem) => elem_children_to_typst(&elem.children, out),
         // hayagriva's contract: `Markup` is already Typst markup — emit verbatim.
         ElemChild::Markup(markup) => out.push_str(markup),
         ElemChild::Link { text, url } => {
-            // hayagriva commonly emits a URL's leading portion as plain text
-            // (e.g. a `https://doi.org/` DOI prefix) immediately followed by a
-            // Link whose `url` is that prefix plus the link's display text.
-            // Emitted as-is, Typst auto-links the bare-URL prefix into a
-            // *separate, truncated* link sitting next to ours. Re-absorb such a
-            // prefix into this single link so the whole URL is one clean link.
+            // hayagriva often writes a URL's start as plain text (e.g.
+            // `https://doi.org/`) followed by a link whose URL includes it.
+            // Typst would auto-link that text separately, so merge it into this
+            // link.
             let mut display = text.text.clone();
             if let Some(prefix) = url.strip_suffix(&text.text) {
                 let escaped_prefix = escape_typst_markup(prefix);
@@ -1017,9 +927,8 @@ fn elem_child_to_typst(child: &hayagriva::ElemChild, out: &mut String) {
             out.push_str(&escape_typst_string(url));
             out.push('"');
             if display == *url {
-                // Body identical to the destination: Typst renders the URL as
-                // the link text on its own. Omitting the body also avoids a
-                // nested auto-link firing on a bare URL inside `[...]`.
+                // When the text equals the URL, omit the body; Typst shows the
+                // URL itself.
                 out.push(')');
             } else {
                 out.push_str(")[");
@@ -1035,9 +944,8 @@ fn elem_child_to_typst(child: &hayagriva::ElemChild, out: &mut String) {
     }
 }
 
-/// Wrap already-escaped `text` in the Typst markup equivalent to hayagriva's
-/// resolved [`Formatting`](hayagriva::Formatting). Whitespace-only runs are left
-/// bare so we don't emit empty `_ _` / `*  *` artifacts.
+/// Wrap escaped `text` in the Typst markup for hayagriva's
+/// [`Formatting`](hayagriva::Formatting). Whitespace-only runs are left bare.
 fn wrap_formatting(text: &str, fmt: &hayagriva::Formatting) -> String {
     use hayagriva::citationberg::{
         FontStyle, FontVariant, FontWeight, TextDecoration, VerticalAlign,
@@ -1082,11 +990,8 @@ mod tests {
         PathBuf::from("/tmp/notebox")
     }
 
-    /// The exported BibTeX must be byte-for-byte deterministic regardless of the
-    /// (randomized) HashMap iteration order of `extra_fields` — otherwise the
-    /// committed `.inkycap/zotero-export.bib` churns on every re-export, which
-    /// surfaced as spurious extra commits and would be a perpetual merge
-    /// conflict under git collaboration. Fields come out alphabetically sorted.
+    /// The exported BibTeX is identical whatever the HashMap order: fields are
+    /// sorted alphabetically.
     #[test]
     fn bibtex_export_is_deterministic_and_fields_sorted() {
         let mut extra = std::collections::HashMap::new();
@@ -1106,9 +1011,7 @@ mod tests {
         };
 
         let out = export_entries_to_bibtex(std::slice::from_ref(&entry));
-        // Stable across runs (different HashMap seeds) within this process at
-        // least, and the extra fields are alphabetical: doi, journal, language,
-        // volume — after the fixed title/author/year.
+        // Extra fields in alphabetical order after title, author and year.
         assert_eq!(
             out,
             "@article{smith2020,\n  \
@@ -1196,13 +1099,9 @@ mod tests {
         assert!(out.contains("#apply-bibliography(\"/references.bib\", style: \"apa\")"));
     }
 
-    /// Our injected wrapper must not be detected as a user-declared
-    /// `#bibliography(...)` call — otherwise re-augmenting an already
-    /// augmented source would short-circuit and we'd lose the directive
-    /// through some pipelines (export → reuse). The detection regex matches
-    /// `#bibliography(` only; `#apply-bibliography(` slips through, which is
-    /// what we want for our own emission, but we also lock down the inverse:
-    /// if a user calls Typst's bibliography directly, we still detect it.
+    /// Our `#apply-bibliography(` must not count as a user's
+    /// `#bibliography(...)`, or re-augmenting would skip the directive; a
+    /// direct `#bibliography(` must still be detected.
     #[test]
     fn user_bibliography_call_is_detected() {
         let src = "#bibliography(\"/x.bib\")\n";
@@ -1335,9 +1234,7 @@ mod tests {
 
     #[test]
     fn escape_invalid_no_bib_leaves_standalone_refs_untouched() {
-        // A *standalone* `@ref` (preceded by whitespace) with no bibliography
-        // loaded is ambiguous — it may be a transiently unresolved citation, so
-        // it is left untouched.
+        // A standalone `@ref` with no bibliography loaded is left alone.
         let valid: std::collections::HashSet<String> = std::collections::HashSet::new();
         let src = "Contact @someone and @other";
         let out = escape_invalid_citations(src, &valid);
@@ -1346,11 +1243,8 @@ mod tests {
 
     #[test]
     fn escape_email_without_bibliography() {
-        // The motivating export bug: an email in a note with no bibliography.
-        // Its `@domain` is attached to a preceding word, so Typst can never
-        // parse it as a citation — it must be escaped even with an empty key
-        // set, or a strict export compile fails on `label <inkycap.org> does
-        // not exist`. (The reading view masked this via error recovery.)
+        // An email in a note with no bibliography must still be escaped, or a
+        // strict export fails with `label <inkycap.org> does not exist`.
         let valid: std::collections::HashSet<String> = std::collections::HashSet::new();
         let src = "e-mail: athena@inkycap.org";
         let out = escape_invalid_citations(src, &valid);
@@ -1374,9 +1268,8 @@ mod tests {
 
     #[test]
     fn escape_leaves_reference_after_cjk_word_as_a_reference() {
-        // A citation written directly after a CJK word is a real reference, not
-        // an address: with no bibliography loaded it is left for a later compile
-        // to resolve, exactly like a space-separated `@key`.
+        // A citation right after a CJK word is a reference and is left for a
+        // later compile.
         let valid: std::collections::HashSet<String> = std::collections::HashSet::new();
         let src = "参见@smith2020。";
         assert_eq!(escape_invalid_citations(src, &valid), src);
@@ -1397,10 +1290,8 @@ mod tests {
 
     #[test]
     fn escape_keeps_label_reference_when_bibliography_present() {
-        // Regression: a cross-reference to a heading/figure/equation label must
-        // survive even when a bibliography is loaded. Before the AST rewrite,
-        // `@intro` was escaped to `\@intro` because it wasn't a bibliography
-        // key — silently breaking the reference in the rendered document.
+        // A reference to a heading, figure or equation label survives when a
+        // bibliography is loaded.
         let valid: std::collections::HashSet<String> =
             ["smith2020"].iter().map(|s| s.to_string()).collect();
         let src = "= Introduction <intro>\n\nSee @intro and @smith2020.";
@@ -1494,9 +1385,8 @@ gross1961:
     fn link_with_url_prefix_collapses_to_single_clean_link() {
         use hayagriva::{ElemChild, Formatted};
 
-        // hayagriva's DOI shape: a plain-text "https://doi.org/" prefix followed
-        // by a Link whose url is that prefix + the display text. The prefix must
-        // be re-absorbed so Typst doesn't auto-link the bare-URL fragment.
+        // hayagriva's DOI shape: the plain "https://doi.org/" text must be
+        // merged into the link.
         let url = "https://doi.org/10.48550/arXiv.2304.07327";
         let children = hayagriva::ElemChildren(vec![
             ElemChild::Text(Formatted {

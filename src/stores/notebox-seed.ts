@@ -1,9 +1,6 @@
-// "Copy from existing notebox" dialog state.
-//
-// Mirrors the prompt/toast pattern: a module-level signal holds the active
-// request, a single host component subscribes to it, and the imperative
-// `promptNoteboxSeed()` function returns a Promise so the
-// `pickAndOpenNotebox` flow can `await` the user's choice before opening.
+// "Copy from existing notebox" dialog state. Like prompt and toasts: a signal
+// holds the request, a host component renders it, and `promptNoteboxSeed()`
+// returns a Promise that `pickAndOpenNotebox` awaits before opening.
 
 import { createSignal } from "solid-js";
 import type { NoteboxRegistryEntry } from "../lib/types";
@@ -21,9 +18,10 @@ export interface NoteboxSeedRequest {
   sources: NoteboxRegistryEntry[];
 }
 
-/** What the user chose in the dialog.
- *  - `"copy"` with a path: seed the new notebox from that source.
- *  - `"skip"`: open with defaults, no copy. */
+/**
+ * The user's choice: `"copy"` with a path copies from that notebox; `"skip"`
+ * opens with defaults.
+ */
 export type NoteboxSeedChoice =
   | { action: "copy"; sourcePath: string }
   | { action: "skip" };
@@ -37,9 +35,10 @@ const [activeNoteboxSeed, setActiveNoteboxSeed] =
 
 export { activeNoteboxSeed };
 
-/** Open the seed-from-existing dialog and resolve with the user's choice.
- *  Skipping (Esc, backdrop click, "Use defaults" button) resolves with
- *  `{ action: "skip" }`. */
+/**
+ * Open the copy-from-existing dialog and resolve with the choice. Skipping
+ * (Esc, backdrop click, "Use defaults") gives `{ action: "skip" }`.
+ */
 export function promptNoteboxSeed(
   request: NoteboxSeedRequest,
 ): Promise<NoteboxSeedChoice> {
@@ -58,18 +57,17 @@ export function resolveNoteboxSeed(choice: NoteboxSeedChoice) {
   cur.resolve(choice);
 }
 
-/** Offer the user a chance to seed a fresh notebox from an existing one,
- *  then carry out the copy if they accept. Skips the prompt (returns
- *  silently) when (a) the target is already a notebox or
- *  (b) there are no existing noteboxes available as sources.
+/**
+ * Offer to fill a new notebox from an existing one, and copy if accepted. No
+ * prompt if the target is already a notebox or there's no other notebox to copy
+ * from.
  *
- *  Designed to be called from every "add notebox" entry point — the
- *  picker-based `pickAndOpenNotebox` and the Settings panel's "New
- *  notebox" form — so users get the same prompt regardless of which
- *  flow they took.
+ * Called from every "add notebox" path (`pickAndOpenNotebox` and Settings' "New
+ * notebox" form), so the prompt is the same either way.
  *
- *  Best-effort: any error in the freshness check or copy IPC is logged
- *  and the function returns rather than blocking the caller. */
+ * Errors in the check or the copy are logged, and the function returns without
+ * blocking the caller.
+ */
 export async function maybeSeedNotebox(
   targetPath: string,
   registry: NoteboxRegistryEntry[],

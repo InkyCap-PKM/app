@@ -1,16 +1,13 @@
 // Ctrl+\ scaffold picker.
 //
-// Lists scaffolds and appends the chosen one to the end of the active note,
-// leaving the caret on a fresh line below it. If the scaffold begins with a
-// `#note(...)` call, its kwargs are merged into the target note's existing
-// `#note(...)` — existing values win on conflict; new keys are appended.
+// Appends the chosen scaffold to the end of the active note, leaving the caret
+// on a new line below it. If the scaffold starts with a `#note(...)` call, its
+// arguments are merged into the note's `#note(...)`: existing values win, new
+// keys are added.
 //
-// The merge + insert happens in the `prepare_scaffold_insert` Tauri command
-// which returns the new full source and cursor offset; we replace the
-// editor's whole document in one CodeMirror transaction so the operation
-// collapses into a single undo step. That transaction is tagged
-// `externalReload` so the protected-range change filters (import-line guard,
-// #note guard) don't clip the whole-doc replace and clear the note.
+// The `prepare_scaffold_insert` command returns the new source and cursor
+// offset, which replace the whole document in one transaction (one undo step),
+// tagged `externalReload` so the protected-range filters don't clip it.
 
 import { Component, For, Show, createResource, createSignal, createEffect, createMemo } from "solid-js";
 import * as ipc from "../lib/ipc";
@@ -79,12 +76,11 @@ const ScaffoldPicker: Component<ScaffoldPickerProps> = (props) => {
   async function insertScaffold(entry: ipc.TemplateEntry) {
     const handle = activeEditorView();
     if (!handle) {
-      // No note is open (an empty "New tab"): start a brand-new note *from*
-      // the chosen scaffold rather than refusing. This is the only way to
-      // create a note whose whole body is a scaffold; inserting into an
-      // existing note only ever appends. Reuses the New Note creation rule
-      // (filename prompt/ZID, folder, import + zid injection) with the
-      // selected scaffold overriding the rule's own.
+      // No note open (an empty tab): create a new note from the scaffold. This
+      // is the only way to make a note whose whole body is a scaffold
+      // (inserting only appends). Uses the New Note creation rule (name prompt
+      // or ZID, folder, import and zid), with this scaffold instead of the
+      // rule's.
       await createNoteFromScaffold(entry);
       return;
     }
@@ -107,10 +103,8 @@ const ScaffoldPicker: Component<ScaffoldPickerProps> = (props) => {
       view.dispatch({
         changes: { from: 0, to: currentSource.length, insert: result.new_source },
         selection: { anchor: result.new_cursor_offset },
-        // Whole-doc replace: bypass the protected-range change filters that
-        // would otherwise preserve the old import/#note lines against this
-        // change and shred the result (clearing the note). Same pattern as
-        // the editor's own external-reload path.
+        // Whole-document replace: without this, the protected-range filters
+        // keep the old import and #note lines and garble the result.
         annotations: externalReload.of(true),
       });
       view.focus();
@@ -120,10 +114,9 @@ const ScaffoldPicker: Component<ScaffoldPickerProps> = (props) => {
     }
   }
 
-  // Create a new note whose content is the chosen scaffold, then open it in
-  // the (empty) active tab. Runs when the scaffold picker is invoked with no
-  // note open. `triggerCreationRule` returns null when the user cancels the
-  // filename prompt; nothing to open in that case.
+  // Create a note from the scaffold and open it in the empty active tab, when
+  // the picker is used with no note open. `triggerCreationRule` returns null if
+  // the name prompt is cancelled.
   async function createNoteFromScaffold(entry: ipc.TemplateEntry) {
     try {
       const result = await triggerCreationRule("new-note", { scaffoldOverride: entry.name });

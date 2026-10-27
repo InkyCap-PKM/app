@@ -1,38 +1,32 @@
-//! Notebox-level git collaboration.
+//! Notebox git collaboration.
 //!
-//! The unit of sharing is the **whole notebox**: a notebox is either
-//! collaborative (backed by a git remote) or it is not. The notebox root
-//! *is* the git repository — there is no mirror worktree. Incoming file
-//! versions are read straight from a fetched commit's git objects (blob by
-//! OID), so the working tree is never disturbed by a fetch.
+//! The whole notebox is shared: it is collaborative (backed by a git remote, or
+//! package handoff) or not. The notebox root is the repository. Incoming
+//! versions are read from fetched git objects, so a fetch never touches the
+//! working tree.
 //!
-//! The collaboration loop is a deliberate **subset** of git — no branch
-//! manager, rebase, stash, cherry-pick, or log explorer:
-//!
-//! The model is **merge-first**: a sync never pauses for review.
+//! Only a small part of git is used (no branches, rebase, stash or log browser),
+//! and a sync never pauses for review:
 //!
 //! ```text
 //!   commit local ─▶ fetch ─▶ merge (take theirs on overlap) ─▶ push
 //!                                   └▶ review & revert later (Changes pane)
 //! ```
 //!
-//! ## Module map
-//! - [`backend`] — thin, synchronous wrapper over `git2` (open/init, remote,
-//!   fetch, merge-base, blob reads, commit, push). The only place that talks
-//!   to libgit2.
-//! - [`auth`] — credential resolution for fetch/push: keyring-backed SSH keys
-//!   and HTTPS PATs, surfaced to the user via [`crate::events::AppEvent`]
-//!   rather than blocking commands.
-//! - [`sync_review`] — line-level hunk diff + per-hunk revert for the
-//!   merge-first "Changes since last sync" review (the revert-later core).
-//! - [`json_merge`] — structured 3-way merge for the shared `settings.json`
-//!   (key-level, so distinct config edits on both sides both survive).
-//! - [`package`] — offline package handoff (Phase 7): zip a notebox's whole
-//!   `.git` to a file and extract a received package to a staging repo, so a
-//!   notebox can collaborate with no hosted git server.
+//! ## Modules
+//! - [`backend`]: synchronous wrapper over `git2`, the only code talking to
+//!   libgit2.
+//! - [`auth`]: credentials for fetch and push (HTTPS username and keychain
+//!   password, or SSH keys).
+//! - [`sync_review`]: line-level diff and per-hunk revert for "Changes since
+//!   last sync".
+//! - [`json_merge`]: key-level 3-way merge of the shared `settings.json`, so
+//!   different edits on both sides survive.
+//! - [`package`]: offline package handoff: zip a notebox's `.git` to a file and
+//!   extract a received one, for collaboration without a server.
 //!
-//! Per-notebox git configuration ([`crate::notebox_settings::NoteboxGitConfig`])
-//! lives in the notebox settings, not globally and not in a `.collection` file.
+//! The per-notebox git config ([`crate::notebox_settings::NoteboxGitConfig`]) is
+//! kept with the notebox settings.
 
 pub mod auth;
 pub mod backend;

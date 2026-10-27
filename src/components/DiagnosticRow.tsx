@@ -1,6 +1,5 @@
-// Shared diagnostic row used by both the Reading view and the Journal
-// Scroll's per-entry render. Extracted so the two surfaces render Typst
-// compile diagnostics with identical structure and styling.
+// Diagnostic row shared by the reading view and the Journal Scroll's entries,
+// so both show Typst compile messages the same way.
 
 import { Component, For, Show } from "solid-js";
 import type { TypstDiagnostic } from "../lib/types";

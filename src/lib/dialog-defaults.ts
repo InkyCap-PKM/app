@@ -1,24 +1,18 @@
-// Default starting locations for native file/folder dialogs.
+// Default starting folders for native file and folder dialogs.
 //
-// Every `save()` / `open()` call in the app routes its `defaultPath`
-// through one of the helpers here so the file-manager always opens
-// somewhere sensible — never the process working directory (which, in
-// `tauri dev`, is the build folder). The policy, by dialog role:
+// Every `save()` / `open()` takes its `defaultPath` from a helper here, so
+// dialogs never open in the process's working folder (the build folder in
+// `tauri dev`). By role:
 //
-//   - Saving/finding something OUTSIDE the notebox (exports, imports of
-//     foreign archives, picking an attachment off disk) → the user's
-//     home directory. Exports additionally remember the last folder the
-//     user exported to, so repeated exports land together.
-//   - Reading/writing something tied to the CURRENT notebox (git
-//     handoff packages, restore-into-this-notebox, bibliography/CSL
-//     config) → the notebox root.
-//   - Something the user has explicitly configured (the backup
-//     destination) → that setting, falling back to home.
+//   - Something outside the notebox (exports, importing archives, picking a
+//     file from disk): the home folder. Exports remember the last folder used.
+//   - Something tied to the current notebox (git packages, restoring into this
+//     notebox, bibliography/CSL files): the notebox root.
+//   - A configured location (backup destination): that setting, or home.
 //
-// The "last export location" is intentionally kept in localStorage, not
-// in `settings.json`: it is ephemeral UI convenience state, and the
-// per-notebox settings file is git-tracked under collaboration — we do
-// not want a local export path creating noise in shared history.
+// The last export folder is kept in localStorage, not `settings.json`, since
+// the notebox settings file is in git when collaborating and a local path
+// doesn't belong in shared history.
 
 import { homeDir, join, dirname } from "@tauri-apps/api/path";
 import { noteboxInfo } from "../stores/notebox";
@@ -26,17 +20,19 @@ import { settings } from "../stores/settings";
 
 const LAST_EXPORT_DIR_KEY = "inkycap:last-export-dir";
 
-/** Home directory, optionally with a suggested filename appended so a
- *  `save()` dialog pre-fills the name. Used for dialogs that operate
- *  outside any notebox. */
+/**
+ * The home folder, with an optional file name so a `save()` dialog suggests it.
+ * For dialogs not tied to a notebox.
+ */
 export async function homeDirDefault(filename?: string): Promise<string> {
   const base = await homeDir();
   return filename ? join(base, filename) : base;
 }
 
-/** The current notebox root, optionally joined with sub-segments (e.g. a
- *  suggested filename). Returns `undefined` when no notebox is open, in
- *  which case the caller should omit `defaultPath` entirely. */
+/**
+ * The notebox root, optionally joined with more parts (e.g. a file name).
+ * `undefined` with no notebox open; the caller then leaves out `defaultPath`.
+ */
 export async function noteboxRootDefault(
   ...segments: string[]
 ): Promise<string | undefined> {
@@ -45,9 +41,10 @@ export async function noteboxRootDefault(
   return segments.length ? join(root, ...segments) : root;
 }
 
-/** Starting location for an export dialog: the folder of the user's most
- *  recent export if one is remembered, otherwise home. `filename`, when
- *  given, is appended so the dialog pre-fills the suggested name. */
+/**
+ * Starting folder for an export dialog: the last export folder if known,
+ * otherwise home, with `filename` appended if given.
+ */
 export async function exportDefault(filename?: string): Promise<string> {
   const remembered = localStorage.getItem(LAST_EXPORT_DIR_KEY);
   const base = remembered ?? (await homeDir());

@@ -12,13 +12,10 @@ use crate::typst_pipeline::package_fetch::compile_with_auto_packages;
 use crate::typst_pipeline::style_injection;
 use crate::typst_pipeline::{TypstCompileResult, TypstDiagnostic, TypstHtmlResult};
 
-/// Shift main-note diagnostic line numbers back to the user's on-disk file.
-///
-/// InkyCap inserts style/notebox lines into the note source (after the import
-/// line) before handing it to Typst, so Typst's diagnostic lines are offset
-/// from what the source editor shows. The insertions all land near the top of
-/// the file, so every position below them shifts by the same line count —
-/// subtract it. Spans in imported files (`is_main == false`) are untouched.
+/// Shift diagnostic line numbers in the main note back to the file on disk.
+/// InkyCap inserts lines near the top before compiling, so everything below is
+/// offset by the same count. Spans in imported files (`is_main == false`) are
+/// unchanged.
 fn remap_diagnostic_lines(diagnostics: &mut [TypstDiagnostic], injected_line_offset: usize) {
     if injected_line_offset == 0 {
         return;
@@ -34,17 +31,14 @@ fn remap_diagnostic_lines(diagnostics: &mut [TypstDiagnostic], injected_line_off
     }
 }
 
-/// Compile the note at `path` and return per-page SVG frames + diagnostics.
+/// Compile the note at `path` to per-page SVG with diagnostics. `path` may be
+/// notebox-relative or absolute; it is canonicalized against the notebox root
+/// and rejected if it leaves it (through `..`, an outside absolute path or a
+/// symlink). The source is read through [`NoteboxStorage`], which applies the
+/// same checks.
 ///
-/// `path` may be notebox-relative or absolute. Either way it is canonicalized
-/// against the open notebox root and rejected if it escapes the sandbox via
-/// `..`, an absolute reference outside the notebox, or a symlink. The source is
-/// read through the [`NoteboxStorage`] trait so the same validation applies to
-/// the file read itself.
-///
-/// When the source contains `@` citations but no explicit `#bibliography()`
-/// call, a bibliography is appended so citations resolve and the bibliography
-/// section renders in reading mode.
+/// With `@` citations and no `#bibliography()`, one is appended so citations
+/// resolve in reading mode.
 #[tauri::command]
 pub async fn compile_typst_svg(
     path: String,
@@ -57,9 +51,8 @@ pub async fn compile_typst_svg(
     let canonical = storage.resolve_path(&path_arg)?;
     let source = storage.read_file(&path_arg).await?;
 
-    // Track lines inserted near the top of the file: only the set-notebox and
-    // style-cascade steps shift existing line numbers. The bibliography step
-    // appends at the end, below all user content, so it never does.
+    // Count the lines inserted near the top (set-notebox and style cascade);
+    // the bibliography goes at the end and shifts nothing.
     let original_lines = source.lines().count();
     let source = maybe_inject_set_notebox(&source, &state, CompilePurpose::ReadingView).await;
     let source = inject_style_cascade(&source, &path_arg, &state).await;
@@ -78,10 +71,8 @@ pub async fn compile_typst_svg(
     Ok(result)
 }
 
-/// Resolve the user's chosen citation style. The per-notebox
-/// `custom_csl_path` overrides the user-global named style; otherwise the
-/// global style applies. Returns `None` when nothing is configured (Typst's
-/// built-in default will apply).
+/// The citation style: the notebox's `custom_csl_path`, else the user's named
+/// style, else `None` (Typst's default).
 async fn resolve_citation_style(state: &AppState, session: &NoteboxSession) -> Option<String> {
     let notebox = session.notebox_settings.read().await;
     if let Some(p) = notebox.citations.custom_csl_path.clone() {
@@ -96,16 +87,13 @@ async fn resolve_citation_style(state: &AppState, session: &NoteboxSession) -> O
         .map(String::from)
 }
 
-/// Ensure the source has a bibliography call that resolves citations and
-/// respects the user's style setting from preferences.
+/// Make sure citations resolve with the user's style:
 ///
-/// Three cases:
-/// 1. No `#bibliography(...)` and valid citations exist → append full call
-///    with path and style.
-/// 2. Explicit `#bibliography(...)` present but no `style:` argument →
-///    inject the user's style from settings so they don't get Typst's
-///    default (IEEE) when they've chosen e.g. Chicago Notes.
-/// 3. Explicit `#bibliography(...)` with `style:` → leave untouched.
+/// 1. No `#bibliography(...)` and real citations: append one with path and
+///    style.
+/// 2. A `#bibliography(...)` without `style:`: add the user's style, so they
+///    don't get Typst's IEEE default.
+/// 3. A `#bibliography(...)` with `style:`: leave it.
 async fn maybe_inject_preview_bibliography(
     source: &str,
     state: &AppState,
@@ -130,9 +118,8 @@ async fn maybe_inject_preview_bibliography(
         return source.to_string();
     };
 
-    // Only inject if at least one extracted citation key actually exists
-    // in the bibliography. Prevents false-positives from email addresses
-    // like `user@domain.com` where Typst sees `@domain` as a citation.
+    // Only if a citation key exists in the bibliography, so an email's
+    // `@domain` doesn't trigger it.
     if let Ok(entries) = super::bibliography::load_entries_inner(state, session).await {
         let extracted = extract_citations(source);
         let has_valid = extracted
@@ -156,9 +143,7 @@ async fn maybe_inject_preview_bibliography(
     }
 }
 
-/// When the user has an explicit `#bibliography(...)` call but no `style:`
-/// argument, inject their preferred style from settings so the rendered
-/// bibliography matches their choice (not Typst's default IEEE).
+/// Add the user's style to a `#bibliography(...)` that has no `style:`.
 async fn inject_style_into_explicit_bib(
     source: &str,
     bib_line: &str,
@@ -190,14 +175,11 @@ async fn inject_style_into_explicit_bib(
     }
 }
 
-/// Escape `@key` patterns that don't match any entry in the user's
-/// bibliography, so Typst treats them as literal text (e.g. email
-/// addresses like `user@domain.com`). Runs after bibliography injection.
-///
-/// Shared with the export pipeline (`export::helpers::prepare_bibliography`
-/// and book export) so a strict PDF/HTML compile escapes stray `@` the same
-/// way the reading view does — otherwise an email would compile fine in the
-/// reading view but hard-fail export.
+/// Escape `@key`s that match no bibliography entry (e.g. email addresses) so
+/// Typst shows them as text. Runs after the bibliography step. Also used by
+/// export (`export::helpers::prepare_bibliography` and the book export), so a
+/// strict export doesn't fail on an email that renders fine in the reading
+/// view.
 pub(crate) async fn escape_non_bib_citations(
     source: &str,
     state: &AppState,
@@ -211,15 +193,9 @@ pub(crate) async fn escape_non_bib_citations(
     crate::typst_pipeline::bibliography::escape_invalid_citations(source, &valid_keys)
 }
 
-/// True when `source` contains anything Typst will treat as a citation
-/// (and therefore needs a bibliography to resolve).
-///
-/// Two forms count:
-/// - `@key` — markup-mode citation sugar (via `extract_citations`).
-/// - `attribution: <key>` — `quote`'s label-as-cite parameter form.
-///
-/// Comment lines (`//`) and `#import` / `#set` lines are excluded so an
-/// `@` inside an import path or set rule doesn't false-positive.
+/// True when `source` has anything Typst treats as a citation: `@key` (via
+/// `extract_citations`) or `attribution: <key>` in a quote. Comment, `#import`
+/// and `#set` lines are ignored.
 pub(crate) fn source_has_citation(source: &str) -> bool {
     if !crate::typst_pipeline::bibliography::extract_citations(source).is_empty() {
         return true;
@@ -274,10 +250,10 @@ pub struct ExcerptHtmlResult {
     pub truncated: bool,
 }
 
-/// Compile only the passages of the note at `path` around its links to the
-/// note at `linked_with` (or its opening passage when it has none), each
-/// with a unit of writing either side, for the Journal Scroll's
-/// Neighbourhood view. See [`crate::typst_pipeline::note_excerpt`].
+/// Compile only the passages of `path` around its links to `linked_with` (or
+/// its opening passage if there are none), with a unit of writing either side,
+/// for the Journal Scroll's Neighbourhood. See
+/// [`crate::typst_pipeline::note_excerpt`].
 #[tauri::command]
 pub async fn compile_typst_html_excerpt(
     path: String,
@@ -314,13 +290,11 @@ async fn compile_html_source(
     let original_lines = source.lines().count();
     let source = maybe_inject_set_notebox(source, state, CompilePurpose::ReadingView).await;
     let source = inject_style_cascade(&source, path_arg, state).await;
-    // Tag citations with `data-cite-key` so the Scroll Context panel can
-    // locate and highlight them. HTML render path only — see
-    // `style_injection::inject_cite_tagging`.
+    // Tag citations with `data-cite-key` so the Scroll Context panel can find
+    // them (HTML only; see `style_injection::inject_cite_tagging`).
     let source = style_injection::inject_cite_tagging(&source);
-    // Re-emit `align()` blocks (which typst-html drops) as styled <div>s so
-    // centred/right-aligned images render. Before the offset calc so the
-    // injected line is counted and diagnostics remap correctly.
+    // Re-emit `align()` blocks, which typst-html drops, as styled `<div>`s.
+    // Done before the offset count so diagnostics map correctly.
     let source = style_injection::inject_html_align_shim(&source);
     let injected_line_offset = source.lines().count().saturating_sub(original_lines);
     let source = maybe_inject_preview_bibliography(&source, state, session).await;
@@ -337,22 +311,17 @@ async fn compile_html_source(
     Ok(result)
 }
 
-/// Inject app-level document defaults (font, size, page) after the
-/// inkycap-notebox import line.
+/// Add the app's document defaults (font, size, page) after the notebox import.
 ///
-/// Collection-level style is intentionally NOT applied here. A note's
-/// `collection:` property is one-directional: it lets a collection *include*
-/// the note, but the note's own reading view and standalone export must not
-/// inherit that collection's styling. Doing so would also be ill-defined for a
-/// note that belongs to several collections (`collection: (a, b)`) — there's no
-/// non-arbitrary winner. Collection style and custom Typst are applied only by
-/// the collection export commands, against the one collection being exported
-/// (see `commands::export`).
+/// Collection styles aren't applied here: a note's `collection:` property lets a
+/// collection include it, but the note's own reading view and export don't take
+/// on the collection's styling (and a note in several collections would have no
+/// clear winner). Collection styles apply only in collection exports (see
+/// `commands::export`).
 ///
-/// This is the standalone-note path: live preview (`compile_typst_svg`/`_html`)
-/// and exporting a single note on its own (PDF/HTML/Pandoc). Any template import
-/// or user `#set` rules later in the document still win over the app defaults
-/// via Typst's cascade.
+/// This is the single-note path: preview (`compile_typst_svg` / `_html`) and
+/// single-note export. Templates and `#set` rules in the note still win through
+/// the cascade.
 pub(crate) async fn inject_style_cascade(
     source: &str,
     _note_path: &std::path::Path,
@@ -373,28 +342,22 @@ pub(crate) async fn inject_style_cascade(
     )
 }
 
-/// What a compile is for. The reading view and exports render a note the same
-/// way except for annotations: the reading view leaves them out (the visual
-/// editor's pills and the Changes & History pane show them instead), while an
-/// export keeps them so a reviewer's remarks reach the shared copy.
+/// What a compile is for. The reading view leaves annotations out (the editor's
+/// pills and Changes & History show them); exports keep them, so reviewers'
+/// remarks reach the shared copy.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CompilePurpose {
     ReadingView,
     Export,
 }
 
-/// Inject `#set-notebox(...)` after the `#import` line when a rendering toggle
-/// differs from the Typst package's default: the user has turned
-/// show-inline-tags or show-inline-wikilinks off, or the compile is for the
-/// reading view (which hides annotations). Defaults are `true` in the package,
-/// so nothing is injected for an export with both toggles on.
+/// Add `#set-notebox(...)` after the import when a rendering toggle differs
+/// from the package default (`true`): inline tags or wikilinks are turned off,
+/// or the compile is for the reading view, which hides annotations.
 ///
-/// Note: the verse font is intentionally NOT auto-injected here. It's an
-/// editor-only preference (preview affordance via `--verse-font` in CSS); a
-/// user who wants verse styled differently in compiled output should reach
-/// for Typst-native control — `#set-notebox(verse-font: ...)`, the `font:`
-/// argument on `#verse(...)`, or a document-level show-rule on the verse
-/// element. Auto-injecting would silently override those choices.
+/// The verse font isn't added: it is an editor-only preference (`--verse-font`
+/// in CSS). For compiled output, use `#set-notebox(verse-font: ...)`,
+/// `#verse(font: ...)` or a show rule, which adding it here would override.
 pub(crate) async fn maybe_inject_set_notebox(
     source: &str,
     state: &AppState,
@@ -459,9 +422,8 @@ async fn ensure_system_fonts_if_needed(
     compiler.ensure_system_fonts_for_settings(&settings);
 }
 
-/// Resolve the bibliography file path for preview injection. Unlike
-/// `configure_bibliography`, this never re-exports — it just checks whether
-/// the expected file already exists on disk.
+/// The bibliography file for preview, if it exists. Unlike
+/// `configure_bibliography`, this never re-exports.
 async fn resolve_preview_bib_path(session: &NoteboxSession) -> Option<String> {
     let notebox_root = session.notebox_root.read().await.clone()?;
     let notebox = session.notebox_settings.read().await;

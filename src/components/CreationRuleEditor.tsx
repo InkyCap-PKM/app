@@ -1,6 +1,6 @@
-// Creation Rule Editor — settings sub-panel for defining creation rules.
-// Each rule specifies: name, icon, scaffold, target folder, filename pattern,
-// creation mode, hotkey, show-in-toolbar, description, Typst template.
+// Creation rule editor in Settings. A rule has a name, icon, scaffold, target
+// folder, filename pattern, creation mode, hotkey, toolbar setting, description
+// and Typst template.
 
 import {
   Component,
@@ -44,12 +44,10 @@ function findHotkeyConflict(
 
 const CreationRuleEditor: Component = () => {
   const t = useI18n();
-  // Built-in rules ship English name/description seeded by the backend
-  // (src-tauri/src/creation_rules/mod.rs). Translate them for display ONLY
-  // while the stored value still matches that seed — once a user edits the
-  // field, their text is shown verbatim. If the backend seed ever changes,
-  // the comparison simply misses and we fall back to the raw value, so this
-  // degrades to untranslated rather than breaking.
+  // Built-in rules get an English name and description from the backend
+  // (src-tauri/src/creation_rules/mod.rs). They are translated for display only
+  // while unchanged; edited text is shown as written. If the backend text
+  // changes, they simply show untranslated.
   const BUILTIN_SEED: Record<string, { name: string; description: string }> = {
     "new-note": {
       name: "New Note",
@@ -139,9 +137,10 @@ const CreationRuleEditor: Component = () => {
     setRefreshTick((t) => t + 1);
   }
 
-  /** Shape of a fresh user-created rule. Centralized so the "+ New Rule"
-   *  button and the "Restore Defaults" button for non-builtin rules stay
-   *  in sync. */
+  /**
+   * A new user rule. Shared by "+ New Rule" and "Restore Defaults" for user
+   * rules.
+   */
   function freshUserRule(id: string): CreationRule {
     return {
       id,
@@ -151,10 +150,10 @@ const CreationRuleEditor: Component = () => {
       // Empty target folder: the rule inherits the notebox's "New note
       // location" setting at trigger time rather than baking a path in.
       target_folder: "",
-      // Blank by default: the user is prompted for a filename on each creation.
-      // (A pattern of date/time/zid tokens is the alternative — see the field
-      // hint. `{{title}}`/`{{slug}}` are scaffold-content variables, not
-      // filename variables, and would expand to nothing here.)
+      // Blank by default: the user is asked for a filename each time. The
+      // alternative is a pattern of date/time/zid tokens (see the field hint);
+      // `{{title}}`/`{{slug}}` are content variables and expand to nothing in a
+      // filename.
       filename_pattern: "",
       creation_mode: "create_and_open",
       hotkey: null,
@@ -176,11 +175,11 @@ const CreationRuleEditor: Component = () => {
     setHotkeyConflict(null);
   }
 
-  /** Restore the form to the rule's defaults. For built-in rules this is
-   *  the seeded definition from the backend (so the Daily Note rule resets
-   *  to `daily/{{date:YYYY}}` etc.). For user-created rules, "defaults"
-   *  means the fresh-rule template — there's no separate canonical state
-   *  to restore to. The rule's `id` is preserved either way. */
+  /**
+   * Reset the form to the rule's defaults: for built-in rules the backend's
+   * definition (the Daily Note rule goes back to `daily/{{date:YYYY}}` etc.),
+   * for user rules the new-rule template. The `id` is kept.
+   */
   async function restoreDefaults() {
     const current = editingRule();
     if (!current) return;
@@ -214,10 +213,9 @@ const CreationRuleEditor: Component = () => {
   async function saveRule() {
     const rule = editingRule();
     if (!rule || !rule.name.trim()) return;
-    // Belt-and-braces: handleHotkeyKeyDown refuses to assign a conflicting
-    // combo, but a rule loaded from disk (or imported) could already carry
-    // one. Block save here so the registry can't end up with two commands
-    // bound to the same key.
+    // handleHotkeyKeyDown refuses a conflicting hotkey, but a rule loaded from
+    // disk could already have one, so block saving too; no two commands may
+    // share a key.
     if (rule.hotkey) {
       const conflict = findHotkeyConflict(rule.hotkey, rule.id);
       if (conflict) {
@@ -265,20 +263,19 @@ const CreationRuleEditor: Component = () => {
     setEditingRule({ ...current, [key]: value });
   }
 
-  /** Move a rule one place earlier (delta = -1) or later (delta = +1) on the
-   *  toolbar. The rule trades places with its toolbar neighbour rather than
-   *  with whatever sits beside it in the settings list, so rules that aren't
-   *  toolbar buttons keep their position and every click shifts the button by
-   *  exactly one slot. */
+  /**
+   * Move a rule one place earlier (-1) or later (+1) on the toolbar. It swaps
+   * with its neighbour on the toolbar, not in the settings list, so other rules
+   * stay put and each click moves the button one slot.
+   */
   async function moveRule(rule: CreationRule, delta: -1 | 1) {
     const list = rules() ?? [];
     const neighbourId = toolbarNeighbourId(list, rule.id, delta);
     if (!neighbourId) return;
     const reordered = swapRules(list, rule.id, neighbourId);
 
-    // Adopt the new list in both views straight away. Waiting for a reload
-    // would leave this list showing the old order for a tick, and a quick
-    // second click would then compute its move from that stale copy.
+    // Use the new list in both views at once; waiting for a reload would let a
+    // quick second click work from the old order.
     mutate(reordered);
     replaceCreationRules(reordered);
     try {
@@ -508,11 +505,9 @@ const CreationRuleEditor: Component = () => {
                     updateField("hotkey", null);
                   }}
                   onConflict={(combo, conflict) => {
-                    // Every hotkey must map to exactly one action, so refuse
-                    // the assignment. The inline label shows the existing
-                    // binding; a warning toast confirms the keypress was
-                    // registered (recording closes silently otherwise, which
-                    // reads as "did it take?").
+                    // A hotkey can have only one action, so refuse it. The
+                    // label shows the existing binding, and a warning toast
+                    // confirms the keypress was received.
                     setHotkeyConflict(conflict);
                     toastWarning(
                       t("creationRules.hotkeyConflictToast", { combo, conflict }),

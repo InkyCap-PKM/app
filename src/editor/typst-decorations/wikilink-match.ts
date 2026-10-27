@@ -1,18 +1,15 @@
 // Matching for wikilink `[[ ]]` suggestions.
 //
-// Deliberately stricter than the quick-open `fuzzyMatch` (a loose subsequence
-// scorer): a wikilink query must match the *letters as they appear in the
-// words* of a candidate — a contiguous, case-insensitive substring, or, for a
-// multi-word query, every whitespace-separated token as a substring. This
-// stops a nonsense query like "asd dthe" from dragging in every note whose
-// letters merely appear in that order, and keeps an exact/prefix hit (e.g.
-// "cirfa" → "CIRFA") ranked at the top.
+// Stricter than quick open's `fuzzyMatch`: the query must appear in a
+// candidate's words as written, as one case-insensitive substring or, for
+// several words, each word as a substring. So a query like "asd dthe" doesn't
+// match every note containing those letters in order, and exact or prefix hits
+// (e.g. "cirfa" → "CIRFA") rank first.
 
 /**
- * Score how well `query` matches a wikilink candidate `target` (a note name or
- * alias). Returns `null` when it doesn't match at all; higher is a better
- * match. An empty query matches everything with a neutral score, so typing a
- * bare `[[` lists all notes.
+ * Score how well `query` matches `target` (a note name or alias): `null` for no
+ * match, higher is better. An empty query matches everything equally, so a bare
+ * `[[` lists all notes.
  */
 export function wikilinkScore(query: string, target: string): number | null {
   const q = query.toLowerCase().trim();
@@ -32,9 +29,8 @@ export function wikilinkScore(query: string, target: string): number | null {
     return base - target.length - idx;
   }
 
-  // Multi-token query: every whitespace-separated token must appear as a
-  // contiguous substring (order-independent). Covers "digital humanities" →
-  // "Alliance of Digital Humanities Organizations".
+  // Several words: each must appear as a substring, in any order ("digital
+  // humanities" → "Alliance of Digital Humanities Organizations").
   const tokens = q.split(/\s+/).filter(Boolean);
   if (tokens.length > 1 && tokens.every((tok) => t.includes(tok))) {
     return 500 - target.length;

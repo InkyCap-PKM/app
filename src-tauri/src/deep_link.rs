@@ -1,26 +1,25 @@
-//! Receiving `inkycap://` links and handing each one to the right window.
+//! Receiving `inkycap://` links and sending each to the right window.
 //!
-//! Links arrive three ways: from the operating system when InkyCap starts or
-//! is already running (through the deep-link and single-instance plugins, see
-//! [`setup`]), and from a link clicked inside a note
-//! (`commands::deep_link::open_inkycap_url`). All of them go through
-//! [`receive`], which parses the link ([`crate::uri_scheme`]), finds the
-//! notebox in the registry and the file inside it ([`resolve`]), and sends the
-//! window a [`Delivery`] holding only checked values. The webview never sees
-//! the link itself.
+//! Links come from the OS at startup or while running (through the deep-link
+//! and single-instance plugins, see [`setup`]), and from links clicked in a
+//! note (`commands::deep_link::open_inkycap_url`). All go through [`receive`],
+//! which parses the link ([`crate::uri_scheme`]), finds the notebox in the
+//! registry and the file in it ([`resolve`]), and sends the window a
+//! [`Delivery`] of checked values only; the webview never sees the link itself.
 //!
-//! Where a link lands:
-//! 1. the window that already has its notebox open (brought to the front);
-//! 2. otherwise a window with no notebox open, which opens it without asking;
-//! 3. otherwise the focused window, which asks before opening the notebox in
-//!    a new window.
+//! Where a link goes:
 //!
-//! A link that arrives while InkyCap is starting is held until the main window
-//! has loaded ([`Inbox`]); the main window then opens the link's notebox in
-//! place of the one it would have restored, without asking.
+//! 1. the window that has its notebox open (brought to the front);
+//! 2. otherwise a window with no notebox, which opens it without asking;
+//! 3. otherwise the focused window, which asks before opening it in a new
+//!    window.
 //!
-//! A link only ever opens a note or collection, or runs a search. It never
-//! creates, changes or deletes anything.
+//! A link arriving during startup waits until the main window has loaded
+//! ([`Inbox`]), which then opens its notebox instead of the one it would have
+//! restored, without asking.
+//!
+//! A link only opens a note or collection or runs a search; it never creates,
+//! changes or deletes anything.
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -104,17 +103,16 @@ pub enum Missing {
     Note,
 }
 
-/// What a window is asked to do with a link. Sent as the `app:deep-link`
-/// event, and returned to the main window by `deep_link_ready` for a link that
-/// arrived while InkyCap was starting.
+/// What a window should do with a link. Sent as the `app:deep-link` event, or
+/// returned by `deep_link_ready` for a link that arrived during startup.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Delivery {
     /// The receiving window has the link's notebox open.
     Open { link: DeepLink },
-    /// The link's notebox is not open in any window. With `ask`, the window
-    /// asks the user before opening it in a new window; without, the window
-    /// has no notebox open and opens it itself.
+    /// The notebox isn't open anywhere. With `ask`, the window asks before
+    /// opening it in a new window; without, the window has no notebox and opens
+    /// it.
     OpenNotebox { link: DeepLink, ask: bool },
     /// The notebox or the note does not exist.
     NotFound(NotFound),
@@ -134,9 +132,8 @@ struct InboxState {
 }
 
 impl Inbox {
-    /// Mark the main window ready and take the link waiting for it, if any.
-    /// A waiting link opens its notebox without asking, since the app was
-    /// launched to follow it.
+    /// Mark the main window ready and take any waiting link. It opens without
+    /// asking, since the app was launched to follow it.
     pub fn take_for_startup(&self) -> Option<Delivery> {
         let mut state = self.0.lock().unwrap_or_else(|e| e.into_inner());
         state.ready = true;
@@ -162,9 +159,9 @@ impl Inbox {
     }
 }
 
-/// Wire up the deep-link plugin: follow links that arrive while running, the
-/// link InkyCap was started with, and register the scheme with the desktop
-/// where no installer did. Call once from the app's `setup`.
+/// Set up the deep-link plugin: follow links while running and the startup
+/// link, and register the scheme where no installer did. Call once from
+/// `setup`.
 pub fn setup(app: &AppHandle) {
     use tauri_plugin_deep_link::DeepLinkExt;
 
@@ -177,10 +174,9 @@ pub fn setup(app: &AppHandle) {
         }
     });
 
-    // On Linux and Windows the plugin reads the startup link from the command
-    // line before any listener exists, so it is collected here instead. It is
-    // resolved before `setup` returns, so it is already in the inbox when the
-    // main window asks for it.
+    // On Linux and Windows the startup link is read from the command line
+    // before listeners exist, so collect it here; it is resolved before `setup`
+    // returns, so it is waiting when the main window asks.
     if let Ok(Some(urls)) = app.deep_link().get_current() {
         for url in urls {
             let Some(resolved) = resolve_url(url.as_str()) else {
@@ -194,9 +190,9 @@ pub fn setup(app: &AppHandle) {
     }
 }
 
-/// Called by the single-instance plugin when InkyCap is started again while
-/// running. A launch carrying a link is followed through [`setup`]'s listener;
-/// a plain launch brings an existing window to the front.
+/// Called by the single-instance plugin when InkyCap is started again. A link
+/// is followed through [`setup`]'s listener; a plain launch brings a window to
+/// the front.
 pub fn on_second_launch(app: &AppHandle, args: &[String]) {
     let carries_link = args.len() == 2
         && args[1]
@@ -243,12 +239,10 @@ fn resolve_url(url: &str) -> Option<Result<DeepLink, NotFound>> {
     ))
 }
 
-/// Resolve a parsed link against the registry and the notebox on disk.
-///
-/// The notebox must be registered under the link's name (the most recently
-/// opened wins if two share it); a link can never point InkyCap at a folder
-/// the user has not opened before. A file must exist inside that notebox after
-/// following symlinks, and be a note or collection.
+/// Resolve a link against the registry and the disk. The notebox must be
+/// registered under the link's name (the most recently opened if two share it),
+/// so a link can't point InkyCap at a folder the user hasn't opened. A file
+/// must exist in it, after following symlinks, and be a note or collection.
 pub fn resolve(request: Request, registry: &[NoteboxRegistryEntry]) -> Result<DeepLink, NotFound> {
     let name = request.notebox().to_string();
     let not_found = |what, name: &str| NotFound {
@@ -382,14 +376,12 @@ fn bring_forward(app: &AppHandle, label: &str) {
     }
 }
 
-/// Register `inkycap://` with the desktop for copies that no installer
-/// registered: an AppImage (on every launch, since the file may have moved)
-/// and, when asked for with `INKYCAP_REGISTER_URL_SCHEME=1`, a development
-/// build. The deb, rpm, Flatpak, Windows and macOS installers register the
-/// scheme themselves, and macOS cannot register one at runtime at all.
-///
-/// A development build does not register on its own because the registration
-/// is per user and would take links away from an installed InkyCap.
+/// Register `inkycap://` for copies no installer registered: an AppImage (every
+/// launch, since it may have moved) and, with `INKYCAP_REGISTER_URL_SCHEME=1`,
+/// a development build. The deb, rpm, Flatpak, Windows and macOS installers
+/// register it themselves, and macOS can't at runtime. A development build
+/// doesn't register by default, since the per-user registration would take
+/// links from an installed InkyCap.
 fn register_scheme_if_needed(app: &AppHandle) {
     let dev_opt_in = cfg!(debug_assertions)
         && std::env::var("INKYCAP_REGISTER_URL_SCHEME").is_ok_and(|v| v == "1");

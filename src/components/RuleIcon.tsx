@@ -24,10 +24,9 @@ const RuleIcon: Component<RuleIconProps> = (props) => {
     return props.name.slice(0, 2);
   };
 
-  // A single glyph (an emoji) fills the square box; a 2-character monogram
-  // needs to shrink so both letters fit horizontally instead of being clipped
-  // by the box's width and overflow:hidden. Count code points (not UTF-16
-  // units) so a surrogate-pair emoji still reads as one glyph.
+  // One character (an emoji) fills the box; a two-letter monogram is made
+  // smaller so both letters fit. Counts code points, not UTF-16 units, so a
+  // surrogate-pair emoji counts as one.
   const fontSize = () => {
     const text = displayText() ?? "";
     return [...text].length > 1 ? size() * 0.6 : size();

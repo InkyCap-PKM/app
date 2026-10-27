@@ -1,7 +1,6 @@
-// Unit tests for the shared name/zid comparators. The load-bearing invariant
-// is natural ordering of embedded digit runs: users number folders and notes
-// to impose an order, and a lexicographic comparator silently defeats it by
-// filing `10` between `1` and `2`.
+// Tests for the name and zid comparators. Numbers inside names must sort by
+// value: people number notes and folders to order them, and plain text order
+// would put `10` between `1` and `2`.
 
 import { describe, it, expect } from "vitest";
 import { compareChronological, compareName, compareZid } from "./sort";
@@ -35,9 +34,8 @@ describe("compareName", () => {
   });
 
   it("orders case-only differences lowercase-first", () => {
-    // Two folders differing only in case can coexist on a case-sensitive
-    // filesystem, so they must be distinct and stably ordered rather than
-    // reported equal.
+    // Folders differing only in case can coexist on case-sensitive file
+    // systems, so they must stay distinct and in a fixed order.
     expect(byName(["NOTES", "notes", "Notes"])).toEqual(["notes", "Notes", "NOTES"]);
     expect(byName(["Ab", "aB"])).toEqual(["aB", "Ab"]);
   });
@@ -47,11 +45,10 @@ describe("compareName", () => {
   });
 
   it("matches the Rust collator exactly", () => {
-    // Asserted verbatim by `matches_the_frontend_collator_exactly` in
-    // src-tauri/src/sort.rs. Both sides run Unicode collation with numeric
-    // ordering (ICU in the browser, ICU4X in Rust), so a file tree and a
-    // collection table cannot disagree about the same notes. Change one side
-    // and you must change the other.
+    // Matched exactly by `matches_the_frontend_collator_exactly` in
+    // src-tauri/src/sort.rs. Both use Unicode collation with numeric ordering
+    // (ICU in the browser, ICU4X in Rust), so a file tree and a collection
+    // table always agree. Changing one means changing the other.
     expect(
       byName([
         "10 Conclusion",

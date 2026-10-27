@@ -1,16 +1,9 @@
-// In-app text-input prompt. Replaces window.prompt() across the codebase,
-// which renders as the WebView's native "JavaScript - http://..." dialog
-// in WebKitGTK and bypasses InkyCap's styling.
+// In-app text prompt, used instead of window.prompt(), which in WebKitGTK shows
+// an unstyled native dialog. Like stores/toasts.ts: a module-level signal holds
+// the active prompt, PromptHost renders it, and `promptText()` returns a
+// Promise (`const name = await promptText(...)`).
 //
-// Pattern mirrors stores/toasts.ts: a module-level signal holds the active
-// prompt, a single PromptHost component subscribes to it, and the imperative
-// `promptText()` function returns a Promise so existing callers that used
-// `const name = prompt(...)` migrate to `const name = await promptText(...)`
-// with minimal restructuring.
-//
-// New code that needs a text prompt MUST use this rather than window.prompt
-// — there is no other styled equivalent, and reaching for the native one
-// breaks visual continuity with the rest of the app.
+// Use this for any text prompt; don't use window.prompt.
 
 import { createSignal } from "solid-js";
 
@@ -30,9 +23,8 @@ export interface PromptOptions {
   /** Cancel button label. Defaults to "Cancel". */
   cancelLabel?: string;
   /**
-   * Optional validator run on every submit attempt. Return a non-empty
-   * string to block submission and display the message as an error;
-   * return null to allow the submit to resolve.
+   * Optional validator run on each submit. Return a message to block submission
+   * and show it as an error, or null to allow it.
    */
   validate?: (value: string) => string | null;
 }
@@ -60,10 +52,12 @@ export interface ConfirmOptions {
   /** Styles the confirm button as destructive (red). Set it for anything that
    *  deletes or removes, so every such confirm looks the same. */
   danger?: boolean;
-  /** Optional secondary opt-in checkbox shown above the buttons (e.g. a
-   *  destructive extra like "also delete the version history"). Its state is
-   *  returned by [`promptConfirmWithCheckbox`]; plain [`promptConfirm`] ignores
-   *  it. Defaults to unchecked unless `initial` is set. */
+  /**
+   * Optional checkbox above the buttons for an extra choice (e.g. "also delete
+   * the version history"). Its state is returned by
+   * [`promptConfirmWithCheckbox`]; [`promptConfirm`] ignores it. Unchecked
+   * unless `initial` is set.
+   */
   checkbox?: { label: string; initial?: boolean };
 }
 
@@ -82,10 +76,8 @@ const [activeConfirm, setActiveConfirm] = createSignal<ConfirmState | null>(null
 export { activeConfirm };
 
 /**
- * Open the prompt modal. Resolves with the trimmed string the user entered,
- * or null if they cancelled (Esc, backdrop click, or Cancel button).
- * If a prompt is already open, the previous one is cancelled (resolved with
- * null) before the new one opens.
+ * Open the prompt. Resolves with the trimmed text, or null if cancelled (Esc,
+ * backdrop click, Cancel). An open prompt is cancelled (null) first.
  */
 export function promptText(opts: PromptOptions): Promise<string | null> {
   const existing = activePrompt();
@@ -104,19 +96,18 @@ export function resolvePrompt(value: string | null) {
 }
 
 /**
- * Open the confirmation modal. Resolves `true` if the user confirmed, `false`
- * if they cancelled (Esc, backdrop click, or Cancel). Styled like the rest of
- * the app rather than the OS dialog. If a confirm is already open, the previous
- * one is cancelled (`false`) before the new one opens.
+ * Open the confirmation dialog. Resolves `true` if confirmed, `false` if
+ * cancelled (Esc, backdrop click, Cancel). An open confirm is cancelled
+ * (`false`) first.
  */
 export function promptConfirm(opts: ConfirmOptions): Promise<boolean> {
   return promptConfirmWithCheckbox(opts).then((r) => r.confirmed);
 }
 
 /**
- * Like [`promptConfirm`], but also reports the state of the optional
- * [`ConfirmOptions.checkbox`]. `checked` is meaningless (always its initial
- * value) when the user cancels, and when no checkbox was configured.
+ * Like [`promptConfirm`], but also returns the state of
+ * [`ConfirmOptions.checkbox`]. `checked` keeps its initial value when cancelled
+ * or when there is no checkbox.
  */
 export function promptConfirmWithCheckbox(opts: ConfirmOptions): Promise<ConfirmResult> {
   const existing = activeConfirm();
@@ -144,10 +135,11 @@ export interface ChoiceOption {
   variant?: "primary" | "secondary" | "danger";
 }
 
-/** A multi-action chooser modal: a title, a message, and 2+ action buttons,
- *  plus an always-present close affordance (the header ✕, Esc, and backdrop
- *  click) that cancels. Use when a yes/no confirm isn't enough — e.g. "Convert
- *  to Typst?" / "Keep as Markdown" / cancel. */
+/**
+ * A chooser with a title, a message and two or more action buttons; closing it
+ * (✕, Esc, backdrop click) cancels. For choices beyond yes/no, e.g. "Convert to
+ * Typst?" / "Keep as Markdown" / cancel.
+ */
 export interface ChoiceOptions {
   /** Heading text shown in the modal header. */
   title: string;
@@ -166,9 +158,9 @@ const [activeChoice, setActiveChoice] = createSignal<ChoiceState | null>(null);
 export { activeChoice };
 
 /**
- * Open the chooser modal. Resolves with the chosen option's `id`, or `null` if
- * the user cancelled (the header ✕, Esc, or a backdrop click). If a chooser is
- * already open, the previous one is cancelled (`null`) before the new one opens.
+ * Open the chooser. Resolves with the chosen option's `id`, or `null` if
+ * cancelled (✕, Esc, backdrop click). An open chooser is cancelled (`null`)
+ * first.
  */
 export function promptChoice(opts: ChoiceOptions): Promise<string | null> {
   const existing = activeChoice();

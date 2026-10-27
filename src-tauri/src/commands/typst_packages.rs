@@ -1,14 +1,12 @@
-//! Tauri IPC for installing Typst packages.
+//! Commands for installing Typst packages:
 //!
-//! Two entry points:
-//! - [`install_typst_package_by_spec`] — fetch `@<ns>/<name>:<ver>` from
-//!   `packages.typst.org` and extract.
-//! - [`install_typst_package_from_file`] — extract a local `.tar.gz` the
-//!   user already has on disk.
+//! - [`install_typst_package_by_spec`]: download `@<ns>/<name>:<ver>` from
+//!   `packages.typst.org` and extract it.
+//! - [`install_typst_package_from_file`]: extract a local `.tar.gz`.
 //!
-//! Both land in `<notebox>/.inkycap/packages/<namespace>/<name>/<version>/`,
-//! which the Typst compile pipeline already resolves at
-//! `typst_pipeline/world.rs::resolve_package_path`.
+//! Both install into
+//! `<notebox>/.inkycap/packages/<namespace>/<name>/<version>/`, where
+//! `typst_pipeline/world.rs::resolve_package_path` finds them.
 
 use std::io::Cursor;
 use std::path::PathBuf;
@@ -27,9 +25,9 @@ pub struct InstalledPackage {
     pub files_written: usize,
 }
 
-/// Install a Typst package by spec (`@preview/cetz:0.2.0` style). Fetches
-/// `https://packages.typst.org/<ns>/<name>-<ver>.tar.gz` and extracts into
-/// the canonical `.inkycap/packages/` layout.
+/// Install a package by spec (`@preview/cetz:0.2.0`): download
+/// `https://packages.typst.org/<ns>/<name>-<ver>.tar.gz` and extract it into
+/// `.inkycap/packages/`.
 #[tauri::command]
 pub async fn install_typst_package_by_spec(
     state: State<'_, AppState>,
@@ -90,10 +88,8 @@ pub async fn install_typst_package_by_spec(
     })
 }
 
-/// Install a Typst package from a local `.tar.gz` file. Reads
-/// `typst.toml` from the extracted archive to determine the canonical
-/// install path. Falls back to a user-supplied spec when the archive
-/// lacks a manifest.
+/// Install a package from a local `.tar.gz`, using its `typst.toml` to decide
+/// where it goes, or a spec from the user when there is no manifest.
 #[tauri::command]
 pub async fn install_typst_package_from_file(
     state: State<'_, AppState>,
@@ -114,10 +110,8 @@ pub async fn install_typst_package_from_file(
         .clone();
     drop(notebox_root);
 
-    // Extract into a temp dir first, then promote into the canonical
-    // location once we know the package's name/version. This avoids
-    // writing a partial archive to the canonical path if extraction
-    // fails halfway, and lets us name the destination from the manifest.
+    // Extract to a temporary folder first, then move it into place once the
+    // name and version are known, so a failed extraction leaves nothing behind.
     let temp = tempfile::tempdir().map_err(InkyCapError::Io)?;
     let temp_root = temp.path().to_path_buf();
 
@@ -193,14 +187,10 @@ pub struct InstalledPackageEntry {
     pub description: Option<String>,
 }
 
-/// List every package installed under `<notebox>/.inkycap/packages/`.
-///
-/// Walks the canonical three-level tree (`<ns>/<name>/<ver>/`) and reads
-/// each `typst.toml` to (a) confirm it's a real package and (b) classify
-/// it as a Universe-style "template" or a plain "library" based on whether
-/// the manifest declares `[template]`. Skips directories that aren't
-/// actually packages so the function tolerates stale subdirs without
-/// surfacing them as broken entries.
+/// Every package installed under `<notebox>/.inkycap/packages/`. Reads each
+/// `<ns>/<name>/<ver>/typst.toml` to confirm it is a package and classify it as
+/// a "template" (with `[template]`) or a "library". Folders that aren't
+/// packages are skipped.
 #[tauri::command]
 pub async fn list_installed_packages(
     state: State<'_, AppState>,
@@ -278,11 +268,9 @@ pub async fn list_installed_packages(
     Ok(out)
 }
 
-/// Read an installed template package's starter scaffold and return its apply
-/// show rule (`#show: <fn>.with(…)`) so the UI can drop it into a collection's
-/// Custom Typst override. `None` when the spec isn't a package, isn't installed,
-/// isn't a template, or has no everywhere-form show rule — the caller treats
-/// that as "no starter available" rather than an error.
+/// The `#show: <fn>.with(…)` rule from an installed template's starter, for a
+/// collection's Custom Typst. `None` if the spec isn't an installed template
+/// package or has no such rule; the caller treats that as no starter.
 #[tauri::command]
 pub async fn get_template_starter(
     state: State<'_, AppState>,
@@ -299,9 +287,9 @@ pub async fn get_template_starter(
     drop(notebox_root);
 
     let snippet = typst_packages::template_starter_snippet(&root, &spec);
-    // Point the starter's `bibliography("…")` at the hidden, auto-generated
-    // per-collection bib (filled in fresh at export from the works the notes
-    // cite) so the user neither maintains a file nor clutters the notebox root.
+    // Point the starter's `bibliography("…")` at the collection's generated
+    // bibliography (rebuilt at export from the works cited), so the user has no
+    // file to maintain.
     let snippet = match (snippet, collection_path.as_deref()) {
         (Some(s), Some(cp)) => {
             let stem = std::path::Path::new(cp)
@@ -320,10 +308,8 @@ pub async fn get_template_starter(
     Ok(snippet)
 }
 
-/// Uninstall a package by spec. Deletes the version directory; if that
-/// leaves the name directory empty, removes it too (and the namespace
-/// directory if *that* is empty). Best-effort tree cleanup so the
-/// `<ns>/<name>/<version>/` shape doesn't accumulate empty stubs.
+/// Uninstall a package by spec: delete its version folder, then the name and
+/// namespace folders if they are left empty.
 #[tauri::command]
 pub async fn uninstall_typst_package(
     state: State<'_, AppState>,
@@ -369,9 +355,8 @@ fn dir_is_empty(p: &std::path::Path) -> bool {
         .unwrap_or(false)
 }
 
-/// What depends on a package version, so the uninstall confirmation can warn
-/// the user before removing it. Reported, never enforced — uninstall is
-/// warn-and-allow (the user may be intentionally cleaning up).
+/// What depends on a package version, so the uninstall confirmation can warn.
+/// Only reported; uninstalling is allowed.
 #[derive(Debug, Serialize)]
 pub struct PackageDependents {
     /// Display names of creation rules whose `typst_template` is this spec.
@@ -439,11 +424,10 @@ pub struct CreatedPackage {
     pub entrypoint_path: String,
 }
 
-/// Scaffold a brand-new local package at
-/// `<notebox>/.inkycap/packages/<ns>/<name>/<version>/`. Defaults to the
-/// `@local/` namespace and version `0.1.0` when the user passes a bare name.
-/// When `as_template` is true, declares `[template]` in the manifest and
-/// generates `template/main.typ`.
+/// Create a new local package in
+/// `<notebox>/.inkycap/packages/<ns>/<name>/<version>/`, defaulting to the
+/// `@local/` namespace and `0.1.0` for a bare name. With `as_template`, the
+/// manifest declares `[template]` and `template/main.typ` is created.
 #[tauri::command]
 pub async fn create_local_package(
     state: State<'_, AppState>,
@@ -498,10 +482,8 @@ pub async fn create_local_package(
         std::fs::create_dir_all(&template_dir).map_err(InkyCapError::Io)?;
         let main_path = template_dir.join("main.typ");
         std::fs::write(&main_path, TEMPLATE_MAIN_TYP).map_err(InkyCapError::Io)?;
-        // Opening lib.typ is the more useful entrypoint for editing — the
-        // user-facing thing they iterate on is the library, not the starter
-        // doc. Returning lib.typ here matches the panel's "open entrypoint"
-        // expectation in the plan doc.
+        // Open lib.typ, the file the user edits, rather than the starter
+        // document.
         lib_path
     } else {
         lib_path

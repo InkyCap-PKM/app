@@ -3,11 +3,10 @@ import { panes } from "../stores/panes";
 import PaneView from "./panes/PaneView";
 
 /**
- * The editor area. Hosts the recursive pane tree: a single leaf pane fills
- * the whole area today, and splits subdivide it. The keyed `Show` re-renders
- * the tree only when the *root* node is replaced (the first split, or a
- * collapse back to one pane); within a stable root, the pane components
- * react to tab/size changes on their own.
+ * The editor area, holding the pane tree: one leaf pane fills it, and splits
+ * divide it. The keyed `Show` re-renders the tree only when the root node is
+ * replaced (the first split, or collapsing back to one pane); otherwise the
+ * panes handle tab and size changes themselves.
  */
 const MainContent: Component = () => {
   return (

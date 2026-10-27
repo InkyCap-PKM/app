@@ -1,10 +1,7 @@
-// Tauri commands for bulk operations on note properties and tags
-// plus the global property type registry.
-//
-// These commands mutate every note (and optionally .collection file) in the
-// notebox that references the targeted key or tag. They go through the
-// same per-note `reindex_note` path as individual edits so the in-memory
-// indexes and the persistent metadata cache stay coherent.
+// Commands for notebox-wide property and tag operations, and the property type
+// registry. They change every note (and optionally `.collection` file) using
+// the key or tag, through `reindex_note` like single edits, so the indexes and
+// cache stay consistent.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -35,9 +32,8 @@ pub async fn get_property_types(
     Ok(reg.all())
 }
 
-/// Return the set of built-in system property keys whose types are fixed and
-/// cannot be reassigned by the user. The markdown-import mapping dialog uses
-/// this to lock the type column for these targets.
+/// The built-in property keys, whose types are fixed. The Markdown import
+/// dialog locks their type column.
 #[tauri::command]
 pub async fn get_system_property_keys() -> Result<Vec<String>, InkyCapError> {
     Ok(crate::property_types::SYSTEM_PROPERTY_KEYS
@@ -46,11 +42,8 @@ pub async fn get_system_property_keys() -> Result<Vec<String>, InkyCapError> {
         .collect())
 }
 
-/// Set the declared type for a property key and rewrite that key in
-/// every note that has it, coercing each value to the new type. When
-/// `ty` is `Auto` the registry entry is stored but no files are
-/// rewritten — Auto means "leave values alone and let the editor
-/// guess from the actual YAML type".
+/// Set a property key's type and rewrite it in every note, converting values.
+/// For `Auto` only the registry changes; values are left as they are.
 #[tauri::command]
 pub async fn set_property_type(
     key: String,
@@ -101,10 +94,8 @@ pub async fn set_property_type(
 
 // ── Property key rename / delete ──────────────────────────────────────
 
-/// Rename a property key across every note that has it.
-/// Also rewrites textual references in `.collection` collection files and
-/// moves the type registry entry so the new key inherits the old key's
-/// declared type.
+/// Rename a property key in every note, update references in `.collection`
+/// files, and move its type registry entry to the new key.
 #[tauri::command]
 pub async fn rename_property_key(
     old_key: String,
@@ -119,11 +110,9 @@ pub async fn rename_property_key(
         return Ok(());
     }
 
-    // System property keys (`title`, `tags`, `date`, …) are load-bearing:
-    // the notebox package, `typst query`, and the property pipeline all key
-    // off these exact names. Renaming one would silently sever that
-    // metadata, so it's forbidden at the boundary. The sidebar also hides
-    // the rename action for these, but enforce it here too.
+    // System keys (`title`, `tags`, `date`, …) are what the notebox package,
+    // `typst query` and the property pipeline rely on, so renaming them is
+    // refused here as well as hidden in the sidebar.
     if is_system_property(&old_key) {
         return Err(InkyCapError::BadRequest(format!(
             "Cannot rename system property '{}'",
@@ -243,9 +232,8 @@ pub async fn remove_property_from_file(
     Ok(())
 }
 
-/// Return the ordered list of property keys exactly as they appear in
-/// the file's `#note(...)` call. Used by the right panel to render rows
-/// in source order rather than fighting the user's drag-and-drop layout.
+/// The property keys in the order of the file's `#note(...)` call, so the right
+/// panel follows source order.
 #[tauri::command]
 pub async fn get_property_order(
     path: String,
@@ -262,10 +250,8 @@ pub async fn get_property_order(
         .collect())
 }
 
-/// Reorder properties inside the `#note(...)` call of a single file to
-/// match `order`. Keys present in the file but missing from `order` are
-/// appended in their original position; keys in `order` not present in
-/// the file are silently skipped.
+/// Reorder the file's `#note(...)` properties to match `order`. Keys not in
+/// `order` keep their position at the end; keys not in the file are skipped.
 #[tauri::command]
 pub async fn reorder_properties(
     path: String,
@@ -285,13 +271,10 @@ pub async fn reorder_properties(
     Ok(())
 }
 
-/// Return the distinct values currently used for `key` across the notebox,
-/// sorted alphabetically. List values are exploded — each member becomes a
-/// separate entry — so the picker for `tags`, `status`, etc. can show the
-/// universe of choices the user has previously committed to.
-///
-/// Non-string scalars (numbers, booleans) are stringified. `link-ref`-shaped
-/// strings keep their `[[Target]]` form.
+/// Distinct values used for `key` across the notebox, sorted. List values are
+/// split into members, so the pickers for `tags`, `status` etc. show every
+/// value already used. Numbers and booleans become strings; `[[Target]]` values
+/// are kept as such.
 #[tauri::command]
 pub async fn get_property_values(
     key: String,
@@ -355,9 +338,8 @@ pub async fn rename_tag(
         return Ok(());
     }
 
-    // Each target carries the tag in at least one form. Snapshot the
-    // `#note(...)` `tags:` list alongside the path so we can rewrite that
-    // property without re-querying the index per file.
+    // Take each note's `#note(...)` `tags:` list with its path, so it can be
+    // rewritten without querying the index again.
     let targets: Vec<(PathBuf, Vec<String>)> = {
         let index = session.property_index.read().await;
         index
@@ -391,10 +373,9 @@ pub async fn rename_tag(
         }
     }
 
-    // .collection files: best-effort literal replacement of the tag name
-    // inside quoted strings. Filter expressions like
-    // `file.tags.contains("rust")` will be updated; bare references
-    // won't, because they'd be indistinguishable from property keys.
+    // `.collection` files: replace the tag name inside quoted strings, so
+    // `file.tags.contains("rust")` is updated. Unquoted names aren't, since
+    // they can't be told from property keys.
     rewrite_collection_files(&session, |text| {
         Some(replace_quoted(text, &old_tag, &new_tag)).filter(|out| out != text)
     })
@@ -403,10 +384,8 @@ pub async fn rename_tag(
     Ok(())
 }
 
-// Deleting a tag globally is intentionally not offered: tags carry less
-// structure than property keys and a notebox-wide strip is easy to
-// trigger by accident and hard to undo. Renaming is the only global tag
-// operation. (Per-note tag edits happen in the editor.)
+// There is no notebox-wide tag delete: it would be easy to trigger by
+// accident and hard to undo. Tags can be renamed globally and edited per note.
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -414,9 +393,8 @@ fn sanitize_tag(s: &str) -> String {
     s.trim().trim_start_matches('#').to_string()
 }
 
-/// Extract the string members of a `#note(...)` `tags:` property value.
-/// A bare string counts as a one-element list, mirroring `lib.typ`'s
-/// coercion of `tags: "x"` to `("x",)`. Non-string members are dropped.
+/// The string members of a `tags:` value. A bare string is a one-element list,
+/// as in `lib.typ`; other values are dropped.
 fn tags_property_list(value: &PropertyValue) -> Vec<String> {
     match value {
         PropertyValue::String(s) if !s.is_empty() => vec![s.clone()],
@@ -431,10 +409,9 @@ fn tags_property_list(value: &PropertyValue) -> Vec<String> {
     }
 }
 
-/// Rename `old` → `new` inside a note's `tags:` array, de-duplicating when
-/// the new name already appears, and write it back through the
-/// whitespace-preserving note rewriter. Returns the content unchanged when
-/// `current` doesn't carry `old`.
+/// Rename `old` to `new` in a note's `tags:` array (without duplicating `new`),
+/// through the whitespace-preserving rewriter. Unchanged if `current` lacks
+/// `old`.
 fn apply_tags_property_rename(content: &str, current: &[String], old: &str, new: &str) -> String {
     if !current.iter().any(|t| t == old) {
         return content.to_string();
@@ -449,9 +426,8 @@ fn apply_tags_property_rename(content: &str, current: &[String], old: &str, new:
     note_rewriter::update_note_property(content, "tags", &PropertyValue::List(new_list))
 }
 
-/// Replace literal occurrences of `needle` *inside* single- or
-/// double-quoted strings. Used for tag rename inside .collection filter
-/// expressions like `file.tags.contains("rust")`.
+/// Replace `needle` only inside quoted strings, for tag renames in
+/// `.collection` filters like `file.tags.contains("rust")`.
 fn replace_quoted(text: &str, needle: &str, replacement: &str) -> String {
     let escaped = regex::escape(needle);
     let patterns = [format!("\"{}\"", escaped), format!("'{}'", escaped)];

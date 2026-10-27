@@ -15,9 +15,8 @@ import { compareName } from "../../lib/sort";
 import { t, tPlural } from "../../lib/i18n";
 import { showContextMenu, type ContextMenuEntry } from "../../lib/context-menu";
 
-// Lucide grip glyphs for the reorder handles — crisper and less fragile than
-// hand-laid dot grids. `grip-horizontal` suits the wide/short column handle,
-// `grip-vertical` the narrow/tall row handle. (static-only: lucide grip-*)
+// Lucide grip icons for the reorder handles: `grip-horizontal` for columns,
+// `grip-vertical` for rows. (static-only: lucide grip-*)
 const GRIP_HORIZONTAL =
   '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="9" r="1.5"/><circle cx="12" cy="9" r="1.5"/><circle cx="19" cy="9" r="1.5"/><circle cx="5" cy="15" r="1.5"/><circle cx="12" cy="15" r="1.5"/><circle cx="19" cy="15" r="1.5"/></svg>';
 /** The corner handle: a small square standing for the whole table. */
@@ -26,9 +25,11 @@ const CORNER_SQUARE =
 const GRIP_VERTICAL =
   '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="5" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="5" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="15" cy="19" r="1.5"/></svg>';
 
-/** CSS absolute/relative length units that both Typst and CSS understand, so
- *  an explicit column width / row height can be applied to the preview DOM
- *  verbatim. `fr` and `auto` are content-driven and left to natural layout. */
+/**
+ * Length units both Typst and CSS understand, so an explicit column width or
+ * row height can be applied to the preview as is. `fr` and `auto` are left to
+ * the layout.
+ */
 const CSS_SHARED_LENGTH = /^\d+(?:\.\d+)?(pt|mm|cm|in|em|%|px)$/;
 function asCssLength(size: string): string | null {
   return CSS_SHARED_LENGTH.test(size.trim()) ? size.trim() : null;
@@ -41,13 +42,9 @@ function pxToTypstPt(px: number): string {
 }
 
 /**
- * Take focus without the browser scrolling the note under the reader.
- *
- * A plain `focus()` scrolls the focused element into view, which for a table
- * taller than a line means the whole note jumps to put the table at the top
- * of the editor — every time a cell is clicked or the table is entered with
- * the arrow keys. Anything that genuinely needs its target on screen asks for
- * it with `revealCell`.
+ * Focus without scrolling. A plain `focus()` would jump a tall table to the top
+ * of the editor on every click or arrow-key entry. Use `revealCell` to bring a
+ * cell into view.
  */
 function focusQuietly(el: HTMLElement) {
   el.focus({ preventScroll: true });
@@ -65,12 +62,10 @@ export interface ScrollRequest {
 type ScrollAlignment = "nearest" | "start" | "end" | "center";
 
 /**
- * Scroll a cell into view the way the note editor scrolls its own caret:
- * placed as `request` asks (nearest edge unless told otherwise, so a cell
- * already on screen stays put), and kept clear of the editor's scroll
- * margins — the breathing room it holds under the caret — plus any margin
- * the request itself carries. The margins ride on the cell as a temporary
- * `scroll-margin`, which the browser's own scrolling honours.
+ * Scroll a cell into view as the editor scrolls its caret: by `request`
+ * (nearest edge by default, so a visible cell stays put), clear of the editor's
+ * scroll margins and the request's own. The margins are applied as a temporary
+ * `scroll-margin`.
  */
 export function revealCell(view: EditorView, cell: HTMLElement | null, request?: ScrollRequest) {
   if (!cell) return;
@@ -99,9 +94,7 @@ type DomWithObserver = HTMLElement & { __cmTableResizeObserver?: ResizeObserver 
 
 const EMPTY_CELL: TableCell = { content: "", relFrom: 0, relTo: 0 };
 
-/** Element-wise equality for the nullable string arrays in `TableData`
- *  (`columns`, `align`, `rowSizes`). Two nulls are equal; a null and a
- *  present array are not. */
+/** Equality for the nullable string arrays in `TableData`. */
 function arraysEqual(a: string[] | null, b: string[] | null): boolean {
   if (a == null || b == null) return a == null && b == null;
   if (a.length !== b.length) return false;
@@ -127,13 +120,9 @@ function extraArgsEqual(
 }
 
 /**
- * Cross-rebuild focus target.
- *
- * A structural change (a row added by Tab at the end of the table, say)
- * rewrites the whole table, and the widget is rebuilt: the old DOM is torn
- * down and a fresh `toDOM` runs. The destination cell is recorded here
- * (keyed by the table's start offset) and the rebuilt widget's `toDOM`
- * consumes it, either editing that fresh cell or selecting it.
+ * Focus target that survives a rebuild. A structural change (e.g. Tab adding a
+ * row) rebuilds the widget; the destination cell is stored here, keyed by the
+ * table's start, and the new `toDOM` edits or selects it.
  */
 let pendingCellFocus: { tableFrom: number; row: number; col: number; mode: CellFocusMode } | null = null;
 
@@ -161,10 +150,9 @@ interface CellSlot {
 }
 
 /**
- * Everything that lives with a rendered table. The widget instance that
- * owns the DOM changes on every edit (`updateDOM` adopts the DOM for the new
- * instance), so event handlers reach the current instance through `widget`
- * rather than closing over the one that built the DOM.
+ * State belonging to a rendered table. `updateDOM` hands the DOM to each new
+ * widget instance, so handlers reach the current one through `widget` rather
+ * than the one that built the DOM.
  */
 interface TableDom {
   widget: TableWidget;
@@ -181,15 +169,12 @@ interface TableDom {
 const domStates = new WeakMap<HTMLElement, TableDom>();
 
 /**
- * The tables that currently host a cell editor, by start offset. While a
- * cell is being typed in, its source passes through states the table parser
- * rejects — an opening bracket before its closer, a half-typed call — and
- * the note's decorations would otherwise drop the whole table to raw source
- * mid-keystroke. The decoration builder keeps the widget in place instead
- * (see `TableWidget.unparsed`), over the range recorded here. The range's
- * end is kept as an offset from the end of the document: while a cell is
- * edited every change happens inside the table, so it stays valid even when
- * the syntax tree no longer shows where the call ends.
+ * Tables with an open cell editor, by start offset. While a cell is typed in,
+ * its source can be briefly unparseable, and the table would drop to raw source
+ * mid-keystroke. The decoration builder keeps the widget over the range
+ * recorded here instead (see `TableWidget.unparsed`). The end is stored
+ * relative to the document end, which stays valid because every edit happens
+ * inside the table.
  */
 const editingTables = new Map<number, { fromDocEnd: number }>();
 
@@ -229,10 +214,9 @@ export function activeCellEditors(view: EditorView): CellEditor[] {
 }
 
 /**
- * Refresh the find-panel highlights painted into every rendered table in
- * `view`. A table is one atomic widget, so CodeMirror's own search-match
- * decorations never reach its cells; visual-tables.ts calls this whenever the
- * query, the panel or the selection changes.
+ * Refresh find-panel highlights in every rendered table. A table is one atomic
+ * widget, so CodeMirror's match decorations don't reach its cells;
+ * visual-tables.ts calls this when the query, panel or selection changes.
  */
 export function refreshTableSearchMatches(view: EditorView) {
   for (const wrap of view.dom.querySelectorAll<HTMLElement>(".cm-typst-table-wrap")) {
@@ -242,8 +226,8 @@ export function refreshTableSearchMatches(view: EditorView) {
 }
 
 /**
- * The painted table cell holding the source offset `pos`, in whichever table
- * of `view` it falls in. Null when `pos` is not inside a rendered cell.
+ * The rendered cell holding source offset `pos`, in any table of `view`, or
+ * null.
  */
 export function tableCellDomAt(view: EditorView, pos: number): HTMLElement | null {
   for (const wrap of view.dom.querySelectorAll<HTMLElement>(".cm-typst-table-wrap")) {
@@ -270,10 +254,9 @@ export function closeCellEditors(view: EditorView) {
 }
 
 /**
- * Forward a keyboard shortcut to the CM6 editor by refocusing it and
- * re-dispatching a synthetic KeyboardEvent. This is necessary because
- * CM6's `ignoreEvent` returns true for keydown inside widgets, so
- * modifier combos (Ctrl-Z, Ctrl-Y) never reach CM6's keymap.
+ * Forward a shortcut to CM6 by refocusing it and re-dispatching the key. CM6
+ * ignores keydown inside widgets, so Ctrl-Z and Ctrl-Y would never reach its
+ * keymap.
  */
 function forwardToEditor(view: EditorView, e: KeyboardEvent) {
   view.focus();
@@ -290,9 +273,10 @@ function forwardToEditor(view: EditorView, e: KeyboardEvent) {
 }
 
 export class TableWidget extends WidgetType {
-  /** True for a placeholder standing in for a table whose source does not
-   *  parse at this instant (see `unparsed`). `data` is then empty until
-   *  `updateDOM` adopts the last good data. */
+  /**
+   * True for a stand-in for a table whose source doesn't parse right now (see
+   * `unparsed`). `data` is empty until `updateDOM` adopts the last good data.
+   */
   readonly unparsed: boolean;
 
   constructor(
@@ -305,9 +289,10 @@ export class TableWidget extends WidgetType {
     this.unparsed = unparsed;
   }
 
-  /** A stand-in for a table being edited whose source is momentarily
-   *  unparseable. It keeps the existing DOM — and the cell editor in it —
-   *  alive; the next parseable state repaints as usual. */
+  /**
+   * A stand-in for a table being edited whose source is briefly unparseable.
+   * Keeps the DOM and its cell editor alive until the next parseable state.
+   */
   static unparsed(from: number, to: number): TableWidget {
     return new TableWidget(EMPTY_TABLE, from, to, true);
   }
@@ -321,17 +306,14 @@ export class TableWidget extends WidgetType {
   eq(other: TableWidget) {
     if (this.unparsed || other.unparsed) return false;
     if (this.from !== other.from || this.to !== other.to) return false;
-    // Compare column widths element-wise, not just the count — a drag-resize
-    // that changes `columns: (1fr, 2fr)` → `(1fr, 3fr)` keeps the same length
-    // but must rebuild the widget, otherwise the new sizing never renders
-    // until an unrelated edit forces a rebuild (stale-render bug).
+    // Compare widths element by element; a resize changes them without changing
+    // the count.
     if (!arraysEqual(this.data.columns, other.data.columns)) return false;
     // Likewise for explicit row heights (`rows:` drag-resize).
     if (!arraysEqual(this.data.rowSizes, other.data.rowSizes)) return false;
     if (!arraysEqual(this.data.align, other.data.align)) return false;
-    // Preserved styling args don't change the widget DOM, but they DO ride
-    // through `replaceTable` on a cell edit — so a reused stale instance would
-    // re-emit old styling over an external source change. Rebuild if they differ.
+    // Styling arguments don't affect the DOM but are written back by
+    // `replaceTable`, so a stale instance would restore old styling.
     if (!extraArgsEqual(this.data.extraArgs, other.data.extraArgs)) return false;
     const thisRows = this.getAllRows();
     const otherRows = other.getAllRows();
@@ -345,10 +327,9 @@ export class TableWidget extends WidgetType {
   }
 
   /**
-   * Adopt the existing DOM for this (newer) instance when the table's shape
-   * is unchanged: cells whose content changed are repainted, the open cell
-   * editor is re-anchored, and the DOM — cell editor included — survives.
-   * A change of shape (rows, columns, header, sizing, styling) rebuilds.
+   * Reuse the existing DOM when the table's shape is unchanged: repaint changed
+   * cells and re-anchor the cell editor. A change of rows, columns, header,
+   * sizing or styling rebuilds.
    */
   updateDOM(dom: HTMLElement, view: EditorView): boolean {
     const st = domStates.get(dom);
@@ -425,11 +406,9 @@ export class TableWidget extends WidgetType {
     const table = document.createElement("table");
     table.className = "cm-typst-table";
 
-    // ── Column-width carrier ──
-    // A <colgroup> lets explicit column widths (the `columns:` lengths the
-    // user sets by dragging) drive the preview without per-cell styling.
-    // The first <col> spans the row-handle gutter; the rest map 1:1 to data
-    // columns. `auto`/`fr` columns are left content-driven.
+    // A <colgroup> applies explicit column widths. The first <col> is the
+    // row-handle gutter; the rest map to columns. `auto` and `fr` columns fit
+    // their content.
     const colgroup = document.createElement("colgroup");
     const gutterCol = document.createElement("col");
     gutterCol.className = "cm-table-gutter-col";
@@ -447,8 +426,7 @@ export class TableWidget extends WidgetType {
     controlRow.className = "cm-table-control-row";
 
     // The corner stands for the whole table: click selects every cell,
-    // right-click opens the table menu — the same click/right-click split
-    // the row and column handles have.
+    // right-click opens the table menu.
     const cornerCell = document.createElement("td");
     cornerCell.className = "cm-table-corner-cell";
     const corner = document.createElement("div");
@@ -598,10 +576,9 @@ export class TableWidget extends WidgetType {
     st.editorCell = null;
     if (!editor || !at) return;
     editingTables.delete(st.widget.from);
-    // A rebuild while a cell was being edited (an undo that removed a row,
-    // a menu action) would otherwise leave nothing focused. Unless the
-    // trigger already chose a destination, land on the same cell — or the
-    // nearest one still there — in navigation mode.
+    // After a rebuild during editing (an undo, a menu action), land on the same
+    // or nearest cell in navigation mode, unless a destination was already
+    // chosen.
     if (!pendingCellFocus) pendingCellFocus = { tableFrom: st.widget.from, row: at.row, col: at.col, mode: "select" };
     // The rebuild may have been triggered from inside the cell editor's own
     // key handler; let that unwind before the editor goes away.
@@ -619,14 +596,11 @@ export class TableWidget extends WidgetType {
   // ────────────────────────────────────────────────────────
 
   /**
-   * Build the draggable column boundaries that let the user set a column's
-   * width. Handles live in an overlay pinned over the table; a
-   * ResizeObserver keeps them aligned as the table reflows. Columns are
-   * content-fit (`auto`) by default — dragging writes an explicit length
-   * into the `columns:` argument, and double-clicking a handle clears the
-   * override back to `auto`. Row heights are left to the content: Typst
-   * treats a length in `rows:` as an exact track size, so a height chosen
-   * against the editor's fonts would clip or overflow in the compiled note.
+   * Draggable column boundaries for setting widths, in an overlay kept aligned
+   * by a ResizeObserver. Columns fit content (`auto`) by default; dragging
+   * writes a length into `columns:` and double-clicking resets it. Row heights
+   * aren't resizable: Typst treats a `rows:` length as exact, so a height
+   * chosen with the editor's fonts would clip in the output.
    */
   private setupResize(st: TableDom, table: HTMLTableElement, colCount: number) {
     const { wrap } = st;
@@ -821,9 +795,9 @@ export class TableWidget extends WidgetType {
   // ────────────────────────────────────────────────────────
 
   /**
-   * Source range of the content inside the cell's brackets. Resolving the
-   * table's live position scans the note's decorations, so anything that
-   * visits every cell resolves it once and passes it in as `tableFrom`.
+   * Source range of the cell's content. Finding the table's position scans the
+   * decorations, so callers visiting every cell resolve it once and pass
+   * `tableFrom`.
    */
   private cellRange(
     st: TableDom,
@@ -856,10 +830,7 @@ export class TableWidget extends WidgetType {
     );
   }
 
-  /**
-   * Repaint the cells whose find-panel matches have changed. The cell being
-   * edited is left alone: its own editor owns what is drawn there.
-   */
+  /** Repaint cells whose find matches changed, except the one being edited. */
   repaintSearchMatches(st: TableDom) {
     const rows = this.getAllRows();
     const tableFrom = this.liveRange(st.view).from;
@@ -876,10 +847,8 @@ export class TableWidget extends WidgetType {
   }
 
   /**
-   * The painted cell whose source holds `pos`, or null when `pos` falls in the
-   * table's own markup rather than a cell. `tableFrom` is the table's start
-   * offset, which the caller reads from the DOM — cheap enough to do on every
-   * scroll request, unlike resolving the widget's live range.
+   * The rendered cell whose source holds `pos`, or null for the table's own
+   * markup. `tableFrom` is read from the DOM by the caller.
    */
   cellDivAt(st: TableDom, tableFrom: number, pos: number): HTMLElement | null {
     const rows = this.getAllRows();
@@ -896,8 +865,8 @@ export class TableWidget extends WidgetType {
 
   /**
    * Open the cell editor in a cell. `caret` places the caret; `replaceWith`
-   * types over the whole content, as typing on a selected cell does. Without
-   * an editor config the cell is selected instead.
+   * replaces the content, as typing on a selected cell does. Without an editor
+   * config the cell is selected instead.
    */
   private activateCell(st: TableDom, row: number, col: number, caret: "end" | "all" | number, replaceWith?: string) {
     const config = st.view.state.facet(cellEditorConfig);
@@ -931,10 +900,8 @@ export class TableWidget extends WidgetType {
 
   /**
    * Move the note's own caret to the end of the table unless it is already
-   * at the table. The note's editor keeps a caret of its own while a cell
-   * is edited, and undo and redo scroll that caret into view — left where
-   * it was before the click, often the top of the note, an undo inside a
-   * cell would jump the page there.
+   * there. Undo scrolls that caret into view, so if it stayed where it was
+   * (often the top of the note), an undo in a cell would jump the page.
    */
   private parkNoteCaret(st: TableDom) {
     const { from, to } = this.liveRange(st.view);
@@ -1019,10 +986,8 @@ export class TableWidget extends WidgetType {
   }
 
   /**
-   * Move the keyboard selection to the cell at (`row`, `col`). `extend` keeps
-   * the anchor and selects the block between it and the new head, as
-   * Shift+Arrow does; otherwise the cell becomes the whole selection. The
-   * new head is scrolled into view either way.
+   * Move the keyboard selection to (`row`, `col`), extending from the anchor
+   * with `extend` (Shift+Arrow). The new cell is scrolled into view.
    */
   private selectCellFromKeyboard(st: TableDom, row: number, col: number, extend: boolean) {
     const { wrap, nav } = st;
@@ -1057,9 +1022,8 @@ export class TableWidget extends WidgetType {
   }
 
   /**
-   * Append a fresh row and edit its first cell — Tab or Enter ran off the
-   * end of the table. The rewrite rebuilds the widget; `pendingCellFocus`
-   * carries the destination across.
+   * Tab or Enter past the last cell: append a row and edit its first cell.
+   * `pendingCellFocus` carries the destination across the rebuild.
    */
   private appendRowAndEdit(st: TableDom) {
     const allRows = this.getAllRows();
@@ -1101,9 +1065,8 @@ export class TableWidget extends WidgetType {
       if (st.editorCell && cell === getCellAt(wrap, st.editorCell.row, st.editorCell.col)) return;
 
       if (e.button === 2) {
-        // Right-click: keep focus where it is so the browser does not start
-        // editing the cell (which would drop the selection the menu acts on).
-        // An unselected cell becomes the selection, as in a spreadsheet.
+        // Keep focus so the browser doesn't start editing the cell. An
+        // unselected cell becomes the selection.
         e.preventDefault();
         if (!cell.classList.contains("cm-typst-table-cell--selected")) {
           clearCellSelection(wrap);
@@ -1152,12 +1115,9 @@ export class TableWidget extends WidgetType {
       nav.headCol = col;
     });
 
-    // Focus moving to the note body (or anywhere else outside the table)
-    // ends editing and drops the selection highlight, which would otherwise
-    // linger as a stale selection. A context menu opened on the selection
-    // still needs it, so focus going there keeps everything. Focus going
-    // nowhere in particular (a click on a popup that takes no focus) is not
-    // a departure.
+    // Focus leaving the table ends editing and clears the selection, except
+    // when it goes to a context menu opened on the selection, or nowhere (a
+    // click on a popup that takes no focus).
     wrap.addEventListener("focusout", (e) => {
       const next = e.relatedTarget;
       if (!(next instanceof Element)) return;
@@ -1195,9 +1155,8 @@ export class TableWidget extends WidgetType {
   private setupTableNavigation(st: TableDom) {
     const { wrap, nav } = st;
     wrap.addEventListener("keydown", (e) => {
-      // A key handled by the cell editor still bubbles up here, and may have
-      // moved focus onto the wrapper on its way (Escape does): it is not a
-      // navigation-mode key.
+      // Keys from the cell editor bubble here (Escape may already have moved
+      // focus to the wrapper); ignore them.
       if (e.target instanceof Element && e.target.closest(".cm-typst-cell-editor")) return;
       if (document.activeElement !== wrap) return;
       const view = st.view;
@@ -1205,9 +1164,8 @@ export class TableWidget extends WidgetType {
       const selected = wrap.querySelector<HTMLElement>(".cm-typst-table-cell--selected");
       const selectedAt = selected ? this.cellPosition(wrap, selected) : null;
 
-      // A selection made by Tab or by entering the table from the note body
-      // does not pass through this handler, so re-anchor the keyboard cursor
-      // on it before moving.
+      // A selection from Tab or from entering the table doesn't pass through
+      // here, so re-anchor the keyboard cursor first.
       if (selected) {
         const headCell = getCellAt(wrap, nav.headRow, nav.headCol);
         if (!headCell?.classList.contains("cm-typst-table-cell--selected")) {
@@ -1248,9 +1206,8 @@ export class TableWidget extends WidgetType {
         return;
       }
 
-      // Home / End: the first / last cell of the current row, as in a
-      // spreadsheet. Left to the browser, these keys scroll the page and take
-      // focus off the table, so they are always claimed.
+      // Home / End go to the first / last cell of the row. Otherwise the
+      // browser would scroll the page and take focus off the table.
       if (e.key === "Home" || e.key === "End") {
         e.preventDefault();
         e.stopPropagation();
@@ -1375,10 +1332,9 @@ export class TableWidget extends WidgetType {
   // ────────────────────────────────────────────────────────
 
   /**
-   * Paste a grid over the cells starting at the selection anchor, growing the
-   * table downward if needed. Copy and paste events never reach the table
-   * wrapper in navigation mode (the DOM selection stays in the note body), so
-   * the editor-level handler in `visual-tables.ts` routes them here.
+   * Paste a grid over the cells from the selection anchor, adding rows if
+   * needed. In navigation mode copy and paste events don't reach the table, so
+   * `visual-tables.ts` routes them here.
    */
   pasteAtSelection(view: EditorView, wrap: HTMLElement, grid: string[][]) {
     const anchor = getSelectionAnchor(wrap);
@@ -1634,12 +1590,10 @@ export class TableWidget extends WidgetType {
   }
 
   /**
-   * The table's current source range. Edits elsewhere in the note move the
-   * decoration that carries this widget, but not the offsets captured when it
-   * was built, so anything that writes back to the source resolves the range
-   * here first. Falls back to the construction offsets when the widget is not
-   * in the decoration set (a fresh, equal widget replaced it at the same
-   * place).
+   * The table's current source range. Edits elsewhere move the decoration but
+   * not the offsets captured at build time, so resolve this before writing
+   * back. Falls back to the build offsets when the widget isn't in the
+   * decoration set.
    */
   private liveRange(view: EditorView): { from: number; to: number } {
     for (const set of view.state.facet(EditorView.decorations)) {
@@ -1841,9 +1795,10 @@ export class TableWidget extends WidgetType {
     this.replaceTable(view, { ...this.data, rows: sorted });
   }
 
-  /** Make the first row the header, or demote the header to a body row.
-   *  Logical row order is unchanged either way, so explicit row heights stay
-   *  aligned. */
+  /**
+   * Make the first row the header, or the header a body row. Row order is
+   * unchanged, so row heights stay aligned.
+   */
   private toggleHeaderRow(view: EditorView) {
     if (this.data.header) {
       this.replaceTable(view, {
@@ -1862,9 +1817,10 @@ export class TableWidget extends WidgetType {
 // Helpers
 // ────────────────────────────────────────────────────────
 
-/** The widget rendered as `wrap`, resolved through the decoration set so the
- *  instance is the one the editor currently holds. Null if `wrap` is not
- *  mounted in `view`. */
+/**
+ * The widget currently rendered as `wrap`, from the decoration set, or null if
+ * it isn't mounted.
+ */
 export function tableWidgetAt(view: EditorView, wrap: HTMLElement): TableWidget | null {
   let pos: number;
   try {
@@ -1887,13 +1843,9 @@ export function tableWidgetAt(view: EditorView, wrap: HTMLElement): TableWidget 
 }
 
 /**
- * Enter a rendered table from the note body: select the cell on the edge the
- * caret arrived from and hand the table keyboard focus, in navigation mode.
- * Returns false when the table has no cells to land on, so the caller can let
- * ordinary cursor motion carry on.
- *
- * The note itself does not move; only the cell being landed on is brought
- * into view, and only if it isn't already.
+ * Enter a table from the note: select the cell on the side the caret came from
+ * and focus the table in navigation mode. Returns false if there are no cells.
+ * Only that cell is scrolled into view, if needed.
  */
 export function focusTableEdge(view: EditorView, wrap: HTMLElement, edge: "first" | "last"): boolean {
   const cells = wrap.querySelectorAll<HTMLElement>(".cm-typst-table-cell");

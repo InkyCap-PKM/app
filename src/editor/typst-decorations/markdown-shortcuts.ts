@@ -1,18 +1,14 @@
-// Markdown-style typing shortcuts that expand into Typst function calls.
-// These are typing conveniences only — the underlying source is always Typst.
+// Markdown-style typing shortcuts that expand into Typst calls; the source is
+// always Typst.
 //
 //   "> "           at line start  →  #quote(block: true)[<cursor>]
 //   "+++"          alone on a line →  #line(length: 100%)
 //   "++<text>++"   inline          →  #footnote[<text>]
 //   "- [ ] " / "- [x] " at line start → - #task("<cursor>") (done: true when x)
 //
-// The pattern follows the same philosophy as the [[wikilink]] shortcut:
-// trigger sequences map to function calls that have no native Typst markup.
-// Direct-formatting markup (*, _, =, -, +, $) is NOT aliased — those round-
-// trip through the visual editor as Typst-native syntax.
-//
-// Triggers fire only on the exact keystroke that completes the pattern, so
-// partially-typed prefixes never cause surprise expansions.
+// Like `[[wikilink]]`, these map to calls that have no Typst markup. Typst's
+// own markup (*, _, =, -, +, $) isn't aliased. Each fires only on the keystroke
+// completing its pattern.
 
 import { EditorView } from "@codemirror/view";
 import type { ChangeSpec, Extension } from "@codemirror/state";
@@ -25,16 +21,11 @@ function handleSpace(view: EditorView, from: number): boolean {
   const line = view.state.doc.lineAt(from);
   const beforeCursor = view.state.doc.sliceString(line.from, from);
 
-  // Markdown task checkbox → a bulleted task. The just-typed space starts the
-  // body, so the line so far is the bare `- [ ]` / `- [x]` marker (indentation
-  // and marker character kept). `x`/`X` inside the box maps to `done: true`;
-  // the caret lands inside the body string so the user types the task text next.
-  //
-  // The list marker is preserved so the result is `- #task("")`, i.e. a task
-  // that is itself a list item. This matches the outliner workflow (issue #24):
-  // tasks nest and fold with the surrounding list instead of becoming standalone
-  // lines that break the list structure. The marker the user typed (`-` or `+`)
-  // is carried through so ordered/unordered intent is respected.
+  // A Markdown task box becomes a task in a list item: the typed space starts
+  // the body, so the line is the bare `- [ ]` / `- [x]` (indent and marker
+  // kept), `x` means `done: true`, and the caret goes inside the string. Keeping
+  // the marker (`- #task("")`) lets tasks nest and fold with the list (issue
+  // #24).
   const task = beforeCursor.match(/^(\s*)([-+]) \[([ xX]?)\]$/);
   if (task) {
     const indent = task[1];
@@ -46,15 +37,10 @@ function handleSpace(view: EditorView, from: number): boolean {
     const insert = indent + markerPrefix + call;
     // The `#` of the inserted call sits just after the indentation and marker.
     const funcFrom = line.from + indent.length + markerPrefix.length;
-    // Keep the fresh call expanded on the cursor line, exactly like the `>`
-    // quote branch below. Without this, the visual plugin collapses `#task(…)`
-    // into its checkbox widget the instant the call is complete — the caret
-    // placed between the quotes then has no live text to sit in, so the task
-    // description the user keeps typing lands *after* the widget
-    // (`#task("")Task text` instead of `#task("Task text")`). expandFunc reveals
-    // the raw source while the cursor stays on the line, so typing flows into
-    // the string; moving away collapses it back to the widget. The pill menu
-    // (right-click / click) remains available for done/due/label. See issue #23.
+    // Keep the new call expanded on the cursor line, as for `>`. Otherwise the
+    // visual plugin turns `#task(…)` into its checkbox immediately and the text
+    // typed next lands after the widget (`#task("")Task text`). Moving away
+    // collapses it; the pill menu still offers done, due and label (issue #23).
     dispatchVisible(view, {
       changes: { from: line.from, to: from, insert } as ChangeSpec,
       selection: { anchor: funcFrom + '#task("'.length },
@@ -65,23 +51,15 @@ function handleSpace(view: EditorView, from: number): boolean {
 
   if (beforeCursor !== ">") return false;
 
-  // Any text already on the line (to the right of the `>`) is the intended
-  // quote body — wrap it inside the brackets rather than stranding an empty
-  // `[]` before it. On a blank line `rest` is empty and this collapses to the
-  // old `#quote(block: true)[]` with the caret between the brackets.
+  // Text already after the `>` becomes the quote body.
   const rest = view.state.doc.sliceString(from, line.to);
   const prefix = "#quote(block: true)[";
   const insert = `${prefix}${rest}]`;
 
-  // The cursor lands at the start of the body (just after `[`) so the user can
-  // keep typing before any wrapped text.
-  // Without expandFunc, the visual plugin collapses #quote[…] into a pill that
-  // replaces the whole call — the cursor then snaps to the pill's left edge
-  // and subsequent keystrokes appear in reverse order. expandFunc keeps the
-  // call expanded as long as the cursor is on this line.
-  // Markdown's `>` is semantically a blockquote — map to the form that
-  // actually renders attribution and gets block styling. The pill's
-  // Inline option lets the user demote to `#quote[…]` after the fact.
+  // The caret goes at the start of the body. expandFunc keeps the call expanded
+  // while the cursor is on the line; otherwise the quote collapses into a pill
+  // and typing comes out reversed. `>` is a block quote in Markdown, so the
+  // block form is used; the pill can switch it to inline.
   dispatchVisible(view, {
     changes: { from: line.from, to: line.to, insert } as ChangeSpec,
     selection: { anchor: line.from + prefix.length },
@@ -131,21 +109,9 @@ function handlePlus(view: EditorView, from: number): boolean {
   return true;
 }
 
-// The CriticMarkup typing shortcuts were all removed. The highlight run
-// (`{==…==}` → #highlight) could never fire — `{` is auto-paired by
-// closeBrackets, so the closing `}` is typed over rather than inserted and the
-// input handler never saw it. The suggestion/annotation runs ({++…++}, {--…--},
-// {~~…~~}, {>>…<<}) were dropped earlier for being unfriendly to author by
-// hand. All of these primitives (`#highlight`, `#annotation`, `#suggestion`)
-// remain available via the `/` slash menu, the command palette, and the
-// Annotations pane — only the delimiter-run typing shortcuts are gone.
-
-// Lists form the same way as in markdown editors: the writer types the marker
-// (`-`, `+`, or `N.`) followed by a space themselves. Typst's parser then
-// recognizes `- `/`+ `/`N. ` as a list item and the visual layer renders the
-// bullet or number — no marker character is treated specially on its own. Once
-// a list has started, pressing Enter continues it with a fresh marker (see
-// `continueList` in keymaps.ts), matching the Obsidian-style flow.
+// Lists form as in Markdown editors: the writer types the marker (`-`, `+`,
+// `N.`) and a space, Typst parses it as a list item, and the visual layer draws
+// the bullet. Enter then continues the list (see `continueList` in keymaps.ts).
 
 export const markdownShortcuts: Extension = EditorView.inputHandler.of(
   (view, from, to, text) => {

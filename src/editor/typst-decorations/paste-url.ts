@@ -10,7 +10,7 @@
 // `#link("…")` call instead, which Typst accepts for every scheme. A `mailto:`
 // address is too: it has no `//`, but its `@` would be read as a reference.
 // A bare email address becomes a `mailto:` link for the same reason; its
-// plain-text form is the escaped `joshua\@phydeau.org`.
+// plain-text form is the escaped `athena\@inkycap.org`.
 
 import { EditorView } from "@codemirror/view";
 import { positionPopupAtAnchor } from "./popup-position";

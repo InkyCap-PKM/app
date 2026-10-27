@@ -1,6 +1,6 @@
-// Shared building blocks for the settings panel: reusable field widgets
-// (toggle/number/text/path/select), the scope-badge label, the accent and
-// date-format composite rows, and small helpers used across multiple tabs.
+// Shared parts of the settings panel: field widgets (toggle, number, text,
+// path, select), the scope badge label, the accent and date-format rows, and
+// helpers used by several tabs.
 import { JSX, Show, For, createSignal, createResource } from "solid-js";
 import { settings, updateSetting } from "../../stores/settings";
 import { setAccentColor, setAccentSource } from "../../stores/theme";
@@ -13,10 +13,11 @@ import { Dropdown } from "../Dropdown";
 import HelpButton from "../HelpButton";
 import { type TargetOption as MappingTargetOption } from "../PropertyMappingDialog";
 
-/** Build the InkyCap properties offered as mapping targets in the import
- *  dialog: the union of system properties and every existing notebox
- *  property (excluding internal `file.*` keys), each with its declared type
- *  and whether it is a type-locked system property. */
+/**
+ * The properties offered as mapping targets in the import dialog: the system
+ * properties and every existing notebox property (except internal `file.*`
+ * keys), each with its type and whether it is a fixed-type system property.
+ */
 export async function loadMappingTargets(): Promise<MappingTargetOption[]> {
   const [types, allKeys, systemKeys] = await Promise.all([
     ipc.getPropertyTypes(),
@@ -92,14 +93,16 @@ export function citationStyleOptions(t: (key: string) => string): { value: strin
 
 // --- Reusable Setting Widgets ---
 
-/** Scope of a setting field. When "notebox", a small "this notebox" badge
- *  renders next to the label so users can see at a glance that the
- *  setting is scoped to the current notebox rather than user-global. */
+/**
+ * Scope of a setting. With "notebox", a "this notebox" badge next to the label
+ * shows that it applies only to the current notebox.
+ */
 export type SettingScope = "user" | "notebox";
 
-/** Inline label render: the field's display name plus an optional
- *  scope badge. All setting helpers go through this so the badge
- *  placement and styling stay consistent. */
+/**
+ * A setting's label with its optional scope badge. Every setting uses this, so
+ * the badge looks the same everywhere.
+ */
 export function SettingLabel(props: {
   label: string;
   scope?: SettingScope;
@@ -293,9 +296,9 @@ export function SettingPathText(props: {
           <div
             class="settings__path-dropdown"
             classList={{ "is-flipped": flipUp() }}
-            /* Keep the input focused when the dropdown itself is clicked —
-               notably its scrollbar, which is not a focusable element and
-               would otherwise blur the input and dismiss the dropdown. */
+            /* Keep focus in the input when the dropdown is clicked,
+               including its scrollbar, which would otherwise blur the input
+               and close the dropdown. */
             onMouseDown={(e) => e.preventDefault()}
           >
             <For each={filtered()}>
@@ -347,11 +350,9 @@ export function SettingSelect(props: {
 }
 
 /**
- * Date-format row mirroring the Zettelkasten ID pattern row: a text input
- * for the pattern, the same token-cheatsheet description, and a live
- * preview of today's date so the user can see the effect before applying.
- * The setting flows through `lib/dates.ts` to every UI date display
- * (Agenda, backup archive list, last-backup indicator).
+ * Date format row, like the Zettelkasten ID pattern row: a pattern field, the
+ * token list, and a preview of today's date. The setting applies to every date
+ * shown (through `lib/dates.ts`).
  */
 export function DateFormatSettingRow() {
   const t = useI18n();
@@ -379,13 +380,12 @@ export function DateFormatSettingRow() {
 }
 
 /**
- * Composite control for the accent color: a tri-state segmented switch
- * (Default / Custom / Match OS) plus, when "Custom" is selected, the
- * `<ColorPicker>` for choosing the actual hex value.
+ * Accent colour control: a Default / Custom / Match OS switch and, for Custom,
+ * a `<ColorPicker>`.
  *
- * "Match OS" availability is probed once at mount via `getOsAccentColor()`.
- * If the platform/DE doesn't expose an accent (typically a non-GNOME-47 /
- * non-KDE Linux desktop), the segment is disabled with a hint.
+ * Whether the OS has an accent colour is checked once with
+ * `getOsAccentColor()`; if it hasn't (common on Linux desktops other than
+ * recent GNOME and KDE), "Match OS" is disabled with a hint.
  */
 export function AccentSettingRow() {
   const t = useI18n();
@@ -437,9 +437,8 @@ export function AccentSettingRow() {
           type="button"
           role="radio"
           aria-checked={settings.appearance.accent_source === "os"}
-          // Disable until the probe resolves — avoids a brief click window
-          // where the user might pick "Match OS" before we know it's not
-          // supported. While loading, keep it disabled with no hint.
+          // Disabled, without a hint, until the check finishes, so it can't be
+          // picked before its availability is known.
           disabled={!osAvailable()}
           title={osHint()}
           class={

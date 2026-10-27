@@ -1,8 +1,7 @@
-// WCAG 2.1 contrast helpers. Used by the accent color picker to warn the
-// user when their pick fails AA contrast against InkyCap's light or dark
-// background. Math follows the W3C "relative luminance" definition.
-//
-// Reference: https://www.w3.org/TR/WCAG21/#dfn-contrast-ratio
+// WCAG 2.1 contrast helpers, used by the accent colour picker to warn when a
+// colour lacks contrast against InkyCap's light or dark background. Uses the
+// W3C relative luminance formula:
+// https://www.w3.org/TR/WCAG21/#dfn-contrast-ratio
 
 export interface RGB {
   r: number;
@@ -43,9 +42,8 @@ export function contrastRatio(a: RGB, b: RGB): number {
 }
 
 /**
- * Whether `fg` against `bg` clears WCAG AA for normal-size body text (4.5).
- * Inputs are hex strings; malformed inputs return `false` (treated as failing
- * so the warning is shown — better to over-warn than miss a real fail).
+ * Whether `fg` on `bg` meets WCAG AA for normal text (4.5). Takes hex strings;
+ * invalid input returns `false`, so the warning shows.
  */
 export function passesAA(fg: string, bg: string): boolean {
   const f = parseHex(fg);
@@ -55,11 +53,10 @@ export function passesAA(fg: string, bg: string): boolean {
 }
 
 /**
- * Whether two colors clear WCAG SC 1.4.11 "Non-text contrast" (3.0). This is
- * the right bar for UI accent surfaces — buttons, focus rings, badges — where
- * text contrast (4.5) doesn't apply. The accent picker uses this threshold:
- * holding accents to 4.5 against both InkyCap's near-white and near-black
- * backgrounds is mathematically infeasible for any saturated color.
+ * Whether two colours meet WCAG SC 1.4.11 non-text contrast (3.0), the right
+ * level for accent surfaces (buttons, focus rings, badges). The accent picker
+ * uses it, since 4.5 against both near-white and near-black backgrounds is
+ * impossible for any saturated colour.
  */
 export function passesNonTextContrast(fg: string, bg: string): boolean {
   const f = parseHex(fg);

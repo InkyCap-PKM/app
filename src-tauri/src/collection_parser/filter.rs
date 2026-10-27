@@ -355,9 +355,9 @@ pub fn parse_filter_expr(input: &str) -> Result<FilterExpr, InkyCapError> {
     Ok(expr)
 }
 
-/// Parse `input`, returning the parser (holding the note-property references
-/// it found) and the number of leading whitespace chars trimmed before
-/// parsing, or `None` when it doesn't parse.
+/// Parse `input`, returning the parser (with the note-property references it
+/// found) and the number of leading whitespace characters trimmed, or `None` if
+/// it doesn't parse.
 fn note_refs(input: &str) -> Option<(Parser, usize)> {
     let lead = input.len() - input.trim_start().len();
     let mut parser = Parser::new(input.trim());
@@ -367,18 +367,17 @@ fn note_refs(input: &str) -> Option<(Parser, usize)> {
     Some((parser, lead_chars))
 }
 
-/// True when the filter expression refers to note property `key` (as a bare
-/// name or `note["key"]`). `file.*` and `this.file.*` fields and string
-/// values never count. An expression that doesn't parse returns `false`.
+/// True when the expression refers to note property `key` (bare or as
+/// `note["key"]`). `file.*`, `this.file.*` and string values don't count; an
+/// expression that doesn't parse gives `false`.
 pub fn expr_references_property(input: &str, key: &str) -> bool {
     note_refs(input).is_some_and(|(parser, _)| parser.note_refs.iter().any(|r| r.key == key))
 }
 
-/// Rewrite every reference to note property `old` in a filter expression so
-/// it names `new`, leaving everything else (string values, `file.*` fields,
-/// spacing) exactly as written. `new` is written bare when it is a plain
-/// name and as `note["…"]` otherwise. Returns `None` when the expression
-/// doesn't parse or doesn't mention `old`.
+/// Rename references to note property `old` as `new`, leaving everything else
+/// (strings, `file.*` fields, spacing) as written. `new` is written bare if it
+/// is a plain name, else as `note["…"]`. `None` if the expression doesn't parse
+/// or doesn't mention `old`.
 pub fn rename_property_in_expr(input: &str, old: &str, new: &str) -> Option<String> {
     let (parser, lead) = note_refs(input)?;
     let spans: Vec<&NoteRefSpan> = parser.note_refs.iter().filter(|r| r.key == old).collect();
@@ -443,9 +442,9 @@ impl<'a> FilterContext<'a> {
     }
 }
 
-/// `file.links` (notes this note links to) and `file.backlinks` (notes that
-/// link to it), as lists of note names. Returns the field name when `prop` is
-/// one of them.
+/// `file.links` (notes this note links to) and `file.backlinks` (notes linking
+/// to it) as lists of note names. Returns the field name when `prop` is one of
+/// them.
 fn link_list_field(prop: &PropertyRef) -> Option<&str> {
     match prop {
         PropertyRef::File(f) if f == "links" || f == "backlinks" => Some(f.as_str()),
@@ -477,9 +476,8 @@ fn link_list(field: &str, note: &NoteMetadata, ctx: &FilterContext<'_>) -> Prope
     PropertyValue::List(names.into_iter().map(PropertyValue::String).collect())
 }
 
-/// Whether a link field holds `needle`, compared the way wikilinks resolve:
-/// ignoring case, surrounding `[[ ]]`, and any `::heading` suffix. Checks the
-/// link index directly rather than building the name list.
+/// Whether a link field contains `needle`, compared as wikilinks resolve
+/// (ignoring case, `[[ ]]` and any `::heading`), using the link index directly.
 fn link_list_contains(
     field: &str,
     note: &NoteMetadata,
@@ -502,9 +500,8 @@ fn resolve_property(
 ) -> PropertyValue {
     match prop {
         PropertyRef::File(field) => {
-            // `file.tags` resolves from the note's real tag list — the union
-            // of inline `#tag(...)` calls and `#note(tags: ...)` — rather
-            // than from the `file.*` property map, which never carries tags.
+            // `file.tags` comes from the note's actual tags (inline `#tag(...)`
+            // and `#note(tags: ...)`); the `file.*` map has none.
             if field == "links" || field == "backlinks" {
                 return link_list(field, note, ctx);
             }
@@ -553,9 +550,8 @@ fn resolve_property(
     }
 }
 
-/// The value a collection table shows in column `col` for `note`, read the
-/// same way a filter reads it, so `file.tags`, `file.links` and
-/// `file.backlinks` work as columns too.
+/// The value a collection table shows for `col`, read as a filter reads it, so
+/// `file.tags`, `file.links` and `file.backlinks` work as columns.
 pub fn column_value(col: &str, note: &NoteMetadata, ctx: &FilterContext<'_>) -> PropertyValue {
     let prop = match col.strip_prefix("file.") {
         Some(field) => PropertyRef::File(field.to_string()),
@@ -576,17 +572,11 @@ fn value_to_property(val: &Value, note: &NoteMetadata, ctx: &FilterContext<'_>) 
     }
 }
 
-/// Resolve a relative-date token of the form `@today`, `@today+N`, or
-/// `@today-N` (N = whole days) to a concrete `YYYY-MM-DD` string in the
-/// machine's local time zone. Returns `None` for anything that is not such a
-/// token, so ordinary string and date literals pass through untouched.
-///
-/// Date filters store relative bounds symbolically (never baked to a fixed
-/// date) so a saved filter like "due within the next 7 days" keeps meaning
-/// *the next 7 days* every time the collection is opened, rather than freezing
-/// to the day it was created. The frontend's in-memory Agenda matcher resolves
-/// the same tokens (see `resolveRelativeDate` in column-filter.ts) so both
-/// evaluation paths agree on what "today" means.
+/// Resolve `@today`, `@today+N` or `@today-N` (whole days) to `YYYY-MM-DD` in
+/// local time, or `None` for anything else. Saved filters keep relative dates
+/// symbolic, so "the next 7 days" stays relative to each day the collection is
+/// opened. The Agenda's `resolveRelativeDate` (column-filter.ts) resolves the
+/// same tokens.
 fn resolve_relative_date(s: &str) -> Option<String> {
     let rest = s.trim().strip_prefix("@today")?;
     // `@today` → 0; `@today+N` / `@today-N` → ±N. `i64::from_str` accepts the
@@ -606,11 +596,9 @@ fn property_eq(a: &PropertyValue, b: &PropertyValue) -> bool {
         (PropertyValue::Number(a), PropertyValue::Number(b)) => (a - b).abs() < f64::EPSILON,
         (PropertyValue::Bool(a), PropertyValue::Bool(b)) => a == b,
         (PropertyValue::Null, PropertyValue::Null) => true,
-        // A multi-valued property (a list, e.g. `collection`) compared against
-        // a scalar tests membership: `collection == "X"` is true when "X" is
-        // one of the note's collections. Without this, `==` was always false
-        // and `!=` always true for list properties, so a "not equals" filter
-        // on `collection` silently matched every note — the reported bug.
+        // A list property compared with a scalar tests membership: `collection
+        // == "X"` is true when "X" is one of the note's collections, and `!=`
+        // when it isn't.
         (PropertyValue::List(items), scalar) if !matches!(scalar, PropertyValue::List(_)) => {
             items.iter().any(|item| property_eq(item, scalar))
         }
@@ -621,18 +609,13 @@ fn property_eq(a: &PropertyValue, b: &PropertyValue) -> bool {
     }
 }
 
-/// Ordered comparison for the relational operators (`< <= > >=`).
+/// Ordering for `< <= > >=`: numeric when both are numbers (or numeric
+/// strings), otherwise as strings, which orders ISO dates (`YYYY-MM-DD`,
+/// `…THH:MM`) correctly. `Null` or a list has no order and gives `None`, so the
+/// row doesn't match.
 ///
-/// Compares **numerically** when both operands are numbers (or numeric
-/// strings), otherwise **lexically** — which is chronologically correct for
-/// the ISO-8601 dates the date picker emits (`YYYY-MM-DD` and `…THH:MM` both
-/// sort by calendar order as strings). A `Null` operand, or a list, has no
-/// defined ordering and yields `None`, so the comparison fails closed (matching
-/// the convention that a row that can't be evaluated does not match).
-///
-/// Per CLAUDE.md's Typst-first principle: collection membership is resolved in
-/// Rust over `typst query`-extracted metadata, so ordered comparison belongs in
-/// this filter layer rather than in a Typst query.
+/// Per CLAUDE.md's Typst-first principle: membership is computed in Rust over
+/// metadata from `typst query`, so the comparison belongs here.
 fn property_cmp(a: &PropertyValue, b: &PropertyValue) -> Option<std::cmp::Ordering> {
     fn as_f64(v: &PropertyValue) -> Option<f64> {
         match v {
@@ -713,12 +696,10 @@ pub fn evaluate(expr: &FilterExpr, note: &NoteMetadata, ctx: &FilterContext<'_>)
     }
 }
 
-/// Evaluate a single member of a filter list against a note. A member is
-/// either a leaf expression string (`collection.contains("x")`) or a nested
-/// filter group (a YAML mapping with its own `and`/`or`/`not`). Anything that
-/// fails to parse — a malformed expression or an unrecognised shape — counts
-/// as "does not match" so a broken row fails closed in an AND list and is
-/// simply skipped in an OR list, never matching a note by accident.
+/// Evaluate one member of a filter list: an expression string
+/// (`collection.contains("x")`) or a nested group. Anything that doesn't parse
+/// doesn't match, so a broken row fails an AND list and is ignored in an OR
+/// list.
 fn evaluate_filter_member(
     member: &serde_yaml::Value,
     note: &NoteMetadata,
@@ -741,16 +722,11 @@ fn evaluate_filter_member(
     }
 }
 
-/// Evaluate a filter group against a note. Combinators are recursive — any
-/// member of an `and`/`or`/`not` list may itself be a nested group — which is
-/// what lets a collection express arbitrary boolean queries like
-/// `(A or B) and C`.
+/// Evaluate a filter group. Members of `and`/`or`/`not` may be groups
+/// themselves, so a collection can express `(A or B) and C`.
 ///
-/// When more than one combinator is present they are AND-ed together: the
-/// group passes when all `and` members pass, *and* at least one `or` member
-/// passes, *and* no `not` member passes. An absent or empty list is a
-/// pass-through, so a single-combinator group behaves as a plain AND / OR /
-/// NONE.
+/// Combinators are ANDed: all `and` members pass, at least one `or` member
+/// passes, and no `not` member passes. A missing or empty list passes.
 pub fn evaluate_filter_group(
     group: &crate::collection_parser::model::FilterGroup,
     note: &NoteMetadata,
@@ -903,9 +879,8 @@ mod tests {
         ));
     }
 
-    // -- Extended coverage: negative cases, error handling,
-    //    this.file.* context, edge cases. CLAUDE.md flags this as the
-    //    most logic-dense backend component; keep the matrix wide. --
+    // -- Negative cases, errors, `this.file.*` and edge cases. This is the most
+    // logic-dense part of the backend, so keep the coverage wide. --
 
     #[test]
     fn test_parse_empty_expression_errors() {
@@ -923,9 +898,7 @@ mod tests {
 
     #[test]
     fn test_parse_unknown_method_errors() {
-        // `foo` is not a known method on a list/string value. The
-        // parser accepts any identifier after `.`, so this may parse
-        // OK; evaluation must simply return false rather than panic.
+        // An unknown method may parse; it must evaluate to false, not panic.
         let parsed = parse_filter_expr(r#"file.tags.foo()"#);
         if let Ok(expr) = parsed {
             let note = make_note(vec![(
@@ -992,9 +965,8 @@ mod tests {
 
     #[test]
     fn test_is_empty_matches_missing_property() {
-        // A property that is not present at all should be treated as
-        // empty — otherwise `tags.isEmpty()` would miss notes that have
-        // never had a `tags` key, which is surprising for users.
+        // A missing property counts as empty, so `tags.isEmpty()` matches notes
+        // with no `tags` key.
         let expr = parse_filter_expr("tags.isEmpty()").unwrap();
         let note = make_note(vec![]);
         assert!(evaluate(
@@ -1031,9 +1003,8 @@ mod tests {
 
     #[test]
     fn test_contains_is_case_insensitive() {
-        // `contains` on a string property is a case-insensitive substring
-        // check, consistent with InkyCap's other text filters — `Notes` must
-        // match `notes`.
+        // `contains` on a string is a case-insensitive substring check, like
+        // InkyCap's other text filters.
         let expr = parse_filter_expr(r#"file.folder.contains("Notes")"#).unwrap();
         let note = make_note(vec![(
             "file.folder",
@@ -1048,9 +1019,8 @@ mod tests {
 
     #[test]
     fn test_this_file_name_self_reference() {
-        // `this.file.name` evaluates against the .collection file itself,
-        // not the candidate note. A filter `file.name != this.file.name`
-        // excludes the collection file from its own collection view.
+        // `this.file.name` is the collection file's own name, so `file.name !=
+        // this.file.name` keeps the collection file out of its view.
         let expr = parse_filter_expr("file.name != this.file.name").unwrap();
         let note_same = make_note(vec![(
             "file.name",
@@ -1091,9 +1061,8 @@ mod tests {
 
     #[test]
     fn test_evaluate_does_not_panic_on_missing_property() {
-        // A filter comparing a missing property against a literal
-        // should evaluate cleanly (to `false` for equality) rather
-        // than panic.
+        // Comparing a missing property evaluates to `false` rather than
+        // panicking.
         let expr = parse_filter_expr(r#"nonexistent == "something""#).unwrap();
         let note = make_note(vec![]);
         assert!(!evaluate(
@@ -1104,9 +1073,8 @@ mod tests {
     }
 
     // ── Relational operators (< <= > >=) ────────────────────────────
-    //
-    // Power the numeric header filter (= ≠ < ≤ > ≥ between) and every date
-    // operator, which the frontend lowers to day-boundary range expressions.
+    // Used by the numeric header filter and every date operator, which the
+    // frontend turns into day-boundary ranges.
 
     fn eval1(expr: &str, key: &str, val: PropertyValue) -> bool {
         let parsed = parse_filter_expr(expr).expect("valid filter expression");
@@ -1244,10 +1212,8 @@ or:
     }
 
     // ── Nested filter group evaluation ──────────────────────────────
-    //
-    // The recursive group model is the load-bearing piece behind the
-    // "(A or B) and C" collection filter, so exercise the combinators and
-    // one real nesting case directly.
+    // The combinators and one real nesting case, behind "(A or B) and C"
+    // collection filters.
 
     use crate::collection_parser::model::FilterGroup;
 
@@ -1329,9 +1295,8 @@ not:
 
     #[test]
     fn test_nested_group_a_or_b_and_c() {
-        // The motivating query: a note belongs when it is tagged for the
-        // collection OR sits in the Research folder, AND it is not the
-        // collection file itself.
+        // A note belongs if tagged for the collection or in the Research
+        // folder, and isn't the collection file.
         let group = yaml_group(
             r#"
 and:
@@ -1409,10 +1374,8 @@ and:
 
     #[test]
     fn test_list_property_equality_is_membership() {
-        // `collection == "X"` on a list property tests membership, and
-        // `collection != "X"` excludes notes that have "X" in the list. This
-        // is the fix for the reported "not equals is not respected" bug, where
-        // a list-vs-scalar comparison always fell through to `false`.
+        // On a list property, `collection == "X"` tests membership and
+        // `collection != "X"` excludes notes with "X".
         let eq = parse_filter_expr(r#"collection == "CollectionConflict""#).unwrap();
         let ne = parse_filter_expr(r#"collection != "CollectionConflict""#).unwrap();
         let p = &FilterContext::new(Path::new("/notebox/x.collection"));

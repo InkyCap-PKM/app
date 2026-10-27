@@ -1,49 +1,38 @@
-// Keeps the browser's caret where CodeMirror's caret is after the editor
-// rebuilds the text around it.
+// Keeps the browser's caret where CodeMirror's is after the editor redraws the
+// text around it.
 //
-// Every keystroke is inserted by the browser at *its* caret, so the two have
-// to agree. CodeMirror checks after each redraw and rewrites the browser's
-// selection when the two positions differ. On WebKitGTK that check can pass
-// when it should not: after the nodes around the caret are replaced without
-// the text changing (a highlight span being removed once a pulse ends, an
-// inline decoration arriving after a delayed parse), the selection's reported
-// anchor still names the old, correct spot while the range the browser will
-// actually edit at has moved. CodeMirror reads the anchor, sees nothing wrong,
-// and the next character lands somewhere else. The same family of bug exists
-// in Chrome and CodeMirror carries a workaround for it there; this is the
-// WebKit equivalent, done from the outside through the public API.
+// The browser inserts each keystroke at its own caret, so the two must agree.
+// CodeMirror checks after every redraw, but on WebKitGTK the check can pass
+// wrongly: when nodes around the caret are replaced without the text changing
+// (a highlight span removed when a pulse ends, a decoration arriving after a
+// delayed parse), the selection still reports the old spot while the browser
+// would edit somewhere else, so the next character lands elsewhere. CodeMirror
+// has a workaround for the same problem in Chrome; this is the WebKit
+// equivalent, through the public API.
 //
 // After each update the selection is collapsed at the DOM position CodeMirror
-// itself resolves for the caret — *unconditionally*, even when the browser's
-// reported range already names that exact node and offset. Comparing first
-// cannot work: in the repro below the reported range is the same node object
-// at the same offset as the caret's, and the browser still edits elsewhere, so
-// any comparison passes while the bug is live. Re-running collapse() with the
-// resolved coordinates makes WebKit re-register the position; when the
-// selection already sits there it is a no-op for every other engine, and it
-// measures at a few microseconds, so running it on every update is free.
+// resolves for the caret, always: in the failing case the reported range is the
+// same node and offset, so a comparison would pass. Collapsing again makes
+// WebKit re-register the position; elsewhere it is a no-op, and it costs
+// microseconds.
 //
-// The divergence shows up around paired delimiters (`` `…` ``, `[[…]]`, and
-// any start/stop region whose delimiters are wrapped in their own spans):
-// CodeMirror parks the caret at offset 0 of the closing delimiter's text node,
-// and WebKit's editing position drifts to the start of the enclosed content —
-// a paste between the delimiters followed by Backspace and more typing then
-// inserts at that stale spot. Verified end-to-end in a real WebKitGTK window
-// through scripts/webkit-harness (`h.pasteBackspaceType`), which is the
-// regression test for this file.
+// It happens around paired delimiters (`` `…` ``, `[[…]]`, and others whose
+// delimiters have their own spans): CodeMirror puts the caret at offset 0 of
+// the closing delimiter's text node, and WebKit's edit position drifts to the
+// start of the content, so a paste, Backspace and more typing go to the wrong
+// place. Tested in a real WebKitGTK window with scripts/webkit-harness
+// (`h.pasteBackspaceType`), the regression test for this file.
 //
-// Left alone: a focused nested editor (a table cell, a verse canvas), which
-// owns its own selection; a selection the user made outside the editor's
-// content; a composition in progress, and the short window after one ends
-// while the browser is still committing the text.
+// Not touched: a focused nested editor (table cell, verse canvas), a selection
+// outside the editor's content, and an ongoing composition (and just after one
+// ends).
 import { EditorView } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
 
 /**
- * How long after `compositionend` to leave the selection alone. WebKit commits
- * the composed text a little after the event fires, and moving the selection
- * in that window can drop the text at the wrong place. CodeMirror allows for
- * the same delay internally.
+ * How long after `compositionend` to leave the selection alone: WebKit commits
+ * the text slightly later, and moving the selection meanwhile can misplace it.
+ * CodeMirror allows the same delay.
  */
 const COMPOSITION_SETTLE_MS = 100;
 
@@ -51,9 +40,8 @@ const COMPOSITION_SETTLE_MS = 100;
 const compositionEndedAt = new WeakMap<EditorView, number>();
 
 /**
- * Re-collapses `domSel` at the DOM position CodeMirror resolves for the caret,
- * so the browser types where the caret is. Runs whether or not the browser's
- * range looks correct; see the note at the top of the file.
+ * Collapse `domSel` at the DOM position CodeMirror resolves for the caret,
+ * whether or not it already looks right (see the top of the file).
  */
 export function syncDomCaretToState(view: EditorView, domSel: Selection): void {
   if (view.composing) return;

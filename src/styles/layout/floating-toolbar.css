@@ -1,6 +1,5 @@
-/* Floating formatting toolbar and page preview tooltip.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Floating formatting toolbar and page preview tooltip. Part of layout.css,
+   whose import order (see ../layout.css) keeps the cascade. */
 
 /* Formatting toolbar (floating tooltip) */
 .cm-formatting-toolbar {

@@ -1,8 +1,7 @@
-// Generic query-view pane — the host-provided renderer that backs a declarative
-// plugin's "view" contribution (see src/lib/plugins.ts). A manifest supplies a
-// notebox-search query string; this runs it and lists the matching notes,
-// click-to-open. It is the in-tree consumer of the sidebar registry: a
-// data-only plugin gets a real sidebar pane without shipping any code.
+// Query view pane for a declarative plugin's "view" (see src/lib/plugins.tsx).
+// The manifest gives a notebox search query; this runs it and lists the
+// matching notes, opened on click. A plugin with only data gets a real sidebar
+// pane through the sidebar registry.
 
 import { Component, createResource, For, Show } from "solid-js";
 import * as ipc from "../lib/ipc";

@@ -1,9 +1,8 @@
-// External-tool bridge — frontend surface. Turns each tool the user has
-// registered (settings.external_tools) into a runnable `/`-command via the
-// command-palette registry. InkyCap ships no concrete tools; this only wires up
-// whatever the user has configured. The executable is resolved and spawned
-// server-side (see src-tauri/src/external_tools.rs) — here we just gather the
-// editor text, call the command, and apply the result.
+// External tools in the frontend: each tool the user registered
+// (settings.external_tools) becomes a command. InkyCap includes no tools
+// itself. The backend finds and runs the program (see
+// src-tauri/src/external_tools.rs); this gathers the editor text, calls the
+// command and applies the result.
 
 import { createEffect } from "solid-js";
 import type { EditorView } from "@codemirror/view";
@@ -49,10 +48,9 @@ async function runTool(view: EditorView, tool: ExternalTool): Promise<void> {
       return;
     }
     if (result.output === "panel") {
-      // Note-scoped right-panel pane — for multi-line output you want to keep
-      // visible while editing. Scoped to the note it ran against (so it hides
-      // when you switch notes) and carries the tool's chosen icon. Never
-      // touches the document.
+      // A right-panel pane for multi-line output to keep in view while editing.
+      // Tied to the note it ran on (hidden on other notes), with the tool's
+      // icon. Never changes the document.
       showToolOutputPane(tool.id, tool.name, result.stdout, filePath, tool.icon);
       return;
     }
@@ -70,14 +68,16 @@ async function runTool(view: EditorView, tool: ExternalTool): Promise<void> {
   }
 }
 
-/** Register the `/`-palette source for external tools the user has opted into
- *  the slash menu (`show_in` = `slash` or `both`). The source reads the live
- *  settings list every time the palette opens, so tools added/removed in
- *  Settings appear without re-registering. Call once at startup.
+/**
+ * Register the `/` palette source for external tools set to appear there
+ * (`show_in` = `slash` or `both`). It reads the settings each time the palette
+ * opens, so added or removed tools appear without registering again. Call once
+ * at startup.
  *
- *  Note the `/` menu replaces the selection as the user types the trigger, so
- *  it suits insert-at-cursor tools; selection-input tools belong in the command
- *  palette (the default), which leaves the selection intact. */
+ * The `/` menu replaces the selection with the typed trigger, so it suits tools
+ * that insert at the cursor; tools that read the selection belong in the
+ * command palette (the default).
+ */
 export function registerExternalToolPalette(): void {
   registerPaletteSource("external-tools", () =>
     (settings.external_tools?.tools ?? [])
@@ -90,11 +90,12 @@ export function registerExternalToolPalette(): void {
   );
 }
 
-/** Keep the global command palette in sync with external tools the user has
- *  opted into it (`show_in` = `palette` or `both`). Unlike the slash source,
- *  the command registry holds concrete `Command`s, so we reconcile on every
- *  settings change: register/refresh the current set, unregister any that were
- *  removed or moved out. Call once at startup (inside a reactive owner). */
+/**
+ * Keep the command palette in step with external tools set to appear there
+ * (`show_in` = `palette` or `both`). The registry holds actual `Command`s, so
+ * on every settings change the current set is registered or updated and removed
+ * ones unregistered. Call once at startup, inside a reactive owner.
+ */
 export function registerExternalToolCommands(): void {
   let registered = new Set<string>();
   createEffect(() => {

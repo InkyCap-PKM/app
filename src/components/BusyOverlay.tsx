@@ -1,10 +1,9 @@
 import { Component, Show } from "solid-js";
 
-/// Centered overlay with backdrop dim and a spinner — used during
-/// long-running operations (book/batch exports, static site, etc.) where
-/// the in-status-bar message is too easy to miss. Non-blocking from a
-/// keyboard-trap perspective, but the backdrop visually communicates
-/// "wait state" so the user knows the app hasn't simply hung.
+/// Centred overlay with a dimmed backdrop and spinner for long operations (book
+/// and batch exports, static sites), where a status bar message is easy to
+/// miss. Doesn't trap the keyboard; the backdrop shows the app is busy, not
+/// frozen.
 const BusyOverlay: Component<{
   visible: boolean;
   /// Headline text — short and active-voice ("Exporting book…").

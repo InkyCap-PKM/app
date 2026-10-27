@@ -16,16 +16,15 @@ pub struct FileTreeNode {
     /// stat field (rare) — frontend treats zero as "unknown" for sort.
     pub modified_time: u64,
     pub created_time: u64,
-    /// The note's `#note(zid:)`, when present. The storage layer leaves this
-    /// `None` (it does not parse note metadata); the `get_file_tree` command
-    /// enriches it from the property index so the file tree can sort by zid.
+    /// The note's `#note(zid:)`, if any. Storage leaves it `None` (it doesn't
+    /// parse metadata); `get_file_tree` fills it from the property index so the
+    /// file tree can sort by zid.
     #[serde(default)]
     pub zid: Option<String>,
 }
 
-/// The sole interface for all file I/O in InkyCap.
-/// All notebox access must go through this trait — never bypass it.
-/// This prepares for future sync backends (cloud, encrypted noteboxes).
+/// The only interface for file I/O in InkyCap; all notebox access goes through
+/// this trait, so other backends (sync, encrypted noteboxes) can be added.
 #[async_trait]
 pub trait NoteboxStorage: Send + Sync {
     /// Read the full contents of a file as a UTF-8 string.

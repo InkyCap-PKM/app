@@ -14,32 +14,32 @@ export interface PropertyEditorProps {
   value: PropertyValue;
   onSave: (key: string, value: PropertyValue) => void;
   /**
-   * Fallback type for keys the registry leaves as "auto" (e.g. the known
-   * system fields like `date-due`). Lets the caller pin an editor without
-   * registering the type globally.
+   * Type for keys the registry leaves "auto" (e.g. system fields like
+   * `date-due`), so the caller can choose an editor without registering a type.
    */
   typeHint?: PropertyType;
   /**
-   * True when the edited file is a scaffold template. Scaffold property values
-   * are routinely `{{var}}` placeholders, so the picker-only editors
-   * (date/datetime/checkbox) relax to raw text entry — the picker can't accept
-   * a variable, and a scaffold author needs to type one.
+   * True when the file is a scaffold. Its values are often `{{var}}`
+   * placeholders, so the picker-only editors (date, datetime, checkbox) use
+   * text entry, since a picker can't accept a variable.
    */
   scaffoldContext?: boolean;
 }
 
-/** A value that is entirely a single `{{var}}` template placeholder (e.g.
- *  `{{zid}}`, `{{date:YYYY-MM-DD}}`). Scaffold authoring puts these in typed
- *  fields — they expand at insert time, so they shouldn't be type-validated or
- *  coerced. Stored as a (quoted) string so the scaffold still compiles and the
- *  value round-trips through the property index. */
+/**
+ * Whether a value is exactly one `{{var}}` placeholder (e.g. `{{zid}}`,
+ * `{{date:YYYY-MM-DD}}`). Scaffolds put these in typed fields; they expand on
+ * insert, so they aren't validated or converted. Stored as a quoted string so
+ * the scaffold still compiles.
+ */
 export function isTemplatePlaceholder(value: PropertyValue): value is string {
   return typeof value === "string" && /^\s*\{\{[^{}]+\}\}\s*$/.test(value);
 }
 
-/** Validate a value against its declared type. Returns an i18n key for the
- *  error message (resolved by the caller through `useI18n`), or null when the
- *  value is acceptable. */
+/**
+ * Check a value against its type. Returns an i18n key for the error (resolved
+ * by the caller with `useI18n`), or null if acceptable.
+ */
 function validateValue(value: PropertyValue, declaredType: string): string | null {
   if (value === null || value === undefined || value === "") return null;
   // Template placeholders are valid in any field — they're not concrete
@@ -61,10 +61,8 @@ function validateValue(value: PropertyValue, declaredType: string): string | nul
         return "property.editor.expectedDatetime";
       break;
     case "list":
-      // A single scalar is a valid in-progress list — the user may be about to
-      // add more items, and the ListEditor (and the backend's `coerce_value`)
-      // both treat a lone scalar as a one-item list. Only an object-shaped value
-      // would be genuinely wrong here, and `PropertyValue` can't produce one.
+      // A single value is a valid list in progress (the ListEditor and the
+      // backend's `coerce_value` treat it as one item).
       break;
     case "text":
       if (typeof value !== "string" && !Array.isArray(value)) return "property.editor.expectedText";
@@ -75,9 +73,7 @@ function validateValue(value: PropertyValue, declaredType: string): string | nul
 
 const PropertyEditor: Component<PropertyEditorProps> = (props) => {
   const t = useI18n();
-  // If the registry declares an explicit type for this key, use it.
-  // Otherwise fall back to inferring from the actual value (legacy
-  // behavior) so untyped properties still render sensibly.
+  // The registry's type for the key if set, otherwise inferred from the value.
   const effectiveType = () => {
     const declared = propertyType(props.propKey);
     if (declared !== "auto") return declared;
@@ -98,10 +94,9 @@ const PropertyEditor: Component<PropertyEditorProps> = (props) => {
 
   const isCollectionProp = () => props.propKey === "collection";
 
-  // Route to the raw text editor when the value is already a placeholder, or
-  // when we're authoring a scaffold and the declared type is a picker-only
-  // editor (date/datetime/checkbox) that can't accept a typed `{{var}}`.
-  // Number and list already have text-entry paths, so they keep their editors.
+  // Use the raw text editor for a placeholder value, or in a scaffold when the
+  // type's editor is picker-only (date, datetime, checkbox). Numbers and lists
+  // already accept text.
   const usesRawEditor = () => {
     if (isTemplatePlaceholder(props.value)) return true;
     if (!props.scaffoldContext) return false;
@@ -194,11 +189,10 @@ function renderStringWithWikilinks(text: string): (string | HTMLSpanElement)[] {
 }
 
 /**
- * Let the property-row kebab menu's "Edit" action open an editor's edit mode.
- * When a value renders as a navigable wikilink, clicking it follows the link
- * instead of starting an edit, so there's otherwise no in-row way to change it.
- * RightPanel dispatches `inkycap:edit-property` with the row's key; the matching
- * editor enters edit mode. Auto-cleans up on unmount.
+ * Let the row menu's "Edit" open an editor in edit mode. A wikilink value
+ * follows the link when clicked, so there's no other in-row way to edit it.
+ * RightPanel dispatches `inkycap:edit-property` with the key; the matching
+ * editor responds. Removed on unmount.
  */
 function useEditRequest(propKey: () => string, startEdit: () => void) {
   const handler = (e: Event) => {
@@ -237,10 +231,8 @@ const StringEditor: Component<PropertyEditorProps> = (props) => {
     setEditing(false);
     const newVal = draft();
     if (newVal !== displayValue()) {
-      // CommaList fields look like single-line text in the UI but
-      // serialize as an array so the Typst-side `#note(...)` call gets
-      // the right shape. `aliases` is the only such field today; future
-      // CommaList fields ride the same path automatically.
+      // CommaList fields look like text but are saved as arrays, so
+      // `#note(...)` gets the right shape. Currently only `aliases`.
       if (propertyType(props.propKey) === "commalist") {
         const items = newVal
           .split(",")
@@ -317,9 +309,8 @@ const NumberEditor: Component<PropertyEditorProps> = (props) => {
   function commit() {
     const raw = draft().trim();
     if (raw === "") {
-      // Clearing the field clears the value (persisted as empty) rather than
-      // silently reverting to the old number. Stored as an empty string —
-      // `none` would round-trip back as the literal string "none".
+      // An emptied field clears the value (saved as an empty string; `none`
+      // would come back as the text "none").
       setError(null);
       setEditing(false);
       if (props.value !== "" && props.value !== null && props.value !== undefined) {
@@ -327,9 +318,7 @@ const NumberEditor: Component<PropertyEditorProps> = (props) => {
       }
       return;
     }
-    // A `{{var}}` template placeholder is accepted verbatim (saved as a
-    // string) so a numeric field can hold a scaffold variable — see
-    // isTemplatePlaceholder.
+    // A `{{var}}` placeholder is accepted as is (see isTemplatePlaceholder).
     if (isTemplatePlaceholder(raw)) {
       setError(null);
       setEditing(false);
@@ -428,9 +417,8 @@ const ListEditor: Component<PropertyEditorProps> = (props) => {
 
   const isOpen = () => listPickerOpen() === props.propKey;
 
-  // Items the user can pick from: union of values-in-this-property and any
-  // currently-selected items (so a stale entry not yet propagated to the
-  // global index still appears as checked).
+  // The choices: values used in this property plus the currently selected ones
+  // (so one not yet in the index still shows as checked).
   const universe = (): Set<string> => {
     const all = new Set<string>(allValues() ?? []);
     for (const it of currentItems()) all.add(it);

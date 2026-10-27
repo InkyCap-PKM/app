@@ -16,19 +16,15 @@ import {
 import { useI18n } from "../../lib/i18n";
 
 /**
- * The control strip at the top of a pane's content, holding the tab's
- * back/forward arrows on the left and whatever the view puts in the centre
- * and right slots.
+ * The control bar at the top of a pane's content: the tab's back/forward arrows
+ * on the left, and whatever the view puts in the centre and right slots.
  *
- * Every view that can be navigated to shows this bar, so a tab never loses
- * its way back: a note fills all three slots with editor controls, while a
- * collection shows the arrows alone (the mode toggles and Journal Scroll
- * have nothing to act on there).
+ * Every view shows it, so a tab can always go back: a note fills all three
+ * slots with editor controls, a collection shows only the arrows.
  *
- * The arrows mean different things depending on whether Journal Scroll is
- * on. With scroll off they walk the tab's file history; with scroll on they
- * walk the within-scroll wikilink history (and are disabled until the user
- * has actually jumped via a wikilink).
+ * With Journal Scroll off the arrows go through the tab's file history; with it
+ * on, through the wikilink history within the scroll (disabled until a wikilink
+ * has been followed).
  */
 const PaneNavBar: Component<{
   tabId: string;

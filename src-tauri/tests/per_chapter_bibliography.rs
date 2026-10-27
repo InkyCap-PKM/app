@@ -1,15 +1,13 @@
-//! Compile-validates `BibliographyMode::PerChapter` end to end.
+//! Checks `BibliographyMode::PerChapter` end to end.
 //!
-//! Phase 3 of the Typst 0.15 upgrade: 0.15 allows multiple `#bibliography()`
-//! per document, each scoped to a subset of citations via a `target` selector.
-//! PerChapter mode emits one auto-generated, chapter-scoped bibliography at the
-//! end of each chapter through the package's `chapter-bibliography` helper.
+//! Typst 0.15 allows several `#bibliography()` calls per document, each limited
+//! to some citations with a `target` selector. PerChapter mode adds one at the
+//! end of each chapter through the package's `chapter-bibliography`.
 //!
-//! The unit test in `book_wrapper.rs` checks the *emitted source*; this runs the
-//! merged book through the real Typst compiler and asserts (a) it compiles and
-//! (b) each chapter's reference list contains only that chapter's cited work —
-//! the scoping selector actually partitions the citations. Needs no external
-//! tooling, so it always runs.
+//! The unit test in `book_wrapper.rs` checks the generated source; this compiles
+//! a book with the real compiler and checks that it compiles and that each
+//! chapter's list holds only that chapter's citations. Needs no external tools,
+//! so it always runs.
 
 use inkycap_lib::collection_parser::model::{
     BibliographyMode, BookPageNumbering, BookWikilinkMode, InjectChapterHeading, TocPlacement,

@@ -1,12 +1,9 @@
 import { EditorView } from "@codemirror/view";
 
-// Spans nested inside a heading are forced to the heading colour so a heading
-// reads as one colour — but link-family elements are excluded: a wikilink/link/
-// footnote keeps its own colour even inside a heading (standard for links, and
-// now load-bearing because heading marks are `inclusiveEnd`, so a heading that
-// ends in a wikilink encloses its pill / `[[ ]]` brackets in the heading span).
-// Without these exclusions those elements would inherit the heading colour and
-// look like plain text.
+// Text inside a heading takes the heading colour, except link-type elements
+// (wikilink, link, footnote), which keep their own. Heading marks are
+// `inclusiveEnd`, so a heading ending in a wikilink contains its pill and
+// brackets.
 const HEADING_LINK_EXEMPT = [
   ".cm-typst-wikilink",
   ".cm-typst-link",
@@ -24,40 +21,33 @@ const headingInnerNonLinkSelector = [1, 2, 3, 4, 5, 6]
 
 export const visualTheme = EditorView.theme({
   ".cm-scroller": { overflowAnchor: "none" },
-  // Shared bullet/number width for list items. The marker widget is this wide,
-  // and list lines hang-indent their wrapped continuation by the same amount
-  // (see `pushListIndent` in visual-plugin) so the two never drift apart. It
-  // also stands in for the marker's now-hidden trailing space, so ~1.5em keeps
-  // the bullet-to-text gap roughly where it was before that space was folded in.
   // ── Shared block geometry ──
-  // Code blocks, block quotes, and callouts each have two states: a rendered
-  // widget while the caret is elsewhere, and in-place editable lines while the
-  // caret is inside. Both states must occupy exactly the same height, or
-  // entering and leaving the block shifts everything below it. Every vertical
-  // measurement the two states share is declared once here and read by both
-  // the widget rules and the edit-line rules further down. Never restate one
-  // of these numbers inline.
+  // Code blocks, block quotes and callouts have two states: a rendered widget
+  // while the caret is elsewhere, and editable lines while it is inside. Both
+  // must have exactly the same height, or entering and leaving the block moves
+  // everything below it. Every vertical measurement they share is declared once
+  // here and used by both sets of rules. Never restate one inline.
   ".cm-content": {
-    // Height of one text row, as a multiple of the font size. CodeMirror's
-    // own base theme sets this on `.cm-scroller`; restating it here as a
-    // variable (and applying it below) lets inline decorations size
-    // themselves to exactly one row instead of guessing.
+    // Height of one text row as a multiple of the font size (CodeMirror sets it
+    // on `.cm-scroller`), as a variable so inline decorations can size
+    // themselves to one row.
     "--editor-line-height": "1.4",
-    // Pill text size relative to the text it sits in. Read both by the pill's
-    // `font-size` and by its height, which has to convert back out of the
-    // pill's own `em` to the surrounding text's row height.
+    // Pill text size relative to the surrounding text, used for the pill's font
+    // size and to compute its height.
     "--pill-font-scale": "0.78",
     lineHeight: "var(--editor-line-height)",
+    // Width of a list bullet or number. Wrapped lines hang-indent by the same
+    // amount (see `pushListIndent` in visual-plugin); it also replaces the
+    // marker's hidden trailing space.
     "--list-bullet-width": "1.5em",
-    // CodeMirror's own horizontal padding on every `.cm-line`. Edit-state
-    // lines replace that padding with their block's inset, so they carry it
-    // as a margin instead to keep the block's edges where the widget's are.
+    // CodeMirror's horizontal padding on each `.cm-line`. Edit-state lines use
+    // their block's inset instead and carry this as a margin, so the block's
+    // edges match the widget's.
     "--line-inset": "6px",
     "--line-inset-end": "2px",
-    // Block quote: outer gap, inner padding, text inset past the opening
-    // quotation mark on the left, the plain inset on the right, the mark's
-    // size, and line height. The mark is drawn out of flow, so only the
-    // inset (not the mark) contributes to the block's width.
+    // Block quote: outer gap, inner padding, left text inset past the quotation
+    // mark, right inset, mark size and line height. The mark is out of flow, so
+    // only the inset adds width.
     "--quote-margin": "10px",
     "--quote-pad": "8px",
     "--quote-inset": "1.9em",
@@ -70,9 +60,9 @@ export const visualTheme = EditorView.theme({
     "--callout-inset": "12px",
     "--callout-body-size": "0.95em",
     "--callout-line-height": "1.5",
-    // Code block: the whole block is set at `--codeblock-font-size`; the
-    // header and footer strips are one `--codeblock-row` tall plus the strip
-    // padding, and the code area adds `--codeblock-body-pad` above and below.
+    // Code block: font size for the whole block; header and footer strips are
+    // one `--codeblock-row` plus padding; the code area adds
+    // `--codeblock-body-pad` above and below.
     "--codeblock-font-size": "0.9em",
     "--codeblock-margin": "10px",
     "--codeblock-row": "1.5em",
@@ -89,19 +79,13 @@ export const visualTheme = EditorView.theme({
   ".cm-typst-italic": { fontStyle: "italic", color: "inherit" },
   ".cm-typst-strike": { textDecoration: "line-through", color: "var(--syntax-strike)" },
   ".cm-typst-highlight": {
-    // A bare `#highlight[…]` (no `fill:`) is the "Yellow" default — the
-    // palette's default deliberately writes no fill to keep source clean, so
-    // the bare mark must paint the same yellow the notebox wrapper compiles
-    // to (`--hl-yellow`, themed light/dark).
+    // A bare `#highlight[…]` is the default yellow (the palette writes no fill
+    // for it), matching the package's `--hl-yellow`.
     backgroundColor: "var(--hl-yellow)",
     borderRadius: "var(--radius-xs)",
     padding: "0 2px",
-    // The five highlight palette colours are intentionally light pastels,
-    // chosen so the marking reads as a felt-pen highlight rather than a
-    // background tint. In dark mode the editor's default text colour is
-    // near-white, which becomes unreadable on those pastels — pin a near-
-    // black text colour on highlighted spans so the contrast is right
-    // regardless of theme.
+    // Highlight colours are light in every theme, so pin near-black text for
+    // contrast in dark mode.
     color: "#1a1a1a", // token-exempt: highlight pastels are light in every theme
   },
   // R12 marks for sub/super/underline/overline: visual representation
@@ -123,25 +107,20 @@ export const visualTheme = EditorView.theme({
     verticalAlign: "super",
     lineHeight: "0",
   },
-  // Inline #quote[…] smart quotes — atomic widgets standing in for the hidden
-  // `#quote[` / `]` markup so the visual editor tracks Typst's inline-quote
-  // rendering (effectively HTML `<q>`). Presentation only; the body between
-  // them remains live source. See QuoteGlyphWidget for why these are widgets
-  // rather than ::before/::after pseudo-elements.
+  // Smart-quote widgets standing in for the hidden `#quote[` / `]` of an inline
+  // quote. See QuoteGlyphWidget for why they are widgets rather than
+  // pseudo-elements.
   ".cm-typst-quote-glyph": { color: "inherit" },
   ".cm-typst-raw-inline": {
     fontFamily: "var(--editor-font-mono, monospace)",
-    // Monospace renders visually larger than the body font at the same em, so
-    // step it down to read at the same size as surrounding prose — matching the
-    // 0.9em used by the editor's other code surfaces (code blocks, edit mode).
+    // Monospace looks larger at the same size; 0.9em matches the other code
+    // surfaces.
     fontSize: "0.9em",
     backgroundColor: "var(--syntax-mono-bg)",
     borderRadius: "var(--radius-sm)",
     padding: "1px 4px",
   },
-  // Fenced code block inside a rendered block body (callout / quote
-  // widget). Same monospace size as inline raw, laid out as a
-  // multi-line preformatted block.
+  // A fenced code block inside a rendered callout or quote body.
   ".cm-typst-raw-block": {
     fontFamily: "var(--editor-font-mono, monospace)",
     fontSize: "0.9em",
@@ -153,14 +132,11 @@ export const visualTheme = EditorView.theme({
     overflowX: "auto",
     lineHeight: "1.4",
   },
-  // Selection visibility over inline content that paints its own opaque
-  // background — highlight fills, code spans, tag/due chips, wikilink/pill
-  // styling. The editor uses native `::selection` (see inkycapTheme), and the
-  // base rule there already tints descendant text; these per-element rules pin
-  // the same tint while keeping the span's own text `color: inherit`, and the
-  // `*::selection` variant reaches the inner label/value spans chips wrap their
-  // content in. WebKitGTK honours only `background-color` (not the `background`
-  // shorthand) inside `::selection`.
+  // Selection over inline content with its own background (highlights, code
+  // spans, chips, pills). The editor uses native `::selection` (see
+  // inkycapTheme); these rules apply the same tint while keeping the text
+  // colour, and `*::selection` reaches chips' inner spans. WebKitGTK only
+  // honours `background-color` inside `::selection`.
   [[
     ".cm-typst-highlight",
     ".cm-typst-raw-inline",
@@ -194,14 +170,11 @@ export const visualTheme = EditorView.theme({
   ".cm-link-hover": {
     cursor: "pointer",
   },
-  // Math marks must never change layout (no display, padding, margin, or
-  // min-height). Typst's parser pairs a freshly typed `$` with the next `$`
-  // anywhere below it, so while an equation is being written the mark can
-  // briefly cover several lines of ordinary prose. A layout-affecting style
-  // there moves the text and caret on every keystroke (issue #1); a colour
-  // and font change is a harmless flicker that ends when the equation closes.
-  // A display equation is told apart by a tinted background instead of by
-  // being set on its own line.
+  // Math marks must never change layout (no display, padding, margin or
+  // min-height). A freshly typed `$` pairs with the next `$` below, so the mark
+  // can briefly cover several lines of prose; a layout change would move the
+  // text on each keystroke (issue #1). A display equation is shown with a
+  // tinted background instead.
   ".cm-typst-math-inline": {
     fontFamily: "var(--editor-font-mono, monospace)",
     color: "var(--syntax-string)",
@@ -264,12 +237,9 @@ export const visualTheme = EditorView.theme({
     display: "inline-block",
     width: "var(--list-bullet-width)",
     textAlign: "center",
-    // Hanging indent: the list line carries `padding-left` of one bullet width
-    // (plus nesting); this negative margin pulls the marker back to the column
-    // edge so the bullet sits at the left margin while the item's text — and any
-    // wrapped continuation — stays one bullet-width in. Done with margin (not the
-    // line's `text-indent`) because WebKitGTK doesn't reliably offset a leading
-    // inline-block via text-indent, which left the bullet hanging in the margin.
+    // Hanging indent: the line has `padding-left` of one bullet width plus
+    // nesting, and this pulls the bullet back to the edge. A negative
+    // `text-indent` isn't reliable on WebKitGTK.
     marginLeft: "calc(-1 * var(--list-bullet-width))",
   },
   ".cm-typst-hr-block": {
@@ -315,11 +285,9 @@ export const visualTheme = EditorView.theme({
     fontSize: "var(--callout-body-size)",
     lineHeight: "var(--callout-line-height)",
   },
-  // Lists rendered inside a block body (callout / quote / annotation). The
-  // body inherits CM's pre-wrap, so reset list items to normal wrapping and
-  // give the markers the same room the editor's own list lines get. No
-  // vertical margins: each item must measure exactly one editor line so the
-  // block keeps its height when it switches to in-place editing.
+  // Lists inside a rendered callout, quote or annotation body. Items get normal
+  // wrapping and the editor's marker space, with no vertical margins, so each
+  // is one editor line and the block keeps its height in edit mode.
   ".cm-typst-body-list": {
     margin: "0",
     paddingLeft: "var(--list-bullet-width)",
@@ -328,13 +296,10 @@ export const visualTheme = EditorView.theme({
   ".cm-typst-body-list li": {
     margin: "0",
   },
-  // Block-shaped widgets that replace a range inside a `.cm-line`. CodeMirror
-  // places a zero-width placeholder on each side of such a widget so the caret
-  // has somewhere to sit; if the widget's box were `display: block`, each
-  // placeholder would form an empty row of its own above and below it. As an
-  // inline-block filling the line they share the widget's row instead, so the
-  // widget measures exactly its own height, like the edit-state lines it
-  // alternates with.
+  // Block widgets replacing a range inside a `.cm-line`. CodeMirror puts a
+  // zero-width caret placeholder on each side; with `display: block` each would
+  // add an empty row. As an inline-block filling the line, they share its row
+  // and the widget measures only its own height.
   ".cm-typst-block-row": {
     display: "inline-block",
     width: "100%",
@@ -348,8 +313,8 @@ export const visualTheme = EditorView.theme({
   },
   // ── Code block ──
   // Rendered widget: header strip (language, copy button), code area, footer
-  // strip. The edit state below rebuilds this frame line by line from the
-  // same geometry variables.
+  // strip. The edit state below rebuilds this frame line by line from the same
+  // variables.
   ".cm-typst-codeblock": {
     fontFamily: "var(--editor-font-mono, monospace)",
     fontSize: "var(--codeblock-font-size)",
@@ -410,10 +375,8 @@ export const visualTheme = EditorView.theme({
   ".cm-typst-codeblock pre": {
     margin: "0",
     padding: "var(--codeblock-body-pad) var(--codeblock-inset)",
-    // Wrap long lines inside the box rather than letting them run past the
-    // rounded right edge. A notes editor favours always-visible content over
-    // a horizontal scrollbar; `pre-wrap` keeps the source's own line breaks
-    // and indentation while folding overlong lines back into the box.
+    // Wrap long lines inside the box rather than scrolling; `pre-wrap` keeps
+    // line breaks and indentation.
     maxWidth: "100%",
     overflowX: "hidden",
     lineHeight: "var(--codeblock-row)",
@@ -427,11 +390,9 @@ export const visualTheme = EditorView.theme({
     whiteSpace: "pre-wrap",
     overflowWrap: "anywhere",
   },
-  // Edit state: the caret is inside the block, so its lines are shown as raw
-  // source. The line kinds rebuild the rendered frame piece by piece from the
-  // shared geometry variables: the opening fence line is the header strip,
-  // the lines between are the code area, and the closing fence line is the
-  // footer strip. The block therefore keeps its exact height while editing.
+  // Edit state: the caret is inside, so lines show as source. The opening fence
+  // line is the header strip, the lines between the code area, the closing
+  // fence line the footer, so the height is unchanged.
   ".cm-typst-codeblock-edit": {
     fontFamily: "var(--editor-font-mono, monospace) !important",
     fontSize: "var(--codeblock-font-size)",
@@ -464,11 +425,9 @@ export const visualTheme = EditorView.theme({
   ".cm-typst-codeblock-edit--last": {
     paddingBottom: "var(--codeblock-body-pad)",
   },
-  // While the caret is on a line, that line's parser error tokens (a `$` or
-  // `(` that is not closed yet) lose their red wavy styling: the writer is in
-  // the middle of typing, not looking at a mistake. The mark is registered
-  // at the lowest precedence so it wraps the highlighter's span, which is
-  // what lets it cancel the underline as well as the colour.
+  // On the caret's line, parser error tokens (an unclosed `$` or `(`) lose
+  // their red underline while the writer is typing. Registered at the lowest
+  // precedence so it wraps the highlighter's span.
   ".cm-typst-caret-line-error, .cm-typst-caret-line-error *": {
     color: "inherit !important",
     textDecoration: "none !important",
@@ -482,8 +441,7 @@ export const visualTheme = EditorView.theme({
     lineHeight: "1.4",
   },
   // Pill row floated over a block widget's top-left corner (images, media,
-  // horizontal rules) instead of stacked above it, so showing the pill when
-  // the caret arrives doesn't make the block taller.
+  // rules), so showing it doesn't make the block taller.
   ".cm-typst-block-pill-overlay": {
     position: "absolute",
     top: "var(--space-1)",
@@ -557,12 +515,10 @@ export const visualTheme = EditorView.theme({
     padding: "2px 6px",
     textAlign: "center" as any,
   },
-  // An embed shown as its path and a button that opens the file: an `#image`
-  // of a PDF, or a picture or player that couldn't be shown here. Tall
-  // enough for the block pill floated over its top-left corner (one text row
-  // inset by the overlay's offset on each side), which the block's hidden
-  // overflow would otherwise cut off. Always centred, so a short path never
-  // runs under the pill.
+  // An embed shown as its path with an open button (a PDF `#image`, or media
+  // that couldn't be shown). Tall enough for the floating block pill, which
+  // overflow would otherwise cut off. Centred, so a short path doesn't run
+  // under the pill.
   ".cm-typst-file-row": {
     display: "flex",
     alignItems: "center",
@@ -599,9 +555,8 @@ export const visualTheme = EditorView.theme({
     outline: "none",
     boxShadow: "var(--focus-ring)",
   },
-  // Inline-block wrapper around the preview <img> so the resize handle can be
-  // anchored to the image's own box (not the full-width block) and the parent's
-  // text-align still controls left/centre/right placement.
+  // Inline-block wrapper around the preview image, so the resize handle anchors
+  // to the image and text-align still places it.
   ".cm-typst-image-holder": {
     position: "relative",
     display: "inline-block",
@@ -709,9 +664,8 @@ export const visualTheme = EditorView.theme({
     padding: "1px 6px",
     fontSize: "0.85em",
   },
-  // Inline #suggestion(...) marks. Colours match lib.typ's _suggestion-*-color
-  // (green #16a34a / red #dc2626) so the visual editor reads like the compiled
-  // CriticMarkup idiom rather than the app's theme green/red.
+  // Inline `#suggestion(...)` colours match lib.typ's `_suggestion-*-color`
+  // (green #16a34a, red #dc2626) rather than the theme's.
   ".cm-typst-suggestion": {
     cursor: "pointer",
   },
@@ -763,8 +717,8 @@ export const visualTheme = EditorView.theme({
     fontWeight: "bold",
   },
   // ── Block quote ──
-  // Rendered widget (caret away). Instead of a bar, a large opening quotation
-  // mark sits in the left inset (see the shared `::before` rule below).
+  // Rendered widget. A large opening quotation mark sits in the left inset (see
+  // `::before` below).
   ".cm-typst-blockquote": {
     display: "block",
     position: "relative",
@@ -774,12 +728,10 @@ export const visualTheme = EditorView.theme({
     fontStyle: "italic",
     color: "var(--fg-muted)",
   },
-  // The decorative opening quotation mark, shared by the rendered widget and
-  // the first edit-state line so it sits in the same spot in both states. It
-  // is absolutely positioned, so it adds no height and the two states still
-  // measure the same. Pseudo-elements are safe here (unlike the inline smart
-  // quotes, see QuoteGlyphWidget) because the mark is out of flow and never
-  // sits between characters the caret can land on.
+  // The opening quotation mark, shared by the widget and the first edit line so
+  // it sits in the same place. Absolutely positioned, so it adds no height. A
+  // pseudo-element is fine here because it never sits where the caret can go
+  // (unlike the inline quotes; see QuoteGlyphWidget).
   ".cm-typst-blockquote::before, .cm-typst-blockquote-line.cm-typst-block-edit-first::before": {
     content: '"\u201C"',
     position: "absolute",
@@ -801,12 +753,9 @@ export const visualTheme = EditorView.theme({
     fontStyle: "normal",
     color: "var(--fg-dim)",
   },
-  // Edit state (caret inside): each body line carries the inset, the first
-  // line draws the quotation mark, and the first and last lines add the
-  // widget's outer gap and inner padding, so the quote is the same height as
-  // its rendered form. The italic/muted fill is a separate mark bounded to the
-  // body, so text trailing after the closing `]` on the same line keeps its
-  // ordinary style.
+  // Edit state: each body line has the inset, the first draws the quotation
+  // mark, and the first and last add the widget's gap and padding, so the
+  // height matches. The italic fill is a separate mark limited to the body.
   ".cm-typst-blockquote-line": {
     marginLeft: "var(--line-inset)",
     marginRight: "var(--line-inset-end)",
@@ -831,11 +780,10 @@ export const visualTheme = EditorView.theme({
     color: "var(--fg-muted)",
   },
   // ── Callout edit state ──
-  // The hidden `#callout(...)[` opener is replaced by a heading row (pill +
-  // label) at the top of the first body line, and every body line carries the
-  // frame's inset and tint (colour set inline per callout kind), with the
-  // corner brackets on the first and last lines. Together they measure the
-  // same as the rendered widget.
+  // A heading row (pill and label) replaces the hidden opener on the first body
+  // line; every body line gets the frame's inset and tint (colour set per
+  // kind), with the corner brackets on the first and last. Together they match
+  // the widget's height.
   ".cm-typst-callout-line": {
     marginLeft: "var(--line-inset)",
     marginRight: "var(--line-inset-end)",
@@ -859,12 +807,10 @@ export const visualTheme = EditorView.theme({
   ".cm-typst-callout-line.cm-typst-block-edit-first.cm-typst-block-edit-last": {
     borderRadius: "var(--radius-sm)",
   },
-  // The callout's frame: a thin corner bracket with a rounded bend at the
-  // top-left and bottom-right, in the `--callout-color` the widget or line
-  // sets inline, faded by `--callout-corner-strength`. Shared by the rendered
-  // widget and the edit state's first and last lines, so it sits in the same
-  // spot in both. Out of flow, so it adds
-  // no height; `max-height` keeps a vertical arm inside a short line.
+  // The callout frame: a corner bracket at the top-left and bottom-right in
+  // `--callout-color`, faded by `--callout-corner-strength`. Shared by the
+  // widget and the edit state's first and last lines. Out of flow, so no
+  // height; `max-height` keeps the vertical arm inside a short line.
   ".cm-typst-callout::before, .cm-typst-callout-line.cm-typst-block-edit-first::before, .cm-typst-callout::after, .cm-typst-callout-line.cm-typst-block-edit-last::after": {
     content: '""',
     position: "absolute",
@@ -899,12 +845,10 @@ export const visualTheme = EditorView.theme({
   ".cm-typst-callout-head .cm-typst-callout-heading": {
     fontSize: "inherit",
   },
-  // ── Pills (R1–R3) ──
-  // Single visual identity for every pill in the visual editor. Inline,
-  // block-row, and embedded sites all use this class. See
-  // documentation/developer/visual-editor/pill-system.md.
-  // .cm-typst-func-chip is kept as an alias so legacy call sites that
-  // still reference it pick up the same styles during the staged rollout.
+  // ── Pills ──
+  // One style for every pill in the visual editor. See
+  // documentation/developer/visual-editor/pill-system.md. `.cm-typst-func-chip`
+  // is an alias for older call sites.
   ".cm-typst-pill, .cm-typst-func-chip": {
     display: "inline-flex",
     alignItems: "center",
@@ -915,14 +859,10 @@ export const visualTheme = EditorView.theme({
     padding: "0 6px 0 3px",
     color: "var(--fg-muted)",
     cursor: "pointer",
-    // An inline pill appears and disappears as the caret enters and leaves
-    // its line, so it must occupy exactly one text row — a pill even a
-    // pixel taller grows the line, and every line below it shifts when the
-    // pill collapses. `1em` inside the pill is its own reduced font size,
-    // so dividing by that scale converts back to the surrounding text's
-    // size; times the row multiple gives one row exactly. Top alignment
-    // then seats it flush with the row instead of centring it on the
-    // baseline, where a box this tall would hang below the line.
+    // An inline pill comes and goes as the caret enters and leaves its line, so
+    // it must be exactly one text row tall, or lines below shift. `1em` here is
+    // the pill's own smaller size, so divide by the scale and multiply by the
+    // row height. Top alignment seats it in the row.
     boxSizing: "border-box",
     height: "calc(1em / var(--pill-font-scale, 0.78) * var(--editor-line-height, 1.4))",
     verticalAlign: "top",
@@ -932,10 +872,7 @@ export const visualTheme = EditorView.theme({
     fontSize: "calc(1em * var(--pill-font-scale, 0.78))",
     fontFamily: "var(--editor-font-mono, monospace)",
     lineHeight: "1",
-    // A hair of trailing space so the chip doesn't butt up against the text
-    // that follows it inline (e.g. #quote[…] before its body). Uses the
-    // density-scaled spacing token (2px at default density) so it tracks the
-    // user's density setting rather than hardcoding a pixel.
+    // A small gap so the pill doesn't touch the text after it.
     margin: "0 var(--space-1) 0 0",
   },
   ".cm-typst-pill:hover, .cm-typst-func-chip:hover, .cm-typst-pill:focus-visible, .cm-typst-func-chip:focus-visible": {
@@ -943,10 +880,8 @@ export const visualTheme = EditorView.theme({
     borderColor: "var(--accent)",
     outline: "none",
   },
-  // A pill whose hidden source holds a search match (hidden-match-pills.ts)
-  // takes the colour matches are marked with, since the match itself can't
-  // be seen. The find's current match also gets a ring. Neither changes the
-  // pill's size, so the line doesn't move as matches come and go.
+  // A pill hiding a search match (hidden-match-pills.ts) takes the match
+  // colour, and the current match a ring. Neither changes its size.
   ".cm-typst-pill.cm-typst-pill--search-match": {
     backgroundColor: "var(--bg-search-match)",
     borderColor: "var(--bg-search-match)",
@@ -1021,9 +956,9 @@ export const visualTheme = EditorView.theme({
     backgroundColor: "var(--bg-hover)",
     outline: "none",
   },
-  // The arrow keys mark the item they land on (lib/menu-nav.ts). A class,
-  // rather than :focus-visible, because the browser does not treat focus
-  // moved by script after a mouse click as visible — see context-menu.css.
+  // Keyboard highlight from lib/menu-nav.ts. A class rather than
+  // :focus-visible, since script-moved focus after a click doesn't count as
+  // visible (see context-menu.css).
   ".cm-typst-pill-menu-item.is-kbd-active": {
     backgroundColor: "var(--bg-hover)",
     boxShadow: "inset 0 0 0 2px var(--accent)",
@@ -1088,9 +1023,8 @@ export const visualTheme = EditorView.theme({
     outline: "none",
     borderColor: "var(--accent)",
   },
-  // A colour field is a swatch, not a text box: it takes the height of the
-  // row's text rather than stretching, and the browser's own picker opens
-  // from it.
+  // A colour field is a swatch that opens the browser's picker, at the height
+  // of the row's text.
   ".cm-typst-pill-menu-input--color": {
     flex: "0 0 auto",
     width: "44px",
@@ -1107,9 +1041,8 @@ export const visualTheme = EditorView.theme({
     fontSize: "0.9em",
     fontFamily: "var(--editor-font-mono, monospace)",
   },
-  // Cross-reference pill (`@heading`, `@fig-…`). Visually related to the
-  // citation chip but accent-tinted and in the body font — it shows resolved
-  // target text, not a raw key, so it reads as prose the writer can click.
+  // Cross-reference pill (`@heading`, `@fig-…`): like the citation chip but
+  // accent-tinted and in the body font, since it shows the target's text.
   ".cm-typst-ref-pill": {
     display: "inline-block",
     backgroundColor: "color-mix(in srgb, var(--accent) 12%, transparent)",
@@ -1131,9 +1064,8 @@ export const visualTheme = EditorView.theme({
     cursor: "text",
   },
   // ── Verse ──
-  // First-class verse element: an open canvas, not a code-block. The
-  // pill at top-left identifies it and exposes alignment options; the
-  // canvas itself is contentEditable with inline formatting rendered.
+  // A contentEditable canvas with inline formatting, with the pill at its
+  // top-left.
   ".cm-typst-verse": {
     display: "block",
     position: "relative",
@@ -1143,15 +1075,12 @@ export const visualTheme = EditorView.theme({
     // making it feel boxed-in. Pill at top-left identifies it.
     borderTop: "2px dotted var(--border-subtle)",
     borderBottom: "2px dotted var(--border-subtle)",
-    // Precedence: explicit verse font → user's editor font (runtime) →
-    // static editor-body default. `--md-body-font` must come before the
-    // static `--editor-font-body` so verse honors the editor-font
-    // setting when no verse-specific font is chosen.
+    // Font: the verse font, else the user's editor font, else the static
+    // default.
     "--verse-active-font": "var(--verse-font, var(--md-body-font, var(--editor-font-body, serif)))",
   },
-  // Verse uses the standard .cm-typst-pill class (R1). The verse-specific
-  // rule only sets positioning so the pill anchors to the canvas's
-  // top-left corner; sizing/colors come from the unified pill rule above.
+  // The verse pill uses `.cm-typst-pill`; this only positions it at the
+  // canvas's corner.
   ".cm-typst-verse-pill": {
     position: "absolute",
     top: "0",
@@ -1182,9 +1111,6 @@ export const visualTheme = EditorView.theme({
     padding: "0 2px",
     borderRadius: "var(--radius-xs)",
   },
-  // (Verse alignment popover replaced by the universal pill super-menu.
-  // Verse alignment options now live as a section in that menu — see
-  // VerseWidget.buildOptionSections in widgets.ts.)
   // ── Table widget ──
   ".cm-typst-table-wrap": {
     display: "block",
@@ -1219,10 +1145,9 @@ export const visualTheme = EditorView.theme({
     whiteSpace: "pre-wrap",
     wordBreak: "break-word",
   },
-  // One box per source line of a painted cell. Each carries the line-level
-  // styling the note gives that line — the list indent above all, which is
-  // what a bullet's negative margin hangs from; without it the marker lands
-  // outside the cell. An empty line keeps its row, as it does in the note.
+  // One box per source line of a painted cell, with the line styling the note
+  // gives that line (notably the list indent the bullet hangs from). Empty
+  // lines keep their row.
   ".cm-typst-cell-line": {
     display: "block",
   },
@@ -1235,9 +1160,7 @@ export const visualTheme = EditorView.theme({
     "-webkit-user-select": "text",
     userSelect: "text",
   },
-  // WebKitGTK honours only `background-color` (not the `background`
-  // shorthand) inside `::selection`; using the shorthand left cell text with
-  // the browser-default blue selection instead of the app's accent tint.
+  // WebKitGTK only honours `background-color` inside `::selection`.
   ".cm-typst-table-cell::selection, .cm-typst-table-cell *::selection": {
     backgroundColor: "var(--bg-selection, Highlight)",
     color: "inherit",
@@ -1381,10 +1304,9 @@ export const visualTheme = EditorView.theme({
   },
 
   // ── Edge-drag resize handles ──
-  // Thin draggable lines pinned over each column's right edge and each row's
-  // bottom edge (positioned by setupResize). The hit target is wider than
-  // the visible line via content-box background clipping, so the 2px line
-  // stays crisp while remaining easy to grab.
+  // Thin lines over each column's right edge and row's bottom edge (placed by
+  // setupResize). The hit area is wider than the 2px line through background
+  // clipping.
   ".cm-table-resize-overlay": {
     position: "absolute",
     inset: "0",

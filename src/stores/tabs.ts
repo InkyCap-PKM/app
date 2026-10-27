@@ -35,36 +35,40 @@ export interface Tab {
   title: string;
   path: string;
   viewName?: string;
-  /** Present only on a `version-diff` tab: the past version being compared
-   *  against the note's current content (a read-only inline diff). `path` is the
-   *  real note path (for fetching current text + Restore). */
+  /**
+   * Only on a `version-diff` tab: the past version compared with the note's
+   * current text. `path` is the note's real path.
+   */
   version?: { commit: string; shortHash: string; timestamp: number };
   /** Per-tab live-preview / source toggle. Undefined = follow user default. */
   editingMode?: EditingMode;
-  /** Per-tab reading-view render format override (svg vs html). Undefined =
-   *  follow the user's `default_reading_format` setting. Per-tab so two panes
-   *  showing the same note in reading mode can differ. */
+  /**
+   * Reading-view format for this tab; undefined follows
+   * `default_reading_format`. Per tab, so two panes of one note can differ.
+   */
   readingFormat?: "svg" | "html";
-  /** Per-tab reading-view zoom factor, where 1 = 100%. Undefined = 100%.
-   *  Per-tab (like `readingFormat`) so two panes showing the same note can be
-   *  zoomed independently — one held at a legible reading size while the other
-   *  is pulled back to inspect page layout. */
+  /**
+   * Reading-view zoom for this tab (1 = 100%); undefined is 100%. Per tab, so
+   * two panes of one note can be zoomed separately.
+   */
   readingZoom?: number;
-  /** Marks a synced editor+preview pair created by "Split with preview": the
-   *  editor tab and its reading-mode preview share one id. Purely drives the
-   *  "synced" tab indicator — the preview's recompile-on-save is path-based, so
-   *  this is not load-bearing for the refresh. A group with only one member
-   *  left open (partner closed) reads as un-synced, so the indicator self-heals. */
+  /**
+   * Shared by the editor and preview tabs of a "Split with preview" pair, for the
+   * synced indicator only (the preview refreshes by path). A group with one member
+   * left reads as unsynced.
+   */
   syncGroupId?: string;
-  /** One-shot cursor offset (in UTF-16 code units) to place the caret at after
-   *  the file loads — e.g. the end of a freshly created note. Consumed by the
-   *  editor on load. */
+  /**
+   * One-time caret offset (UTF-16) applied after the file loads, e.g. the end
+   * of a new note.
+   */
   pendingCursorOffset?: number;
   /** One-shot heading label to scroll to after the file loads. */
   pendingHeadingLabel?: string;
-  /** One-shot match range to select and scroll to after the file loads.
-   *  `line` is 1-indexed; `charStart`/`charEnd` are offsets into that line.
-   *  Used by the search panel to deep-link a result row to its exact spot. */
+  /**
+   * One-time match to select and scroll to after the file loads. `line` is
+   * 1-based; `charStart` / `charEnd` are offsets in it. Used by search results.
+   */
   pendingMatch?: { line: number; charStart: number; charEnd: number };
 }
 
@@ -79,17 +83,13 @@ interface TabHistory {
   forward: TabHistoryEntry[];
 }
 
-// Flat registry of every open tab across all panes. Lookups (by id/path),
-// "is this file open?" checks, rename migration and search deep-linking all
-// run against this. Display order and which pane shows a tab are owned by
-// the pane tree (`stores/panes.ts`) — this array's order is just insertion
-// order and no longer dictates the tab strip.
+// Every open tab in all panes, for lookups, "is this open?", rename handling
+// and search links. Order and placement belong to the pane tree
+// (`stores/panes.ts`); this array is in insertion order.
 const [tabs, setTabs] = createStore<Tab[]>([]);
 
-// The app's single "active tab" is the focused pane's active tab. These
-// delegate to the pane store so the existing API — `activeTabId()`,
-// `setActiveTabId()`, `getActiveTab()` — keeps working unchanged for the
-// ~26 modules that consume it.
+// The active tab is the focused pane's active tab; these delegate to the pane
+// store.
 const activeTabId = focusedActiveTabId;
 function setActiveTabId(id: string | null): void {
   if (id === null) {
@@ -117,14 +117,10 @@ export function setTabDirty(tabId: string, dirty: boolean): void {
 // Per-tab navigation history, keyed by tab ID.
 const historyMap = new Map<string, TabHistory>();
 
-// Per-tab editor state cache. Stores a serialized CodeMirror EditorState
-// (doc + selection + undo history) plus the scroll position, so that
-// switching away from a tab and back again preserves Ctrl-Z and returns the
-// reader to where they had scrolled — rather than resetting to the top. The
-// cache is keyed by tab ID and tied to a path so we can invalidate it when a
-// tab is navigated in-place to a different file. Entries live until the tab is
-// closed (see `closeTab`), giving "remember my place until I close it"
-// semantics across any number of tab switches.
+// Per-tab editor state: the serialized EditorState (doc, selection, undo
+// history) and scroll position, so switching back to a tab keeps undo and the
+// reading position. Keyed by tab ID with its path, so it is reset when the tab
+// navigates to another file. Kept until the tab closes (see `closeTab`).
 interface CachedEditorState {
   path: string;
   /** Serialized CM6 state (doc + selection + history) for source/live mode. */
@@ -133,16 +129,19 @@ interface CachedEditorState {
   scroll?: StateEffect<unknown>;
   /** Pixel scroll offset of the reading-mode container (`.typst-reading`). */
   readingScrollTop?: number;
-  /** The text of `json` once it is known to be saved to disk. A restore that
-   *  finds the note on disk no longer matching it knows the file changed
-   *  while the tab was away (a link rewrite on rename, sync, another app). */
+  /**
+   * The text of `json` once known to be saved. If the note on disk no longer
+   * matches on restore, it changed while the tab was away (a rename's link
+   * rewrite, a sync, another app).
+   */
   savedText?: string;
 }
 const editorStateCache = new Map<string, CachedEditorState>();
 
-/** Merge a partial update into a tab's cache entry, preserving fields that
- *  belong to other editor modes. A path change resets the entry so a tab
- *  navigated in-place to a different file doesn't inherit stale scroll/state. */
+/**
+ * Merge an update into a tab's cache entry, keeping other modes' fields. A
+ * different path resets the entry.
+ */
 function patchCacheEntry(tabId: string, path: string, patch: Partial<Omit<CachedEditorState, "path">>): void {
   const existing = editorStateCache.get(tabId);
   if (existing && pathEquals(existing.path, path)) {
@@ -189,12 +188,12 @@ export function getCachedSavedText(tabId: string, path: string): string | undefi
   return entry.savedText;
 }
 
-/** Cache the source/live-mode scroll position. Captured *continuously* while
- *  the user scrolls (not at teardown): destroyEditor runs from a `createEffect`,
- *  which fires after Solid's render effects have already removed the editor div,
- *  so a snapshot taken there reads a detached scroller (scrollTop 0). Tracking
- *  live avoids that ordering trap. The value is a document-anchored CM6 scroll
- *  effect so it re-applies correctly regardless of viewport height at restore. */
+/**
+ * Save the source/visual scroll position. Updated continuously while scrolling,
+ * because by teardown the editor div is already detached and reads as 0. Stored
+ * as a document-anchored CM6 scroll effect, so it restores correctly at any
+ * viewport height.
+ */
 export function setCachedScroll(tabId: string, path: string, scroll: StateEffect<unknown>): void {
   patchCacheEntry(tabId, path, { scroll });
 }
@@ -213,11 +212,11 @@ export function clearCachedEditorState(tabId: string): void {
   editorStateCache.delete(tabId);
 }
 
-/** Drop every cached editor state for `path`, and clear those tabs' dirty flags.
- *  Call this after writing a note out-of-band (a version restore, a hunk revert)
- *  so an inactive tab of that note reloads fresh from disk on reactivation
- *  instead of restoring its now-stale cached buffer — which would otherwise show
- *  old content and read as dirty (cached buffer ≠ the just-written disk file). */
+/**
+ * Drop the cached editor state for `path` and clear those tabs' dirty flags. Call
+ * after writing a note outside the editor (a version restore, a hunk revert) so
+ * inactive tabs reload from disk instead of restoring stale text.
+ */
 export function invalidateEditorCacheForPath(path: string): void {
   for (const [tabId, entry] of editorStateCache.entries()) {
     if (pathEquals(entry.path, path)) {
@@ -243,9 +242,8 @@ function getOrCreateHistory(tabId: string): TabHistory {
   return h;
 }
 
-// Stack of recently-closed tabs, most-recent last. Powers "Reopen Closed
-// Tab" (Ctrl+Shift+T). Empty (file-less) tabs are never recorded; the
-// stack is capped so a long session doesn't accumulate unbounded entries.
+// Recently closed tabs, newest last, for "Reopen Closed Tab" (Ctrl+Shift+T).
+// Empty tabs aren't recorded; the stack is capped.
 interface ClosedTab {
   type: Tab["type"];
   title: string;
@@ -261,12 +259,9 @@ export interface OpenTabOptions {
   /** If true, always open in a new tab (Ctrl+Click behaviour). */
   forceNewTab?: boolean;
   /**
-   * Marks this as a discretionary "open in a new tab" action — a
-   * Ctrl/Cmd+click or a right-click "open in new tab" menu item. When set,
-   * whether the content focus switches to the opened tab is governed by the
-   * user's "Switch to new tabs immediately" setting
-   * (`behaviour.switch_to_new_tab`). Without this flag an opened tab always
-   * takes focus, so creations, header buttons and quick-open keep switching.
+   * An explicit "open in new tab" (Ctrl/Cmd+click or the menu item). Whether it
+   * takes focus follows the "Switch to new tabs immediately" setting
+   * (`behaviour.switch_to_new_tab`); other opens always take focus.
    */
   newTabAction?: boolean;
   /** UTF-16 code-unit offset to place the cursor at after the file loads. */
@@ -276,20 +271,16 @@ export interface OpenTabOptions {
   /** Match range to select and scroll to after the file loads. */
   match?: { line: number; charStart: number; charEnd: number };
   /**
-   * Skip the "activate the existing tab with this path" shortcut and always
-   * create a fresh tab. Needed when the caller deliberately wants a second,
-   * independent view of a file that is *already* open — notably opening the
-   * anchor note from inside its own Journal Scroll tab, where the existing
-   * tab with that path IS the scroll itself.
+   * Always create a new tab, even if one with this path is open. Used to open a
+   * Journal Scroll's anchor note from inside that scroll, whose tab has the
+   * same path.
    */
   allowDuplicate?: boolean;
 }
 
 /**
- * Decide whether an `openTab` call should switch the content focus to the
- * opened tab. A discretionary "open in new tab" action defers to the user's
- * preference; every other open (in-place navigation, creations, quick-open,
- * header buttons) takes focus immediately.
+ * Whether `openTab` should switch focus to the tab: an explicit "open in new
+ * tab" follows the user's setting; every other open takes focus.
  */
 function shouldActivate(opts: OpenTabOptions | undefined): boolean {
   if (opts?.newTabAction) return settings.behaviour.switch_to_new_tab;
@@ -297,17 +288,13 @@ function shouldActivate(opts: OpenTabOptions | undefined): boolean {
 }
 
 /**
- * Open a file/collection/mycelial view. By default, navigates within the active
- * tab (replacing its content and pushing history). If `forceNewTab` is
- * set, or there is no active tab, a new tab is created instead.
+ * Open a file, collection or Mycelial view. By default it replaces the active
+ * tab's content and adds to history; with `forceNewTab`, or no active tab, it
+ * opens a new tab. An existing tab with the same path and type is reused. Focus
+ * follows `shouldActivate`.
  *
- * If a tab with the same path+type already exists, that tab is reused.
- * Whether the content focus switches to the opened/reused tab is governed
- * by `shouldActivate` (see `OpenTabOptions.activate`).
- *
- * Passing `editingMode` pins the mode the tab lands in (source / visual /
- * reading); it is applied whichever way the tab is resolved — reused, navigated
- * in place, or freshly created. Leave it undefined to follow the user default.
+ * `editingMode` sets the mode (source, visual, reading) whichever way the tab
+ * is resolved; undefined follows the user default.
  */
 export function openTab(
   tab: Omit<Tab, "id">,
@@ -329,9 +316,8 @@ export function openTab(
     if (opts?.match) {
       setTabs((t) => t.id === existing.id, "pendingMatch", opts.match);
     }
-    // A caller that asks for a specific editor mode (e.g. the collection
-    // table's "open in visual editor" button) gets it even when the note is
-    // already open in some other mode.
+    // An explicit mode applies even when the note is already open in another
+    // mode.
     if (tab.editingMode) {
       setTabs((t) => t.id === existing.id, "editingMode", tab.editingMode);
     }
@@ -345,9 +331,8 @@ export function openTab(
 
   // Navigate within the active tab when possible.
   if (active && !opts?.forceNewTab) {
-    // Only push history for tabs that have actual content. A version-diff is a
-    // transient read-only compare view (no version metadata survives a
-    // {type,title,path} history entry), so it never enters nav history.
+    // Only tabs with content enter history. A version-diff is a temporary
+    // compare view and never does.
     if (active.type !== "empty" && active.type !== "version-diff") {
       const h = getOrCreateHistory(active.id);
       h.back.push({
@@ -398,12 +383,9 @@ export function openTab(
 }
 
 /**
- * Open a freshly created note from a creation rule (toolbar button, command
- * palette, hotkey, file-tree "new note", startup). Reuses the active tab when
- * it's an empty placeholder ("New tab") so a creation doesn't strand a blank
- * tab beside the new note; otherwise opens a fresh tab so a note the user is
- * already working on isn't replaced. All creation-rule entry points share this
- * so the behaviour stays uniform.
+ * Open a note just made by a creation rule. Reuses the active tab when it is
+ * empty ("New tab"), otherwise opens a new tab so the current note isn't
+ * replaced. Used by every creation entry point.
  */
 export function openCreatedNote(
   tab: Omit<Tab, "id">,
@@ -413,10 +395,10 @@ export function openCreatedNote(
   return openTab(tab, { ...opts, forceNewTab: !reuseEmpty });
 }
 
-/** Open (or update) a read-only version-compare tab for `notePath`. If one is
- *  already open for this note, retarget it to the new version in place — so
- *  clicking through a note's history reuses one compare view rather than
- *  stacking tabs. Otherwise opens a fresh `version-diff` tab. */
+/**
+ * Open a read-only compare tab for `notePath`, or retarget the existing one, so
+ * browsing history reuses one view.
+ */
 export function openVersionDiff(
   notePath: string,
   title: string,
@@ -428,9 +410,8 @@ export function openVersionDiff(
   if (existing) {
     retargetVersionDiff(existing.id, notePath, title, version);
   } else {
-    // Open the compare tab in the note's pane *without* switching to it: this
-    // deliberately ignores the "switch to new tab" preference so the note stays
-    // active and its Changes & History sidebar stays put for browsing versions.
+    // Open it in the note's pane without switching to it, whatever the "switch
+    // to new tab" setting, so the Changes & History sidebar stays on the note.
     const newId = `tab-${nextId++}`;
     setTabs(
       produce((t) =>
@@ -442,18 +423,19 @@ export function openVersionDiff(
   keepNoteActive(notePath);
 }
 
-/** Keep the note whose history is being browsed active (and its pane focused),
- *  so opening or retargeting a version-diff never steals focus — the Changes &
- *  History sidebar then stays on the note. Always applied, regardless of the
- *  "switch to new tab" setting. No-op if the note isn't open as a file tab. */
+/**
+ * Keep the note whose history is shown active and its pane focused. No-op if it
+ * isn't open as a file tab.
+ */
 function keepNoteActive(notePath: string): void {
   const noteTab = tabs.find((t) => t.type === "file" && pathEquals(t.path, notePath));
   if (noteTab) activateTab(noteTab.id);
 }
 
-/** Point the single compare (version-diff) tab at a note + version. The pane
- *  showing it re-renders because `PaneLeaf` keys the view on the version commit
- *  too (so a retarget reloads even within the same note). */
+/**
+ * Point the compare tab at a note and version. `PaneLeaf` keys the view on the
+ * commit, so it reloads.
+ */
 function retargetVersionDiff(
   tabId: string,
   notePath: string,
@@ -470,15 +452,11 @@ function retargetVersionDiff(
   );
 }
 
-/** Open a note version *beside* the current note: split the focused pane to the
- *  right and put the version-diff in the new right pane, leaving the live note in
- *  the left. The side-by-side counterpart of [`openVersionDiff`] (which replaces
- *  the active tab). Falls back to an in-pane diff if the split can't be created.
- *
- *  Reuses a single compare view: if a version-diff tab is already open, it's
- *  retargeted to this note/version (and its pane focused) rather than spawning
- *  another split — so repeated side-by-side clicks don't stack panes. To compare
- *  several versions at once, split the view manually. */
+/**
+ * Open a note version beside the note: split the focused pane and show the
+ * version-diff on the right. Falls back to an in-pane diff if the split fails. An
+ * existing compare tab is retargeted instead of adding another split.
+ */
 export function openVersionDiffSplit(
   notePath: string,
   title: string,
@@ -488,9 +466,8 @@ export function openVersionDiffSplit(
   if (existing) {
     retargetVersionDiff(existing.id, notePath, title, version);
     const leaf = leafForTab(existing.id);
-    // If the compare tab already has its own pane, just reuse it there. If it's
-    // sharing a pane (e.g. opened as a second tab beside the note), move it into
-    // a new side-by-side pane so the note and the history sit beside each other.
+    // Reuse the compare tab's own pane; if it shares the note's pane, move it to
+    // a new one beside it.
     if (leaf && leaf.tabIds.length > 1) {
       removeTab(existing.id); // detach from the shared leaf (note stays put)
       if (!splitLeaf(leaf.id, "row", existing.id)) {
@@ -553,9 +530,8 @@ export function closeTab(id: string) {
     if (closedTabs.length > CLOSED_TAB_LIMIT) closedTabs.shift();
   }
 
-  // Remove from the pane tree first — this re-points the owning leaf's
-  // active tab to a neighbour and collapses the pane if it just emptied —
-  // then drop the tab from the registry.
+  // Remove from the pane tree first (which picks a new active tab and collapses
+  // an empty pane), then from the registry.
   const { workspaceEmptied } = removeTab(id);
   setTabs(produce((t) => {
     const i = t.findIndex((x) => x.id === id);
@@ -565,18 +541,17 @@ export function closeTab(id: string) {
   editorStateCache.delete(id);
   setTabDirty(id, false);
 
-  // Invariant: while a notebox is open, the workspace always has at least
-  // one tab. If closing this tab emptied the sole remaining pane, spawn a
-  // fresh empty tab so the user lands on the tabula-rasa hints.
+  // With a notebox open there is always at least one tab; replace the last one
+  // with an empty tab.
   if (workspaceEmptied) {
     createEmptyTab();
   }
 }
 
-/** Close every open tab. Used when switching noteboxes so notes from the
- *  previous notebox don't linger as zombie tabs in the new one. The
- *  closed-tab stack is also cleared — reopening a tab from a different
- *  notebox would resolve the wrong file. */
+/**
+ * Close every tab, when switching noteboxes. The closed-tab stack is cleared
+ * too, since its paths belong to the old notebox.
+ */
 export function closeAllTabs() {
   setTabs([]);
   historyMap.clear();
@@ -588,9 +563,10 @@ export function closeAllTabs() {
 }
 
 
-/** Reopen the most recently closed tab (Ctrl+Shift+T). No-op when the
- *  closed-tab stack is empty. Opens in a fresh tab; if a tab with the
- *  same path is already open, that tab is focused instead. */
+/**
+ * Reopen the most recently closed tab (Ctrl+Shift+T) in a new tab, or focus it
+ * if already open.
+ */
 export function reopenClosedTab() {
   const last = closedTabs.pop();
   if (!last) return;
@@ -606,18 +582,20 @@ export function getActiveTab(): Tab | undefined {
   return id ? tabs.find((t) => t.id === id) : undefined;
 }
 
-/** Path of the file open in the focused pane's active tab, or `undefined`
- *  when that tab isn't a file (a collection, an empty tab, …). This is the
- *  note the "Current folder" option of "New note location" refers to. */
+/**
+ * Path of the file in the focused pane's active tab, or `undefined` if it isn't
+ * a file. Used for the "Current folder" note location.
+ */
 export function activeNotePath(): string | undefined {
   const tab = getActiveTab();
   return tab?.type === "file" ? tab.path : undefined;
 }
 
-/** Display title for a tab. Empty tabs show the localized "New tab" label
- *  rather than their stored placeholder title; file tabs drop the extension;
- *  other tab types keep their title verbatim. The dot must follow at least one
- *  character so a leading-dot file like ".gitignore" doesn't render blank. */
+/**
+ * Tab title: "New tab" (localized) for empty tabs, the name without extension
+ * for files, and the stored title otherwise. A leading-dot name like
+ * ".gitignore" keeps its name.
+ */
 export function tabDisplayTitle(tab: Pick<Tab, "type" | "title">): string {
   if (tab.type === "empty") return t("tabStrip.newTab");
   if (tab.type !== "file") return tab.title;
@@ -630,10 +608,8 @@ export function reorderTab(fromIndex: number, toIndex: number) {
 }
 
 /**
- * Split a pane in two. The new sibling opens a second, independent view of
- * the source pane's active tab (same file, fresh editor instance) — the
- * common "compare two places in one document" case — or an empty tab when
- * the source pane has nothing open. Focus moves to the new pane.
+ * Split a pane. The new pane shows a second, independent view of the active tab
+ * (or an empty tab) and takes focus.
  */
 export function splitPane(leafId: string, direction: SplitDirection): string | null {
   const leaf = leafById(leafId);
@@ -666,17 +642,11 @@ export function splitPane(leafId: string, direction: SplitDirection): string | n
 }
 
 /**
- * Split the pane and open a live-updating reading-mode preview of the active
- * note in the new sibling — the "edit here, watch the render there" case.
- *
- * The preview follows the user's Appearance > Reading view format preference
- * (`readingFormat` left undefined → `tabReadingFormat` falls back to
- * `default_reading_format`). Both tabs are tagged with a shared `syncGroupId`
- * to drive the synced-pair indicator; the preview's refresh itself is
- * path-based (it recompiles on `inkycap:note-saved`, which the editor's
- * autosave already emits). Focus stays on the source pane so the user keeps
- * typing. Returns the new leaf id, or null when the active tab isn't a note
- * (nothing to preview) or the split failed.
+ * Split the pane and show a live reading-mode preview of the active note in the
+ * new one. The preview uses the user's reading format, and both tabs share a
+ * `syncGroupId` for the synced indicator; the preview recompiles on
+ * `inkycap:note-saved`. Focus stays on the editor. Returns the new leaf id, or
+ * null if the tab isn't a note or the split failed.
  */
 export function splitWithPreview(leafId: string): string | null {
   const leaf = leafById(leafId);
@@ -720,19 +690,17 @@ export function splitWithPreview(leafId: string): string | null {
   return newLeafId;
 }
 
-/** True when this tab belongs to a synced editor+preview pair whose partner is
- *  still open. Reactive (reads the tab store). A group stranded to one member
- *  reads as un-synced, so the indicator clears when either pane closes. */
+/** True when this tab's synced partner is still open. */
 export function isSyncedTab(tabId: string): boolean {
   const tab = tabs.find((t) => t.id === tabId);
   if (!tab?.syncGroupId) return false;
   return tabs.some((t) => t.id !== tabId && t.syncGroupId === tab.syncGroupId);
 }
 
-/** True when the note at `path` already has a live "Split with preview" pair
- *  open anywhere. Caps the feature at one synced preview per note: both the
- *  editor and preview panes of a synced note report true, so the action is
- *  hidden for both. Reactive (reads the tab store). */
+/**
+ * True when the note at `path` already has a "Split with preview" pair open;
+ * only one is allowed per note, so the action is hidden in both panes.
+ */
 export function pathHasSyncedPreview(path: string): boolean {
   return tabs.some((t) => pathEquals(t.path, path) && isSyncedTab(t.id));
 }
@@ -771,16 +739,10 @@ export function switchToTabByIndex(index: number) {
 }
 
 /**
- * Migrate any tab, cached editor state, or history entry that points at
- * `from` to point at `to` instead. Invoked when the file watcher reports
- * an external rename (a `mv` in the terminal, a rename in the file
- * manager, etc.) so that an open tab follows the file rather than
- * becoming a phantom that errors on the next save.
- *
- * The new title defaults to the destination filename, matching how
- * `openTab` callers (App.tsx, MycelialView.tsx) compute the title from a
- * path. Pass `newTitle` for tabs titled otherwise, such as a collection,
- * whose tab shows its name without the `.collection` extension.
+ * Point any tab, cached state or history entry at `from` to `to` instead, after
+ * an external rename, so open tabs follow the file. The title defaults to the
+ * new file name; pass `newTitle` for others, such as a collection, shown
+ * without `.collection`.
  */
 export function renameTabPath(from: string, to: string, newTitle = to.split("/").pop() ?? to) {
   if (pathEquals(from, to)) return;
@@ -797,10 +759,7 @@ export function renameTabPath(from: string, to: string, newTitle = to.split("/")
     }),
   );
 
-  // Editor state cache is keyed by tab ID but stores the path alongside
-  // the serialized state so cache entries can be invalidated when a tab
-  // navigates to a different file. Migrate matching entries so the
-  // cached undo history isn't thrown away on rename.
+  // Move cached entries too, so undo history survives the rename.
   for (const [tabId, entry] of editorStateCache.entries()) {
     if (pathEquals(entry.path, from)) {
       editorStateCache.set(tabId, { ...entry, path: to });
@@ -850,11 +809,9 @@ export function setTabReadingFormat(tabId: string, fmt: "svg" | "html") {
   setTabs((t) => t.id === tabId, "readingFormat", fmt);
 }
 
-// Reading-view zoom bounds. Wider than a browser's own range at the low end —
-// pulling a paginated SVG note back far enough to see a whole spread is a real
-// use — and stopping at 4× above, past which the SVG page no longer fits any
-// pane. `READING_ZOOM_STEP` is the geometric factor one Ctrl+= / wheel notch
-// applies, matching the Mycelial view's 1.2.
+// Reading-view zoom limits: lower than a browser's, so a paged note can be
+// pulled back to see a spread; 4× at most. `READING_ZOOM_STEP` is the factor
+// per Ctrl+= or wheel notch, as in the Mycelial view.
 export const READING_ZOOM_MIN = 0.25;
 export const READING_ZOOM_MAX = 4;
 export const READING_ZOOM_STEP = 1.2;
@@ -872,9 +829,10 @@ export function setTabReadingZoom(tabId: string, zoom: number) {
   setTabs((t) => t.id === tabId, "readingZoom", clamped);
 }
 
-/** Multiply a tab's reading-view zoom by `factor` (one notch in or out).
- *  Geometric rather than additive so a notch feels the same size at 40% as at
- *  300% — the same reason the Mycelial view scales rather than steps. */
+/**
+ * Multiply a tab's zoom by `factor`; geometric, so each step feels the same at
+ * any zoom.
+ */
 export function nudgeTabReadingZoom(tabId: string, factor: number) {
   setTabReadingZoom(tabId, tabReadingZoom(tabId) * factor);
 }

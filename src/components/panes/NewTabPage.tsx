@@ -34,10 +34,9 @@ import { noteboxInfo, indexReady, propertyVersion, fileTreeVersion } from "../..
 import { executeCommand, findCommandByKeybinding } from "../../lib/command-registry";
 import { navigateWikilink } from "../../lib/wikilink-nav";
 
-/// Every action doubles as a button that does what it describes, so a click
-/// and the shortcut do the same thing. "Create a note" is bound by a creation
-/// rule rather than a fixed command, so it is looked up by the key combo the
-/// label names.
+/// Each action is also a button doing what it says. "Create a note" is bound by
+/// a creation rule, not a fixed command, so it is found by the key combo in its
+/// label.
 const ACTIONS: { labelKey: string; run: () => void }[] = [
   {
     labelKey: "mainContent.emptyState.openFileHint",
@@ -80,10 +79,11 @@ function formatModified(secs: number): string {
 }
 
 /**
- * Fetches one list while `enabled()` is true, refetching whenever the notebox
- * index or the chosen list length changes. Returns `undefined` until the index has finished its first
- * scan, so a half-built index never shows as a short list. While a refetch is
- * in flight it keeps returning the previous list, so the page never flickers.
+ * Fetches one list while `enabled()` is true, again whenever the notebox index
+   or list length
+ * changes. `undefined` until the index finishes its first scan, so a half-built
+   index never shows
+ * as a short list. During a refetch the previous list is kept, so nothing flickers.
  */
 function useIndexedList<T>(
   enabled: () => boolean,

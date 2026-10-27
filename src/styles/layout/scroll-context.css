@@ -1,6 +1,5 @@
-/* Scroll Context right-panel surface.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Scroll Context right panel surface. Part of layout.css, whose import order
+   (see ../layout.css) keeps the cascade. */
 
 /* ─── Scroll Context right-panel surface ─── */
 
@@ -21,9 +20,8 @@
   text-align: center;
 }
 
-/* Section body — a light card on the panel's darker (--bg-secondary)
-   background so content reads as distinct from the section headings
-   above it. */
+/* Section body: a light card on the panel's darker (--bg-secondary)
+   background, set apart from the headings. */
 .scroll-context__section-body {
   display: flex;
   flex-direction: column;

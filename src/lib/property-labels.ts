@@ -1,13 +1,8 @@
-// Friendly display labels for collection property keys.
-//
-// Collection tables key off raw property identifiers — user-authored note
-// properties (`title`, `instructor`, …) and synthetic filesystem properties
-// (`file.mtime`, `file.size`, …). The raw `file.*` keys are precise but read
-// like internals; this module maps them to human labels for display only.
-//
-// The KEY stays the identity used for sorting, filtering, column config and
-// IPC — only the rendered text changes. User-authored property keys are shown
-// verbatim (we don't second-guess names the author chose).
+// Display labels for collection property keys. Collection tables use raw keys:
+// note properties (`title`, `instructor`, …) and file properties (`file.mtime`,
+// `file.size`, …). The `file.*` keys get readable labels here, for display
+// only; the key is still what sorting, filtering, column settings and IPC use.
+// Note property names are shown as written.
 
 import { t } from "./i18n";
 

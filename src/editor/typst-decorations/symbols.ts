@@ -1,15 +1,11 @@
-// Curated subset of Typst's `sym` module — the symbols common enough to be
-// worth a quick-pick in the `/` menu and a glyph preview on the visual-editor
-// `#sym.*` pill.
+// A selection of Typst's `sym` symbols common enough for the `/` menu and a
+// glyph preview on the `#sym.*` pill.
 //
-// This is deliberately NOT a mirror of Typst's full symbol table (hundreds of
-// entries). Reproducing that table in TypeScript would duplicate what Typst
-// owns and drift as Typst evolves — exactly what CLAUDE.md's Typst-first
-// principle warns against. The `#sym.*` pill falls back to showing the raw
-// name for any symbol outside this set, and the pill's name input accepts any
-// symbol, so coverage here only governs which ones get a glyph preview and a
-// menu shortcut. Names + glyphs verified against the `codex` crate
-// (codex/src/modules/sym.txt), the authoritative table Typst compiles from.
+// Not a copy of Typst's full table (hundreds of symbols), which would duplicate
+// what Typst owns. The pill shows the raw name for other symbols and its name
+// field accepts any, so this only decides which get a preview and a menu entry.
+// Names and glyphs checked against the `codex` crate
+// (codex/src/modules/sym.txt), which Typst compiles from.
 
 export interface CuratedSymbol {
   /** Dotted path after `#sym.` — e.g. "arrow.r", "trademark.registered". */

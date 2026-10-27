@@ -1,6 +1,5 @@
-/* Notebox name/switcher, management pane, notebox-lost banner.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Notebox name and switcher, management pane, notebox-lost banner. Part of
+   layout.css, whose import order (see ../layout.css) keeps the cascade. */
 
 /* ─── Status bar: clickable notebox name ─── */
 
@@ -15,10 +14,9 @@
   font-size: var(--text-sm);
   font-weight: 500;
   cursor: pointer;
-  /* The status bar places this button's left edge at --toolbar-btn-inset.
-     The side padding then centres its 14px icon (set in StatusBar.tsx) on the
-     same vertical line as the toolbar's icons above it. The right side uses
-     the same padding so the chip looks even at both ends. */
+  /* The status bar puts this button's left edge at --toolbar-btn-inset; this
+     padding centres its 14px icon (set in StatusBar.tsx) under the toolbar
+     icons. The right side matches. */
   --notebox-name-pad-x: max(
     8px,
     calc(var(--toolbar-width) / 2 - var(--toolbar-btn-inset) - 7px)
@@ -49,9 +47,8 @@
   text-align: left;
 }
 
-/* Each notebox row pairs the switch action (fills the row) with a trailing
-   "open in a new window" button, which only tints on hover so it stays quiet
-   until reached for. */
+/* Each notebox row has the switch action (filling the row) and an "open in a
+   new window" button that only tints on hover. */
 .notebox-switcher__row {
   display: flex;
   align-items: center;
@@ -102,12 +99,10 @@
   align-items: flex-start;
 }
 
-/* Registry rows (not the add/clone/import forms, which lack data-notebox-path)
-   lay out as a two-column grid: name and path on the left, action buttons on
-   the right, with the per-notebox collaboration line spanning both columns
-   underneath so it and its experimental notice get the full row width. The
-   buttons claim their own column, so a long path wraps beside them instead of
-   running underneath. */
+/* Registry rows (not the add/clone/import forms, which lack
+   data-notebox-path) are a two-column grid: name and path on the left,
+   buttons on the right, and the collaboration line below across both
+   columns. A long path wraps beside the buttons. */
 .notebox-row[data-notebox-path] {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -149,9 +144,8 @@
   gap: var(--space-2);
 }
 
-/* A field row inside an add/clone/import form: the text input paired with its
-   inline "?" help trigger, so the explanatory hint lives in the popover rather
-   than cramped into the input's placeholder. */
+/* A field in an add/clone/import form: the input and its "?" help button, so
+   the hint is in the popover rather than the placeholder. */
 .notebox-form__field {
   display: flex;
   align-items: center;
@@ -201,10 +195,8 @@
   margin-top: var(--space-3);
 }
 
-/* The collaboration line is the registry row's third grid child, so without
-   this it would be auto-placed into the left column only and its experimental
-   notice would wrap into a narrow strip. Span both columns so the line gets
-   the full row width beneath the name, path, and buttons. */
+/* The collaboration line is the row's third grid item; span both columns so
+   it and its experimental notice get the full width. */
 .notebox-row[data-notebox-path] > .notebox-row__collab {
   grid-column: 1 / -1;
 }
@@ -256,8 +248,8 @@
   background: color-mix(in srgb, var(--accent-danger) 45%, black);
   color: var(--fg-on-accent);
   border-bottom: 1px solid color-mix(in srgb, var(--accent-danger) 65%, black);
-  /* An edge-attached banner casting onto the content below, not a floating
-     surface with an edge to define.
+  /* A banner attached to the edge, casting onto the content below, not a
+     floating surface.
      token-exempt: edge-attached banner, not a floating surface */
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
   font-size: var(--text-sm);

@@ -1,6 +1,5 @@
-// Files tab: new-note location + attachment folder, link/delete/extension
-// toggles, the Zettelkasten-ID options, and a maintenance "Rebuild cache"
-// recovery action.
+// Files tab: new note location and attachment folder, link, delete and
+// extension settings, Zettelkasten ID options, and "Rebuild cache".
 import { createResource, createSignal, Show } from "solid-js";
 import * as ipc from "../../lib/ipc";
 import { settings, updateSetting, noteboxSettings, updateNoteboxSetting } from "../../stores/settings";

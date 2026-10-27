@@ -1,19 +1,18 @@
-// The top of a note: the imports, `#note(...)` properties call and other
-// setup that come before its body. Read from the Typst syntax tree (Typst's
-// own parser, via codemirror-lang-typst), so a multi-line `#note(...)` or a
-// comment containing brackets can't mislead it the way a line scan could.
+// The top of a note: the imports, the `#note(...)` call and other setup before
+// the body. Read from the Typst syntax tree, so a multi-line `#note(...)` or a
+// comment with brackets can't confuse it.
 //
-// Every question about where the header ends goes through `noteHeaderItems`;
-// callers apply their own rule on top of that one list.
+// Every question about where the header ends goes through `noteHeaderItems`.
 
 import type { EditorState } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
 import { isCommentClosed } from "./comments";
 import type { ProtectedRange } from "./visual-protected";
 
-/** What a header item is. `locale` is a `#set text(...)` that only sets the
- *  document language (see {@link isLeadingLocaleDirective}); other set rules
- *  are `set`. */
+/**
+ * Kind of header item. `locale` is a `#set text(...)` that only sets the
+ * language (see {@link isLeadingLocaleDirective}); other set rules are `set`.
+ */
 export type HeaderItemKind =
   | "comment"
   | "import"
@@ -33,9 +32,11 @@ export interface HeaderItem {
   to: number;
 }
 
-/** The note's leading header items in document order, ending before the first
- *  top-level node that is none of the kinds above (usually body text). Blank
- *  lines between items are skipped. Empty when the state has no Typst parser. */
+/**
+ * The note's header items in order, up to the first top-level node of another
+ * kind (usually body text). Blank lines are skipped. Empty without a Typst
+ * parser.
+ */
 export function noteHeaderItems(state: EditorState): HeaderItem[] {
   const items: HeaderItem[] = [];
   const cur = syntaxTree(state).cursor();
@@ -105,10 +106,9 @@ const TOP_MATTER: ReadonlySet<HeaderItemKind> = new Set([
 ]);
 
 /**
- * Offset where the note's body begins: the start of the first line after the
- * top matter and any blank lines that follow it, or the end of the document.
- * New `#set` rules and dropped files are placed here, so they sit below the
- * imports and properties rather than among them.
+ * Where the note's body begins: the first line after the header and the blank
+ * lines after it, or the document end. New `#set` rules and dropped files go
+ * here, below the imports and properties.
  */
 export function noteBodyStart(state: EditorState): number {
   let headerEnd = 0;
@@ -132,21 +132,14 @@ export function noteBodyStart(state: EditorState): number {
 }
 
 /**
- * True for a document-language directive line — a `#set text(...)` whose
- * arguments are *exclusively* `lang:` and/or `region:`, e.g.
- * `#set text(lang: "fr", region: "CA")`.
+ * True for a language line: a `#set text(...)` with only `lang:` and/or
+ * `region:`, e.g. `#set text(lang: "fr", region: "CA")`.
  *
- * This is locale typesetting machinery: a note whose prose is French (German,
- * …) carries it so Typst applies the right hyphenation, punctuation spacing,
- * and smart quotes. It is boilerplate the author rarely edits — analogous to
- * the notebox `#import` — so the visual editor folds it into the hidden,
- * locked leading-preamble block rather than surfacing it as raw source or a
- * "document setup" chip. (It stays fully visible and editable in source mode.)
- *
- * A `#set text(font: …)` — or any other key alongside lang/region — is genuine
- * document setup and deliberately does NOT match: it belongs in the visible
- * setup chip. The leading `#` is optional so this also matches a bare `SetRule`
- * syntax node (whose `#` is a separate token).
+ * It sets hyphenation, spacing and quotes for the note's language and is rarely
+ * edited, so the visual editor hides it with the notebox `#import` (source mode
+ * shows it). A `#set text(font: …)`, or any other argument, doesn't match: that
+ * is document setup, shown in the setup chip. The `#` is optional, so a bare
+ * `SetRule` node (whose `#` is a separate token) also matches.
  */
 export function isLeadingLocaleDirective(text: string): boolean {
   const m = /^#?set\s+text\s*\((.*)\)\s*$/.exec(text.trim());
@@ -157,14 +150,11 @@ export function isLeadingLocaleDirective(text: string): boolean {
 }
 
 /**
- * Ranges (whole lines plus their trailing newline) of the leading run of
- * `#import` lines — the notebox import plus any package imports a user or a
- * template added — and a document-language directive among them. The run ends
- * at the first other header item (typically the `#note(...)` call) or body
- * line. These are hidden and locked in the visual editor so the note reads as
- * a clean document, while the source editor leaves them fully visible and
- * editable (only the notebox import is also locked in source, via
- * `importLineGuard`).
+ * Ranges (whole lines with their newline) of the leading `#import` lines (the
+ * notebox import and any package imports) and a language line among them, up to
+ * the first other header item (usually `#note(...)`) or body line. Hidden and
+ * locked in the visual editor; in source mode they're visible, and only the
+ * notebox import is locked (`importLineGuard`).
  */
 export function computePreambleImportRanges(state: EditorState): ProtectedRange[] {
   const ranges: ProtectedRange[] = [];

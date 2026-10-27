@@ -27,10 +27,9 @@ const VALID_SORT_KEYS: SortKey[] = [
 
 const SORT_PREF_KEY = "inkycap:references-panel:sort";
 
-/// Sort options for the Browse References menu, in display order. Rendered
-/// as an app-drawn `.context-menu` (see `anchorPanelMenu`) to match the
-/// left sidebar's File/Tag/Property sort menus — a native <select> popup
-/// is OS-themed and can't follow the InkyCap theme on WebKitGTK.
+/// Sort options for Browse References, in display order. Shown as an app-drawn
+/// `.context-menu` (see `anchorPanelMenu`) like the sidebar sort menus, since a
+/// native <select> popup can't follow the theme on WebKitGTK.
 const SORT_OPTIONS: { value: SortKey; labelKey: string }[] = [
   { value: "added-desc", labelKey: "references.sort.addedNewest" },
   { value: "added-asc", labelKey: "references.sort.addedOldest" },
@@ -270,10 +269,9 @@ const ReferencesPanel: Component = () => {
 
   const [copyingBib, setCopyingBib] = createSignal(false);
 
-  // Copy the active file's references as static, pre-formatted Typst markup so
-  // the user can paste a frozen bibliography into another note (no live
-  // `#bibliography(...)` needed). Backend renders via hayagriva in the
-  // notebox's citation style; we just place the result on the clipboard.
+  // Copy the active file's references as formatted Typst, to paste a fixed
+  // bibliography into another note without `#bibliography(...)`. The backend
+  // formats it with hayagriva in the notebox's citation style.
   async function handleCopyBibliography() {
     const path = activeFileTab()?.path;
     if (!path || copyingBib()) return;

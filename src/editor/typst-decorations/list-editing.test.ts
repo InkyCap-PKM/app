@@ -6,10 +6,9 @@ import { codeFolding, foldEffect, foldedRanges } from "@codemirror/language";
 import { typstKeymap, listContentStart, smartIndentListsFacet } from "./keymaps";
 import { listPasteHandler, listPasteInsertion } from "./list-paste";
 
-// Parser-independent unit tests for the in-page list editing affordances:
-// smart Home (caret lands on the text, after the marker) and the list-paste
-// marker de-duplication. Both work off raw line text, so no WASM parser is
-// needed.
+// Tests for in-page list editing that don't need the parser: Home putting the
+// caret on the text after the marker, and removing a duplicate marker on paste.
+// Both use the line text only.
 
 function mk(doc: string, anchor = doc.length) {
   return new EditorView({
@@ -95,9 +94,9 @@ describe("smart Home", () => {
   });
 
   it("tags its transaction as a select gesture", () => {
-    // The selection format toolbar only appears for selections a user made
-    // deliberately, which it recognizes by CodeMirror's `select` user event.
-    // An untagged Shift-Home left the toolbar hidden.
+    // The selection toolbar appears only for selections the user made,
+    // recognized by CodeMirror's `select` user event, so Shift-Home must be
+    // tagged with it.
     const events: (string | undefined)[] = [];
     const v = new EditorView({
       state: EditorState.create({

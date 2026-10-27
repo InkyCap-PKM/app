@@ -1,9 +1,7 @@
-// Blocking overlay shown whenever the app has no active notebox — on a fresh
-// install, when the saved notebox can't be opened at launch, or right after the
-// user removes the active notebox from Settings. InkyCap holds the invariant
-// that you are always inside a valid notebox; this is the one surface that has
-// no notebox behind it, so it is deliberately non-dismissable (no backdrop
-// click, no Escape) until a notebox is opened or created.
+// Blocking overlay whenever no notebox is open: on a new install, when the
+// saved notebox can't be opened at launch, or after the active notebox is
+// removed in Settings. The app always works inside a notebox, so this can't be
+// dismissed (no backdrop click, no Escape) until one is opened or created.
 
 import { errorText } from "../lib/errors";
 import { Component, Show, For, createSignal, createResource } from "solid-js";
@@ -26,9 +24,8 @@ const NoteboxRequiredOverlay: Component = () => {
   const [busy, setBusy] = createSignal(false);
   const blocked = () => busy() || isLoading();
 
-  // Noteboxes already open in another window. A notebox is exclusive to one
-  // window, so those can't be opened here — they're disabled below. Re-fetched
-  // whenever this overlay becomes visible (i.e. this window has no notebox).
+  // Noteboxes open in other windows, disabled below since a notebox is open in
+  // one window only. Fetched again whenever this overlay appears.
   const [openElsewhere] = createResource(
     () => initAttempted() && !noteboxInfo(),
     async (visible) => (visible ? await ipc.listOpenNoteboxes() : []),
@@ -52,10 +49,9 @@ const NoteboxRequiredOverlay: Component = () => {
     if (blocked()) return;
     setBusy(true);
     try {
-      // pickAndOpenNotebox runs the native folder picker, offers the
-      // seed-from-existing prompt for a fresh folder, then opens it —
-      // opening a folder that isn't yet a notebox initializes one, so this
-      // single action covers both "open existing" and "create new".
+      // pickAndOpenNotebox shows the folder picker, offers to copy from an
+      // existing notebox for a new folder, then opens it. Opening a folder that
+      // isn't a notebox makes it one, so this covers both opening and creating.
       await pickAndOpenNotebox();
     } catch (err) {
       showToast("error", t("noteboxRequired.openFailed", { error: errorText(err) }));

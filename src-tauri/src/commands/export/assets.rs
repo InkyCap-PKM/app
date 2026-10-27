@@ -8,9 +8,8 @@ use crate::storage::traits::NoteboxStorage;
 
 // ── Self-contained .typ export ──────────────────────────────────
 
-/// Export a note as a self-contained `.typ` file with the `inkycap-notebox`
-/// package inlined and referenced images copied alongside. The output
-/// directory will contain the `.typ` plus any assets it references.
+/// Export a note as a self-contained `.typ` file, with the `inkycap-notebox`
+/// package inlined and its images copied beside it.
 #[tauri::command]
 pub async fn export_self_contained_typ(
     path: String,

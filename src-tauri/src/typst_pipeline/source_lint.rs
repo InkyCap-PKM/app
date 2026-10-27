@@ -1,25 +1,18 @@
-//! Detect (and, where safe, repair) common problems in a `.typ` file's source
-//! — leftover Markdown markup and Typst syntax errors. Powers the cleanup pass
-//! of the "Audit .typ files for InkyCap compatibility" tool.
+//! Find, and where safe fix, problems in a `.typ` file's source (leftover
+//! Markdown and Typst syntax errors), for the "Audit .typ files for InkyCap
+//! compatibility" tool.
 //!
-//! Two concerns, both Typst-first:
-//!
-//! 1. **Markdown leftovers** — files dragged in from another tool (or pasted
-//!    from Markdown) often carry `# heading`, `[text](url)`, `![alt](url)`, and
-//!    `**bold**` markup. None of that means anything in Typst (a leading `# ` is
-//!    a code-mode expression that errors; `**` and `[](…)` render as literal
-//!    junk), so it's safe to rewrite into the Typst equivalents. The transforms
-//!    are deliberately conservative: they skip fenced code blocks entirely —
-//!    located with the parser, so a fence opened inside a list item counts too
-//!    — and the inline ones skip any line containing a backtick (an inline-code
-//!    span) rather than risk rewriting code. Every change is surfaced for
-//!    review before it's applied.
-//!
-//! 2. **Syntax errors** — a missing bracket or a typo is a genuine syntax
-//!    error. We can *find* these with `typst::syntax` (the same parser the
-//!    compiler uses) and report them with a line/column, but we do **not**
-//!    auto-fix them: there's no reliable way to guess the intended repair, and
-//!    a wrong guess corrupts the user's content. They're listed for the user.
+//! 1. **Markdown leftovers** in files from other tools or pasted Markdown: `#
+//!    heading`, `[text](url)`, `![alt](url)`, `**bold**`. None of it means
+//!    anything in Typst (a leading `# ` is a failing code expression; `**` and
+//!    `[](…)` render as junk), so it is rewritten to the Typst equivalent. Code
+//!    blocks are skipped (found with the parser, so a fence in a list item
+//!    counts), and the inline fixes skip any line with a backtick rather than
+//!    risk changing code. Every change is shown for review first.
+//! 2. **Syntax errors** (a missing bracket, a typo) are found with
+//!    `typst::syntax` and reported with line and column, but never fixed
+//!    automatically: there is no reliable way to guess the intent, and a wrong
+//!    guess corrupts content.
 
 use std::sync::LazyLock;
 
@@ -31,9 +24,8 @@ use crate::typst_pipeline::source_structure;
 
 // ── Markdown leftovers ─────────────────────────────────────────────────────
 
-/// An ATX Markdown heading: one-to-six leading `#` then a space then text.
-/// `#import`/`#note(`/`#let` etc. have no space after the `#`, so they never
-/// match (they're valid Typst code, not headings).
+/// A Markdown ATX heading: one to six `#`, a space, then text. `#import`,
+/// `#note(`, `#let` etc. have no space after `#`, so they don't match.
 static ATX_HEADING: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(#{1,6})[ \t]+(\S.*)$").unwrap());
 
@@ -49,9 +41,8 @@ static MD_IMAGE: LazyLock<Regex> =
 static MD_LINK: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\[([^\]]+)\]\(([^)\s]+)\)").unwrap());
 
-/// A proposed Markdown→Typst fix on one source line. Round-trips to the
-/// frontend and back (the user can accept/reject each before applying), so it
-/// is both `Serialize` and `Deserialize`.
+/// A proposed Markdown-to-Typst fix on one line. Sent to the frontend and back
+/// (each can be accepted or rejected), so it is `Serialize` and `Deserialize`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MdFix {
@@ -70,9 +61,8 @@ fn esc(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-/// Apply the inline Markdown transforms (image → link → bold) to a line that is
-/// known to be free of inline-code spans. Returns the rewritten line and the
-/// list of transform kinds that fired.
+/// Apply the inline fixes (image, then link, then bold) to a line without
+/// inline code. Returns the new line and which fixes applied.
 fn transform_inline(line: &str) -> (String, Vec<&'static str>) {
     let mut kinds = Vec::new();
     let mut s = line.to_string();
@@ -108,11 +98,10 @@ fn transform_inline(line: &str) -> (String, Vec<&'static str>) {
     (s, kinds)
 }
 
-/// Transform one line, returning the rewritten line + the kinds that applied,
-/// or `None` if nothing changed. The heading transform always runs (it's
-/// anchored at line start, never inside an inline-code span); the inline
-/// transforms run only when the line has no backtick, so an inline-code span
-/// like `` `[x](y)` `` is left untouched.
+/// Fix one line, returning the new line and the fixes applied, or `None` if
+/// unchanged. The heading fix always runs (it is anchored at the line start);
+/// the inline fixes only on lines without a backtick, so `` `[x](y)` `` is left
+/// alone.
 fn transform_line(line: &str) -> Option<(String, String)> {
     let mut kinds: Vec<&'static str> = Vec::new();
     let mut s = line.to_string();
@@ -160,10 +149,8 @@ pub fn detect_md_fixes(content: &str) -> Vec<MdFix> {
     out
 }
 
-/// Apply every Markdown→Typst fix to a file's source, preserving the original
-/// line endings' structure (operates line-by-line; re-joins with `\n` and
-/// restores a trailing newline if the input had one). Returns the input
-/// unchanged when there's nothing to fix.
+/// Apply every Markdown fix to a file, line by line, rejoining with `\n` and
+/// keeping a trailing newline. Unchanged if there's nothing to fix.
 pub fn apply_md_fixes(content: &str) -> String {
     if detect_md_fixes(content).is_empty() {
         return content.to_string();
@@ -188,13 +175,11 @@ pub fn apply_md_fixes(content: &str) -> String {
     joined
 }
 
-/// Apply only the `accepted` fixes (the user may have rejected some so they can
-/// keep a line "broken" on purpose, or because the tool misread it). Each fix
-/// is matched by its 1-based `line`, and applied only when that line still
-/// reads exactly as the fix's `before` — a guard against the file having
-/// changed since the audit. Every fix is a same-line replacement, so line
-/// numbers don't shift and one fix maps to one line. Returns the input
-/// unchanged when nothing applies.
+/// Apply only the `accepted` fixes (the user may keep some lines as they are).
+/// Each is matched by its 1-based `line` and applied only if the line still
+/// reads as its `before`, in case the file changed since the audit. Fixes
+/// replace single lines, so line numbers don't shift. Unchanged if nothing
+/// applies.
 pub fn apply_selected_md_fixes(content: &str, accepted: &[MdFix]) -> String {
     if accepted.is_empty() {
         return content.to_string();
@@ -230,10 +215,9 @@ pub struct SyntaxIssue {
     pub message: String,
 }
 
-/// Parse the source with `typst::syntax` and report any syntax errors with
-/// their location. Purely syntactic — it doesn't evaluate, so unresolved
-/// `#wikilink(...)` etc. are not flagged (those parse fine); only genuine
-/// structural errors (unclosed brackets, stray tokens) surface here.
+/// Syntax errors in `content`, with locations, from `typst::syntax`. Only
+/// parsing, so unresolved `#wikilink(...)` and the like aren't flagged; only
+/// structural errors (unclosed brackets, stray tokens).
 pub fn detect_syntax_errors(content: &str) -> Vec<SyntaxIssue> {
     let id = FileId::new(RootedPath::new(
         VirtualRoot::Project,
@@ -293,9 +277,8 @@ mod tests {
 
     #[test]
     fn skips_a_fence_opened_inside_a_list_item() {
-        // Issue #21's shape: the fence line starts with the list marker, so a
-        // `starts_with("```")` toggle never sees it and the block's contents
-        // were offered up as "fixes".
+        // Issue #21: a fence after a list marker; its content mustn't be
+        // offered as fixes.
         let src = "- item\n  - ```\n# Not a heading to fix\n```\n";
         assert!(
             detect_md_fixes(src).is_empty(),

@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { initMenuNav, destroyMenuNav } from "./menu-nav";
 
-// The menu controller works off the DOM alone (it has to — half the app's
-// menus are drawn by CodeMirror as plain elements), so these tests build the
-// same markup a menu renders and press keys at the document.
+// The menu controller uses only the DOM (many menus are drawn by CodeMirror as
+// plain elements), so these build the markup a menu renders and press keys on
+// the document.
 
 function press(key: string): KeyboardEvent {
   const e = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
@@ -270,9 +270,9 @@ describe("menu keyboard navigation", () => {
     expect(focusedLabel()).toBe("One");
   });
 
-  // The cue has to be a class we set: browsers do not treat focus moved by
-  // script after a mouse click as ":focus-visible", so relying on that left the
-  // arrow keys moving an invisible cursor until the first Tab revealed it.
+  // The cue must be our own class: browsers don't treat focus moved by script
+  // after a mouse click as ":focus-visible", which would leave the arrow keys
+  // moving an invisible cursor.
   it("marks the item the keyboard is on", () => {
     buildMenu(["One", "Two", "Three"]);
     press("ArrowDown");

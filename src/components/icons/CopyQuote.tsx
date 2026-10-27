@@ -2,13 +2,10 @@ import type { Component } from "solid-js";
 import { lucideFrame } from "./frame";
 
 /**
- * "Copy as quote" glyph for Compose cards: lucide's `copy` pages with a pair
- * of filled quotation marks on the front page. Drawn so it can't be mistaken
- * for the References tab's quote icon.
+ * "Copy as quote" icon for Compose cards: Lucide's `copy` pages with filled
+ * quotation marks on the front, distinct from the References tab's quote icon.
  *
- * ⚠ Master lives at design-assets/copy-quote.svg. That file and this
- * component are kept in sync BY HAND — if you redraw the glyph, edit both,
- * or the editable master and the shipped icon will silently diverge.
+ * Master: design-assets/copy-quote.svg, kept in step by hand.
  */
 export const CopyQuoteIcon: Component<{ size?: number; class?: string }> = (props) => (
   <svg {...lucideFrame(props.size ?? 18)} class={props.class}>

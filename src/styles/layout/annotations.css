@@ -1,6 +1,5 @@
-/* Annotations pane.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Annotations pane. Part of layout.css, whose import order (see
+   ../layout.css) keeps the cascade. */
 
 /* ── Annotations pane ── */
 .annotations-panel {
@@ -45,9 +44,9 @@
   color: var(--fg-on-accent);
 }
 
-/* Scope hint shown only while reviewing a collaboration note: ties this
-   pane's per-change decisions to the larger merge finished from the
-   Collaboration panel. Mirrors the git panel's accent-bordered banner. */
+/* Hint shown only while reviewing a collaboration note, linking this pane's
+   decisions to the merge finished from the Collaboration panel. Same
+   accent-bordered banner as the git panel. */
 .annotations-panel__collab-hint {
   margin: 0 0 var(--space-4);
   padding: var(--space-3) var(--space-4);
@@ -68,9 +67,8 @@
   color: var(--fg-muted);
 }
 
-/* Merge-first "Incoming since last sync" review block, shown above the manual
-   annotation list. Separated from it with a subtle divider so the two surfaces
-   read as distinct. */
+/* "Incoming since last sync" section above the annotation list, separated by
+   a faint divider. */
 .annotations-panel__incoming {
   margin-bottom: var(--space-4);
   padding-bottom: var(--space-4);
@@ -109,9 +107,8 @@
   color: var(--fg-secondary);
 }
 
-/* Read-only version-compare (inline diff) view. Fills the tab body; its own
-   header carries the version label + Restore/Close, since a version-diff tab
-   has no editor toolbar. */
+/* Read-only version comparison view. Fills the tab body; its own header has
+   the version label and Restore/Close, since there's no editor toolbar. */
 .version-diff {
   display: flex;
   flex-direction: column;
@@ -247,9 +244,9 @@
   white-space: nowrap;
 }
 
-/* The user's pre-merge version that a sync replaced (took theirs). Its own line
-   between the message and the author/date row, warning-toned so it reads as
-   "this is what you lost; click to compare". */
+/* The user's version that a sync replaced (taking theirs), on its own line
+   between the message and the author/date row, warning-coloured as "what you
+   lost; click to compare". */
 .note-history__took-theirs {
   align-self: flex-start;
   margin: var(--space-1) 0;
@@ -298,9 +295,9 @@
   align-items: flex-start;
 }
 
-/* Per-row action (resolve a tracked change, dismiss a comment, revert an
-   incoming hunk). Carries a visible border + background so it reads as a
-   button — these rows are dense, and a bare icon looks like decoration. */
+/* Row action (resolve a tracked change, dismiss a comment, revert an
+   incoming hunk), with a visible border and background so it reads as a
+   button in these dense rows. */
 .annotations-panel__action {
   flex-shrink: 0;
   display: inline-flex;
@@ -325,9 +322,9 @@
   color: var(--accent-danger);
 }
 
-/* Per-hunk revert (restore to your version) — a bare icon button matching the
-   History tab's row action buttons (.note-history__action), since it's the same
-   "restore this" gesture. Distinct from the bordered menu/dismiss actions. */
+/* Per-hunk revert (back to your version): a bare icon button like the
+   History tab's row actions (.note-history__action), since it's the same
+   "restore" action. */
 .annotations-panel__revert {
   flex-shrink: 0;
   background: none;

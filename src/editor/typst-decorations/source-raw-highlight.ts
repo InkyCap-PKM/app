@@ -1,13 +1,10 @@
-// Source-mode highlighter for embedded code inside Typst raw blocks.
+// Source-mode highlighting of code inside Typst raw blocks. The Typst
+// highlighter styles a whole `Raw` node as monospace; this parses its content
+// with the block's language and adds `tok-*` mark classes, the same ones the
+// visual editor's CodeBlockWidget uses, so the CSS is shared.
 //
-// In source mode the existing Typst highlighter colors `Raw` nodes uniformly
-// as `tags.monospace`. This plugin layers per-token colors on top by parsing
-// the raw block's content with the corresponding language and emitting
-// Decoration.mark spans with `tok-*` classes — the same classes the visual
-// editor's CodeBlockWidget uses, so the CSS is shared.
-//
-// Language loads are async; we cache loaded languages globally and dispatch
-// a refresh effect once a new language resolves so the plugin re-decorates.
+// Languages load asynchronously; they are cached, and a refresh effect is sent
+// when one finishes loading.
 
 import {
   Decoration,
@@ -23,9 +20,8 @@ import { RangeSetBuilder, StateEffect, StateField } from "@codemirror/state";
 import { classHighlighter, highlightTree } from "@lezer/highlight";
 import { isTypstFenceLang, typstSnippetSupport } from "./typst-snippet-lang";
 
-// Synchronous handle to a loaded language. Languages take a microtask + module
-// fetch to load, so the first time we see one we kick off the load and only
-// start rendering colors after it resolves.
+// Loaded languages. The first time a language is seen its load starts, and
+// highlighting begins once it finishes.
 const loadedLangs = new Map<string, LanguageSupport>();
 const inFlight = new Map<string, Promise<void>>();
 
@@ -46,10 +42,9 @@ const refreshField = StateField.define<number>({
 function ensureLangLoaded(lang: string, view: EditorView): LanguageSupport | null {
   const key = lang.toLowerCase().trim();
   if (!key) return null;
-  // Typst has no `@codemirror/language-data` entry, so it must be resolved
-  // ahead of the registry lookup below. It is bundled rather than fetched, so
-  // it resolves synchronously — the same shape as a `loadedLangs` cache hit,
-  // and no `refreshHighlight` round-trip is needed (see typst-snippet-lang.ts).
+  // Typst isn't in `@codemirror/language-data`, so check it before the lookup
+  // below. It is bundled, so it's available at once, like a cache hit (see
+  // typst-snippet-lang.ts).
   if (isTypstFenceLang(key)) return typstSnippetSupport();
   const cached = loadedLangs.get(key);
   if (cached) return cached;
@@ -68,9 +63,8 @@ function ensureLangLoaded(lang: string, view: EditorView): LanguageSupport | nul
     .load()
     .then((support) => {
       loadedLangs.set(key, support);
-      // Fire the refresh effect so any plugin instance rebuilds. Wrap in
-      // try/catch — the view may have been destroyed before the language
-      // resolved (tab closed mid-load).
+      // Send the refresh effect so the plugin redraws. The view may have closed
+      // while the language loaded, hence the try.
       try {
         view.dispatch({ effects: refreshHighlight.of(null) });
       } catch {}
@@ -88,10 +82,9 @@ interface RawSlice {
   contentTo: number;
 }
 
-// Walk the syntax tree in the visible range and collect `{lang, contentFrom,
-// contentTo}` for each block raw (` ```lang\n...\n``` `). Inline raw spans
-// (single backticks) are skipped — language-tagged blocks are the only place
-// the user expects code highlighting.
+// Collect `{lang, contentFrom, contentTo}` for each code block (`
+// ```lang\n...\n``` `) in the visible range. Inline raw (single backticks)
+// isn't highlighted.
 function collectRawSlices(view: EditorView): RawSlice[] {
   const out: RawSlice[] = [];
   const doc = view.state.doc;
@@ -125,9 +118,8 @@ function buildDecorations(view: EditorView): DecorationSet {
   const slices = collectRawSlices(view);
   if (slices.length === 0) return Decoration.none;
 
-  // highlightTree emits ranges in document order *within* its parsed tree,
-  // and slices are in document order, so spans are pre-sorted by start. We
-  // still sort defensively — RangeSetBuilder requires sorted input.
+  // Spans come out in document order, but are sorted anyway since
+  // RangeSetBuilder requires it.
   type Span = { from: number; to: number; cls: string };
   const spans: Span[] = [];
 
@@ -181,14 +173,12 @@ const sourceRawHighlightPlugin = ViewPlugin.fromClass(
   },
 );
 
-// Color rules for the `tok-*` classes emitted by classHighlighter. Lives
-// here (not in visual-plugin's theme) so it loads in both source and visual
-// mode — the visual plugin's theme is gated behind the visual compartment
-// and disappears in source mode, where these rules are still needed.
+// Colours for the `tok-*` classes from classHighlighter. Here, not in the
+// visual plugin's theme (which only loads in visual mode), so they apply in
+// both modes.
 //
-// Class set is the actual emitted set from @lezer/highlight (see
-// node_modules/@lezer/highlight). Colors map to the editor's `--syntax-*`
-// theme vars so light/dark switches apply automatically.
+// The classes are those @lezer/highlight emits. Colours use the `--syntax-*`
+// variables, so they follow the theme.
 const tokTheme = EditorView.theme({
   ".tok-keyword": { color: "var(--syntax-keyword)" },
   ".tok-atom": { color: "var(--syntax-keyword)" },
@@ -233,11 +223,9 @@ const tokTheme = EditorView.theme({
 });
 
 /**
- * Returns the extension(s) needed to syntax-highlight code inside Typst raw
- * blocks (` ```lang ... ``` `) in source mode. Safe to include in visual
- * mode too — the visual plugin replaces raw blocks with widgets before this
- * plugin's marks would render, but the bundled theme still applies to those
- * widgets so the same colors are used in both modes.
+ * Extensions that highlight code in Typst raw blocks (` ```lang ... ``` `) in
+ * source mode. Safe in visual mode too: there the blocks are widgets, which use
+ * the same theme, so colours match.
  */
 export function sourceRawHighlight() {
   return [refreshField, sourceRawHighlightPlugin, tokTheme];

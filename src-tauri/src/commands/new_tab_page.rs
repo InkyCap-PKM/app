@@ -1,13 +1,10 @@
-// ---------------------------------------------------------------------------
-// Lists shown on the new tab page: recently modified notes and notes that are
-// linked to but not written yet. (The page's "Today" list comes from
-// `agenda::get_today_agenda_items`.) The Journal Scroll's Connections pane
-// also uses the unwritten notes list, limited to the entries on screen.
+// Lists on the new tab page: recently modified notes, and notes that are
+// linked to but not yet written. (The "Today" list comes from
+// `agenda::get_today_agenda_items`.) The Journal Scroll's Connections pane also
+// uses the unwritten notes list, limited to the entries on screen.
 //
-// Both lists read only the in-memory property index; nothing touches the disk,
-// so they stay cheap enough to refetch after every save while the page is
-// visible.
-// ---------------------------------------------------------------------------
+// Both read only the in-memory property index, so they're cheap enough to
+// fetch again after every save while the page is shown.
 
 use tauri::State;
 
@@ -59,12 +56,9 @@ pub async fn get_recent_notes(
     Ok(recent_notes(&notes, limit.min(MAX_LIST_LENGTH)))
 }
 
-/// Unwritten notes, newest linking note first.
-///
-/// With `from_paths`, only links written in those notes count, and the whole
-/// list comes back (it is already bounded by how many notes were given);
-/// `limit` is ignored. Without it, links from every note count and the list
-/// holds at most `limit` entries.
+/// Unwritten notes, newest linking note first. With `from_paths`, only links in
+/// those notes count and the whole list is returned (`limit` is ignored).
+/// Otherwise links in every note count, up to `limit` entries.
 #[tauri::command]
 pub async fn get_unwritten_notes(
     limit: usize,

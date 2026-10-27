@@ -1,28 +1,19 @@
-// Outliner folding for the Typst editor: collapse a heading's section or a
-// list item's nested subtree.
+// Folding for the Typst editor: collapse a heading's section or a list item's
+// nested items.
 //
-// This is built on CodeMirror's real fold engine (`codeFolding()` +
-// `foldService` + `foldEffect`/`unfoldEffect`), not a bespoke line-hider. That
-// buys three things the earlier heading-only line-hider could not:
-//   • Fold state is a normal StateField, so it survives switching editor modes
-//     (this extension lives in the always-on base config, not the visual-mode
-//     compartment) and maps correctly through edits — including a subtree move,
-//     which keeps its fold instead of half-unfolding.
-//   • One fold service folds both headings and list items.
-//   • The standard fold keyboard shortcuts (foldKeymap) work for free.
+// Uses CodeMirror's fold engine (`codeFolding()`, `foldService`, `foldEffect` /
+// `unfoldEffect`), so fold state survives mode switches (this is in the base
+// config, not the visual compartment) and maps through edits, including subtree
+// moves; one service handles headings and lists; and the standard fold
+// shortcuts (foldKeymap) work.
 //
-// The control the user clicks is a hover chevron to the left of the foldable
-// line, matching the Outline panel's caret icons — deliberately not the
-// standard left-hand fold gutter, whose permanent column of arrows reads as a
-// code editor rather than a writing surface.
+// The control is a hover chevron left of the line, like the Outline panel's
+// carets, rather than the fold gutter, whose column of arrows looks like a code
+// editor.
 //
-// What counts as foldable, and the range each fold covers:
-//   • Heading: from the end of the heading line to the end of its section (the
-//     line before the next heading of equal or higher level). Headings come
-//     from the parser-backed scan, so a `= …` inside a ``` fence is neither a
-//     fold point nor a section boundary (issue #21).
-//   • List item with nested content: from the end of the item's line to the end
-//     of its indented subtree (see `listSubtreeEndLine`).
+// What folds:
+//   • Heading: from the end of its line to the end of its section (before the next heading of the same or higher level). Headings come from the parser-backed scan, so a `= …` inside a code block counts for nothing (issue #21).
+//   • List item with nested content: from the end of its line to the end of its subtree (see `listSubtreeEndLine`).
 
 import type { Extension, Range } from "@codemirror/state";
 import {
@@ -158,10 +149,9 @@ class FoldCaretWidget extends WidgetType {
   }
 
   toDOM(view: EditorView) {
-    // A zero-width inline anchor rides the item's first text row at its content
-    // origin; the visible chevron is positioned absolutely to the left of that
-    // origin, so it follows the item's indentation and never pushes the text or
-    // fights the hanging bullet's own negative margin.
+    // A zero-width anchor on the item's first row at its content start; the
+    // chevron is positioned to its left, so it follows the indent without
+    // moving the text or clashing with the bullet's negative margin.
     const anchor = document.createElement("span");
     anchor.className = "cm-fold-caret-anchor";
     const icon = document.createElement("span");
@@ -205,9 +195,7 @@ function insideFold(state: EditorState, pos: number): boolean {
 function buildDecorations(view: EditorView): DecorationSet {
   const ranges: Range<Decoration>[] = [];
   for (const t of foldTargets(view.state)) {
-    // A foldable item hidden inside an ancestor's fold gets no chevron — it
-    // isn't on screen, and its would-be chevron would otherwise be rendered
-    // stranded at the ancestor's fold boundary.
+    // No chevron for an item inside a folded ancestor; it isn't on screen.
     if (insideFold(view.state, t.lineFrom)) continue;
     ranges.push(foldLineDeco.range(t.lineFrom));
     ranges.push(
@@ -250,25 +238,15 @@ const foldChevronPlugin = ViewPlugin.fromClass(
 
 // -- Theme --
 
-// Positioning knobs (all scale with the line's font, so a big heading and a
-// body-size bullet each get a proportionate chevron and gap):
-//   CARET_GAP   — space between the chevron and the item's content.
-//   CARET_RISE      — how far above the font's x-height centre a heading
-//                     chevron sits, to land on the optical middle of tall caps.
-//   CARET_RISE_LIST — the same for list items. Body-size text is already close
-//                     to centred at the x-height, so it needs only a small
-//                     rise; the larger heading rise would read high on a bullet.
-//                 Raise a value to move that chevron up, lower it to move down.
-//   CARET_SIZE  — diameter of the round hover highlight. Deliberately wider
-//                 than the 1em chevron drawn inside it, so the circle reads as
-//                 a target around the glyph rather than a tight ring on it.
-//   CARET_INSET — half the difference between the two. Subtracted from the
-//                 chevron's right offset so enlarging the circle grows the
-//                 highlight outwards in both directions instead of nudging the
-//                 glyph towards the text. Keep it at (CARET_SIZE - 1em) / 2.
-// Heading chevrons sit CARET_GAP left of the text; list chevrons sit a further
-// `--list-bullet-width` left to clear the hanging bullet (see
-// .cm-typst-list-bullet in visual-theme.ts).
+// Positioning, all relative to the line's font so headings and list items get
+// proportionate chevrons:
+//   CARET_GAP       space between the chevron and the content.
+//   CARET_RISE      how far above the x-height centre a heading chevron sits, to look centred on tall capitals.
+//   CARET_RISE_LIST the same for list items, smaller since body text is nearly centred at the x-height.
+//   CARET_SIZE      diameter of the round hover highlight, wider than the 1em chevron so it reads as a target.
+//   CARET_INSET     half the difference; subtracted from the right offset so a bigger circle grows outward without moving the glyph. Keep it at (CARET_SIZE - 1em) / 2.
+// List chevrons sit a further `--list-bullet-width` left to clear the bullet
+// (see .cm-typst-list-bullet in visual-theme.ts).
 const CARET_GAP = "0.4em";
 const CARET_RISE = "0.18em";
 const CARET_RISE_LIST = "0.05em";
@@ -276,9 +254,8 @@ const CARET_SIZE = "1.3em";
 const CARET_INSET = "0.15em";
 
 const foldTheme = EditorView.theme({
-  // Zero-width inline anchor at the item's content origin. `vertical-align:
-  // middle` puts its centre on the font's x-height; the chevron is centred in
-  // it and then raised by CARET_RISE onto the optical middle of the text.
+  // Zero-width anchor at the content start. `vertical-align: middle` centres it
+  // on the x-height; the chevron is centred in it and raised by CARET_RISE.
   ".cm-fold-caret-anchor": {
     display: "inline-block",
     width: "0",
@@ -288,10 +265,8 @@ const foldTheme = EditorView.theme({
   },
   ".cm-fold-caret": {
     position: "absolute",
-    // Right edge sits CARET_GAP to the left of the content origin (the anchor
-    // is zero-width, so its right edge is the origin). A direct `right` offset
-    // — not `right: 100%` plus a margin — avoids a subpixel reposition on
-    // hover.
+    // A direct `right` offset rather than `right: 100%` plus a margin, which
+    // shifted by a subpixel on hover.
     right: `calc(${CARET_GAP} - ${CARET_INSET})`,
     top: "50%",
     transform: `translateY(calc(-50% - ${CARET_RISE}))`,
@@ -333,10 +308,8 @@ const foldTheme = EditorView.theme({
     height: "1em",
     pointerEvents: "none",
   },
-  // The "…" chip the fold engine leaves standing in place of a collapsed
-  // region. CodeMirror's own base theme hard-codes a pale grey fill for it,
-  // which glares against a dark editor; app tokens track whichever theme is
-  // active.
+  // The "…" chip left in place of a folded region. CodeMirror's base theme
+  // gives it a pale grey that glares in dark mode; use app tokens.
   ".cm-foldPlaceholder": {
     background: "var(--bg-highlight)",
     border: "1px solid var(--border-input)",
@@ -352,9 +325,8 @@ const foldTheme = EditorView.theme({
 });
 
 /**
- * Typst outliner folding: heading sections and nested list subtrees, driven by
- * CodeMirror's fold engine with a hover-chevron control. Belongs in the base
- * editor config (both modes) so folds persist across mode switches.
+ * Folding of heading sections and nested lists, with a hover chevron. In the
+ * base config, so folds survive mode switches.
  */
 export function typstFolding(): Extension {
   return [codeFolding(), typstFoldService, foldChevronPlugin, foldTheme];

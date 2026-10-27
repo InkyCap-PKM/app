@@ -1,23 +1,18 @@
-//! Structured 3-way merge for JSON documents — used to reconcile the shared
-//! `.inkycap/settings.json` when both collaborators edited it.
+//! 3-way merge for JSON, used for `.inkycap/settings.json` when both
+//! collaborators changed it. It is a nested object of settings, so two people
+//! changing different keys should both keep their change. The merge goes key by
+//! key: matching and one-sided changes resolve themselves; only the same key
+//! changed to different values needs a decision.
 //!
-//! A whole-file pick ("keep mine" / "take theirs") is the wrong model for
-//! settings: the file is a nested object of config sections, so two people
-//! editing *different* keys (one changes the citation path, the other the
-//! attachment folder) should keep *both* edits, not force a winner. This module
-//! merges key-by-key: agreements and one-sided changes resolve automatically;
-//! only a true same-key-different-value clash needs a hand decision.
-//!
-//! The merge is recursive over JSON objects. Arrays and scalars are atomic —
-//! a differing array is a single clash (settings arrays are small, and there's
-//! no stable identity to merge their elements on).
+//! Objects are merged recursively; arrays and other values are compared whole
+//! (settings arrays are small and their items have no stable identity).
 
 use serde::Serialize;
 use serde_json::{Map, Value};
 
-/// One key both sides changed to different values — needs a hand pick. The
-/// `path` is dotted (e.g. `"citations.zotero_path"`); the merged document
-/// defaults to [`mine`](Self::mine) until the user chooses otherwise.
+/// A key both sides changed to different values. `path` is dotted (e.g.
+/// `"citations.zotero_path"`); the merged document uses [`mine`](Self::mine)
+/// until the user chooses.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KeyConflict {
@@ -29,9 +24,8 @@ pub struct KeyConflict {
 /// The outcome of a 3-way JSON merge.
 #[derive(Debug, Clone, PartialEq)]
 pub struct JsonMerge {
-    /// The merged document. Non-conflicting keys are unioned automatically;
-    /// each conflicting key defaults to mine (flip individual keys with
-    /// [`set_at_path`]).
+    /// The merged document. Keys without conflicts are combined; each
+    /// conflicting key starts as mine (change one with [`set_at_path`]).
     pub merged: Value,
     /// Keys both sides changed differently. Empty ⇒ a fully automatic merge.
     pub conflicts: Vec<KeyConflict>,
@@ -86,9 +80,9 @@ fn merge_value(
                 (Some(mv), Some(tv)) => {
                     out.insert(k.clone(), merge_value(&child_path, bv, mv, tv, conflicts));
                 }
-                // Present on one side only. Accept a deletion only when the
-                // other side left the value untouched; otherwise keep the
-                // surviving value (a change-vs-delete biases toward keeping).
+                // Only on one side: accept a deletion only if the other side
+                // didn't change the value; otherwise keep it (a change beats a
+                // delete).
                 (Some(mv), None) => {
                     if !(bo.contains_key(k) && bv == mv) {
                         out.insert(k.clone(), mv.clone());
@@ -114,10 +108,9 @@ fn merge_value(
     mine.clone()
 }
 
-/// Set the value at a dotted `path` (e.g. `"citations.zotero_path"`) in an
-/// object tree, creating intermediate objects as needed. Used to flip a
-/// conflicting key to "theirs" after the user decides. No-op if a path segment
-/// runs through a non-object.
+/// Set the value at a dotted `path` (e.g. `"citations.zotero_path"`), creating
+/// objects as needed, to switch a conflicting key to theirs. Does nothing if
+/// the path passes through a non-object.
 pub fn set_at_path(root: &mut Value, path: &str, value: Value) {
     let parts: Vec<&str> = path.split('.').collect();
     let mut cur = root;

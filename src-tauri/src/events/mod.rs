@@ -39,10 +39,9 @@ pub enum AppEvent {
     FileDeleted {
         path: PathBuf,
     },
-    /// Atomic rename observed by the watcher with both endpoints known
-    /// (notify's `RenameMode::Both`). Carries paired paths so the index
-    /// layer can rewrite wikilinks in referencing notes instead of
-    /// orphaning them, which is what a split delete+create would do.
+    /// A rename the watcher saw with both paths (notify's `RenameMode::Both`),
+    /// so wikilinks in other notes can be rewritten rather than broken, as a
+    /// separate delete and create would.
     FileRenamed {
         from: PathBuf,
         to: PathBuf,
@@ -73,11 +72,10 @@ pub enum AppEvent {
     /// The last-backup state changed (a backup ran, or its settings moved).
     BackupStateChanged,
 
-    // --- Notebox-level git collaboration (see `crate::git`) ---
-    // The collaboration loop never blocks on a command for credentials;
-    // when fetch/push need a credential the backend doesn't have, it raises
-    // `GitCredentialNeeded` and the frontend prompts. The fetch/consolidate/
-    // push lifecycle reports progress through the remaining variants.
+    // --- Git collaboration (see `crate::git`) ---
+    // When fetch or push needs a credential the backend doesn't have, it sends
+    // `GitCredentialNeeded` and the frontend asks; commands never wait for one.
+    // The other variants report fetch, merge and push progress.
     /// Git state of a collaborative notebox, sent when it is opened.
     GitStatus {
         remote: String,
@@ -108,11 +106,10 @@ pub enum AppEvent {
     GitPushStarted,
     /// A push finished.
     GitPushCompleted,
-    /// Fetch/push could not authenticate with the stored (or absent)
-    /// credentials for `remote`. The frontend prompts the user to sign in;
-    /// the backend never blocks waiting on a command. `transport` is what
-    /// needs a credential ("ssh" or "https"). (Field is not named `kind`
-    /// because that is the serde tag for this enum.)
+    /// Fetch or push couldn't authenticate with the stored (or missing)
+    /// credentials for `remote`; the frontend asks the user to sign in.
+    /// `transport` is "ssh" or "https" (not named `kind`, which is this enum's
+    /// serde tag).
     GitCredentialNeeded {
         remote: String,
         transport: String,

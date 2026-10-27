@@ -1,7 +1,7 @@
 // Markup for notebox files placed in a note (dropped, pasted or picked), and
-// inserting it into the editor. Shared by the editor's own drop/paste handler
+// inserting it. Shared by the editor's drop/paste handler
 // (editor/typst-decorations/drag-drop.ts) and the native drop listener
-// (lib/tauri-drag-drop.ts), so both produce the same markup.
+// (lib/tauri-drag-drop.ts).
 
 import type { EditorState } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
@@ -26,10 +26,12 @@ export function fileExtension(name: string): string {
  *  note (`#image` places page 1 of a PDF). */
 export type PdfPlacement = "link" | "firstPage";
 
-/** Markup for the notebox file at `relativePath` (notebox-relative, no
- *  leading slash). Paths are written notebox-root-absolute (`/Assets/x.png`).
- *  Images, video and audio are shown; notes become wikilinks; a PDF follows
- *  `pdf`; anything else becomes a link to the file. */
+/**
+ * Markup for the file at `relativePath` (notebox-relative, no leading slash),
+ * written root-absolute (`/Assets/x.png`). Images, video and audio are
+ * embedded; notes become wikilinks; a PDF follows `pdf`; anything else becomes
+ * a link.
+ */
 export function attachmentMarkup(relativePath: string, pdf: PdfPlacement = "link"): string {
   const ext = fileExtension(relativePath);
   const path = typstStringEscape(relativePath);
@@ -41,9 +43,11 @@ export function attachmentMarkup(relativePath: string, pdf: PdfPlacement = "link
   return `#link("/${path}")[${filename}]`;
 }
 
-/** Move `pos` past the note's header (imports, `#note(...)` and other top
- *  matter), then past any range the visual editor locks (such as hidden
- *  comments), so inserted markup never lands inside hidden source. */
+/**
+ * Move `pos` past the note's header (imports, `#note(...)` and the like) and
+ * any range the visual editor locks (such as hidden comments), so inserted
+ * markup never lands in hidden source.
+ */
 export function clampPastProtected(state: EditorState, pos: number): number {
   const bodyStart = noteBodyStart(state);
   let p = pos < bodyStart ? bodyStart : pos;
@@ -79,10 +83,11 @@ function choosePdfPlacement(view: EditorView, pos: number): Promise<PdfPlacement
   });
 }
 
-/** Insert markup for the notebox file at `relativePath` on its own line at
- *  `pos` (moved past the note's header and locked ranges), asking first how
- *  to place a PDF. Resolves with the position just after the insert, where a
- *  following file of the same drop goes. */
+/**
+ * Insert markup for the file at `relativePath` on its own line at `pos` (moved
+ * past the header and locked ranges), asking first how to place a PDF. Resolves
+ * with the position after the insert, for the next file of the same drop.
+ */
 export async function insertAttachmentAt(
   view: EditorView,
   relativePath: string,
@@ -109,15 +114,12 @@ export async function insertAttachmentAt(
 export type AttachmentFunc = "image" | "video" | "audio";
 
 /**
- * Open the native attachment picker, copy each selected file into the
- * notebox's configured attachment folder, and replace the editor range
- * `[from, to]` with `#image("/<path>")` (or `#video(...)` / `#audio(...)`)
- * calls for each picked file. Notebox-root-absolute path emission is the
- * load-bearing invariant — see CLAUDE.md's portable-paths principle.
+ * Open the file picker, copy each chosen file into the attachment folder, and
+ * replace `[from, to]` with `#image("/<path>")` (or `#video(...)` /
+ * `#audio(...)`) calls. Paths must be notebox-root-absolute (see CLAUDE.md).
  *
- * If the user cancels the picker, the editor range is left untouched
- * (the slash-trigger or selection is preserved so the user can keep
- * typing or invoke a different command).
+ * If the picker is cancelled, the range is left as is, so the user can keep
+ * typing or choose another command.
  */
 export async function pickAndInsertAttachments(
   view: EditorView,

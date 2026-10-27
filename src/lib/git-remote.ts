@@ -1,7 +1,6 @@
-// Git remote-address helpers, shared by the collaboration panel (the SSH/HTTPS
-// toggle) and the Settings clone flow. libgit2 picks the transport from the URL
-// scheme, so keeping the address shape consistent with the chosen auth method
-// is what makes a username/password vs. SSH-key choice actually take effect.
+// Git remote address helpers for the collaboration panel's SSH/HTTPS switch and
+// the Settings clone form. libgit2 chooses the transport from the URL, so the
+// address must match the chosen sign-in method for it to apply.
 
 /** A remote address that uses SSH rather than HTTPS — anything not starting with
  *  `http://` / `https://` (e.g. `ssh://git@host/…` or `git@host:owner/repo`).
@@ -26,9 +25,10 @@ export function remoteParts(url: string): string {
   return s.replace(/\/+$/, "");
 }
 
-/** Rewrite a remote address to HTTPS, so a username/password choice is honoured
- *  (libgit2 picks SSH vs HTTPS from the URL scheme; a mismatched URL would
- *  silently ignore the credentials). Empty/unparseable input is left as-is. */
+/**
+ * Rewrite a remote address to HTTPS, so a username and password are used (with
+ * an SSH URL they'd be ignored). Empty or unrecognized input is returned as is.
+ */
 export function toHttpsRemote(url: string): string {
   const p = remoteParts(url);
   return p ? `https://${p}` : url.trim();

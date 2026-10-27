@@ -1,33 +1,28 @@
-// Generate airtight third-party licence notices for everything InkyCap
-// distributes — every Rust crate compiled into the binary and every npm
-// package shipped in the front-end bundle — reproducing each component's
-// own copyright/licence text as MIT, BSD, ISC, Apache, etc. require.
+// Generate the third-party licence notices for everything InkyCap distributes
+// (every Rust crate in the binary and npm package in the bundle), reproducing
+// each component's copyright and licence text as MIT, BSD, ISC, Apache etc.
+// require.
 //
-// Fully offline and reproducible: it reads the already-resolved dependency
-// graph (`cargo metadata --offline`, `npm ls --omit=dev`) and the licence
-// files already present in the cargo registry and `node_modules`. No network,
-// no extra tooling to install.
+// Offline and reproducible: reads the resolved dependency graph (`cargo
+// metadata --offline`, `npm ls --omit=dev`) and the licence files already in
+// the cargo registry and `node_modules`.
 //
 // Outputs (bundled via `bundle.resources` in tauri.conf.json):
 //   src-tauri/licenses/THIRD-PARTY-rust.txt
 //   src-tauri/licenses/THIRD-PARTY-js.txt
 //
-// Run with:  npm run licenses:gen
+// Run with `npm run licenses:gen`. Every version bump runs `npm run
+// licenses:refresh`, which first fetches crate sources missing locally (`cargo
+// fetch`; Linux builds never fetch the Windows- and macOS-only crates), so
+// release commits have current notices.
 //
-// Every version bump (`npm run version:stable`, `version:beta`, …) runs
-// `npm run licenses:refresh` afterwards, which first downloads any crate
-// sources missing from this computer (`cargo fetch`; the Windows- and
-// macOS-only crates are never fetched by a Linux build) and then runs this
-// script, so the notices are current in each release commit.
-//
-// Scope notes:
-//   - Rust: normal + build dependencies, transitively, across ALL platform
-//     targets (so one notices file is correct for every OS build). Dev-only
-//     crates (test/bench tooling) are excluded — they are not distributed.
-//   - JS: production dependencies only (`--omit=dev`); Vite/TypeScript/Vitest
-//     and friends are build-time only and never shipped.
-//   - The curated, human-readable acknowledgement lives in the Settings →
-//     Sources tab; these files are the exhaustive legal companion.
+// Scope:
+//   - Rust: normal and build dependencies, transitively, for all platforms (one
+//     file covers every build). Dev-only crates aren't distributed and are left
+//     out.
+//   - JS: production dependencies only (`--omit=dev`).
+//   - The readable acknowledgements are in Settings → Sources; these files are
+//     the complete legal list.
 
 import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync, writeFileSync, statSync } from "node:fs";
@@ -78,18 +73,14 @@ function collectLicenceTexts(dir, preferred) {
 }
 
 /**
- * Build a consolidated notices document for a set of components.
- *
- * Identical licence texts are printed ONCE. Many crates ship the byte-identical
- * Apache-2.0 LICENSE (its copyright lives in headers/NOTICE, not the body), so
- * that single 10 KB text would otherwise repeat hundreds of times. MIT/BSD
- * texts each carry their own copyright line, so they only deduplicate when
- * genuinely identical — distinct copyrights stay distinct, preserving the
- * attribution those licences require.
+ * Build one notices document for a set of components. Identical licence texts
+ * are printed once: many crates ship the same Apache-2.0 text (copyright is in
+ * NOTICE files), which would otherwise repeat hundreds of times. MIT/BSD texts
+ * carry their own copyright, so they only merge when truly identical.
  *
  * Layout:
- *   PART 1 — every component, with its metadata and a `License texts: #n` ref
- *   PART 2 — each unique licence text once, numbered, with its "Used by" list
+ *   PART 1: every component, with its metadata and `License texts: #n`
+ *   PART 2: each unique licence text, numbered, with its "Used by" list
  */
 function buildDocument(title, scope, components) {
   const sorted = [...components].sort(
@@ -250,17 +241,14 @@ function normaliseAuthors(pkg) {
   return [...new Set(list.filter(Boolean))].join(", ");
 }
 
-// Ask npm for the resolved production dependency tree.
+// The resolved production dependency tree from npm.
 //
-// On Windows npm is a shim script (`npm.cmd`), and since the CVE-2024-27980
-// mitigation Node refuses to spawn a `.cmd` without `shell: true` — so a bare
-// `execFileSync("npm", …)` aborts with EINVAL there and the JS notices never
-// get written. Prefer `npm_execpath`, which npm sets to its own JS entry point
-// when this runs under `npm run licenses:gen` (the documented invocation):
-// that needs no shell and pins us to the exact npm that invoked us. Only fall
-// back to the shell when the variable is absent — e.g. a direct
-// `node scripts/gen-third-party-licenses.mjs` run — where the argument list is
-// still entirely static literals, so nothing user-supplied reaches cmd.exe.
+// On Windows npm is `npm.cmd`, which Node won't spawn without `shell: true`
+// (since the CVE-2024-27980 fix), so a plain `execFileSync("npm", …)` fails
+// there. Use `npm_execpath` (npm's own entry point, set under `npm run
+// licenses:gen`), which needs no shell. Only without it (a direct `node` run)
+// fall back to the shell; the arguments are fixed literals, so nothing
+// user-supplied reaches cmd.exe.
 function npmLs() {
   const args = ["ls", "--omit=dev", "--all", "--parseable"];
   const opts = { cwd: ROOT, maxBuffer: 64 * 1024 * 1024, encoding: "utf8" };

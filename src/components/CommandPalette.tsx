@@ -1,6 +1,5 @@
-// Command palette (Ctrl+P).
-// Fuzzy searches all registered commands, shows keybinding hints.
-// Default (empty-query) view groups commands into collapsible categories.
+// Command palette (Ctrl+P): fuzzy search of all commands with their
+// keybindings. With no query, commands are grouped into collapsible categories.
 
 import { Component, createSignal, createMemo, createEffect, For, Show } from "solid-js";
 import {
@@ -170,9 +169,8 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
         const headerIdx = rows.findIndex(
           (r) => r.type === "header" && r.category === expanded,
         );
-        // After collapsing, navRows will recompute — find the header again
-        // We need to recompute: after setting expandedCategory to null,
-        // navRows is all headers. Find this category's header index.
+        // After collapsing, navRows is only headers again; find this category's
+        // header index.
         const groups = groupedCategories();
         const catIdx = groups.findIndex((g) => g.category === expanded);
         if (catIdx >= 0) setSelectedIndex(catIdx);
@@ -270,9 +268,10 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
     );
   }
 
-  /** Keep the selected row in view. Runs on keyboard navigation (selectedIndex
-   *  changes) and on list rebuilds (query / expansion changes) alike — the
-   *  search-results view previously had no scroll-follow at all. */
+  /**
+   * Keep the selected row in view, on keyboard moves (selectedIndex) and list
+   * rebuilds (query or expansion changes).
+   */
   let resultsEl: HTMLDivElement | undefined;
   createEffect(() => {
     selectedIndex();

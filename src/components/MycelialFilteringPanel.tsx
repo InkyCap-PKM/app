@@ -1,24 +1,20 @@
-// Concept Filtering pane for the Mycelial View's right panel.
+// Concept Filtering pane in the Mycelial View's right panel: shows the filtering
+// behind concept detection and lets the user undo it. Three sections:
 //
-// Makes the (otherwise invisible) filtering behind concept detection legible
-// and reversible. Three sections, words first and notes last:
-//   1. Excluded terms: words that recur in this note's neighbourhood like a
-//      real emergent concept but were held back by a stopword. The whole point
-//      is discoverability: you can't rescue a word you didn't know was filtered.
-//      Each row says *why* it was excluded and offers the matching rescue.
-//   2. Stopwords: add your own words to ignore, plus a button to edit the
-//      full list on disk.
-//   3. Excluded notes: the notebox-wide exclusion rules, collection-style
-//      filter expressions where a note matching *any* rule takes no part in
-//      Mycelial calculations. The common case (exclude by tag) gets a
-//      one-click tag picker; anything else goes through the same property row
-//      editor the collection FilterBuilder uses.
+//   1. Excluded terms: words that recur around this note like a concept but were
+//      held back by a stopword, each with the reason and a way to include it.
+//      You can't rescue a word you don't know was filtered.
+//   2. Stopwords: add words to ignore, or edit the full list.
+//   3. Excluded notes: notebox-wide rules (collection-style filters); a note
+//      matching any rule is left out of Mycelial calculations. Excluding by tag
+//      has a tag picker; anything else uses the collection FilterBuilder's
+//      property row editor.
 //
-// Each section's explanation sits behind a HelpButton, as in the Growth pane.
+// Each section's explanation is behind a HelpButton, as in the Growth pane.
 //
-// Data flows in via the mycelial store (MycelialView publishes excluded terms
-// when it loads); mutations call the backend then `requestMycelialReload()` so
-// the graph and this list both refresh.
+// Excluded terms come from the mycelial store (published by MycelialView on
+// load); changes call the backend, then `requestMycelialReload()` refreshes the
+// graph and this list.
 
 import { Component, For, Show, createSignal, onMount } from "solid-js";
 import { Plus, SquarePen, X } from "lucide-solid";

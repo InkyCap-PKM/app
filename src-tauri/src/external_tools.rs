@@ -1,25 +1,19 @@
-//! The generic **external-tool bridge** — the one programmatic seam that lets
-//! outside developers connect arbitrary programs to InkyCap without InkyCap
-//! shipping any concrete integration (grammar checkers, AI rewriters, dictation
-//! post-processors, linters, custom exporters all become user-installable
-//! tools).
+//! External tools: lets users connect other programs to InkyCap (grammar checkers,
+//! rewriters, linters, custom exporters) without InkyCap including any of them.
 //!
-//! Model: the user registers an executable in settings ([`ExternalTool`]);
-//! InkyCap pipes text to its stdin and takes its stdout back — the Unix-pipe
-//! pattern. Security properties that make this safe despite running an external
-//! program:
+//! The user registers an executable in settings ([`ExternalTool`]); InkyCap sends
+//! text to its stdin and reads its stdout. What keeps this safe:
 //!
-//! * **Spawned from Rust**, not via the webview shell allowlist (which stays
-//!   pinned to `binaries/inkycap-tinymist`). The exec decision lives inside the trust
-//!   boundary.
-//! * **Resolved by id, never by path.** The frontend invokes a tool by its
-//!   stable `id`; the executable path is read only from persisted settings, so
-//!   the webview cannot ask InkyCap to run an arbitrary binary.
-//! * **User-authorized by construction** — the user pasted the path themselves,
-//!   the same model as the existing Pandoc and Zotero paths.
-//! * **No shell.** Arguments are passed as a vector; user text never becomes a
-//!   shell string.
-//! * **Bounded** output and a wall-clock timeout guard against a runaway child.
+//! * **Run from Rust**, not through the webview's shell allowlist (which allows only
+//!   `binaries/inkycap-tinymist`).
+//! * **Chosen by id, never by path.** The frontend names a tool by `id`; the
+//!   executable path comes only from saved settings, so the webview can't run an
+//!   arbitrary program.
+//! * **Set up by the user**, who entered the path, as with the Pandoc and Zotero
+//!   paths.
+//! * **No shell.** Arguments are passed as a list; user text never becomes a shell
+//!   command.
+//! * **Limited** output size and a timeout stop a runaway process.
 //!
 //! See `documentation/developer/extending/external-tools.md`.
 
@@ -36,9 +30,8 @@ use crate::errors::{InkyCapError, Result};
 use crate::settings::ExternalTool;
 use crate::state::AppState;
 
-/// Max bytes captured from a tool's stdout. Tools are user-authorized, but a
-/// runaway process must not be able to exhaust memory — output past this is an
-/// error, never a silent truncation.
+/// Most bytes read from a tool's stdout. More is an error, never silently cut
+/// off.
 const MAX_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
 
 /// Hard wall-clock limit for a single tool run.
@@ -49,9 +42,9 @@ const RUN_TIMEOUT: Duration = Duration::from_secs(60);
 pub struct ExternalToolResult {
     /// The tool's stdout (lossy UTF-8 — tools are expected to emit text).
     pub stdout: String,
-    /// The configured output disposition (`"insert"` | `"replace"` |
-    /// `"notify"`), echoed so the frontend applies the result without
-    /// re-reading settings (and without a TOCTOU window on the tool list).
+    /// The tool's output mode (`"insert"` | `"replace"` | `"notify"`), returned
+    /// so the frontend needn't read the settings again (which could have
+    /// changed).
     pub output: String,
 }
 
@@ -63,11 +56,10 @@ fn substitute(arg: &str, notebox_root: &str, file: &str, selection: &str) -> Str
         .replace("$INKYCAP_SELECTION", selection)
 }
 
-/// Run a registered external tool: pipe `input_text` to its stdin, return its
-/// stdout. `selection` and `file_path` feed the argument placeholders; the
-/// frontend has already chosen `input_text` per the tool's `input` mode (the
-/// live buffer, which may differ from what's on disk — piping what the user
-/// sees is the intended behaviour).
+/// Run a registered external tool: send `input_text` to its stdin and return
+/// its stdout. `selection` and `file_path` fill argument placeholders. The
+/// frontend chose `input_text` by the tool's `input` mode (the editor's text,
+/// which may be unsaved).
 #[tauri::command]
 pub async fn run_external_tool(
     tool_id: String,
@@ -105,9 +97,8 @@ pub async fn run_external_tool(
         )));
     }
 
-    // Native-shape paths for argv: the tool operates on the real filesystem, so
-    // it needs OS-native separators, not the frontend-canonical forward-slash
-    // shape. This is subprocess argv, not an IPC payload.
+    // OS-native paths, since these are command-line arguments for a program,
+    // not IPC.
     let notebox_root = session
         .notebox_root
         .read()
@@ -133,19 +124,17 @@ pub async fn run_external_tool(
         .spawn()
         .map_err(|e| InkyCapError::BadRequest(format!("failed to launch external tool: {e}")))?;
 
-    // Write stdin on a separate task so it runs concurrently with the stdout
-    // read below — otherwise a tool that streams output while we're still
-    // writing input would deadlock on the pipe buffers.
+    // Write stdin on a separate task, concurrently with reading stdout; a tool
+    // that writes output while still reading input would otherwise deadlock.
     let writer = if tool.input == "none" {
         drop(child.stdin.take());
         None
     } else {
         let stdin = child.stdin.take();
-        // Reduce the piped text to plain prose first when the tool opts in —
-        // grammar/style checkers want the writing, not the `#import` preamble,
-        // `#note(...)` metadata, inline markup, math, or code. Done here (not
-        // on the frontend) because the Typst parser is Rust-only; see CLAUDE.md
-        // Typst-first principle and `crate::typst_pipeline::plaintext`.
+        // If the tool asks for it, reduce the text to plain prose first
+        // (checkers want the writing, not imports, `#note(...)`, markup, math
+        // or code). Done here since the Typst parser is in Rust; see
+        // `crate::typst_pipeline::plaintext`.
         let data = if tool.strip_markup {
             crate::typst_pipeline::plaintext::extract_plain_text(&input_text).into_bytes()
         } else {

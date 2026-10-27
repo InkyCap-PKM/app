@@ -1,6 +1,5 @@
-/* Typst reading mode (compiled SVG frames).
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Typst reading mode (compiled SVG pages). Part of layout.css, whose import
+   order (see ../layout.css) keeps the cascade. */
 
 /* ─── Typst reading mode (compiled SVG, frame-based) ─── */
 
@@ -30,12 +29,10 @@
 .typst-reading__pages {
   display: flex;
   flex-direction: column;
-  /* Left-align the column and centre each page with its own auto margins
-     (below). align-items:center would centre a page wider than the pane too,
-     but flex centring pushes the overflow past BOTH edges — the left edge then
-     clips and can't be scrolled to. Auto margins collapse to 0 on overflow, so
-     a too-wide page (common in a narrow preview split) starts at the left edge
-     and the container's horizontal scroll reaches all of it. */
+  /* Left-align the column and centre each page with auto margins. Flex
+     centring would push a too-wide page past both edges, and the left part
+     couldn't be scrolled to; auto margins become 0, so a wide page (common
+     in a narrow split) starts at the left and scrolls. */
   align-items: flex-start;
   gap: var(--space-6);
   padding: var(--space-7) var(--space-6);
@@ -46,8 +43,8 @@
   /* Pages always show on white regardless of theme — they're a document
      surface, not a UI surface. */
   color: #000000; /* token-exempt: pages mimic paper, independent of UI theme */
-  /* A document page, not a UI surface, so it keeps its own paper elevation
-     rather than the menu shadow.
+  /* A document page, so it has its own paper shadow rather than the menu
+     shadow.
      token-exempt: document surface, independent of the UI shadow tokens */
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18), 0 4px 12px rgba(0, 0, 0, 0.08);
   flex-shrink: 0;
@@ -139,18 +136,16 @@
 /* HTML reading view — flowing, copyable content */
 .typst-reading__html-content {
   padding: var(--space-8) var(--space-9);
-  /* `width: 100%` (capped by max-width) gives the box a definite width.
-     Without it, the auto margins below would override align-self:stretch
-     on the flex parent (.typst-reading), shrinking the box to its content
-     and centering short notes instead of left-aligning them. */
+  /* `width: 100%` (capped by max-width) gives a definite width; otherwise
+     the auto margins would shrink short notes to their content and centre
+     them. */
   width: 100%;
   max-width: 800px;
   box-sizing: border-box;
   margin: 0 auto;
   font-family: var(--md-body-font, var(--editor-font-body, sans-serif));
-  /* Driven by the editor's body-font-size preference so Ctrl+= / Ctrl+-
-     (the "content" zoom target) resize the HTML reading view, matching
-     the visual editor. */
+  /* Follows the editor's body font size, so Ctrl+= / Ctrl+- zoom the HTML
+     reading view as in the visual editor. */
   font-size: var(--md-body-size, var(--text-xl));
   line-height: var(--leading-relaxed);
   color: var(--fg-primary);
@@ -171,10 +166,8 @@
   font-weight: 600;
 }
 
-/* Typst's HTML export emits semantic <h1>–<h6> but no sizing — the consumer
-   supplies the type scale. Without these the reading view rendered every
-   heading at the body size. Sizes are `em`-relative so the content zoom
-   (Ctrl+= / Ctrl+-, which drives --md-body-size) scales headings with the body. */
+/* Typst's HTML has `<h1>`–`<h6>` without sizes, so supply the scale. In `em`,
+   so content zoom (`--md-body-size`) scales headings too. */
 .typst-reading__html-content h1 { font-size: 1.8em; font-weight: 700; }
 .typst-reading__html-content h2 { font-size: 1.5em; font-weight: 700; }
 .typst-reading__html-content h3 { font-size: 1.3em; }
@@ -288,16 +281,15 @@
   margin: 0;
 }
 
-/* Typst's HTML backend wraps an <li>'s text in <p> when the item contains
-   block children (e.g. a nested list). The default <p> margin then breaks
-   visual continuity with sibling list items. */
+/* Typst wraps an `<li>`'s text in `<p>` when it has block children (a nested
+   list); drop that margin so items stay together. */
 .typst-reading__html-content li > p {
   margin: 0;
 }
 
-/* Typst emits bibliography entries as <section role="doc-bibliography"> with
-   a <ul> of <li> entries. The section carries class="hanging-indent" when the
-   citation style calls for it (Chicago, APA, MLA, etc.). */
+/* Bibliographies come as `<section role="doc-bibliography">` with a `<ul>`
+   of entries; the section has class="hanging-indent" when the style uses one
+   (Chicago, APA, MLA, …). */
 .typst-reading__html-content section[role="doc-bibliography"] {
   margin-top: 2em;
   padding-top: 1em;
@@ -323,9 +315,8 @@
   text-indent: -2em;
 }
 
-/* Typst emits footnote bodies as <section role="doc-endnotes"> at the end of
-   the document. Without explicit styling it renders flush against the body
-   text and reads as more content — give it a clear visual break. */
+/* Footnotes come as `<section role="doc-endnotes">` at the end; give them a
+   clear break from the body. */
 .typst-reading__html-content section[role="doc-endnotes"] {
   margin-top: 2em;
   padding-top: 1em;
@@ -358,12 +349,10 @@
   height: auto;
 }
 
-/* Admonition callouts (#callout). The notebox package emits these as
-   <div class="inkycap-callout …"> on the HTML target
-   (typst-html can't carry the paged `block` box styling), passing the resolved
-   kind colour through the --inkycap-callout-color custom property. Mirrors the
-   paged/SVG and visual-editor look: a thin corner bracket with a rounded
-   bend at the top-left and bottom-right + faint tint + coloured title. */
+/* Callouts (#callout): the notebox package emits `<div
+   class="inkycap-callout …">` for HTML (typst-html drops the paged box
+   styling), with the kind's colour in `--inkycap-callout-color`. Matches the
+   paged and editor look: corner brackets, faint tint, coloured title. */
 .typst-reading__html-content .inkycap-callout {
   --callout-color: var(--inkycap-callout-color, var(--accent-info));
   position: relative;
@@ -429,9 +418,8 @@
   margin: 0 0 0.4em 1.5em;
 }
 
-/* Highlight (#highlight) → <mark>; the notebox package sets the background
-   colour inline, so here we only keep the text readable (the UA stylesheet
-   forces black) and soften the corners. */
+/* Highlight (#highlight) → `<mark>`. The package sets the background inline;
+   this keeps the text readable and rounds the corners. */
 .typst-reading__html-content mark {
   color: inherit;
   border-radius: var(--radius-xs);
@@ -506,10 +494,9 @@
   height: 1.15em;
 }
 
-/* Toolbar overflow menu: when a pane is too narrow for the header controls to
-   sit inline, they collapse behind this single "⋯" button (see
-   `compactToolbar` in TypstEditor). The popup drops the same control groups —
-   stacked — using the shared --popup-* surface tokens. */
+/* Toolbar overflow: in a narrow pane the header controls collapse behind one
+   "⋯" button (see `compactToolbar` in TypstEditor), whose popup stacks them,
+   using the --popup-* tokens. */
 .editor-header__overflow {
   position: relative;
   display: inline-flex;
@@ -531,9 +518,8 @@
   box-shadow: var(--popup-shadow);
 }
 
-/* Each control in the overflow menu is a labelled row: a muted label on the
-   left, the control (segmented toggle / stepper / icon action) pinned right.
-   Uniform rows turn the ragged inline cluster into a tidy settings panel. */
+/* Each control in the overflow menu gets a row: muted label left, control
+   right. */
 .editor-header__menu-row {
   display: flex;
   align-items: center;
@@ -563,24 +549,18 @@
   background: var(--border-subtle);
 }
 
-/* Labelled two-way pickers in the editor header: the reading format
-   (SVG / HTML) and the Journal Scroll's Timeline / Neighbourhood.
-   Reuses .editor-header__mode-toggle / __mode-seg and tints the chosen
-   segment green, with its outline, so the control reads as a picker rather
-   than a status badge. Text is downsized relative to the mode toggle next
-   to it — these picks are secondary to source/visual/reading and shouldn't
-   shout. */
+/* Two-way pickers in the editor header (reading format SVG / HTML, Journal
+   Scroll Timeline / Neighbourhood). Built on .editor-header__mode-toggle /
+   __mode-seg, with the chosen segment tinted green and outlined so it reads
+   as a picker. Smaller text than the mode toggle, since these are secondary. */
 .editor-header__format-seg {
   font-size: var(--text-sm);
   padding: 3px 8px;
 }
 
-/* Each segment carries its own border (instead of the shared toggle's), so
-   the chosen format can recolour its border: one outline that follows the
-   toggle's rounding, as on the Journal Scroll button, marking the choice by
-   shape and not only by the faint tint. The segments overlap by the border's
-   width so the middle divider stays a single line, and the chosen one sits
-   on top of that overlap. */
+/* Each segment has its own border, so the chosen one can recolour its
+   outline (shape, not just tint). Segments overlap by the border width so
+   the middle divider stays single, with the chosen one on top. */
 .editor-header__format-toggle {
   border: none;
   overflow: visible;
@@ -613,11 +593,8 @@
   color: var(--accent-green);
 }
 
-/* Reading-view zoom control (− / level / +). Reuses the same segmented shell
-   as the mode and format toggles; only the level readout needs its own rule,
-   for a stable width so stepping through 100% → 83% → 69% doesn't shift the
-   ± buttons under the pointer. `ch` keeps that width tied to the font rather
-   than a hardcoded pixel guess. */
+/* Reading zoom control (− / level / +), on the same segmented shell. The
+   level has a stable width in `ch`, so the buttons don't move as it changes. */
 .editor-header__zoom-level {
   font-size: var(--text-sm);
   padding: 3px 6px;
@@ -739,11 +716,9 @@
   color: var(--fg-primary);
 }
 
-/* Floating selection toolbar — surface from the shared --popup-* tokens. */
-/* The selection toolbar floats directly over document text, so unlike
-   menus that open into empty space it uses a contrasting surface
-   (--toolbar-float-*) rather than plain --popup-bg, which equals the
-   page background. */
+/* Floating selection toolbar. It floats over text, so it uses a contrasting
+   surface (--toolbar-float-*) rather than --popup-bg, which matches the
+   page. */
 .selection-toolbar {
   position: fixed;
   display: flex;
@@ -752,9 +727,8 @@
   background: var(--toolbar-float-bg);
   border: 1px solid var(--toolbar-float-border);
   border-radius: var(--popup-radius);
-  /* Inset top highlight defines the toolbar edge on dark themes without
-     having to brighten the whole surface. Light themes pass `transparent`,
-     so the highlight is a no-op there. */
+  /* An inset top highlight defines the edge on dark themes; light themes
+     pass `transparent`. */
   box-shadow:
     inset 0 1px 0 0 var(--toolbar-float-highlight),
     var(--popup-shadow);

@@ -1,6 +1,6 @@
-// Builds the release feed files and finds a release's installers on disk.
-// Pure apart from `findArtifacts`, which only reads the folder it is given, so
-// release-feeds.mjs can do all network and signing work around these.
+// Builds the release feeds and finds a release's installers. Only
+// `findArtifacts` touches the disk (reading the folder it's given), so
+// release-feeds.mjs does the network and signing work.
 
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -10,9 +10,9 @@ import { ARTIFACTS, DOWNLOAD_URL, RELEASES_URL, releaseTagUrl } from "./config.m
 export const LATEST_SCHEMA = 1;
 
 /**
- * Look for each shippable installer of `version` anywhere under `dir`
- * (so unzipped CI artifact folders can be dropped in as they are).
- * Returns `{ found: [{ artifact, path }], missing: [artifact] }`.
+ * Find each installer of `version` anywhere under `dir` (so unzipped CI
+ * artifact folders can be used as they are). Returns `{ found: [{ artifact,
+ * path }], missing: [artifact] }`.
  */
 export function findArtifacts(dir, version) {
   const byName = new Map();
@@ -39,9 +39,8 @@ export function findArtifacts(dir, version) {
 }
 
 /**
- * The notify-only feed (`latest.json`, schema 1): `base` is the currently
- * published feed, whose other channel is kept so a beta never erases the
- * stable entry.
+ * The notify-only feed (`latest.json`, schema 1). `base` is the published feed;
+ * its other channel is kept, so a beta never removes the stable entry.
  */
 export function buildLatestFeed(base, { version, channel, notes, date }) {
   return {
@@ -69,8 +68,8 @@ export function buildUpdaterFeed({ version, notes, pubDate, entries }) {
 
 /**
  * Which updater feeds a release goes into. Versions only increase, so every
- * release is the newest one available to beta testers; only stable releases
- * go into the stable feed.
+ * release is the newest for beta testers; only stable releases go into the
+ * stable feed.
  */
 export function updaterChannelsFor(channel) {
   return channel === "stable" ? ["stable", "beta"] : ["beta"];

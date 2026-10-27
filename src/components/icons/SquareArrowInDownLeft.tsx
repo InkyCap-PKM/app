@@ -2,12 +2,10 @@ import type { Component } from "solid-js";
 import { lucideFrame } from "./frame";
 
 /**
- * Custom "square-arrow-in-down-left" — an arrow entering the box from the
- * lower left. Used for the "linked from the anchor" badge in Journal Scroll.
+ * An arrow entering a box from the lower left, for the "linked from the anchor"
+ * badge in Journal Scroll.
  *
- * ⚠ Master lives at design-assets/square-arrow-in-down-left.svg. That file
- * and this component are kept in sync BY HAND — if you redraw the glyph,
- * edit both, or the editable master and the shipped icon will diverge.
+ * Master: design-assets/square-arrow-in-down-left.svg, kept in step by hand.
  */
 export const SquareArrowInDownLeft: Component<{
   size?: number;

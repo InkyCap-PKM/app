@@ -1,15 +1,11 @@
-// ---------------------------------------------------------------------------
-// CitationRow — one cited work, rendered identically in the References
-// sidebar and the Journal Scroll's Scroll Context pane.
+// CitationRow: one cited work, shown the same way in the References sidebar and
+// the Journal Scroll's Scroll Context pane.
 //
-// The two panels feed it different data (a whole bibliography entry, a
-// single file's citations, or a count-bearing aggregation across the
-// visible scroll window), so each maps its own shape onto `CitationRowData`
-// and opts into the extras it needs: pass `count` for the occurrence badge,
-// `onActivate` for click-to-act. Presentation, the Zotero link, and author
-// formatting live here only — the two panels share one look and one set of
-// CSS classes (`.citation-row*`).
-// ---------------------------------------------------------------------------
+// The two panels have different data (a bibliography entry, one file's
+// citations, or counts across the visible scroll), so each maps its own onto
+// `CitationRowData` and adds what it needs: `count` for the occurrence badge,
+// `onActivate` for clicking. Display, the Zotero link and author formatting are
+// only here, with the `.citation-row*` classes.
 
 import { Component, Show } from "solid-js";
 import { noteboxSettings } from "../stores/settings";

@@ -1,14 +1,8 @@
 /**
- * Mycelial View layout engine.
- *
- * Lays out the **inner growth region** only: the center note, latent-link
- * boxes, emergent-concept boxes, and the source notes that produced a
- * signal. Context notes (wikilink neighbors with no signal) are shown in
- * the right panel as a list, not in the graph.
- *
- * After the force simulation, positions are normalized so the bounding
- * box fits within TARGET_SIZE pixels. Box dimensions are NOT scaled —
- * only positions — so text stays readable at the default zoom level.
+ * Mycelial View layout: the centre note, latent-link and emergent-concept
+ * boxes, and the source notes they came from. Context notes are listed in the
+ * right panel, not drawn. After the force simulation, positions (not box sizes)
+ * are scaled to fit TARGET_SIZE, so text stays readable at the default zoom.
  */
 
 import type {
@@ -31,21 +25,17 @@ const REPULSION = 52000;
 const SPRING_K = 0.04;
 const DAMPING = 0.82;
 const ITERATIONS = 120;
-// Centering pull toward the origin, proportional to distance. Without it a
-// node with few or no springs is only ever pushed *outward* by repulsion and
-// drifts far past the cluster — visible as a lone card stranded off-screen.
-// Gravity counteracts that so the graph stays compact, while springs and
-// repulsion still set the local arrangement.
+// Pull towards the origin, proportional to distance. Without it a node with few
+// springs is only pushed outward and drifts off; springs and repulsion still
+// shape the local arrangement.
 const GRAVITY = 0.0016;
 const PADDING = 120;
-// Soft cap on the laid-out size. Kept generous so the force simulation's
-// natural 2-D spread is preserved rather than crushed into a narrow ribbon;
-// fit-to-view handles the zoom regardless of absolute size.
+// Soft limit on the layout size, generous so the 2-D spread isn't squeezed into
+// a ribbon; fit-to-view handles zoom.
 const TARGET_SIZE = 4200;
 const OVERLAP_MARGIN = 44;
-// Hard cap on how long any single edge may be after the force simulation.
-// Past this, an edge reads as a node stranded on empty canvas rather than a
-// meaningful link, so the post-sim `compactLongEdges` pass reels it in.
+// Longest an edge may be after the simulation; longer ones are pulled in by
+// `compactLongEdges`.
 const MAX_EDGE = SPRING_LENGTH * 2.2;
 
 export type BoxKind = "center" | "source" | "latent" | "emergent" | "kindred";
@@ -153,9 +143,10 @@ export function computeMycelialLayout(
     b: string;
     kind: ConnectionKind;
     score: number;
-    /** A tether is an invisible spring that pulls an otherwise-disconnected
-     *  component back toward the anchor. It shapes the layout but is never
-     *  drawn as a connection. */
+    /**
+     * An invisible spring pulling a disconnected component towards the anchor.
+     * It shapes the layout but isn't drawn.
+     */
     tether?: boolean;
   }
   const springs: Spring[] = [];
@@ -188,17 +179,10 @@ export function computeMycelialLayout(
   }
 
   // ---- 2b. Tether disconnected components to the anchor. -----------------
-  // The spring graph is frequently disconnected: an emergent concept or
-  // latent link whose source notes never reach the anchor forms its own
-  // island with no spring path back. Such an island feels only gravity and
-  // repulsion — and because repulsion from the main cluster outweighs the
-  // deliberately gentle gravity, it drifts far across the canvas, forcing
-  // fit-to-view to zoom everything down to a tiny, barely usable speck.
-  //
-  // The fix: find each connected component and, for any that excludes the
-  // anchor, add one invisible tether spring from the anchor to a
-  // representative node. Every component is then pulled into a single
-  // cohesive graph. Tethers are flagged so they never render as edges.
+  // A concept whose source notes never reach the anchor forms an island with no
+  // spring back, feels only gravity and repulsion, and drifts far away, forcing
+  // fit-to-view to shrink everything. So each component without the anchor gets
+  // one invisible tether from the anchor to one of its nodes.
   {
     const parent = new Map<string, string>();
     for (const n of sim) parent.set(n.id, n.id);
@@ -313,18 +297,13 @@ export function computeMycelialLayout(
     }
   }
 
-  // ---- 3b. Cap absurdly long edges. ---------------------------------------
-  // A node held by a single weak spring (a lone latent link, a pendant
-  // source note) can still end up stranded far from its cluster: the
-  // cumulative repulsion of every other box shoves it outward faster than
-  // one spring can reel it back within the iteration budget, so it settles
-  // at the far end of a long, empty-canvas-spanning edge. The force sim
-  // expresses that as a soft preference; here we apply it as a hard
-  // constraint. Each spring longer than MAX_EDGE has its endpoints pulled
-  // together until it clears the cap — moving the anchor never (it's
-  // pinned), otherwise splitting the correction between both ends. A few
-  // passes let a node with several long edges settle to a sensible
-  // compromise. Overlaps this introduces are cleaned up by resolveOverlaps.
+  // ---- 3b. Cap very long edges. ---------------------------------------
+  // A node held by one weak spring can end up far from its cluster, pushed by
+  // the combined repulsion faster than the spring can pull it back. Here
+  // MAX_EDGE becomes a hard limit: each longer spring's ends are pulled
+  // together (only the far end for the pinned anchor, otherwise both). A few
+  // passes let nodes with several long edges settle. resolveOverlaps cleans up
+  // any overlaps this makes.
   const compactLongEdges = () => {
     for (let pass = 0; pass < 30; pass++) {
       let anyLong = false;
@@ -360,16 +339,11 @@ export function computeMycelialLayout(
   };
   compactLongEdges();
 
-  // Resolve remaining rectangle overlaps by iteratively pushing pairs apart.
-  // Defined here but invoked AFTER normalization (step 4): normalization
-  // scales positions toward the centroid *without* scaling box sizes, so
-  // running this before normalization lets the scale-down silently
-  // re-introduce the very overlaps it had cleared.
-  // Boxes are pushed apart *along the line between their centres* (radial),
-  // not along the cheaper axis. An axis push always separates wide-and-short
-  // boxes vertically — the cheaper direction — which collapses a dense graph
-  // into a tall ribbon. A radial push preserves the angular arrangement the
-  // force simulation produced, so the graph keeps its 2-D spread.
+  // Push overlapping boxes apart. Run after normalization (step 4), which moves
+  // positions without scaling boxes and would bring overlaps back. Boxes move
+  // along the line between their centres rather than the cheaper axis, which
+  // would stack wide boxes into a tall ribbon; this keeps the simulation's 2-D
+  // arrangement.
   const resolveOverlaps = () => {
     for (let pass = 0; pass < 40; pass++) {
       let anyOverlap = false;
@@ -433,10 +407,8 @@ export function computeMycelialLayout(
     }
   }
 
-  // Clear overlaps the scale-down may have introduced. This can push the
-  // bounding box back above TARGET_SIZE — that is the correct trade: fixed-
-  // size boxes cannot be packed below a minimum area, and a slightly larger
-  // graph is better than unreadable overlapping cards.
+  // Clear overlaps from the scale-down. This may grow the layout past
+  // TARGET_SIZE again, which is better than overlapping boxes.
   resolveOverlaps();
 
   // ---- 5. Shift to positive coordinates. ----------------------------------

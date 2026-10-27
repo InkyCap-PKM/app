@@ -84,9 +84,11 @@ async function handlePastedImage(view: EditorView, file: File) {
   }
 }
 
-/** Fallback for pastes the webview can't see: on WebKitGTK the clipboard's
- *  file references and (on Linux) pasted image data never reach the paste
- *  event, so we read them from the Rust side and insert whatever was saved. */
+/**
+ * For pastes the webview can't see: on WebKitGTK clipboard file references and
+ * (on Linux) pasted image data never reach the paste event, so they are read
+ * from Rust and whatever was saved is inserted.
+ */
 async function handleClipboardPasteFallback(view: EditorView) {
   try {
     const saved = await ipc.pasteClipboardIntoNotebox({ currentNote: activeNotePath() });
@@ -99,11 +101,12 @@ async function handleClipboardPasteFallback(view: EditorView) {
   }
 }
 
-/** Last drag-over position tracked from DOM events. On Linux/webkit2gtk,
- *  external drags block dataTransfer but still fire dragover with correct
- *  clientX/clientY. The Tauri-level drop handler reads this to get an
- *  accurate drop position instead of relying on Tauri's physical-pixel
- *  coordinates (which are in a different coordinate space). */
+/**
+ * Last drag-over position from DOM events. On Linux (webkit2gtk) external drags
+ * hide dataTransfer but still report the right clientX/clientY in dragover. The
+ * Tauri drop handler uses this for the drop position instead of Tauri's
+ * physical-pixel coordinates, which are in another coordinate space.
+ */
 let lastDragPos: { x: number; y: number; time: number } | null = null;
 export function getLastDragPos(): { x: number; y: number } | null {
   if (!lastDragPos) return null;
@@ -201,9 +204,9 @@ export const dragDropHandler = ViewPlugin.fromClass(
         if (pasteUrlHandler(event, view)) return true;
 
         // WebKitGTK hides clipboard files (and Linux image data) from the
-        // webview. When the webview sees no text either, the clipboard most
-        // likely holds a native file reference or image — read it from Rust.
-        // Plain-text pastes still fall through to CM's default handling.
+        // webview. If the webview sees no text either, the clipboard probably
+        // holds a file or image, so read it from Rust. Plain text pastes go on
+        // to CodeMirror's default handling.
         const text = cd.getData("text/plain");
         if (!text || text.trim() === "") {
           event.preventDefault();

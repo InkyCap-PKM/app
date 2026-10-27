@@ -1,7 +1,5 @@
-// Interactive "Delete file" flow: confirm with the user, delete the
-// note or attachment on disk, and close its tab. Shared by the File Actions
-// menus (RightPanel, AttachmentPanel) and the Ctrl+D command so every entry
-// point behaves identically.
+// "Delete file": confirm, delete the note or attachment, and close its tab.
+// Shared by the File Actions menus (RightPanel, AttachmentPanel) and Ctrl+D.
 
 import { getActiveTab, closeTab, tabs } from "../stores/tabs";
 import { promptConfirm } from "../stores/prompt";

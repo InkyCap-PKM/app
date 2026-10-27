@@ -1,20 +1,17 @@
-// In-app "new release available" notice and Upgrade.
+// The "new release available" notice and Upgrade.
 //
 // A check asks the backend (commands::updates) whether a newer version exists
-// and, if so, surfaces a notice plus links to download it. Copies installed by
-// one of InkyCap's own installers can also upgrade in place (commands::upgrade):
-// download and verify, save open notes, install, then restart. The Download
-// button stays available in every case.
+// and, if so, shows a notice with download links. Copies installed by InkyCap's
+// own installers can also upgrade in place (commands::upgrade): download and
+// verify, save open notes, install, restart. Download is always offered.
 //
-// Where releases live is deliberately NOT known here: the backend reads a
-// static release feed that carries the download and releases links, so moving
-// the project to a different code forge needs no frontend change. The constants
-// below are only the last-resort links used before a check has answered.
+// Where releases are hosted isn't known here: the backend reads a release feed
+// with the download and release links, so moving the project needs no frontend
+// change. The constants below are only fallback links before a check answers.
 //
-// A check only ever runs on explicit user action, or on startup if the user
-// opted in (settings.updates.check_on_startup) — never silently otherwise
-// (local-first, no telemetry). A copy updated by the software centre it came
-// from (Flathub) never checks: `updatesManaged` hides every update control.
+// A check runs only when the user asks, or at startup if they opted in
+// (settings.updates.check_on_startup). A copy updated by its software centre
+// (Flathub) never checks: `updatesManaged` hides every update control.
 import { createSignal } from "solid-js";
 import * as ipc from "../lib/ipc";
 import { errorCode, errorText } from "../lib/errors";
@@ -145,10 +142,12 @@ async function saveEverything(): Promise<void> {
   await recordTabSession();
 }
 
-/** Download, verify and install the available version. On Windows the
- *  installer then closes and reopens InkyCap; elsewhere the phase becomes
- *  `installed` and `restartIntoUpdate` finishes the job. Cancelling the
- *  system's password prompt quietly returns to the Upgrade button. */
+/**
+ * Download, verify and install the new version. On Windows the installer then
+ * closes and reopens InkyCap; elsewhere the phase becomes `installed` and
+ * `restartIntoUpdate` finishes. Cancelling the system password prompt returns
+ * quietly to the Upgrade button.
+ */
 export async function startUpgrade(): Promise<void> {
   if (phase() === "downloading" || phase() === "installing") return;
   setUpgradeErrorMessage(null);

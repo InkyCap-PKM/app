@@ -7,11 +7,8 @@ use std::path::PathBuf;
 
 use crate::errors::Result;
 
-/// Editor-related settings.
-///
-/// Old settings files may contain fields that no longer exist;
-/// serde silently drops unknown fields since `deny_unknown_fields`
-/// is intentionally absent.
+/// Editor settings. Unknown fields in older files are ignored
+/// (`deny_unknown_fields` isn't set).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct EditorSettings {
@@ -29,10 +26,9 @@ pub struct EditorSettings {
     /// Dictionary codes the user has enabled (e.g. `["en_CA", "fr"]`) — the set
     /// the status-bar language switcher offers.
     pub spellcheck_languages: Vec<String>,
-    /// Which enabled dictionary is actively checking, set from the status-bar
-    /// chip: `"all"` checks against every enabled dictionary (a word passes if
-    /// any accepts it — for bilingual notes), or a single dictionary code to
-    /// narrow checking to one language. Off is the `spellcheck` master toggle.
+    /// The dictionary checking text, from the status-bar chip: `"all"` (a word
+    /// passes if any enabled dictionary accepts it) or one dictionary code.
+    /// `spellcheck` turns checking off.
     pub spellcheck_active: String,
     /// Auto-close brackets and quotes.
     pub auto_pair_brackets: bool,
@@ -41,15 +37,10 @@ pub struct EditorSettings {
     pub auto_pair_typst: bool,
     /// Smart list indentation on Enter/Tab.
     pub smart_indent_lists: bool,
-    /// When true, pressing Enter at the end of a line in the *visual
-    /// editor* inserts a Typst linebreak (`\`) so the next line wraps as
-    /// a new visual line in the rendered output, instead of being
-    /// collapsed into a space (Typst's default behaviour for single
-    /// newlines). A second consecutive Enter still produces a paragraph
-    /// break. In the visual editor the `\` is hidden and managed as an
-    /// atomic "soft break" so the writer never sees or edits it; source
-    /// mode never auto-inserts it and shows any existing `\` as plain
-    /// text.
+    /// When true, Enter at the end of a line in the visual editor inserts a
+    /// Typst line break (`\`), so the line breaks in the output instead of
+    /// joining with a space. A second Enter makes a paragraph break. The visual
+    /// editor hides the `\`; source mode never inserts it.
     pub enter_inserts_line_break: bool,
     /// Default editing mode: "source" or "live-preview".
     pub default_editing_mode: String,
@@ -112,11 +103,10 @@ pub struct AppearanceSettings {
     pub bg_palette_light: String,
     /// Background palette for the dark theme: "default" or "warm".
     pub bg_palette_dark: String,
-    /// When true, the colours that carry meaning (errors, warnings, success,
-    /// added and removed text, Mycelial View kinds, and source-mode strings
-    /// and numbers) switch to a set chosen to stay distinct for colourblind
-    /// users. Works with either background palette and leaves the accent
-    /// colour and note content alone.
+    /// Switch the colours that carry meaning (errors, warnings, diff colours,
+    /// Mycelial View kinds, source-mode strings and numbers) to a set that
+    /// stays distinct for colourblind users. The accent colour and note content
+    /// are unaffected.
     pub colourblind_friendly: bool,
     /// Accent source: "default", "custom", or "os".
     /// Determines how the frontend resolves the working accent color.
@@ -126,30 +116,22 @@ pub struct AppearanceSettings {
     pub accent_color: String,
     /// What Ctrl+/Ctrl- adjusts: "content", "interface", or "both".
     pub zoom_target: String,
-    /// The user's chosen sort mode for the file tree. One of "name-asc",
-    /// "name-desc", "modified-desc", "modified-asc", "created-desc",
-    /// "created-asc". Persisted here so a re-open preserves the ordering
-    /// the user picked. Stored as a string so the frontend's union type
-    /// is the single source of truth — Rust just round-trips the value.
+    /// File-tree sort: "name-asc", "name-desc", "modified-desc",
+    /// "modified-asc", "created-desc" or "created-asc". A string, since the
+    /// frontend's type defines the values.
     pub file_tree_sort: String,
-    /// Moment-style format pattern for displaying dates in the UI
-    /// (Agenda due dates, backup timestamps, last-backup indicator, etc.).
-    /// Does not affect how dates are stored — only their presentation.
-    /// E.g. "D MMM YYYY" → "8 Nov 2024"; "YYYY-MM-DD" → "2024-11-08".
+    /// Format pattern for dates shown in the UI; stored dates are unaffected.
+    /// E.g. "D MMM YYYY" → "8 Nov 2024".
     pub date_format: String,
-    /// BCP-47 code for the user-interface language (e.g. "en", "fr"). Drives
-    /// which locale dictionary the frontend loads. "en" is the default and the
-    /// fallback for any code without a shipped translation. Affects UI chrome
-    /// only, not note content or how anything is stored.
+    /// BCP-47 code for the interface language (e.g. "en", "fr"). "en" is the
+    /// default and the fallback for codes without a translation. Doesn't affect
+    /// note content.
     pub ui_locale: String,
-    /// When true, a newly created note authored under a non-English UI locale
-    /// gets a `#set text(lang: …, region: …)` directive injected after its
-    /// `#import` line, derived from `ui_locale` (e.g. "fr-CA" → lang "fr",
-    /// region "CA"). This gives correct hyphenation, French punctuation
-    /// spacing, and smart quotes for prose in that language. It is the only
-    /// place the UI locale touches note *content*; disable it to keep new
-    /// notes language-neutral (English / Typst default) regardless of UI
-    /// language. No effect when `ui_locale` is "en". Default true.
+    /// When true, a note created under a non-English UI language gets `#set
+    /// text(lang: …, region: …)` after its import (e.g. "fr-CA" → lang "fr",
+    /// region "CA"), for correct hyphenation, spacing and quotes. The only way
+    /// the UI language affects note content. No effect when `ui_locale` is
+    /// "en". Default true.
     pub use_locale_typesetting: bool,
 }
 
@@ -171,9 +153,8 @@ impl Default for AppearanceSettings {
     }
 }
 
-/// File and link handling settings — workflow toggles that follow the user,
-/// not the notebox. Folder paths and notebox-specific exclusions live in
-/// `NoteboxFileSettings` instead (see `notebox_settings.rs`).
+/// File and link settings that follow the user. Folder paths and notebox
+/// exclusions are in `NoteboxFileSettings` (`notebox_settings.rs`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FileSettings {
@@ -190,9 +171,8 @@ pub struct FileSettings {
     /// When true, new notes are automatically titled with the generated ZID
     /// instead of prompting the user for a title.
     pub auto_title_as_zid: bool,
-    /// When true, the file tree shows filename extensions (e.g. "note.typ").
-    /// When false (default), the trailing `.<ext>` is stripped from file
-    /// nodes (directories are unaffected).
+    /// Show file extensions in the file tree (e.g. "note.typ"). Off by default;
+    /// folders are unaffected.
     pub show_file_extensions: bool,
 }
 
@@ -209,17 +189,14 @@ impl Default for FileSettings {
     }
 }
 
-/// Startup behavior settings — the user's "how should the app open"
-/// preference. The notebox-specific target (file path / rule id) and the
-/// last-active-file pointer live in `NoteboxStartupSettings`.
+/// Startup behaviour. The notebox's target and last-active file are in
+/// `NoteboxStartupSettings`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct StartupSettings {
     /// What to open on launch: "default", "last-file", "previous-tabs",
-    /// "creation-rule", "specific-page", or "specific-collection".
-    ///
-    /// "previous-tabs" restores the tabs this machine last had open in the
-    /// notebox; that record is per-machine and lives outside the notebox, in
+    /// "creation-rule", "specific-page" or "specific-collection". The tabs for
+    /// "previous-tabs" are stored per machine outside the notebox, in
     /// [`crate::tab_sessions`].
     pub behavior: String,
 }
@@ -236,9 +213,8 @@ impl Default for StartupSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BehaviourSettings {
-    /// When a file is opened in a new tab (Ctrl/Cmd+click or a right-click
-    /// "open in new tab" action), switch the content focus to that tab
-    /// immediately. When false, the tab opens in the background.
+    /// Switch to a tab opened with Ctrl/Cmd+click or "Open in new tab". When
+    /// false, it opens in the background.
     pub switch_to_new_tab: bool,
 
     /// Show the most recently modified notes on the new tab page.
@@ -247,21 +223,15 @@ pub struct BehaviourSettings {
     pub new_tab_today: bool,
     /// Show notes that are linked to but not written yet on the new tab page.
     pub new_tab_unwritten_notes: bool,
-    /// How many entries each list on the new tab page shows before the rest
-    /// is cut off (or, for the "Today" list, before it scrolls). The Settings
-    /// UI offers 3, 6 or 12.
+    /// How many entries each list on the new tab page shows (3, 6 or 12).
     pub new_tab_list_length: u32,
 
-    /// Linux-only workaround for a WebKitGTK rendering bug: when true,
-    /// InkyCap sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` (and the sibling
-    /// `WEBKIT_DISABLE_COMPOSITING_MODE=1`) at startup, disabling the
-    /// GPU-accelerated DMABUF compositing path that produces stray/duplicated
-    /// UI artifacts on some GPU + driver + compositor combinations (notably
-    /// NVIDIA/Nouveau and some Wayland sessions). Read once before the webview
-    /// starts (see `crate::run`), so a change only takes effect after a
-    /// restart. Default false: stock WebKitGTK behaviour is left untouched for
-    /// the majority who don't hit the bug. Ignored on macOS/Windows, whose
-    /// webviews (WKWebView / WebView2) are unaffected. See issue #22.
+    /// Linux only: set `WEBKIT_DISABLE_DMABUF_RENDERER=1` and
+    /// `WEBKIT_DISABLE_COMPOSITING_MODE=1` at startup, to avoid stray or
+    /// duplicated UI on some GPU and driver combinations (notably
+    /// NVIDIA/Nouveau and some Wayland sessions). Read before the webview
+    /// starts (see `crate::run`), so changes need a restart. Off by default.
+    /// See issue #22.
     pub disable_dmabuf_renderer: bool,
 }
 
@@ -278,9 +248,8 @@ impl Default for BehaviourSettings {
     }
 }
 
-/// In-app update preferences. A check never runs without user action unless
-/// `check_on_startup` is explicitly enabled — InkyCap makes no network request
-/// otherwise (local-first, no silent calls).
+/// Update settings. No update check runs without user action unless
+/// `check_on_startup` is on.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct UpdateSettings {
@@ -289,36 +258,28 @@ pub struct UpdateSettings {
     /// Also surface development (beta) releases — the odd-numbered release
     /// channel. Default false: only user-facing (even) releases are offered.
     pub include_beta: bool,
-    /// Advanced: replace the release feed the update check asks. Empty or unset
-    /// means InkyCap's own feed. Intended for forks and self-builders, so it has
-    /// no Settings UI — set it in `settings.json`. Must be `https`, and when it
-    /// is set the check never falls back to InkyCap's hosts.
+    /// Advanced: a different release feed for the update check. Empty means
+    /// InkyCap's own. For forks; set in `settings.json` only. Must be `https`;
+    /// when set, the check never falls back to InkyCap's hosts.
     #[serde(default)]
     pub feed_url: Option<String>,
 }
 
-/// User overrides for global UI keyboard shortcuts.
-///
-/// The default keybinding of every command lives in the frontend command
-/// registry (`src/lib/commands.ts`); this map records only the *deltas* a
-/// user has made. Keys are command ids (e.g. `"file:quick-open"`); a value
-/// of `Some("Ctrl+Shift+O")` rebinds the command, while `None` means the
-/// user explicitly unbound it (the command keeps its default action but has
-/// no active hotkey). A command absent from the map uses its registry
-/// default. Combos are stored in the frontend's platform-neutral canonical
-/// form (`Cmd` folded into `Ctrl`), so one override file works across
-/// macOS/Linux/Windows. Rust only round-trips the map — all resolution and
-/// conflict-checking happens frontend-side.
+/// User overrides of keyboard shortcuts. Defaults live in the frontend command
+/// registry (`src/lib/commands.ts`). Keys are command ids (e.g.
+/// `"file:quick-open"`): `Some("Ctrl+Shift+O")` rebinds, `None` unbinds, and a
+/// missing key keeps the default. Combos use the frontend's platform-neutral
+/// form (`Cmd` stored as `Ctrl`). Rust only stores the map; the frontend
+/// resolves and checks conflicts.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct ShortcutSettings {
     pub overrides: HashMap<String, Option<String>>,
 }
 
-/// Typst-facing document defaults that affect compilation, reading view,
-/// and export. User-global because typography is tuned to the device the
-/// user is writing on (display size, eye comfort); a notebox or collection
-/// can still override locally with Typst markup or a collection style.
+/// Document defaults for compiling, reading and export. Per user, because
+/// typography is tuned to the device; a notebox or collection can override
+/// them.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DocumentDefaults {
@@ -328,16 +289,14 @@ pub struct DocumentDefaults {
     pub page_size: Option<String>,
 }
 
-/// Citation and bibliography settings — the user-global subset (system
-/// install paths and a global style default). The notebox-specific source
-/// selection, bibliography file path, and custom CSL override live in
+/// Per-user citation settings (install paths and the default style). The
+/// notebox's source, bibliography file and CSL override are in
 /// `NoteboxCitationSettings`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CitationSettings {
-    /// Citation style name (e.g. "chicago-author-date", "apa"). Global
-    /// default — a notebox can override via its own settings or a
-    /// collection-level style.
+    /// Citation style name (e.g. "chicago-author-date", "apa"). A notebox or
+    /// collection can override it.
     pub citation_style: Option<String>,
     /// Absolute path to the Zotero SQLite database.
     pub zotero_database_path: Option<String>,
@@ -401,11 +360,10 @@ impl Default for FontChoice {
     }
 }
 
-/// Font configuration. Each role picks one of System / Bundled / Custom
-/// (plus role-specific extras: text adds "typst-default"; editor adds
-/// "follow" interface; verse adds "follow" text). Resolution to a
-/// concrete family name happens at the boundary (CSS for interface/editor;
-/// Typst injection for mono/text/verse).
+/// Fonts. Each role is System, Bundled or Custom, plus role-specific options
+/// ("typst-default" for text, "follow" for editor and verse). Resolved to a
+/// family in CSS (interface, editor) or in the injected Typst (mono, text,
+/// verse).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FontSettings {
@@ -423,13 +381,10 @@ impl Default for FontSettings {
         Self {
             interface: FontChoice::system(),
             editor: FontChoice::system(),
-            // Bundled (JuliaMono) rather than system: monospace is injected
-            // into the Typst compile, so a system default would make a fresh
-            // install reference a non-embedded family (Consolas/SF Mono) on the
-            // very first render — forcing system-font loading and diverging
-            // across OSes. Bundled keeps the out-of-box compile all-embedded and
-            // identical everywhere. interface/editor stay system: those are
-            // frontend CSS (the native app UI), where matching the OS is right.
+            // Bundled rather than system, because monospace goes into the Typst
+            // compile: a system default would differ by OS and need system fonts
+            // on the first render. Interface and editor fonts are CSS, where
+            // following the OS is right.
             monospace: FontChoice::bundled(),
             text: FontChoice::bundled(),
             verse: FontChoice::follow(),
@@ -442,9 +397,8 @@ impl Default for FontSettings {
 pub struct ExportSettings {
     /// Custom path to the Pandoc binary. If not set, auto-detected from PATH.
     pub pandoc_path: Option<String>,
-    /// When a `.typ` note in the notebox is opened without the
-    /// `inkycap-notebox` import line, add it without asking. When `false`,
-    /// the editor asks first.
+    /// Add the `inkycap-notebox` import to a note that lacks it without asking.
+    /// When `false`, the editor asks first.
     pub auto_add_notebox_import: bool,
 }
 
@@ -457,38 +411,25 @@ impl Default for ExportSettings {
     }
 }
 
-/// Notebox backup settings — controls how, when, and where the backup
-/// runner writes zip snapshots of the currently-open notebox.
-///
-/// User-global because the destination (an external folder, e.g. a backup
-/// volume) is a per-machine concern; the runner picks up whichever notebox
-/// is open at the time it fires. The password itself is *not* stored here
-/// — when `password_protected` is true the actual secret lives in the OS
-/// keychain (Secret Service on Linux, Keychain on macOS, Credential Manager
-/// on Windows). Settings.json only records that a password is set, so a
-/// settings.json leak does not leak the secret.
+/// Backup settings: how, when and where zip snapshots of the open notebox are
+/// written. Per user, because the destination is per machine; a backup covers
+/// whichever notebox is open. The password isn't stored here: it is kept in the
+/// OS keychain, and this file only records that one is set.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BackupSettings {
-    /// Master on/off for the entire backup feature. When `false`, the
-    /// scheduler is dormant and the manual "Back up now" command refuses
-    /// to run — the user has explicitly opted out. Distinct from "no
-    /// destination configured": this is an explicit user choice, not a
-    /// missing configuration step. Defaults to `true` so users who
-    /// upgrade with an already-configured destination keep their
-    /// existing schedule.
+    /// Turns backups on or off. When off, the scheduler is idle and "Back up
+    /// now" refuses to run. Defaults to `true`, so an existing destination
+    /// keeps its schedule.
     pub enabled: bool,
-    /// Destination folder for backup archives. `None` disables the feature
-    /// entirely (scheduled runner is dormant, command-palette entry is a
-    /// no-op with a clear error). Stored as the frontend-canonical
-    /// forward-slash string; converted to a `PathBuf` at use-sites.
+    /// Destination folder. `None` disables backups. Stored in forward-slash
+    /// form.
     pub path: Option<String>,
     /// Hours between scheduled backups. `0` disables scheduled backups
     /// (manual command-palette runs still work).
     pub interval_hours: u32,
-    /// Number of archives to keep in the destination folder. Older ones
-    /// matching the configured filename pattern are pruned after each
-    /// successful backup.
+    /// Archives to keep; older ones matching the filename pattern are deleted
+    /// after each backup.
     pub keep_count: u32,
     /// Skip the scheduled backup if no notebox content has changed since
     /// the last successful backup. Manual runs ignore this flag.
@@ -496,15 +437,11 @@ pub struct BackupSettings {
     /// Include the user-global config folder (`~/.config/inkycap/`) in
     /// the archive. Small but useful when restoring on a new machine.
     pub include_user_config: bool,
-    /// True when a password is set in the OS keychain. The password
-    /// itself is fetched at archive-write time via `keyring`; this flag
-    /// is the persisted "feature enabled" toggle the settings UI binds
-    /// to so the user can see whether encryption will be applied.
+    /// True when a password is in the OS keychain; it is read when an archive
+    /// is written.
     pub password_protected: bool,
-    /// Filename template. Supports tokens `{notebox}`, `{YYYY}`, `{MM}`,
-    /// `{DD}`, `{HH}`, `{mm}`, `{ss}`. Substituted values are sanitized
-    /// against Windows-reserved characters and reserved names before the
-    /// final path is assembled.
+    /// Filename template with `{notebox}`, `{YYYY}`, `{MM}`, `{DD}`, `{HH}`,
+    /// `{mm}`, `{ss}`. Substituted values are made safe for Windows file names.
     pub filename_pattern: String,
 }
 
@@ -523,9 +460,7 @@ impl Default for BackupSettings {
     }
 }
 
-/// Top-level user-global settings — preferences that follow the user across
-/// every notebox. Notebox-specific settings (folder paths, journal scroll
-/// preferences, bibliography source, etc.) live in
+/// Settings that follow the user across noteboxes. Per-notebox settings are in
 /// [`crate::notebox_settings::NoteboxSettings`].
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
@@ -545,13 +480,9 @@ pub struct UserSettings {
     pub shortcuts: ShortcutSettings,
 }
 
-/// A user-registered external program InkyCap can pipe text through — the
-/// generic "external tool" bridge. InkyCap ships *no* concrete tools; the user
-/// points at an executable they trust, the same authorization model as the
-/// Pandoc and Zotero paths. The executable is spawned from Rust (it is never
-/// reachable from the webview shell allowlist), and the path lives only in
-/// persisted settings — the frontend invokes a tool by `id`, never by path, so
-/// it cannot ask InkyCap to run an arbitrary binary. See
+/// An external program the user registered for piping text through. InkyCap
+/// ships none. It is started from Rust, and the frontend refers to it by `id`,
+/// never by path, so it can't run an arbitrary binary. See
 /// `documentation/developer/extending/external-tools.md` and
 /// [`crate::external_tools`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -564,37 +495,24 @@ pub struct ExternalTool {
     pub name: String,
     /// Absolute path to the executable to run.
     pub command: String,
-    /// Arguments passed as a vector (never a shell string — no shell is
-    /// involved). Each entry may contain the placeholders
-    /// `$INKYCAP_NOTEBOX_ROOT`, `$INKYCAP_FILE`, and `$INKYCAP_SELECTION`,
-    /// substituted at run time.
+    /// Arguments, passed as a list (no shell). May contain
+    /// `$INKYCAP_NOTEBOX_ROOT`, `$INKYCAP_FILE` and `$INKYCAP_SELECTION`.
     pub args: Vec<String>,
     /// What InkyCap writes to the tool's stdin: `"selection"`, `"note"`, or
     /// `"none"`.
     pub input: String,
-    /// What InkyCap does with the tool's stdout: `"insert"` (at the cursor),
-    /// `"replace"` (the selection), `"notify"` (transient toast, document
-    /// untouched), or `"panel"` (a persistent right-panel pane). The backend
-    /// does not act on this — it echoes the value to the frontend, which
-    /// applies the disposition.
+    /// What to do with the output: `"insert"`, `"replace"`, `"notify"` or
+    /// `"panel"`. Applied by the frontend.
     pub output: String,
-    /// Where the tool is offered: `"palette"` (the global command palette,
-    /// the default — it never disturbs the editor selection, so
-    /// `input: "selection"` tools work), `"slash"` (the editor `/` menu, best
-    /// for insert-at-cursor tools), or `"both"`. The backend does not act on
-    /// this — the frontend reads it to decide where to surface the tool.
+    /// Where the tool is offered: `"palette"` (default; keeps the editor
+    /// selection), `"slash"` (the `/` menu) or `"both"`. Used by the frontend.
     pub show_in: String,
-    /// When `true` (the default), the note/selection text is reduced to plain
-    /// prose — the `#import` preamble, `#note(...)` metadata, inline markup,
-    /// math, and code are stripped — before being written to the tool's stdin.
-    /// Best for text-oriented tools (grammar/style checkers); turn off for
-    /// tools that need the raw Typst source. See
-    /// [`crate::typst_pipeline::plaintext`].
+    /// When `true` (the default), send plain prose, with the import,
+    /// `#note(...)`, markup, math and code removed. Turn off for tools that
+    /// need Typst source. See [`crate::typst_pipeline::plaintext`].
     pub strip_markup: bool,
-    /// Optional icon for the tool's output pane tab, as a `"lucide:<name>"`
-    /// string (the icon-picker format shared with collections). Empty means
-    /// "use the default" (a terminal glyph). The backend does not act on this —
-    /// the frontend resolves it when rendering the right-panel tab.
+    /// Icon for the tool's output tab, as `"lucide:<name>"`. Empty means the
+    /// default (a terminal). Used by the frontend.
     pub icon: String,
 }
 
@@ -632,10 +550,8 @@ pub fn load_settings() -> UserSettings {
     let path = settings_path();
     let raw = std::fs::read_to_string(&path).ok();
 
-    // Check whether the raw JSON contains `accent_source` before
-    // deserializing — we need this to distinguish legacy files (which
-    // predate the field) from files where the user explicitly chose
-    // "default".
+    // Note whether `accent_source` is in the file, to tell older files from an
+    // explicit "default".
     let parsed_raw = raw
         .as_deref()
         .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok());
@@ -658,12 +574,8 @@ pub fn load_settings() -> UserSettings {
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();
 
-    // Migrate legacy appearance settings: pre-`accent_source` configs
-    // that lack the field entirely land with the serde default ("default")
-    // but may carry a non-default `accent_color`. Promote those to
-    // "custom" so the user's color survives the upgrade. Only run this
-    // when `accent_source` was truly absent — otherwise the user has
-    // explicitly chosen "default" and we must respect that.
+    // Older files without `accent_source` but with a custom `accent_color`
+    // become "custom", so the colour is kept.
     if !has_accent_source
         && settings.appearance.accent_source == "default"
         && !settings
@@ -674,9 +586,8 @@ pub fn load_settings() -> UserSettings {
         settings.appearance.accent_source = "custom".to_string();
     }
 
-    // Migrate legacy `bg_palette` into both per-theme fields. Only run when
-    // the new fields are still at their defaults — otherwise the user has
-    // already chosen per-theme values and we must respect those.
+    // Copy an older `bg_palette` into both per-theme fields, unless they have
+    // already been set.
     if let Some(legacy) = legacy_bg_palette {
         if settings.appearance.bg_palette_light == "default"
             && settings.appearance.bg_palette_dark == "default"
@@ -686,9 +597,8 @@ pub fn load_settings() -> UserSettings {
         }
     }
 
-    // Drop legacy editor "follow" mode — the option was removed from
-    // the UI. Inherit the interface choice so the user's effective
-    // editor font stays the same across the upgrade.
+    // The editor "follow" font option was removed; use the interface choice so
+    // the font stays the same.
     if settings.fonts.editor.mode == FontChoice::FOLLOW {
         settings.fonts.editor = settings.fonts.interface.clone();
     }

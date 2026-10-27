@@ -1,13 +1,11 @@
 // ---------------------------------------------------------------------------
-// Journal Scroll — unified ScrollQuery primitive.
+// Journal Scroll queries.
 //
-// The Journal Scroll view (and internal sub-queries like the right-panel
-// "Scroll Context" tab and the wikilink-routing `queryResultIncludes` check)
-// issue queries against the in-memory `PropertyIndex` / `LinkIndex` through
-// this single command. The scroll's Timeline scope uses All or Folder, and
-// its Neighbourhood scope uses Neighbourhood; the other variants exist so
-// sub-panes and routing logic can build on the same primitive without each
-// defining its own ad-hoc command.
+// The Journal Scroll and related features (the Scroll Context tab, the
+// `queryResultIncludes` check for wikilinks) query the in-memory
+// `PropertyIndex` / `LinkIndex` through this one command. Timeline uses All or
+// Folder, Neighbourhood uses Neighbourhood; the other variants serve the
+// sub-panes and link routing.
 // ---------------------------------------------------------------------------
 
 use std::collections::HashSet;
@@ -39,9 +37,8 @@ pub enum ScrollFilter {
     All,
     /// Notes within a folder (recursive when set).
     Folder { path: PathBuf, recursive: bool },
-    /// Notes whose property `name` equals `value`. List-valued properties
-    /// match when any element equals `value`. `name == "tags"` consults the
-    /// index's tag map for O(1) lookup.
+    /// Notes whose property `name` equals `value`; a list matches if any
+    /// element does. `tags` uses the index's tag map.
     PropertyEq { name: String, value: PropertyValue },
     /// Notes that have any non-empty value for property `name`.
     PropertyAny { name: String },
@@ -49,9 +46,8 @@ pub enum ScrollFilter {
     LinkedFrom { source: PathBuf },
     /// Notes that link to `target` (backlinks of `target`).
     LinkedTo { target: PathBuf },
-    /// The Journal Scroll's Neighbourhood scope: `note` itself, every note
-    /// it links to, and every note that links to it. `note` leads the
-    /// result whatever the sort, so the whole neighbourhood unfolds below it.
+    /// Neighbourhood: `note`, the notes it links to, and the notes linking to
+    /// it. `note` always comes first.
     Neighbourhood { note: PathBuf },
 }
 
@@ -78,16 +74,14 @@ pub enum SortDir {
 pub struct ScrollEntry {
     pub path: String,
     pub title: String,
-    /// The entry is the scroll's anchor, and the anchor falls outside the
-    /// query's filter (e.g. a topic note while the scroll is limited to the
-    /// daily notes folder). It is still listed, placed where its date falls
-    /// among the matching notes, so the scroll continues from that point.
+    /// The entry is the anchor but outside the query's filter (e.g. a topic
+    /// note while the scroll shows daily notes). It is listed at its date, so
+    /// the scroll continues from there.
     pub out_of_scope: bool,
 }
 
-/// Resolve a Journal Scroll query (filter + sort) into the ordered list of
-/// matching note entries the frontend pages through. Reads the property index;
-/// performs no compilation.
+/// The ordered entries for a Journal Scroll query (filter and sort), from the
+/// property index without compiling.
 #[tauri::command]
 pub async fn run_scroll_query(
     query: ScrollQuery,
@@ -105,16 +99,10 @@ pub async fn run_scroll_query(
     ))
 }
 
-/// Locate `target` within the same sorted result set `run_scroll_query`
-/// would produce, returning its offset relative to `anchor` (negative =
-/// before, zero = anchor row, positive = after). Returns `Ok(None)` when
-/// the target isn't in the result.
-///
-/// Used by the Journal Scroll wikilink-click handler: if the user clicks a
-/// wikilink whose target is in the current scroll's query but not yet
-/// loaded, the frontend pages in that direction until the target loads,
-/// then smooth-scrolls to it. Without this, the click falls through to a
-/// new tab even when the target is just past the loaded window.
+/// Find `target` in the same sorted results `run_scroll_query` gives, as an
+/// offset from `anchor` (negative before, positive after). `Ok(None)` when it
+/// isn't there. Used when a wikilink's target is in the scroll but not loaded
+/// yet, so the frontend can page to it instead of opening a new tab.
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct FindInScrollQuery {
     pub filter: ScrollFilter,
@@ -123,10 +111,8 @@ pub struct FindInScrollQuery {
     pub target: String,
 }
 
-/// Return the signed offset (relative to `anchor`) of `target` within a scroll
-/// query's ordered results, or `None` if `target` isn't in the query. Lets the
-/// wikilink-click handler page in the right direction to a not-yet-loaded entry
-/// (see [`FindInScrollQuery`]).
+/// The offset of `target` from `anchor` in a query's results, or `None` (see
+/// [`FindInScrollQuery`]).
 #[tauri::command]
 pub async fn find_offset_in_scroll_query(
     query: FindInScrollQuery,
@@ -145,24 +131,17 @@ pub async fn find_offset_in_scroll_query(
         (Some(a), Some(t)) => Ok(Some((t as i64 - a as i64) as i32)),
         // Target not in result.
         (_, None) => Ok(None),
-        // Anchor not in result (only when it isn't a note in the index; an
-        // out-of-scope note is always added by `build_sorted`). Treat the
-        // anchor as offset 0 by convention so target's index becomes its
-        // absolute offset.
+        // The anchor isn't in the results (only when it isn't an indexed note);
+        // treat it as offset 0.
         (None, Some(t)) => Ok(Some(t as i32)),
     }
 }
 
-/// Build the full sorted candidate list for a query. Shared by
-/// `run_scroll_query` and `find_offset_in_scroll_query` so both surfaces
-/// see the same sorted ordering — diverging here would let the
-/// in-result-extension wikilink path target an entry the scroll itself
-/// would never page to.
+/// The full sorted list for a query, shared by `run_scroll_query` and
+/// `find_offset_in_scroll_query` so they agree on the order.
 ///
-/// The anchor is always part of the result, even when the filter excludes
-/// it, so the scroll can start from the note the user opened it on. An
-/// out-of-scope anchor is placed where its date falls among the matching
-/// notes (see [`sort_candidates`]).
+/// The anchor is always included, even when the filter excludes it, placed
+/// where its date falls among the matching notes (see [`sort_candidates`]).
 async fn build_sorted(
     filter: &ScrollFilter,
     sort: &ScrollSort,
@@ -252,21 +231,15 @@ fn move_to_front(entries: &mut [ScrollEntry], path: &str) {
     }
 }
 
-/// Sort a candidate note set into the scroll's display order.
+/// Sort notes into display order by `(tier, key)`: tier 0 has the sort
+/// property, tier 1 doesn't. Notes without it aren't dropped (that would hide
+/// them, or strand an anchor without it); they come after the others, ordered
+/// by creation date.
 ///
-/// Each note is keyed by `(tier, key)`. Tier 0 = the note has the sort
-/// property; tier 1 = it doesn't. A note missing the property is never
-/// dropped — that would silently hide notes from the feed *and*, if the
-/// anchor itself lacked the property, strand the anchor (breaking
-/// anchor-return and offset math). Instead it lands in tier 1, after every
-/// tier-0 note, ordered among its peers by file creation date so the tail
-/// is still a stable, sensible chronological run.
-///
-/// The anchor (at path `anchor`) is the exception: when it lacks the sort
-/// property (a note with no `date` or ZID, say) it is placed by its creation
-/// date instead of dropping to the tail, so the notes after it are still the
-/// ones nearest to it in time. `outside_anchor` is an anchor the filter
-/// excluded; it is sorted in the same way and marked `out_of_scope`.
+/// An anchor without the sort property (no `date` or ZID) is placed by its
+/// creation date instead, so the notes after it are those nearest in time.
+/// `outside_anchor` is an anchor the filter excluded; it is placed the same way
+/// and marked `out_of_scope`.
 fn sort_candidates(
     candidates: Vec<&NoteMetadata>,
     outside_anchor: Option<&NoteMetadata>,
@@ -296,24 +269,18 @@ fn sort_candidates(
                 SortDir::Asc => crate::sort::compare_name(&a.0 .1, &b.0 .1),
                 SortDir::Desc => crate::sort::compare_name(&b.0 .1, &a.0 .1),
             })
-            // Final tiebreaker: the note's path. The candidate set is
-            // collected from a HashMap, so its iteration order varies
-            // between calls; a stable sort would then leave two notes
-            // sharing a sort key in a different relative order each time.
-            // Pagination depends on the sorted list being identical across
-            // queries (the anchor's index must not move) — without a unique
-            // tiebreaker the anchor drifts and the scroll re-fetches and
-            // duplicates entries, visibly snapping back to the anchor.
+            // Break ties by path. The candidates come from a HashMap, so
+            // without a unique tiebreak notes with equal keys change order
+            // between calls, the anchor's position moves, and pagination
+            // duplicates entries.
             .then_with(|| a.1.path.cmp(&b.1.path))
     });
 
     keyed.into_iter().map(|(_, e)| e).collect()
 }
 
-/// A note's `(tier, key)` for [`sort_candidates`]. The anchor, when it
-/// lacks the sort key, is placed by its creation date among the notes that
-/// have one, so the feed continues from the notes nearest to it in time
-/// rather than from the tail of undated notes.
+/// A note's `(tier, key)` for [`sort_candidates`]. An anchor without the key is
+/// placed by its creation date.
 fn keyed_by(note: &NoteMetadata, sort: &ScrollSort, is_anchor: bool) -> (u8, String) {
     let key = sort_key(note, sort).or_else(|| {
         if is_anchor {
@@ -330,11 +297,8 @@ fn keyed_by(note: &NoteMetadata, sort: &ScrollSort, is_anchor: bool) -> (u8, Str
 
 // === Connection flags ===
 //
-// Encodes how each candidate entry relates to the scroll's anchor. The
-// frontend's pill-level "Connections" toggle gates whether the resulting
-// CSS classes are styled — flags are always computed cheaply from the
-// in-memory `LinkIndex` + property tags. Source of truth for the
-// `entry--*` classes in `JournalScrollView`.
+// How each entry relates to the anchor, from the `LinkIndex` and tags. The
+// source of the `entry--*` classes in `JournalScrollView`.
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ConnectionFlags {
@@ -348,9 +312,8 @@ pub struct ConnectionFlags {
     pub shares_tags: bool,
 }
 
-/// For each path in `paths`, compute its connection flags relative to `anchor`
-/// (links-to / linked-from / shares-tags) so the Journal Scroll can show
-/// per-entry connection icons. Reads the link and property indexes.
+/// Connection flags (links-to, linked-from, shares-tags) for each path relative
+/// to `anchor`, for the per-entry icons.
 #[tauri::command]
 pub async fn compute_connection_flags(
     anchor: String,
@@ -393,11 +356,8 @@ pub async fn compute_connection_flags(
             .unwrap_or_default();
         let shares_tags =
             !anchor_tags.is_empty() && anchor_tags.iter().any(|t| entry_tags.contains(*t));
-        // The anchor is related to itself on every axis (it shares all its
-        // own tags, may link to itself, etc.), but surfacing that as a
-        // links/linked/shares decoration is noise — the `is_anchor` flag
-        // already says everything. Zero the relational flags for the anchor
-        // so it shows only the anchor badge.
+        // The anchor relates to itself on every axis, which is noise; it shows
+        // only the anchor badge.
         let is_anchor = path == anchor_path;
         out.push(ConnectionFlags {
             path: p.clone(),
@@ -412,9 +372,8 @@ pub async fn compute_connection_flags(
 
 // === Filter helpers ===
 
-/// The notebox-relative parent folder of a note — the walker's `file.folder`
-/// property — trimmed of any leading/trailing slash. Empty for a note that
-/// sits directly at the notebox root.
+/// A note's notebox-relative folder (`file.folder`) without leading or trailing
+/// slashes; empty at the root.
 fn note_folder_rel(note: &NoteMetadata) -> &str {
     note.properties
         .get("file.folder")
@@ -428,12 +387,9 @@ fn collect_folder_notes<'a>(
     folder: &Path,
     recursive: bool,
 ) -> Vec<&'a NoteMetadata> {
-    // Match on the walker's notebox-relative `file.folder` property, not on
-    // `note.path`: depending on whether a note arrived from the metadata
-    // cache or a fresh parse, `note.path` may be absolute or relative, but
-    // `file.folder` is always notebox-relative. The target folder (from the
-    // "Anchor scope" setting) is notebox-relative too; both sides are
-    // trimmed of slashes so a stray leading/trailing `/` can't mismatch.
+    // Match on `file.folder`, which is always notebox-relative; `note.path` may
+    // be absolute or relative depending on where the note came from. Both sides
+    // are trimmed of slashes.
     let target = folder.to_string_lossy();
     let target = target.trim_matches('/');
     index
@@ -531,11 +487,9 @@ fn sort_key(note: &NoteMetadata, sort: &ScrollSort) -> Option<String> {
     }
 }
 
-/// Fallback sort key for a note that lacks the requested sort property —
-/// its file creation date. `file.ctime` is an indexed pseudo-property
-/// (the same one the "created" sort axis uses), so this needs no extra
-/// filesystem I/O. An empty string when even that is unavailable, which
-/// simply groups such notes together at one end of the tier-1 tail.
+/// Fallback sort key for a note without the sort property: its creation date
+/// (`file.ctime`, already indexed). Empty when unknown, which groups such notes
+/// together.
 fn creation_date_key(note: &NoteMetadata) -> String {
     note.properties
         .get("file.ctime")
@@ -543,19 +497,16 @@ fn creation_date_key(note: &NoteMetadata) -> String {
         .unwrap_or_default()
 }
 
-/// The note's creation date written in the same form as the sort axis's
-/// keys, so it can be compared against them. `None` for a title sort, where
-/// a date means nothing, or when the creation date is unknown. The stored
-/// time is UTC; it is turned into local time first, the time ZIDs and
-/// hand-written dates are written in.
+/// The creation date in the sort axis's key format, for comparing. `None` for a
+/// title sort or an unknown date. Converted from UTC to local time, the time
+/// ZIDs and dates are written in.
 fn creation_date_as_sort_key(note: &NoteMetadata, sort: &ScrollSort) -> Option<String> {
     let ctime = chrono::DateTime::parse_from_rfc3339(&creation_date_key(note)).ok()?;
     format_creation_key(ctime.with_timezone(&chrono::Local).fixed_offset(), sort)
 }
 
-/// `time` as a sort key: 14 digits (`YYYYMMDDhhmmss`) for ZID sorting, an
-/// RFC 3339 timestamp for date properties (which also orders correctly
-/// against a plain `YYYY-MM-DD`).
+/// `time` as a key: 14 digits (`YYYYMMDDhhmmss`) for ZIDs, RFC 3339 for date
+/// properties (which also orders against `YYYY-MM-DD`).
 fn format_creation_key(
     time: chrono::DateTime<chrono::FixedOffset>,
     sort: &ScrollSort,
@@ -616,12 +567,9 @@ fn extract_zid(note: &NoteMetadata) -> Option<String> {
     re.find(&stem).map(|m| m.as_str().to_string())
 }
 
-/// Return the entries at sorted positions `[anchor_idx + offset, anchor_idx + offset + limit)`
-/// that actually exist. Out-of-range positions are omitted (not shifted) —
-/// this gives the frontend a strict pagination protocol where
-/// `result.len() < limit` unambiguously means "this batch hit the edge".
-/// Without strict semantics, a `loadMore("before")` request could leak
-/// entries from past the anchor and corrupt the visible-window state.
+/// The entries at `[anchor_idx + offset, anchor_idx + offset + limit)` that exist.
+/// Out-of-range positions are left out, not shifted, so `result.len() < limit` always means
+/// the edge was reached.
 fn slice_around_anchor(
     sorted: &[ScrollEntry],
     anchor: &Path,
@@ -740,9 +688,8 @@ mod tests {
 
     #[test]
     fn folder_filter_respects_recursion() {
-        // Folder matching keys off the notebox-relative `file.folder`
-        // property, so the target folder is notebox-relative too. A leading
-        // slash on the target must not cause a spurious mismatch.
+        // Folder matching uses the notebox-relative `file.folder`; a leading
+        // slash on the target must not matter.
         let index = build_index(vec![
             note(
                 "/v/notes/a.typ",
@@ -795,10 +742,7 @@ mod tests {
             vec!["/v/1.typ", "/v/2.typ", "/v/3.typ"]
         );
 
-        // Strict-before request: offset=-2, limit=2 → positions [0, 1].
-        // This is what `loadMore("before")` will issue; it must not return
-        // entries from past the anchor even when the requested window
-        // overlaps with idx >= anchor.
+        // offset -2, limit 2 → positions [0, 1]; nothing past the anchor.
         let strict_before = slice_around_anchor(&entries, &anchor, -2, 2);
         assert_eq!(
             strict_before
@@ -863,9 +807,8 @@ mod tests {
 
     #[test]
     fn sort_candidates_keeps_notes_missing_the_sort_key_at_the_end() {
-        // Two notes carry a zid; two don't. The keyless pair must still
-        // appear (never dropped — that would strand the anchor) and must
-        // sort after the keyed pair, ordered among themselves by ctime.
+        // Notes without a zid still appear, after those with one, ordered by
+        // ctime.
         let with_zid_old = note(
             "/v/a.typ",
             &[("zid", PropertyValue::String("20260101000000".into()))],
@@ -911,10 +854,8 @@ mod tests {
 
     #[test]
     fn sort_candidates_is_order_independent_for_equal_keys() {
-        // Three notes share one sort key. Pagination needs the sorted list
-        // to be identical no matter what order the candidate set arrives in
-        // (it comes from a HashMap), so the path tiebreaker must fully
-        // determine the order.
+        // Three notes with one key: the path tiebreak decides the order
+        // whatever order the candidates arrive in.
         let mk = || {
             vec![
                 note(

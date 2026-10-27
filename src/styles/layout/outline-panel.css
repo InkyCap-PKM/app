@@ -1,14 +1,12 @@
-/* Outline panel.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Outline panel. Part of layout.css, whose import order (see ../layout.css)
+   keeps the cascade. */
 
 /* ── Outline Panel ── */
 
-/* No extra padding on the pane wrapper: the right panel's tab-content
-   already provides the 8px gutter, and the shared section-header sets its own
-   row height. Any additional top-padding here would push the "Outline" label
-   out of the band it shares with the left sidebar's "Files" label and the
-   editor's toolbar. */
+/* No padding: the right panel's tab content gives the 8px gutter and the
+   section header sets its own height. Top padding would push "Outline" out
+   of the band it shares with the sidebar's "Files" label and the editor
+   toolbar. */
 .outline-panel {
   padding: 0;
 }

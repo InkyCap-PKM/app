@@ -1,27 +1,18 @@
-//! Typst-output fidelity corpus.
+//! Typst output snapshot tests.
 //!
-//! The expensive, error-prone part of any Typst compiler bump is confirming
-//! that *rendered output* didn't silently shift across real documents — a base-
-//! line tweak in math, a list-marker change, an HTML-structure adjustment. This
-//! turns that eyeball pass into a test: a checked-in corpus of representative
-//! `.typ` notes is compiled through the real pipeline and every surface (HTML,
-//! SVG, `typst query` metadata) is snapshotted with `insta`.
-//!
-//! On the next bump the workflow is `cargo insta test --review`: accepted diffs
-//! become the new baseline, unexpected diffs are caught before they reach a
-//! user. See `documentation/developer/typst-upgrade.md`.
+//! A checked-in set of representative `.typ` notes is compiled through the real
+//! pipeline, and each output (HTML, SVG, `typst query` metadata) is snapshotted
+//! with `insta`, so a Typst upgrade that changes rendered output shows up as a
+//! diff. After an upgrade run `cargo insta test --review` and accept the
+//! expected changes. See `documentation/developer/typst-upgrade.md`.
 //!
 //! ## Determinism
 //!
-//! Snapshots must be machine-independent. We deliberately do **not** call
-//! `ensure_system_fonts()` — only the fonts bundled in `typst-assets` are
-//! available, so the same input renders identically on any developer's machine
-//! and in CI. Adding system-font discovery here would make snapshots depend on
-//! whatever fonts happen to be installed.
+//! Snapshots must be the same on every machine, so `ensure_system_fonts()` is
+//! not called: only the fonts bundled in `typst-assets` are used.
 //!
-//! Each fixture gets a fresh tempdir notebox scaffolded with the
-//! `inkycap-notebox` package, plus a shared `refs.bib`, so citation/bibliography
-//! fixtures resolve.
+//! Each fixture gets a fresh temporary notebox with the `inkycap-notebox`
+//! package and a shared `refs.bib`, so citations resolve.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -49,10 +40,9 @@ const REFS_BIB: &str = r#"@article{lovelace1843,
 }
 "#;
 
-/// Deterministic, serializable projection of a [`QueryResult`]. The live struct
-/// stores properties in a `HashMap` (non-deterministic iteration order) and is
-/// not `Serialize`; this mirror sorts properties into a `BTreeMap` and carries
-/// only the metadata surfaces that must stay stable across a bump.
+/// Snapshot-friendly copy of a [`QueryResult`]: properties sorted into a
+/// `BTreeMap` (the real struct uses a `HashMap` and isn't `Serialize`), with
+/// only the metadata that must stay stable.
 #[derive(serde::Serialize)]
 struct MetadataSnapshot {
     properties: BTreeMap<String, PropertyValue>,
@@ -78,11 +68,9 @@ impl From<QueryResult> for MetadataSnapshot {
     }
 }
 
-/// Compact, layout-focused digest of the rendered SVG pages. Snapshotting the
-/// full SVG (megabytes of glyph-outline path data) would be unreadable and
-/// noisy under sub-pixel font shifts; the page count and rounded geometry are
-/// the signals that catch a real layout regression, paired with the byte length
-/// as a coarse "did the drawing change at all" tripwire.
+/// Summary of the rendered SVG pages. The full SVG is megabytes of glyph paths
+/// and changes with tiny font shifts; page count and rounded geometry catch
+/// real layout changes, and the byte length flags any change at all.
 #[derive(serde::Serialize)]
 struct SvgDigest {
     page_count: usize,
@@ -149,9 +137,8 @@ fn compile_fixture(path: &Path) {
     insta::assert_json_snapshot!("metadata", meta);
 }
 
-/// One snapshot set (svg / html / metadata) per `.typ` fixture. `insta::glob!`
-/// names snapshots after the fixture file, so adding a `.typ` under
-/// `fixtures/fidelity/` extends the corpus with no code change here.
+/// One snapshot set (svg / html / metadata) per `.typ` fixture, named after the
+/// file, so adding a `.typ` under `fixtures/fidelity/` extends the tests.
 #[test]
 fn fidelity_corpus() {
     insta::glob!("fixtures/fidelity/*.typ", |path| {
@@ -159,14 +146,12 @@ fn fidelity_corpus() {
     });
 }
 
-/// Pin benchmark — the perf check the `Cargo.toml` pin-rationale comment
-/// mandates on every minor bump. (It replaces the obsolete pre-pivot
-/// `spike-bench`/`bench-napi.mjs` NAPI scripts, which measured a typst.ts
-/// prototype that no longer exists; the pipeline is now a pure-Rust crate.)
+/// Compile-time benchmark, run on every minor Typst upgrade (see the pin note
+/// in `Cargo.toml`).
 ///
-/// Ignored by default — it's a measurement, not a pass/fail gate, and a fresh
-/// compiler is built per iteration so the bundled fonts reload each time. Run
-/// it against the new pin and record the numbers in the upgrade runbook:
+/// Ignored by default, since it's a measurement, not a test; a fresh compiler
+/// per iteration reloads the bundled fonts each time. Run it on the new version
+/// and record the results in the upgrade guide:
 ///
 /// ```text
 /// cargo test --release --test fidelity -- --ignored --nocapture pin_benchmark

@@ -1,15 +1,12 @@
 import { createSignal, onCleanup } from "solid-js";
 
 /**
- * Watches an element for horizontal overflow — content wider than the box, so
- * some of it is clipped at the trailing edge. Returns a reactive `overflowing`
- * signal and a `ref` to attach to the element.
- *
- * Used to drive an edge shadow that cues the user there are hidden controls
- * (e.g. a narrowed sidebar's mode bar / the right panel's tab bar). It implies
- * no scrolling: the reveal gesture is widening the panel, so only the trailing
- * edge ever overflows. A `ResizeObserver` catches panel resizes and a
- * `MutationObserver` catches buttons appearing/disappearing.
+ * Watches an element for horizontal overflow (content clipped at the trailing
+ * edge), returning an `overflowing` signal and a `ref`. Drives an edge shadow
+ * showing there are hidden controls (a narrow sidebar's mode bar, the right
+ * panel's tab bar). The fix is to widen the panel, not scroll, so only the
+ * trailing edge overflows. A `ResizeObserver` catches resizes and a
+ * `MutationObserver` buttons appearing or disappearing.
  */
 export function createOverflowWatcher() {
   const [overflowing, setOverflowing] = createSignal(false);

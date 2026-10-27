@@ -3,15 +3,14 @@ import { EditorState, EditorSelection } from "@codemirror/state";
 import { EditorView, Decoration } from "@codemirror/view";
 import { syncDomCaretToState, domCaretResync } from "./dom-caret-resync";
 
-// jsdom's selection always agrees with itself, so the WebKit misbehaviour this
-// guards against — the browser editing at a different spot than the range it
-// reports — cannot be reproduced here. A fake selection stands in, and these
-// tests cover when the sync runs and where it puts the caret. The real thing is
-// checked in a WebKitGTK window through scripts/webkit-harness
-// (`h.pasteBackspaceType`).
+// jsdom's selection always agrees with itself, so the WebKit problem (the
+// browser editing somewhere other than the range it reports) can't happen here.
+// A fake selection stands in, and these test when the sync runs and where it
+// puts the caret. The real behaviour is tested in a WebKitGTK window with
+// scripts/webkit-harness (`h.pasteBackspaceType`).
 //
-// The sync re-asserts the caret whether or not the browser's range already
-// looks right, because a range that looks right proves nothing on WebKit.
+// The sync sets the caret even when the range already looks right, since on
+// WebKit that proves nothing.
 
 function mk(doc: string, anchor: number) {
   const view = new EditorView({
@@ -56,9 +55,9 @@ describe("syncDomCaretToState", () => {
 
   it("resolves the caret on the side the cursor is associated with", () => {
     // A mark ending at position 5 splits the line into two text nodes, so the
-    // two sides of position 5 are different DOM spots. The caret carries which
-    // one it belongs to, and the sync has to honour it or it would move the
-    // caret across the mark's boundary.
+    // two sides of position 5 are different DOM positions. The caret records
+    // which side it's on, and the sync must keep that, or it would move the
+    // caret across the mark's edge.
     const marked = [domCaretResync, EditorView.decorations.of(
       Decoration.set([Decoration.mark({ class: "test-mark" }).range(0, 5)]),
     )];

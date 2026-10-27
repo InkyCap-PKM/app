@@ -2,12 +2,10 @@ import type { Component } from "solid-js";
 import { lucideFrame } from "./frame";
 
 /**
- * Flag with an alert "!" mark — marks an experimental / not-fully-tested
- * feature. Editable master: `design-assets/flag-notice.svg` — keep the two in
- * sync by hand. Uses `lucideFrame` so it renders as `currentColor` alongside
- * the lucide icons; the flag path keeps its scaled 2.13783 stroke (it was
- * traced at a larger scale in the master), while the "!" inherits the 2px frame
- * stroke.
+ * Flag with a "!", marking an experimental feature. Master:
+ * `design-assets/flag-notice.svg`, kept in step by hand. Uses `lucideFrame`;
+ * the flag keeps its 2.13783 stroke (traced at a larger scale), while the "!"
+ * uses the frame's 2px.
  */
 export const FlagNoticeIcon: Component<{ size?: number; class?: string }> = (
   props,

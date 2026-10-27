@@ -2,24 +2,22 @@ import { pathEquals } from "./paths";
 import * as ipc from "./ipc";
 import type { DeepLink } from "./types";
 
-// Opening additional InkyCap windows.
+// Opening more InkyCap windows.
 //
-// Each OS window owns its own notebox session (see the per-window notebox
-// backend), so a new window is a genuinely independent view. With a `notebox`
-// path it boots straight into that notebox; without one it shows the notebox
-// picker (a clean "new instance" where the user chooses what to open).
+// Each window has its own notebox session, so a new window is independent. With
+// a `notebox` path it opens that notebox; without one it shows the notebox
+// picker.
 //
-// The label uses the `note-*` prefix so the window is covered by the
-// `["main", "note-*"]` capability glob and gets full IPC/event access.
+// The label starts with `note-` so the window matches the `["main", "note-*"]`
+// capability and gets IPC and event access.
 
 /**
- * Open a new InkyCap window. Pass a notebox root to open it directly;
- * omit it to open an empty window that shows the notebox picker. With `link`
- * (an `inkycap://` link already checked by the backend, for that notebox),
- * the window follows it once the notebox is open.
+ * Open a new window: on the given notebox root, or with the notebox picker if
+ * none. With `link` (an `inkycap://` link the backend already checked, for that
+ * notebox), the window follows it once the notebox is open.
  *
- * The WebviewWindow API is lazy-imported so it stays out of the initial
- * bundle for sessions that never open a second window.
+ * The WebviewWindow API is imported lazily, keeping it out of the initial
+ * bundle.
  */
 export function openNoteboxWindow(notebox?: string, link?: DeepLink): void {
   void (async () => {
@@ -40,10 +38,9 @@ export function openNoteboxWindow(notebox?: string, link?: DeepLink): void {
 }
 
 /**
- * If `notebox` is already open in a window, focus that window and return true
- * (a notebox is exclusive to one window). With `excludeCurrent`, a match in
- * *this* window doesn't count — used when switching the current window, so it
- * only redirects to a genuinely different window.
+ * If `notebox` is open in a window, focus it and return true (a notebox is open
+ * in one window only). With `excludeCurrent`, this window doesn't count, for
+ * switching the current window.
  */
 export async function focusNoteboxWindow(
   notebox: string,

@@ -8,14 +8,16 @@ export interface Toast {
   level: ToastLevel;
   message: string;
   detail?: string;
-  /** When set, an X button on the toast invokes this callback in addition
-   *  to dismissing the toast. Used for cancellable long-running work
-   *  (e.g. the in-progress backup toast). */
+  /**
+   * If set, an X button on the toast calls this as well as dismissing it, for
+   * cancellable work (e.g. the backup progress toast).
+   */
   onCancel?: () => void;
-  /** When true the toast stays until the caller dismisses it and the
-   *  whole-toast click-to-dismiss is suppressed (otherwise the user
-   *  thinks they cancelled the work when they only hid its progress
-   *  indicator). */
+  /**
+   * If true, the toast stays until the caller dismisses it, and clicking it
+   * doesn't dismiss it (which would look like cancelling the work when it only
+   * hid the progress).
+   */
   persistent?: boolean;
   /** An optional button in the toast body (e.g. "Copy command"). Clicking
    *  it runs `run` and leaves the toast open. */
@@ -36,16 +38,16 @@ const [toasts, setToasts] = createSignal<Toast[]>([]);
 export { toasts };
 
 export interface ShowToastOptions {
-  /** Don't auto-dismiss. Used for "work in progress" toasts that
-   *  should remain visible until the caller explicitly dismisses
-   *  them with `dismissToast(id)` — typically by showing a result
-   *  toast in their place. */
+  /**
+   * Don't dismiss automatically, for "in progress" toasts that stay until the
+   * caller calls `dismissToast(id)`, usually replacing it with a result toast.
+   */
   persistent?: boolean;
-  /** Wire an explicit Cancel action. When set, the toast renders an
-   *  X button that invokes this callback (and dismisses the toast).
-   *  Use for in-progress toasts that represent cancellable work — a
-   *  toast without an `onCancel` has no way to abort the underlying
-   *  job, so it shouldn't pretend to. */
+  /**
+   * A Cancel action: the toast shows an X button that calls this and dismisses
+   * it. For toasts about cancellable work; a toast without `onCancel` can't
+   * stop its job, so it shouldn't offer to.
+   */
   onCancel?: () => void;
   /** Add a button to the toast body; see `Toast.action`. */
   action?: ToastAction;

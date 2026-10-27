@@ -1,17 +1,12 @@
-// Custom in-page find/replace panel (Ctrl+F).
-//
-// CodeMirror's search/replace *logic* is excellent and stays untouched — this
-// module only supplies the panel DOM through the documented
-// `search({ createPanel })` extension point. The custom panel exists to:
-//   * hide the replace row behind a disclosure toggle, so a plain search
-//     can't turn into an accidental replacement;
-//   * use icon buttons for Next/Previous and sentence-cased text elsewhere;
-//   * group the action buttons into segmented controls like the rest of the
-//     app's toolbars;
-//   * add hover tooltips to the option checkboxes;
-//   * match the surrounding InkyCap UI (tokens, button styling).
-// Every command the controls invoke (findNext, replaceAll, …) is the stock
-// CodeMirror command — no search logic is reimplemented here.
+// The Ctrl+F find/replace panel. Only the panel DOM is ours, through
+// CodeMirror's `search({ createPanel })`; every control runs a stock CodeMirror
+// command (findNext, replaceAll, …). It:
+//   * hides the replace row behind a toggle, so a search can't turn into an
+//     accidental replacement;
+//   * uses icon buttons for Next/Previous and sentence case elsewhere;
+//   * groups the buttons into segmented controls like other toolbars;
+//   * adds tooltips to the option checkboxes;
+//   * uses the app's tokens and button styles.
 
 import {
   runScopeHandlers,
@@ -50,9 +45,8 @@ function svgIcon(paths: string | string[], size = 16): string {
   );
 }
 
-// Right-pointing chevron for the disclosure toggle; CSS rotates it 90° when
-// the replace row is open. Lucide `arrow-big-down-dash` / `arrow-big-up-dash`
-// drive the Next / Previous buttons.
+// The disclosure chevron (rotated by CSS when open). Lucide
+// `arrow-big-down-dash` / `arrow-big-up-dash` for Next / Previous.
 const CHEVRON_SVG = svgIcon("m9 18 6-6-6-6", 14);
 const ARROW_DOWN_SVG = svgIcon([
   "M14 8a1 1 0 0 1 1 1v2a1 1 0 0 0 1 1h3.293a.707.707 0 0 1 .5 1.207l-6.939 6.939a1.207 1.207 0 0 1-1.708 0l-6.94-6.94a.707.707 0 0 1 .5-1.206H8a1 1 0 0 0 1-1V9a1 1 0 0 1 1-1z",
@@ -78,9 +72,10 @@ class InkycapSearchPanel implements Panel {
   private readonly caseField: HTMLInputElement;
   private readonly reField: HTMLInputElement;
   private readonly wordField: HTMLInputElement;
-  /** "{current} of {total}" position indicator shown inside the search field.
-   *  `total` is the live count of remaining matches, so as the user replaces,
-   *  it ticks down — reaching "No results" once none are left. */
+  /**
+   * "{current} of {total}" inside the search field. `total` counts the
+   * remaining matches, so it goes down as you replace.
+   */
   private readonly countLabel: HTMLElement;
   /** Last query the panel published, so `commit` can skip no-op dispatches. */
   private query: SearchQuery;
@@ -124,9 +119,8 @@ class InkycapSearchPanel implements Panel {
     close.setAttribute("aria-label", t("search.close"));
     close.addEventListener("click", () => closeSearchPanel(view));
 
-    // "All" is a toggle: it restores the highlight on every match. CM's
-    // always-on all-match highlight is otherwise suppressed (see the editor
-    // theme), so a plain search marks only the current match.
+    // "All" toggles the highlight on every match; otherwise only the current
+    // match is highlighted (see the editor theme).
     const allBtn = button("select", t("search.all"), () => {
       const on = view.dom.classList.toggle(HIGHLIGHT_ALL_CLASS);
       allBtn.classList.toggle("is-active", on);
@@ -149,9 +143,8 @@ class InkycapSearchPanel implements Panel {
       close,
     );
 
-    // Both rows live in one column so their left edges align exactly; the
-    // disclosure toggle sits beside the column, not inside a row, so no
-    // hand-tuned indent is needed to keep Find and Replace flush-left.
+    // Both rows share one column so their left edges align; the toggle sits
+    // beside it.
     const rows = element("div", "cm-search__rows");
     rows.append(searchRow);
 
@@ -177,10 +170,9 @@ class InkycapSearchPanel implements Panel {
   }
 
   /**
-   * Build a query from the current field values and publish it if changed.
-   * After publishing, advance to the first match: CodeMirror's always-on
-   * all-match highlight is suppressed (see `.cm-searchMatch` in the editor
-   * theme), so the only feedback while searching is the current match.
+   * Publish a query from the fields if it changed, then go to the first match,
+   * since only the current match is highlighted (see `.cm-searchMatch` in the
+   * editor theme).
    */
   private commit() {
     const query = new SearchQuery({
@@ -192,17 +184,10 @@ class InkycapSearchPanel implements Panel {
     });
     if (query.eq(this.query)) return;
     this.query = query;
-    // Remember exactly where the caret sits so dispatching the query (which
-    // advances to the first match and can re-select the whole search field)
-    // doesn't force the caret to the end — that would break mid-word edits
-    // like backspacing inside a word.
-    //
-    // Guard this to the case where the search field is the one being edited.
-    // Calling `setSelectionRange` on the search field while the *replace*
-    // field has focus steals focus back to the search field on WebKit
-    // (macOS WKWebView), which is why typing in Replace jumped the caret up
-    // to Find. Chromium and Gecko don't focus on setSelectionRange, so Linux
-    // and Windows never exhibited it.
+    // Keep the caret where it is in the search field, since publishing the
+    // query can select the whole field. Only when the search field is the one
+    // being edited: `setSelectionRange` on it while Replace has focus steals
+    // focus on WebKit (macOS), so the caret would jump to Find.
     const editingSearch = document.activeElement === this.searchField;
     const caret = editingSearch ? this.searchField.selectionStart : null;
     this.view.dispatch({ effects: setSearchQuery.of(query) });
@@ -215,21 +200,12 @@ class InkycapSearchPanel implements Panel {
   }
 
   /**
-   * Replace the current match, then move to the nearest remaining match so
-   * repeated clicks step through the file.
-   *
-   * CodeMirror's `replaceNext` leaves the selection on the inserted
-   * replacement (not a query match), which would both strand the highlight on
-   * the replaced word and read as "0 of N" in the counter. We reposition onto
-   * a real match afterwards — but deliberately WITHOUT wrapping: the next
-   * match after the replacement if one exists, otherwise the last match
-   * before it. So replacing the final match lands on the new final match
-   * ("2 of 2") instead of jumping back to the top, while replacing top-down
-   * reads "1 of 2", "1 of 1", … as matches are consumed.
-   *
-   * The reposition runs only when a replacement actually happened (the doc
-   * changed). When `replaceNext` merely moved to the next match — because the
-   * selection wasn't on one — we leave its result alone.
+   * Replace the current match, then move to the nearest remaining one, so
+   * repeated clicks step through the file. `replaceNext` leaves the selection
+   * on the replacement (not a match), so move to the next match after it, or
+   * else the last one before it, without wrapping: replacing the last match
+   * stays at the end ("2 of 2"). Only after an actual replacement; if
+   * `replaceNext` only moved, keep its result.
    */
   private replaceAndAdvance() {
     const prevDoc = this.view.state.doc;
@@ -240,9 +216,8 @@ class InkycapSearchPanel implements Panel {
     const query = getSearchQuery(state);
     if (!query.search || !query.valid) return;
 
-    // `replaceNext` selected the inserted replacement; its end is where we
-    // resume looking. Matches starting before this point are "behind" us
-    // (track the last one); the first at or after it is the one to land on.
+    // Search onward from the end of the inserted text, remembering the last
+    // match before it.
     const pos = state.selection.main.to;
     let after: { from: number; to: number } | null = null;
     let lastBefore: { from: number; to: number } | null = null;
@@ -297,9 +272,7 @@ class InkycapSearchPanel implements Panel {
         }
       }
     }
-    // The count depends on the query and on which match the selection sits on,
-    // so refresh it when either changes (query edits here or in the field's
-    // `input` handler; Next/Previous/Enter move the selection).
+    // Refresh the count when the query or selection changes.
     if (queryChanged || update.selectionSet || update.docChanged) {
       this.updateCount();
     }
@@ -316,11 +289,9 @@ class InkycapSearchPanel implements Panel {
   }
 
   /**
-   * Wrap a text field with a clear button at its right edge — the same
-   * affordance as the app's other search/filter inputs. The button shows
-   * only while the field has content and clears it on click. An optional
-   * `inline` element (the match-count indicator) is placed inside the field,
-   * just left of the clear button.
+   * Wrap a field with a clear button at its right edge, shown only when it has
+   * content, like the app's other filters. `inline` (the match count) goes
+   * inside the field, left of the button.
    */
   private wrapField(input: HTMLInputElement, inline?: HTMLElement): HTMLElement {
     const wrap = element("div", "cm-search__field");
@@ -349,12 +320,10 @@ class InkycapSearchPanel implements Panel {
   }
 
   /**
-   * Refresh the "{n} of {m}" indicator from the live query and selection.
-   * Counts every match via the query's own cursor (the same matcher CM uses,
-   * so case/regexp/word options are honoured) and finds which one the current
-   * selection sits on. Hidden when the field is empty or the regexp is
-   * invalid. Counting is capped so a pathological query on a huge document
-   * can't stall the keystroke; the cap is surfaced as "{cap}+".
+   * Refresh "{n} of {m}" from the query and selection, counting with the
+   * query's own cursor (so case, regexp and word options apply). Hidden when
+   * the field is empty or the regexp is invalid. Capped so a huge document
+   * can't stall typing; the cap shows as "{cap}+".
    */
   private updateCount() {
     const query = getSearchQuery(this.view.state);
@@ -385,10 +354,9 @@ class InkycapSearchPanel implements Panel {
             current: String(current),
             total: total >= MATCH_COUNT_CAP ? `${MATCH_COUNT_CAP}+` : String(total),
           });
-    // Reserve room inside the field so the count never sits under the typed
-    // text or the clear button. Measured from the label's rendered width
-    // rather than hard-coded, so it adapts to the digit count and the user's
-    // font. CLEAR_ZONE_PX is the clear button's right-edge footprint.
+    // Pad the field so typed text doesn't run under the count or clear button;
+    // measured, since the count's width varies. CLEAR_ZONE_PX is the clear
+    // button's space.
     this.searchField.style.paddingRight = `${CLEAR_ZONE_PX + this.countLabel.offsetWidth + 8}px`;
   }
 }
@@ -472,8 +440,8 @@ function option(input: HTMLInputElement, label: string, tip: string): HTMLLabelE
 }
 
 /**
- * In-page search extension wired to InkyCap's custom panel. Added to the
- * editor so `Ctrl+F` (bound via `searchKeymap`) opens the styled panel.
+ * Search extension using InkyCap's panel; Ctrl+F (from `searchKeymap`) opens
+ * it.
  */
 export const inkycapSearch = search({
   top: false,
@@ -486,9 +454,8 @@ export function openEditorFind(view: EditorView) {
 }
 
 /**
- * Open the in-page panel with the replace row already expanded — used by the
- * File Actions ▸ Replace… menu. The panel mounts during `openSearchPanel`, so
- * the expand runs on the next frame once its DOM is in place.
+ * Open the panel with the replace row expanded (File Actions ▸ Replace…). The
+ * panel mounts in `openSearchPanel`, so expand on the next frame.
  */
 export function openEditorReplace(view: EditorView) {
   openSearchPanel(view);

@@ -1,9 +1,6 @@
-//! Notebox scanner.
-//!
-//! Walks `.typ` files, extracts filesystem metadata, and (for cache misses)
-//! compiles each file through the Typst pipeline to extract body-derived
-//! metadata via `typst query` against the `<inkycap-note>`, `<inkycap-tag>`,
-//! and `<inkycap-link>` labels emitted by the `inkycap-notebox` package.
+//! Notebox scanner: walks `.typ` files, reads file metadata, and for cache
+//! misses compiles each file and runs `typst query` against the package's
+//! `<inkycap-note>`, `<inkycap-tag>` and `<inkycap-link>` labels.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -16,13 +13,10 @@ use crate::storage::traits::NoteboxStorage;
 use crate::typst_pipeline::query::{self, QueryResult};
 use crate::typst_pipeline::TypstCompiler;
 
-/// Parse a single note from its content (for incremental re-indexing).
-/// Does not populate `file.*` properties since those come from filesystem
-/// metadata.
-///
-/// When `compiler` is provided, body-derived metadata (links, tags,
-/// typed properties) is extracted via `typst query`; otherwise those
-/// fields are empty.
+/// Parse one note from its content, for incremental reindexing. `file.*`
+/// properties aren't set (they come from the filesystem). With `compiler`,
+/// links, tags and typed properties come from `typst query`; otherwise they are
+/// empty.
 pub fn parse_note(
     path: &Path,
     content: &str,
@@ -56,9 +50,8 @@ pub struct ScanResult {
     /// File contents collected during the scan, so callers (e.g. the search
     /// engine) don't need to re-read every file from disk.
     pub contents: Vec<(PathBuf, String)>,
-    /// Modification times from stat, keyed by absolute path. Used by the
-    /// search-engine persistence layer to detect files that changed since
-    /// the last persisted snapshot.
+    /// Modification times by absolute path, so the saved search index can find
+    /// changed files.
     pub file_mtimes: HashMap<PathBuf, i64>,
 }
 
@@ -89,12 +82,10 @@ async fn parse_note_from_disk(
     Ok((note, content))
 }
 
-/// Populate the `file.*` properties on `properties` from a storage
-/// [`FileMetadata`]. These are derived from the filesystem (not `#note(...)`),
-/// so every indexed note needs them set — including notes reindexed in memory
-/// after a write (e.g. a collaboration apply), where `parse_note` alone leaves
-/// them empty and collection filters like `file.ext == "typ"` would then
-/// silently exclude the note until a full rescan.
+/// Set the `file.*` properties from a [`FileMetadata`]. Every indexed note
+/// needs them, including notes reindexed in memory after a write, where
+/// `parse_note` leaves them empty and filters like `file.ext == "typ"` would
+/// miss the note.
 pub fn insert_file_properties(
     properties: &mut HashMap<String, PropertyValue>,
     file_meta: &FileMetadata,
@@ -147,9 +138,8 @@ fn enrich_with_query(note: &mut NoteMetadata, qr: QueryResult) {
     }
 }
 
-/// Convert a freshly parsed [`NoteMetadata`] into a [`CachedFile`] suitable
-/// for upsert into the metadata cache. `mtime` and `size` come from the
-/// filesystem stat performed at scan time.
+/// A [`CachedFile`] from a freshly parsed note, with `mtime` and `size` from
+/// the scan.
 pub(crate) fn note_to_cached_file(
     note: &NoteMetadata,
     relative_path: PathBuf,
@@ -165,9 +155,8 @@ pub(crate) fn note_to_cached_file(
         }
     });
 
-    // Strip file.* properties when persisting — they're derived from the
-    // filesystem stat, not from #note(...) properties, so caching them would be both
-    // redundant and wrong (the absolute path varies if the notebox moves).
+    // Don't cache `file.*` properties: they come from the filesystem, and the
+    // absolute path changes if the notebox moves.
     let mut persisted_props: HashMap<String, PropertyValue> = HashMap::new();
     for (k, v) in &note.properties {
         if !k.starts_with("file.") {
@@ -197,18 +186,12 @@ pub(crate) fn note_to_cached_file(
     }
 }
 
-/// Whether a cache entry that is fresh by mtime and size still looks like the
-/// leftover of a bad parse, and should be re-parsed rather than trusted.
-///
-/// Two shapes are rejected. No properties and no tags for a file that visibly
-/// has a `#note(...)` call: older builds stored an empty result when a
-/// body-only error (an unresolved citation, say) failed the whole compile,
-/// and the body-stripped fallback in `compile_and_query` now succeeds on the
-/// re-parse. And an empty link list for a file that visibly contains a
-/// `#wikilink(...)` or `[[...]]`: without this the Links pane silently shows
-/// "No outbound links" after the user adds wikilinks, because the cache hit
-/// short-circuits the reparse. Both are cheap substring checks; a false
-/// positive only costs one unnecessary reparse.
+/// Whether a cache entry that matches by mtime and size still looks like a bad
+/// parse and should be redone. Two cases: no properties or tags for a file with
+/// a `#note(...)` call (older builds stored empty results when a body error
+/// failed the compile), and no links for a file containing `#wikilink(...)` or
+/// `[[...]]` (otherwise the Links pane shows none after the user adds links).
+/// Cheap substring checks; a false positive costs one reparse.
 fn cache_entry_looks_stale(cached: &CachedFile, content: &str) -> bool {
     let non_file_props = cached.properties.keys().any(|k| !k.starts_with("file."));
     let cached_empty = !non_file_props && cached.tags.is_empty();
@@ -218,16 +201,14 @@ fn cache_entry_looks_stale(cached: &CachedFile, content: &str) -> bool {
     (cached_empty && looks_like_note) || (cached_no_links && content_has_wikilinks)
 }
 
-/// Metadata for one note straight from the cache, without the compiler: what
-/// the next scan would produce for it as a cache hit. Lets the Properties
-/// panel show a note while the indexes are still being built after open,
-/// instead of waiting for the scan to release the compiler.
+/// One note's metadata from the cache, without compiling: what the next scan
+/// would produce for it. Lets the Properties panel show a note while the
+/// indexes are still building.
 ///
-/// `None` when the file has no cache entry, the entry is stale (its recorded
-/// mtime and size no longer match the file, or it fails
-/// [`cache_entry_looks_stale`]), or the file cannot be stat'd or read. Only an
-/// entry the scan itself would reuse is served, so the caller never shows
-/// values the finished index will contradict.
+/// `None` with no entry, a stale one (mtime or size changed, or
+/// [`cache_entry_looks_stale`]), or a file that can't be stat'd or read. Only
+/// entries the scan would reuse are served, so nothing shown is later
+/// contradicted.
 pub async fn note_from_cache(
     storage: &dyn NoteboxStorage,
     cache: &MetadataCache,
@@ -250,9 +231,8 @@ pub async fn note_from_cache(
     Some(cached_to_note(&cached, abs_path, notebox_root, &stat))
 }
 
-/// Reconstitute a [`NoteMetadata`] from a cache hit, deriving the `file.*`
-/// properties from the path strings and the filesystem stat obtained during
-/// the scan.
+/// A [`NoteMetadata`] from a cache hit, with `file.*` properties from the path
+/// and the scan's stat.
 fn cached_to_note(
     cached: &CachedFile,
     abs_path: &Path,
@@ -265,10 +245,8 @@ fn cached_to_note(
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    // `file.folder` is exposed to collection filters and the property panel and
-    // is compared against forward-slash paths from the file tree — flow it
-    // through the frontend-shape helper (like `file.path` below) so Windows
-    // callers don't trip on `\` separators or a `\\?\` verbatim prefix.
+    // `file.folder` is compared with forward-slash paths from the file tree, so
+    // use the frontend form (like `file.path` below).
     let folder = abs_path
         .parent()
         .map(|p| crate::storage::to_frontend_string(p.strip_prefix(notebox_root).unwrap_or(p)))
@@ -277,10 +255,7 @@ fn cached_to_note(
         .extension()
         .map(|e| e.to_string_lossy().into_owned())
         .unwrap_or_default();
-    // `file.path` is a notebox-relative path exposed to collection filters,
-    // queries, and the property panel — flow it through the frontend-shape
-    // helper so Windows callers don't trip on `\` separators when the same
-    // value is matched against forward-slash paths from the file tree.
+    // `file.path`, notebox-relative, in the frontend's forward-slash form.
     let rel_path = abs_path
         .strip_prefix(notebox_root)
         .map(crate::storage::to_frontend_string)
@@ -353,10 +328,8 @@ pub(crate) async fn stat_file(path: &Path) -> Result<FileStat> {
     })
 }
 
-/// List `.collection` files from the reserved `.inkycap/collections/`
-/// directory. Returns an empty list if the directory is missing (callers
-/// like the scanner must not fail just because a freshly imported notebox
-/// hasn't been scaffolded yet).
+/// `.collection` files in `.inkycap/collections/`. Empty if the folder is
+/// missing (e.g. a freshly imported notebox not yet set up).
 async fn list_collection_files(
     storage: &dyn NoteboxStorage,
     notebox_root: &Path,
@@ -368,9 +341,8 @@ async fn list_collection_files(
     storage.list_files(&dir, "*.collection").await
 }
 
-/// Scan all `.typ` files in a notebox directory. This is the no-cache cold
-/// path: every file is read, compiled, and queried for metadata. Used as
-/// a fallback when no cache is available.
+/// Scan every `.typ` file without a cache: read, compile and query each. Used
+/// when there is no cache.
 pub async fn scan_notebox(
     storage: &dyn NoteboxStorage,
     notebox_root: &Path,
@@ -385,9 +357,8 @@ pub async fn scan_notebox(
     let mut link_index = LinkIndex::new();
 
     for path in &note_files {
-        // Log-and-skip a single unreadable/locked note (antivirus, a sync
-        // tool mid-write) rather than failing the entire notebox scan — the
-        // cache-aware path already skips per-file on stat failure.
+        // Skip a note that can't be read (antivirus, a sync tool mid-write)
+        // instead of failing the whole scan.
         let (mut note, content) = match parse_note_from_disk(storage, path).await {
             Ok(v) => v,
             Err(err) => {
@@ -434,24 +405,20 @@ pub struct CacheScanStats {
     pub cache_hits: usize,
     pub cache_misses: usize,
     pub pruned: usize,
-    /// Absolute paths of files that were pruned from the cache (deleted
-    /// since last scan). Needed so callers can remove stale entries from
-    /// the persisted search index.
+    /// Paths removed from the cache because the files are gone, so the saved
+    /// search index can drop them.
     pub pruned_paths: Vec<PathBuf>,
 }
 
-/// Cache-aware notebox scan. For each file:
+/// Scan with the cache. For each file:
 ///
-/// 1. `stat()` it (no read).
-/// 2. If a cache entry exists with matching `(mtime, size)`, reuse the cached
-///    metadata (which already contains query-derived links/tags/properties
-///    from the previous scan). The file content is still needed for full-text
-///    search.
-/// 3. Otherwise, fall back to the full disk parse + `typst query`, and queue
-///    the result for upsert into the cache.
+/// 1. Stat it (no read).
+/// 2. If the cache has a matching `(mtime, size)` entry, reuse its metadata.
+///    The content is still read for full-text search.
+/// 3. Otherwise parse and query it, and queue the result for the cache.
 ///
-/// After the scan, stale entries (files in the cache that no longer exist on
-/// disk) are pruned, and the upsert batch is committed in a single transaction.
+/// Then remove cache entries for files that no longer exist, and write the
+/// queued entries in one transaction.
 pub async fn scan_notebox_cached(
     storage: &dyn NoteboxStorage,
     notebox_root: &Path,
@@ -640,9 +607,7 @@ mod tests {
         assert_eq!(note.links, vec!["B".to_string()]);
     }
 
-    /// Once the file on disk no longer matches the entry's recorded size, the
-    /// entry is not served, so a reader never sees values the next scan will
-    /// replace.
+    /// An entry whose size no longer matches the file isn't served.
     #[tokio::test]
     async fn note_from_cache_refuses_an_entry_the_file_has_outgrown() {
         let dir = tempfile::tempdir().unwrap();
@@ -656,9 +621,8 @@ mod tests {
             .is_none());
     }
 
-    /// An entry the scan would re-parse anyway (no links recorded for a file
-    /// that visibly has a wikilink) is not served either, and a file with no
-    /// entry is a miss.
+    /// An entry the scan would re-parse (no links for a file with a wikilink)
+    /// isn't served, and a file without an entry is a miss.
     #[tokio::test]
     async fn note_from_cache_refuses_stale_looking_and_missing_entries() {
         let dir = tempfile::tempdir().unwrap();

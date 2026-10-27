@@ -1,31 +1,23 @@
-//! Line-level hunk diff and per-hunk revert for the merge-first "Changes since
-//! last sync" review.
+//! Line diff and per-hunk revert for the "Changes since last sync" review.
 //!
-//! The merge-first collaboration model (see [`crate::commands::git`]) never
-//! pauses: a Sync / package import always lands incoming changes, taking
-//! *theirs* on an overlap, and the user reverts anything they disagree with
-//! afterwards. This module is the diff/revert core behind that "revert later"
-//! gesture. It compares the **baseline** (the note as it stood just before the
-//! sync, read from the recorded `last_sync_oid` commit) against the **current**
-//! working-tree text, splits the difference into hunks, and reconstructs the
-//! text with any one hunk reverted to its baseline form.
+//! Sync and package import always apply incoming changes, taking theirs where
+//! both sides changed (see [`crate::commands::git`]), and the user reverts what
+//! they disagree with afterwards. This compares the **baseline** (the note just
+//! before the sync, from the recorded `last_sync_oid` commit) with the
+//! **current** text, splits the difference into hunks, and rebuilds the text
+//! with one hunk reverted.
 //!
-//! It is deliberately pure (`&str` in, value out) so it unit-tests without a
-//! repo or the filesystem; the [`crate::commands::git`] layer reads the two
-//! sides and writes the result through [`crate::storage`].
-//!
-//! Line diffing reuses the same `similar` engine as [`crate::git::suggest`] so
-//! the two review surfaces agree on hunk boundaries.
+//! It works on strings only, so it can be tested without a repository;
+//! [`crate::commands::git`] reads both sides and writes the result through
+//! [`crate::storage`]. It uses the same `similar` diff as
+//! [`crate::git::suggest`], so both reviews agree on hunks.
 
 use similar::{capture_diff_slices, Algorithm, DiffOp};
 
-/// One contiguous region that differs between the baseline and current text.
-///
-/// Identity and the editor scroll target are the **current**-side line range:
-/// `[current_start, current_end)`, 0-based and end-exclusive over the current
-/// text's lines. A pure deletion (a region present in the baseline but gone now)
-/// is zero-width — `current_start == current_end` at the point the lines were
-/// removed.
+/// A region that differs between baseline and current text, identified by its
+/// current-side line range `[current_start, current_end)` (0-based,
+/// end-exclusive), which is also the editor's scroll target. A pure deletion is
+/// zero-width (`current_start == current_end`) where the lines were removed.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncHunk {
@@ -42,9 +34,9 @@ pub struct SyncHunk {
     pub current_text: String,
 }
 
-/// Split `text` into lines that keep their terminators, so concatenating them
-/// reproduces the original byte-for-byte (including a missing final newline).
-/// An empty string yields no lines.
+/// Split `text` into lines that keep their line endings, so joining them gives
+/// back the exact text (including a missing final newline). An empty string
+/// gives no lines.
 fn split_lines_keep_terminator(text: &str) -> Vec<&str> {
     let mut out = Vec::new();
     let mut start = 0;
@@ -131,10 +123,9 @@ pub fn diff_hunks(baseline: &str, current: &str) -> Vec<SyncHunk> {
     hunks
 }
 
-/// Rebuild `current` with the single hunk at current-side range
-/// `[current_start, current_end)` reverted to its baseline form, leaving every
-/// other hunk untouched. Returns `None` when no hunk matches that exact range
-/// (the file changed since the diff was computed — the caller should refetch).
+/// Rebuild `current` with the hunk at `[current_start, current_end)` reverted
+/// to the baseline, leaving the others. `None` if no hunk has exactly that
+/// range (the file changed since the diff; the caller should fetch it again).
 pub fn revert_hunk(
     baseline: &str,
     current: &str,
@@ -187,13 +178,11 @@ pub fn revert_hunk(
     matched.then_some(out)
 }
 
-/// Drop hunks whose change is *entirely* structural — every non-blank line on
-/// both sides satisfies `is_structural_line`. Used to hide the auto-injected
-/// notebox import preamble (`#import "/.inkycap/notebox.typ": *`) from the
-/// "changes since sync" review: InkyCap manages that line, so a collaborator
-/// should never see it presented as a reviewable change. A hunk that mixes a
-/// structural line with real content stays visible (the real edit matters), and
-/// a pure-whitespace hunk is never dropped on this basis.
+/// Drop hunks whose every non-blank line on both sides is structural
+/// (`is_structural_line`), such as the notebox import line (`#import
+/// "/.inkycap/notebox.typ": *`), which InkyCap manages and shouldn't be shown
+/// for review. A hunk mixing structural and real lines stays, and
+/// whitespace-only hunks are never dropped for this.
 pub fn drop_structural_hunks<F>(hunks: Vec<SyncHunk>, is_structural_line: F) -> Vec<SyncHunk>
 where
     F: Fn(&str) -> bool,

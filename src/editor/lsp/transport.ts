@@ -15,9 +15,8 @@ type ErrorHandler = (err: string) => void;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-// Tauri's shell plugin delivers "raw" payloads as JSON-serialized arrays,
-// which arrive in JS as plain number[] — not Uint8Array. This normalizer
-// handles both forms so the rest of the transport can work with Uint8Array.
+// Tauri's shell plugin sends "raw" payloads as JSON arrays, which arrive as
+// number[], not Uint8Array; this accepts both.
 function toBytes(raw: Uint8Array | number[] | ArrayLike<number>): Uint8Array {
   if (raw instanceof Uint8Array) return raw;
   return new Uint8Array(raw);
@@ -41,10 +40,9 @@ export class LspTransport {
   }
 
   async spawn(args: string[]): Promise<void> {
-    // Raw encoding delivers stdout/stderr as byte chunks without
-    // line-buffering. This is required because LSP response bodies
-    // have no trailing newline — string mode would hold the body
-    // in Tauri's internal buffer indefinitely.
+    // Raw encoding delivers stdout/stderr as byte chunks without line
+    // buffering. Needed because LSP message bodies don't end with a newline, so
+    // in string mode Tauri would hold the body indefinitely.
     const command = Command.sidecar("binaries/inkycap-tinymist", args, {
       encoding: "raw",
     });

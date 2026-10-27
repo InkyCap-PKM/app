@@ -1,20 +1,15 @@
-//! Entry-level zip read/write primitives, shared by the backup feature
-//! and package-handoff collaboration.
+//! Reading and writing single zip entries, for backups and collaboration
+//! packages.
 //!
-//! This layer is deliberately thin: it knows how to put one entry (bytes
-//! or a streamed file) into a zip, and how to read one entry back out,
-//! with optional AES-256 and optional cancellation. It does *not* walk
-//! trees, apply exclusion rules, strip prefixes, or resolve conflicts —
-//! that orchestration belongs to each caller, because backup (archive a
-//! whole notebox tree) and collab (package a specific file set) need
-//! very different orchestration on top of the same mechanics.
+//! This writes one entry (bytes or a streamed file) or reads one, with optional
+//! AES-256 and cancellation. Walking folders, exclusions, prefixes and
+//! conflicts are left to callers, since a backup (a whole notebox) and a
+//! package (a set of files) need different handling.
 //!
-//! Interior paths always use forward slashes (the zip spec convention),
-//! so callers building interior names must join with `/`, not the OS
-//! separator.
+//! Paths inside a zip always use `/`, not the OS separator.
 //!
-//! Archives can come from other people, so every read of entry contents
-//! goes through an [`ExtractBudget`] that stops archives built to expand
+//! Archives can come from other people, so every read of entry contents goes
+//! through an [`ExtractBudget`], which stops archives built to expand
 //! enormously from filling the disk or memory.
 
 use std::io::{Read, Write};
@@ -30,10 +25,9 @@ use crate::errors::{InkyCapError, Result};
 /// Streaming chunk size for file entries.
 const CHUNK: usize = 64 * 1024;
 
-/// Per-entry options: Deflate, `0644`, AES-256 when a password is
-/// supplied. Rebuilt for every entry because the zip crate consumes the
-/// options by value on each `start_file` / `add_directory`. The returned
-/// options borrow `password`, hence the explicit lifetime.
+/// Options for one entry: Deflate, `0644`, AES-256 with a password. Built per
+/// entry because the zip crate takes them by value each time; they borrow
+/// `password`.
 pub fn entry_options(password: Option<&str>) -> zip::write::FileOptions<'_, ()> {
     let opts = SimpleFileOptions::default()
         .compression_method(CompressionMethod::Deflated)
@@ -44,9 +38,8 @@ pub fn entry_options(password: Option<&str>) -> zip::write::FileOptions<'_, ()> 
     }
 }
 
-/// Writes individual entries into a zip file. The caller decides which
-/// entries exist and what they're named; this handles the per-entry
-/// mechanics (optional AES, chunked streaming, cancellation).
+/// Writes entries into a zip file. The caller chooses the entries and names;
+/// this handles AES, chunked streaming and cancellation.
 pub struct ZipBuilder {
     zip: ZipWriter<std::fs::File>,
     password: Option<String>,
@@ -65,9 +58,8 @@ impl ZipBuilder {
 
     /// Add an in-memory entry (e.g. a generated manifest or sidecar).
     pub fn add_bytes(&mut self, interior: &str, data: &[u8]) -> Result<()> {
-        // `entry_options` borrows `self.password`; `start_file` borrows
-        // `self.zip`. Keeping them as direct field accesses (rather than a
-        // `&self` helper) lets the borrow checker see them as disjoint.
+        // Direct field access (not a `&self` helper) so the borrow checker sees
+        // `self.password` and `self.zip` borrowed separately.
         let opts = entry_options(self.password.as_deref());
         self.zip
             .start_file(interior, opts)
@@ -76,10 +68,9 @@ impl ZipBuilder {
         Ok(())
     }
 
-    /// Add a file from disk, streamed in chunks. Returns the number of
-    /// uncompressed bytes written. When `cancel` is set, it is polled
-    /// before the file opens and between chunks, so cancelling during a
-    /// very large file doesn't wait for the next file boundary.
+    /// Add a file from disk, streamed in chunks. Returns the uncompressed bytes
+    /// written. `cancel` is checked before opening and between chunks, so a
+    /// large file can be cancelled mid-way.
     pub fn add_file(
         &mut self,
         interior: &str,
@@ -151,9 +142,8 @@ pub fn open(archive: &Path) -> Result<ZipArchive<std::fs::File>> {
     ZipArchive::new(file).map_err(|e| InkyCapError::BadRequest(format!("not a valid zip: {e}")))
 }
 
-/// List a zip's entries from its central directory. Does not decrypt —
-/// entry metadata is never encrypted — so this works on AES archives
-/// without a password.
+/// List a zip's entries. Entry metadata isn't encrypted, so this works on AES
+/// archives without a password.
 pub fn list_entries(archive: &Path) -> Result<Vec<ZipEntryInfo>> {
     let mut zip = open(archive)?;
     let mut out = Vec::with_capacity(zip.len());

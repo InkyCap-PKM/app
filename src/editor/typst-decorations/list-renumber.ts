@@ -1,17 +1,11 @@
-// Keeps the explicit `N.` numbers in a Typst ordered list in step with the
-// list's shape.
+// Keeps the explicit `N.` numbers of a Typst ordered list in step with its
+// shape.
 //
-// Typst has two ordered-list markers. `+` numbers itself at compile time, so it
-// is always right. An explicit `1.` is a literal: Typst prints the number the
-// writer typed, and so does the visual editor. That literal goes stale the
-// moment the list's shape changes — indent an item and its number is still the
-// one it had as a sibling of the item above, so a nested item reads `2.` where
-// it should read `1.`, and everything after it keeps counting from the wrong
-// place.
-//
-// This module is the one place that fixes those numbers up. It works on the raw
-// lines of a region (no parser, no editor state) so it can be unit-tested
-// directly and reused by any command that changes a list's shape.
+// `+` items are numbered by Typst; `1.` is literal, printed as typed, and goes
+// stale when the list changes (an indented item still reads `2.` instead of
+// `1.`, and later items count wrongly). This fixes those numbers. It works on
+// raw lines (no parser or editor state), so it can be tested directly and used
+// by any command that reshapes a list.
 
 import type { Text } from "@codemirror/state";
 import { leadingWhitespace } from "./list-scan";
@@ -33,26 +27,21 @@ interface Level {
 }
 
 /**
- * Renumber the explicit `N.` markers in `lines`, which must be the lines of one
- * contiguous list block (see `listBlockRange`).
+ * Renumber the `N.` markers in `lines`, the lines of one list block (see
+ * `listBlockRange`):
  *
- * The rules, in full:
+ * - Only `N.` markers change; `+` numbers itself, `-` has none.
+ * - Each nesting level counts separately, so indenting restarts at 1.
+ * - A `+` item counts as a step at its level (Typst puts `+` and `N.` in one
+ *   list) but isn't rewritten.
+ * - The block's first item keeps its number, so a list starting at `5.` runs 5,
+ *   6, 7; every later run starts at 1 (a sub-list starting elsewhere is
+ *   `#enum(start: …)`).
+ * - Blank lines don't end a run.
+ * - A line indented deeper than the item above is its wrapped text and is left
+ *   alone; any other non-item line ends the list.
  *
- * - Only `N.` markers are rewritten. `+` numbers itself, `-` has no number.
- * - Each nesting level counts on its own, so indenting an item restarts it at 1
- *   instead of continuing its former parent's run.
- * - A `+` item counts as a step at its level (Typst puts `+` and `N.` items in
- *   one enum), it is just never rewritten.
- * - The block's very first item keeps the number the writer typed, so a list
- *   deliberately starting at `5.` still runs 5, 6, 7. Every later run starts at
- *   1; a sub-list that should start elsewhere is `#enum(start: …)` in Typst,
- *   not a hand-typed marker.
- * - Blank lines do not end a run — a Typst list with blank lines between items
- *   is still one list (just loosely spaced).
- * - A line indented deeper than the item above it is that item's wrapped text
- *   and is left alone; any other non-item line ends the list.
- *
- * Returns a new array; `lines` is not modified.
+ * Returns a new array.
  */
 export function renumberListLines(lines: string[]): string[] {
   const out = lines.slice();
@@ -102,15 +91,11 @@ export function renumberListLines(lines: string[]): string[] {
 }
 
 /**
- * The line range (1-based, inclusive) of the whole list block containing
- * `lineNumber` — every adjacent list item, its wrapped continuation lines, and
- * the blank lines between them. Prose at the list's own indent, and a raw-block
- * fence, end the block.
- *
- * Commands renumber over this whole range rather than from the edit downwards:
- * one contiguous replacement is what the incremental parser handles cleanly,
- * and it means a list whose numbers were already wrong straightens itself out
- * the next time the writer indents or outdents an item in it.
+ * The lines (1-based, inclusive) of the list block containing `lineNumber`:
+ * adjacent items, their wrapped lines and the blank lines between. Prose at the
+ * list's indent, or a code fence, ends it. Commands renumber the whole block:
+ * one contiguous edit suits the incremental parser, and a list with wrong
+ * numbers is fixed the next time it is indented.
  */
 export function listBlockRange(doc: Text, lineNumber: number): [number, number] {
   let first = lineNumber;
@@ -142,9 +127,9 @@ export function linesOfRange(doc: Text, first: number, last: number): string[] {
 }
 
 /**
- * Width of a line's leading marker (indent, marker, and one separator), or 0
- * when the line does not open a list item. Used to keep a caret at the same
- * spot in the item's text when the marker's width changes (`9.` → `10.`).
+ * Width of a line's marker (indent, marker, one space), or 0 if it isn't a list
+ * item. Keeps the caret in place when the marker's width changes (`9.` →
+ * `10.`).
  */
 export function markerWidth(text: string): number {
   const m = MARKER_RE.exec(text);

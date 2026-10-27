@@ -1,26 +1,20 @@
-//! Export-time resolution of the collaboration *review layer* — inline
-//! `#suggestion(...)` tracked changes plus the `#annotation(...)` block notes.
+//! Handling the review markup at export: inline `#suggestion(...)` tracked
+//! changes and `#annotation(...)` notes. Both jobs use `typst::syntax`, so
+//! ranges land on character boundaries and multi-byte text is preserved.
 //!
-//! Two host-side jobs, both AST-based (Typst-first — `typst::syntax` is the
-//! same parser the compiler uses, so byte ranges land on char boundaries and
-//! multi-byte UTF-8 passes through verbatim, per CLAUDE.md):
+//! 1. [`prepare_review_markup`] applies the chosen export setting to a note's
+//!    source before it is compiled or converted:
+//!    - **Accept**: apply every suggestion (insertions kept, deletions removed,
+//!      replacements use the new text) and remove the notes, for a clean copy.
+//!    - **Reject**: the opposite: discard suggestions and keep the original
+//!      text; notes are still removed.
+//!    - **Keep**: leave all review markup, so the export shows the marks (the
+//!      default).
 //!
-//! 1. [`prepare_review_markup`] applies the user's chosen export policy to a
-//!    note's source before it is compiled or converted:
-//!    - **Accept** — take every suggested change (insertions kept, deletions
-//!      removed, replacements take the new text) and drop the review-only block
-//!      notes, yielding a clean published copy.
-//!    - **Reject** — the inverse: discard suggested changes, keep the original
-//!      text, and still drop the block notes.
-//!    - **Keep** — leave all review markup intact so the export renders the
-//!      tracked-change marks (the default; nothing is silently altered).
-//!
-//! 2. [`flatten_review_to_native`] rewrites any review calls that survive into
-//!    plain Typst (`strike` / `underline` / `quote`). Exporters that cannot load
-//!    the `inkycap-notebox` package — i.e. the Pandoc path, whose own Typst
-//!    reader has no access to our package definitions — call this so the
-//!    surviving "keep" marks compile instead of erroring on an undefined
-//!    `suggestion` / `annotation` identifier.
+//! 2. [`flatten_review_to_native`] rewrites any remaining review calls as plain
+//!    Typst (`strike` / `underline` / `quote`), for exporters that can't load
+//!    the `inkycap-notebox` package (Pandoc), where `suggestion` / `annotation`
+//!    would be undefined.
 
 use std::ops::Range;
 
@@ -28,9 +22,8 @@ use typst::syntax::{ast, parse, LinkedNode, SyntaxKind};
 
 use crate::typst_pipeline::suggestion::{count_suggestions, resolve_all_suggestions};
 
-/// Block-level review functions from `inkycap-notebox` that carry reviewer
-/// commentary rather than document content. Stripped for accept/reject; left
-/// intact for keep (the compiler renders them).
+/// Block-level review functions from `inkycap-notebox`, holding reviewer
+/// comments rather than content. Removed for accept and reject, kept for keep.
 const BLOCK_REVIEW_CALLS: &[&str] = &["annotation"];
 
 /// How the export should treat the collaboration review layer. Stored in a
@@ -58,9 +51,8 @@ impl ReviewMarkupMode {
     }
 }
 
-/// Apply the chosen review-markup policy to a note's source. Pure source
-/// transform: the result is still valid Typst that compiles against the
-/// `inkycap-notebox` package (the `Keep` path is unchanged source).
+/// Apply the chosen review setting to a note's source. The result still
+/// compiles against `inkycap-notebox` (Keep returns it unchanged).
 pub fn prepare_review_markup(source: &str, mode: ReviewMarkupMode) -> String {
     match mode {
         ReviewMarkupMode::Keep => source.to_string(),
@@ -69,9 +61,8 @@ pub fn prepare_review_markup(source: &str, mode: ReviewMarkupMode) -> String {
     }
 }
 
-/// Number of review-layer constructs in the source (suggestions + block
-/// notes). Lets the export dialog show its review-markup control only when a
-/// note actually carries tracked changes.
+/// Number of review constructs (suggestions and notes) in the source, so the
+/// export dialog shows its review setting only when there are some.
 pub fn count_review_markup(source: &str) -> usize {
     count_suggestions(source) + collect_block_review(source).len()
 }
@@ -80,10 +71,9 @@ pub fn count_review_markup(source: &str) -> usize {
 // Block-review AST handling (annotation)
 // ---------------------------------------------------------------------------
 
-/// Remove every block-review call from the source. Used by accept/reject — the
-/// notes are reviewer commentary, not document content, so a resolved copy
-/// drops them. When a call is the only thing on its line, the trailing newline
-/// is consumed too so no blank line is left behind.
+/// Remove every block review call (accept and reject: they are comments, not
+/// content). A call alone on its line takes its newline too, so no blank line
+/// is left.
 fn strip_block_review(source: &str) -> String {
     let spans = collect_block_review(source);
     if spans.is_empty() {

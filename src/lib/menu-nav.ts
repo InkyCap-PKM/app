@@ -1,56 +1,36 @@
-// Keyboard control for every pop-up menu in the app, in one place.
-//
-// A menu opened with the mouse has to be finishable with the keyboard — that
-// is how every menu on the desktop behaves, and the app has around thirty of
-// them: panel sort menus, right-click menus in the file tree and collection
-// table, the notebox switcher, the visual editor's pill and table menus, the
-// spellcheck suggestions. Wiring arrow keys into each one separately would be
-// thirty chances to do it differently, so this module does it once for all of
-// them and new menus inherit it by using one of the surfaces below.
+// Keyboard control for every pop-up menu in the app. A menu opened with the
+// mouse must be usable from the keyboard, and there are dozens of menus (sort
+// menus, right-click menus, the notebox switcher, pill and table menus,
+// spellcheck), so this handles all of them; a new menu gets it by using one of
+// the surfaces below.
 //
 //   ↑ ↓         move through the items, wrapping at the ends
 //   Home End    first / last item
-//   Enter Space activate the item the keyboard is on
+//   Enter Space activate the current item
 //   → ←         enter / leave a submenu
-//   Escape      dismiss (owned by the menu itself — see clickOutside.ts)
+//   Escape      close (handled by the menu itself; see clickOutside.ts)
 //
-// It listens on the document in capture phase because a menu is usually opened
-// while the focus is somewhere else entirely: a right-click in the editor
-// leaves the caret focused, so there is no element on the menu that would
-// receive the first arrow key. Capture also means the key never reaches the
-// editor underneath, so ↓ moves through the menu instead of moving the caret.
-// That editor is a contentEditable element, so being in a text field is not
-// by itself a reason to stand aside: only a field *inside* the menu (a filter
-// box) keeps its own keys.
+// It listens on the document in the capture phase, because focus is usually
+// elsewhere when a menu opens (a right-click in the editor leaves the caret
+// focused), and so keys don't reach the editor underneath. Only a text field
+// inside the menu (a filter box) keeps its own keys.
 //
-// Navigation moves real DOM focus onto the item. Menu items are buttons, so
-// focus is what announces them to a screen reader and what makes Enter mean
-// "this one". The focus that was in place before the menu was entered is put
-// back when the menu closes, so picking a sort order does not leave the
-// writer's cursor behind.
+// Navigation moves real focus onto the items, which are buttons, so screen
+// readers announce them and Enter means "this one". Focus returns where it was
+// when the menu closes.
 //
-// The item you are on is marked with `.is-kbd-active`, mirrored onto whatever
-// holds focus inside the menu. That class, not `:focus-visible`, is what the
-// stylesheets paint. `:focus-visible` is a browser guess about whether focus
-// "should" be shown, and after a mouse click it answers no — including for
-// focus moved by script, which is every step of this navigation. The result
-// was arrow keys that worked silently: the focus really was moving, nothing
-// drew it, and the first Tab suddenly revealed a cursor several rows down
-// from where the user thought they were. A class we set ourselves cannot
-// disagree with where the focus actually is.
-//
-// The mark only appears for focus the keyboard caused. A menu that focuses
-// its first item as it opens (the pill menu does, so keys work at once) must
-// not show a cursor the user never asked for beside the row the mouse is on
-// and the row that is checked. Once the arrows are in use the menu carries
-// `.is-kbd-nav`, which the stylesheets use to silence the hover highlight so
-// there is one cursor, the keyboard's; moving the mouse takes it back.
+// The current item is marked `.is-kbd-active`, which the stylesheets paint
+// instead of `:focus-visible`: browsers don't treat focus moved by script after
+// a click as visible, so arrow keys would move focus with nothing drawn. The
+// mark appears only for keyboard-caused focus, so a menu that focuses its first
+// item on opening (the pill menu) shows no stray cursor. While the arrows are
+// in use the menu has `.is-kbd-nav`, which turns off the hover highlight;
+// moving the mouse ends it.
 
 /**
- * The menu surfaces, as (container, item) selector pairs. A menu whose markup
- * uses one of these class pairs gets keyboard control for free. Keep this list
- * in step when a new kind of menu appears — it is the one registry, mirrored
- * only by the hover-silencing rule in styles/layout/context-menu.css.
+ * Menu surfaces as (container, item) selector pairs; a menu using one of these
+ * gets keyboard control. The only list, apart from the hover rule in
+ * styles/layout/context-menu.css.
  */
 const MENU_SURFACES: ReadonlyArray<{ menu: string; item: string }> = [
   // The shared app menu: panel sort menus, right-click menus, Dropdown's
@@ -83,9 +63,10 @@ const KBD_NAV_CLASS = "is-kbd-nav";
 let focusBeforeMenu: HTMLElement | null = null;
 /** Watches for the entered menu leaving the DOM, to restore focus. */
 let closeWatcher: MutationObserver | null = null;
-/** Was the last input a key rather than a pointer? Focus that lands inside a
- *  menu is marked only when it is; focus a menu moves by script as it opens,
- *  or a click, gets no cursor. */
+/**
+ * Whether the last input was a key. Focus inside a menu is marked only then,
+ * not for focus set by script or a click.
+ */
 let lastInputWasKey = false;
 /** Set while a menu carries the keyboard-driving class, so the mousemove
  *  listener has nothing to do the rest of the time. */
@@ -130,16 +111,18 @@ function releaseToMouse(): void {
   }
 }
 
-/** Is any menu on one of the surfaces above open right now? Lets a
- *  dismissal handler that outlives its menu tell whether Escape has
- *  something to close (see clickOutside.ts). */
+/**
+ * Whether any menu is open, so a dismiss handler can tell whether Escape has
+ * something to close (see clickOutside.ts).
+ */
 export function menuIsOpen(): boolean {
   return openMenu() !== null;
 }
 
-/** Keep the visible mark on whatever holds focus inside a menu. Driven by
- *  focus rather than by the arrow keys themselves so it stays right when the
- *  user reaches an item some other way — Tab, or a click. */
+/**
+ * Keep the mark on whatever has focus in a menu, so it stays right when an item
+ * is reached by Tab or a click.
+ */
 function handleFocusIn(e: FocusEvent): void {
   clearActiveMarks();
   if (!lastInputWasKey) return;
@@ -177,12 +160,10 @@ interface OpenMenu {
 }
 
 /**
- * The menu the keys belong to. When the focus is inside a menu, that menu —
- * the innermost one, so a submenu the keyboard has entered wins over the menu
- * that holds it, but a submenu merely open beside the item the keyboard is on
- * does not. Otherwise the last visible menu in document order, which is the
- * one opened most recently; a submenu nested inside another menu's item is
- * passed over there, since the keyboard enters the outer menu first.
+ * The menu the keys belong to: with focus inside a menu, the innermost (a
+ * submenu the keyboard entered, not one merely open beside the current item);
+ * otherwise the last visible menu, the most recently opened, skipping submenus
+ * nested in another menu's item.
  */
 function openMenu(): OpenMenu | null {
   const active = document.activeElement;
@@ -257,9 +238,10 @@ function inTextField(target: EventTarget | null): boolean {
   );
 }
 
-/** Move focus onto a menu item, making it focusable first if it is a plain
- *  `<div>` rather than a button. The menu holding it becomes keyboard-driven
- *  until the mouse moves. */
+/**
+ * Focus a menu item, making a plain `<div>` focusable first. The menu stays
+ * keyboard-driven until the mouse moves.
+ */
 function focusItem(item: HTMLElement): void {
   if (!item.hasAttribute("tabindex") && item.tagName !== "BUTTON" && item.tagName !== "A") {
     item.tabIndex = -1;
@@ -323,9 +305,7 @@ function handleKeyDown(e: KeyboardEvent): void {
     stopWatching();
     return;
   }
-  // A filter box or other field inside the menu owns its own keys. A field
-  // underneath the menu — the editor a right-click menu was opened from — does
-  // not: the menu is what the user is looking at.
+  // A field inside the menu keeps its keys; the editor under it doesn't.
   if (inTextField(e.target) && menu.el.contains(e.target as Node)) return;
 
   const items = itemsOf(menu);
@@ -334,9 +314,8 @@ function handleKeyDown(e: KeyboardEvent): void {
   const active = document.activeElement;
   const current = items.findIndex((el) => el === active || el.contains(active as Node));
 
-  // Enter, Space and the sideways arrows are only claimed once the keyboard is
-  // actually on an item — otherwise they still belong to whatever the user
-  // was typing in.
+  // Enter, Space and the side arrows are only taken once the keyboard is on an
+  // item.
   if (e.key === "Enter" || e.key === " " || e.key === "ArrowRight") {
     if (current < 0) return;
     e.preventDefault();

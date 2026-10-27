@@ -1,6 +1,5 @@
-// Reactive store for creation rules.
-// The toolbar and other consumers subscribe to this signal so changes
-// (save, delete, toggle show_in_toolbar) reflect immediately without restart.
+// Store for creation rules, so the toolbar and others see changes (save,
+// delete, toolbar toggle) at once.
 
 import { createSignal } from "solid-js";
 import type { CreationRule, CreationResult } from "../lib/types";
@@ -29,11 +28,11 @@ export function toolbarRules(): CreationRule[] {
   return creationRules().filter(isToolbarRule);
 }
 
-/** Swap in a rule list the caller already holds, without a round trip to
- *  disk. Used when the app itself produced the new list (reordering in
- *  Settings), so the toolbar updates in the same tick the settings list
- *  does. Callers that change rules on disk without knowing the resulting
- *  list should call `loadCreationRules` instead. */
+/**
+ * Set the rule list from one the caller already has, without reading from disk
+ * (e.g. reordering in Settings), so the toolbar updates with the settings list.
+ * Use `loadCreationRules` after changes on disk.
+ */
 export function replaceCreationRules(rules: CreationRule[]): void {
   setCreationRules(rules);
 }
@@ -44,9 +43,8 @@ export function activeRules(): CreationRule[] {
 }
 
 /**
- * Prompt the user for a filename when a rule can't resolve one on its own
- * (blank pattern, or a pattern that expanded to nothing). Returns the trimmed
- * name, or `null` if the user cancelled.
+ * Ask for a filename when a rule can't produce one (blank pattern, or one that
+ * expands to nothing). Returns the trimmed name, or `null` if cancelled.
  */
 async function promptFilename(rule: CreationRule | undefined): Promise<string | null> {
   const name = await promptText({
@@ -61,18 +59,16 @@ async function promptFilename(rule: CreationRule | undefined): Promise<string | 
 }
 
 /**
- * Trigger a creation rule from anywhere in the app (toolbar, command
- * palette, hotkey, deep link). Handles the "needs a filename" affordance: a
- * blank pattern prompts up front; a non-empty pattern that the backend can't
- * resolve to a name (it returns `filename-required`) prompts and retries. In
- * both cases the user-entered name is passed as the title override.
+ * Run a creation rule from anywhere (toolbar, command palette, hotkey, deep
+ * link). A blank pattern asks for a name first; a pattern the backend can't
+ * turn into a name (`filename-required`) asks and retries. The name entered is
+ * passed as the title.
  *
- * `{{title}}`/`{{slug}}` are scaffold-content variables, not filename
- * variables — a pattern made only of them expands to nothing and lands on the
- * same prompt path rather than erroring.
+ * `{{title}}`/`{{slug}}` are content variables, not filename variables, so a
+ * pattern of only those expands to nothing and asks for a name.
  *
- * Returns the backend result on success, or `null` if the user cancelled
- * the filename prompt. Other errors propagate.
+ * Returns the result, or `null` if the name prompt was cancelled. Other errors
+ * are thrown.
  */
 export async function triggerCreationRule(
   ruleId: string,
@@ -81,11 +77,9 @@ export async function triggerCreationRule(
   const folderOverride = options?.targetFolder;
   const scaffoldOverride = options?.scaffoldOverride;
   let rule = creationRules().find((r) => r.id === ruleId);
-  // If the rule isn't cached yet, the store hasn't loaded for this notebox
-  // (e.g. a fresh install where the startup load ran before a notebox was
-  // open). Load it now and retry, so we can read the real `filename_pattern`
-  // and decide whether to prompt — rather than calling the backend blind and
-  // having it reject an empty-pattern rule with "filename-required".
+  // Rule not cached: the store hasn't loaded for this notebox yet (e.g. the
+  // startup load ran before a notebox was open). Load and retry, so the real
+  // `filename_pattern` decides whether to ask for a name.
   if (!rule) {
     await loadCreationRules();
     rule = creationRules().find((r) => r.id === ruleId);
@@ -94,10 +88,9 @@ export async function triggerCreationRule(
   // rule from disk and returns a clear error if it truly doesn't exist.
   const pattern = rule?.filename_pattern.trim() ?? "?";
 
-  // Decide the initial filename override. A blank pattern can't produce one, so
-  // fall back to a ZID (when enabled) or prompt up front; a non-empty pattern
-  // starts with no override and lets the backend expand it (which may still
-  // come back `filename-required` if it expands to nothing).
+  // Initial filename. A blank pattern can't give one, so use a ZID (if enabled)
+  // or ask; otherwise the backend expands the pattern (and may still return
+  // `filename-required`).
   let nameOverride: string | undefined;
   if (pattern === "") {
     if (settings.files.zettelkasten_enabled && settings.files.auto_title_as_zid) {
@@ -109,12 +102,12 @@ export async function triggerCreationRule(
     }
   }
 
-  // Create, resolving the two "needs your input" outcomes by prompting and
-  // retrying. The loop lets a user-chosen name that ALSO collides re-prompt:
-  //  - `filename-required`: the pattern expanded to nothing — ask for a name.
-  //  - `note-name-conflict`: the name already exists in another folder
-  //    (filenames are notebox-globally unique) — open that note, rename, or
-  //    cancel. Other errors propagate.
+  // Create, prompting and retrying for the two outcomes that need input (so a
+  // chosen name that also collides asks again):
+  // - `filename-required`: the pattern expanded to nothing; ask for a name.
+  // - `note-name-conflict`: the name exists in another folder (names are unique
+  //   across the notebox); open that note, rename or cancel.
+  // Other errors are thrown.
   for (;;) {
     try {
       return await ipc.executeCreationRule(

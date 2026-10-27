@@ -61,10 +61,9 @@ pub async fn export_note_pdf(
     Ok(pdf_bytes)
 }
 
-/// Export a single note to PDF, saving to the given output path.
-///
-/// `metadata_mode`: "exclude" (default) or "properties" (set title/author/date/keywords
-/// as PDF document properties via `#set document(...)`).
+/// Export one note to PDF at the given path. `metadata_mode`: "exclude" (default) or
+/// "properties" (title, author, date and keywords as PDF properties through `#set
+/// document(...)`).
 #[tauri::command]
 pub async fn export_note_pdf_to_file(
     path: String,
@@ -241,13 +240,11 @@ pub async fn export_collection_note_pdf(
     companion.copy().await
 }
 
-/// Batch-export all notes in a collection to PDF files in the given output
-/// directory. A note that can't be read, compiled, or written is left out and
-/// listed in `skipped_notes` so the user learns which notes need fixing.
-///
-/// `only_files` limits the run to those note paths (used to retry just the
-/// notes a previous run skipped). With `bypass_errors`, a note that fails to
-/// compile is exported with its errored markup kept as plain text.
+/// Export every note of a collection as its own PDF in the output folder. A
+/// note that can't be read, compiled or written is listed in `skipped_notes`.
+/// `only_files` limits the run to those notes (to retry skipped ones); with
+/// `bypass_errors`, a failing note is exported with its errored markup as plain
+/// text.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn export_collection_batch_pdf(
@@ -415,12 +412,10 @@ pub async fn export_collection_batch_pdf(
 
 // ── Book (merged collection) export ─────────────────────────────
 
-/// Per-export overrides supplied by the "Export as book" dialog. Any field
-/// left as `None` falls back to the value stored in the collection's
-/// `book:` block, then to the built-in default. Mirrors the optional fields
-/// of [`crate::collection_parser::model::BookExportConfig`] plus a flag
-/// controlling whether the resolved values are persisted back to the
-/// collection file.
+/// Overrides from the "Export as book" dialog. `None` falls back to the
+/// collection's `book:` block, then the default. The optional fields of
+/// [`crate::collection_parser::model::BookExportConfig`], plus whether to save
+/// the values back to the collection.
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BookExportOverrides {
@@ -442,9 +437,9 @@ pub struct BookExportOverrides {
     /// Review-markup policy ("accept"/"reject"/"keep") applied to every note
     /// before it is inlined into the book. Absent → keep marks.
     pub review_mode: Option<String>,
-    /// Name of a note. When set, each chapter holds only the passages that
-    /// link to it, not the whole note. Notes with no such passage are left
-    /// out and listed in [`BookExportResult::without_passages`].
+    /// A note name. When set, each chapter holds only the passages linking to
+    /// it. Notes without such passages are left out and listed in
+    /// [`BookExportResult::without_passages`].
     pub passages_linking_to: Option<String>,
     /// Overrides the collection's saved `export.linked_files`.
     pub linked_files: Option<LinkedFilesOptions>,
@@ -458,19 +453,17 @@ pub struct BookLabelCollision {
     pub notes: Vec<String>,
 }
 
-/// Export the notes in a collection as a single merged PDF — title page,
-/// optional abstract, outline, sequential chapters, and one bibliography.
-/// Notes are inlined into a synthetic Typst document; nothing is written to
-/// disk besides the final PDF.
+/// Export a collection's notes as one PDF: title page, optional abstract,
+/// outline, chapters and one bibliography. The notes are inlined into a
+/// generated document; only the PDF is written.
 #[tauri::command]
 pub async fn export_collection_book_pdf(
     collection_path: String,
     view_name: String,
     output_path: String,
     overrides: Option<BookExportOverrides>,
-    // Note stems to omit from the book (notes the user chose to skip after a
-    // previous attempt reported them as failing to compile). Empty/None on the
-    // first attempt.
+    // Chapter stems to leave out (notes the user chose to skip after a previous
+    // attempt failed on them). Empty on the first attempt.
     exclude_notes: Option<Vec<String>>,
     // Keep errored markup as plain text instead of failing (the user chose to
     // bypass errors after a previous attempt reported them).
@@ -561,9 +554,7 @@ pub async fn export_collection_book_pdf(
         }
     }
 
-    // Acquire notebox root up front: per-note path rebasing needs it to
-    // compute each note's notebox-relative directory. The same guard is
-    // read again further down for template / bibliography resolution.
+    // The notebox root, needed to rebase each note's paths.
     let notebox_root_for_rebase = session.notebox_root.read().await.clone();
 
     let mut notes: Vec<BookNote> = Vec::with_capacity(data.rows.len());
@@ -589,12 +580,9 @@ pub async fn export_collection_book_pdf(
             None => content,
         };
 
-        // Rebase relative path arguments in the note's source so calls
-        // like `image("daisy.png")` resolve against the note's own
-        // folder once inlined into the merged document's synthetic main
-        // (which lives at the notebox root, not next to the note). Absolute
-        // paths and non-literal arguments are left untouched. See
-        // typst_pipeline::path_rebase.
+        // Rebase relative paths so `image("daisy.png")` still resolves from the
+        // note's folder once inlined into the generated document at the notebox
+        // root. See typst_pipeline::path_rebase.
         let rebased = if let Some(ref vroot) = notebox_root_for_rebase {
             let note_dir = note_path_buf
                 .parent()
@@ -620,9 +608,8 @@ pub async fn export_collection_book_pdf(
         ));
     }
 
-    // Drop notes the user chose to exclude after a previous attempt flagged
-    // them as failing to compile (matched by chapter stem — the book's chapter
-    // identity). If that empties the book, there's nothing to export.
+    // Leave out the notes the user excluded (by chapter stem). If none remain,
+    // there's nothing to export.
     if !exclude.is_empty() {
         notes.retain(|n| !exclude.contains(&n.stem));
         if notes.is_empty() {
@@ -644,10 +631,8 @@ pub async fn export_collection_book_pdf(
         )));
     }
 
-    // In-place bibliography mode keeps each note's own `#bibliography(...)`.
-    // Typst 0.15 permits multiple bibliographies per document (each scoped to a
-    // subset of citations), so more than one declaring note is no longer an
-    // error — the 0.14 pre-flight cap is removed.
+    // In-place mode keeps each note's `#bibliography(...)`; Typst 0.15 allows
+    // several per document.
 
     let app_settings = state.settings.read().await;
     let defaults_rules = style_injection::build_defaults_show_call_resolved(&app_settings);
@@ -698,9 +683,8 @@ pub async fn export_collection_book_pdf(
             .file_stem()
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| "book".to_string());
-        // Anchor at the notebox root so relative paths in inlined notes
-        // (e.g. `image("daisy.png")`) resolve against the notebox — not the
-        // reserved `.inkycap/collections/` location of the .collection file.
+        // Anchor at the notebox root, not the `.collection` file's
+        // `.inkycap/collections/` folder.
         let parent = notebox_root_ref
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|| {
@@ -713,10 +697,10 @@ pub async fn export_collection_book_pdf(
     };
     drop(notebox_root_guard);
 
-    // Collection-template exports apply the bibliography through the template's
-    // own `#show: …(bibliography: bibliography("<path>"))`. Materialize that file
-    // fresh from the works actually cited by the member notes, and suppress our
-    // consolidated `#bibliography(...)` so the document has exactly one.
+    // A collection template applies the bibliography through its own `#show:
+    // …(bibliography: bibliography("<path>"))`. Generate that file from the works
+    // the notes cite, and leave out our own `#bibliography(...)`, so there is
+    // exactly one.
     if let (Some(root), Some(custom)) = (
         notebox_root_owned.as_deref(),
         base.custom_typst
@@ -797,10 +781,9 @@ pub async fn export_collection_book_pdf(
     let source =
         super::super::typst::maybe_inject_set_notebox(&source, &state, CompilePurpose::Export)
             .await;
-    // Escape stray `@` (emails like `athena@inkycap.org`) inlined from the
-    // member notes. Book export builds its own merged source rather than going
-    // through `prepare_bibliography`, so it needs the same escape step here or a
-    // single member's email would fail the whole strict book compile.
+    // Escape stray `@` (emails like `athena@inkycap.org`) from the inlined
+    // notes. The book doesn't go through `prepare_bibliography`, so it needs
+    // this too, or one email would fail the whole compile.
     let source =
         super::super::typst::escape_non_bib_citations(&source, state.inner(), &session).await;
     let source = ensure_document_date_for_standard(source, book_pdf_standard);
@@ -824,10 +807,9 @@ pub async fn export_collection_book_pdf(
                 effective_bib.as_deref(),
             );
             let failing = book_wrapper::book_diagnostic_note_stems(&source_for_diag, &diags);
-            // Errors attributable to specific notes → let the caller offer to
-            // exclude them and retry. Otherwise (front-matter, package, or
-            // span-less errors that excluding a note can't fix) it's a hard
-            // failure.
+            // Errors in specific notes: the caller can offer to exclude them
+            // and retry. Others (front matter, package, no span) can't be fixed
+            // that way.
             if failing.is_empty() {
                 return Err(InkyCapError::ExportFailed(message));
             }
@@ -857,9 +839,8 @@ pub async fn export_collection_book_pdf(
     })
 }
 
-/// A chapter made of the passages in `content` that link to the note named
-/// `target` (lowercase), separated by blank lines. `None` when the note has
-/// no such passage.
+/// A chapter of the passages in `content` linking to `target` (lowercase),
+/// separated by blank lines, or `None`.
 fn passage_chapter(content: &str, target: &str) -> Option<String> {
     let parts: Vec<String> =
         crate::typst_pipeline::link_passages::inbound_passages(content, target)
@@ -890,10 +871,9 @@ mod passage_chapter_tests {
     }
 }
 
-/// Outcome of a book export. Either the PDF was written (`output_path` set), or
-/// the compile failed in one or more notes the caller can choose to exclude and
-/// retry (`failing_notes` — note stems — plus a human-readable `message`).
-/// A failure that no note exclusion could fix comes back as `Err` instead.
+/// Result of a book export: the PDF was written (`output_path`), or compiling
+/// failed in notes the caller can exclude and retry (`failing_notes`, as stems,
+/// and `message`). A failure excluding notes can't fix is returned as `Err`.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BookExportResult {
@@ -924,19 +904,11 @@ fn extract_note_title(content: &str) -> Option<String> {
 
 // ── PDF standards / compliance ──────────────────────────────────
 
-/// Pre-flight a source for issues that would block export under the
-/// chosen PDF standard, and return them all in a single actionable error.
-///
-/// Reporting issues up-front (rather than letting typst-pdf surface a
-/// single cryptic message for the first failure) is especially valuable
-/// for accessibility-driven exports like PDF/UA-1: the author needs the
-/// full list of fixes — alt text on every image, gap-free headings,
-/// document metadata — to make the document genuinely conformant. A
-/// silent fallback (e.g. injecting `alt: "<filename>"`) would let the
-/// export succeed but defeat the point of choosing the standard.
-///
-/// Returns `Ok(())` when the standard is `Standard` (no requirements) or
-/// when no issues are found.
+/// Check a source for everything that would block export under the chosen PDF
+/// standard, and report all of it in one error. For PDF/UA-1 the author needs
+/// the full list (alt text on every image, gap-free headings, metadata);
+/// silently filling in, e.g., `alt: "<filename>"` would pass but defeat the
+/// point of the standard. `Ok(())` for `Standard` or when nothing is found.
 pub fn check_pdf_standard_requirements(
     source: &str,
     standard: PdfStandardPreset,
@@ -987,12 +959,9 @@ pub fn check_pdf_standard_requirements(
     )))
 }
 
-/// Find heading-level jumps that skip one or more levels (e.g. `=` →
-/// `===`, which violates PDF/UA-1's consecutive-nesting rule).
-///
-/// The headings come from Typst's parser, so a `=== Example` line inside a
-/// ``` fence — a code sample, not a section — can't raise a warning the author
-/// has no way to act on.
+/// Heading jumps that skip levels (e.g. `=` → `===`), which PDF/UA-1 forbids.
+/// Headings come from Typst's parser, so `=== Example` in a code block doesn't
+/// count.
 fn heading_level_gaps(source: &str) -> Vec<(usize, u8, u8, String)> {
     let mut last_level: Option<u8> = None;
     let mut offenders = Vec::new();

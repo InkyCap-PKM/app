@@ -1,26 +1,14 @@
-//! Backup scheduler — the long-running tokio task that fires the
-//! runner on the user-configured interval while the app is open.
+//! Backup scheduler: a long-running task that runs backups at the configured
+//! interval while the app is open.
 //!
-//! Design notes:
-//!
-//! * The schedule is **global, not per-notebox.** A user with three
-//!   noteboxes shouldn't get three independent timers running over each
-//!   other; we back up *the currently-open notebox* whenever the
-//!   interval elapses since the last successful run.
-//!
-//! * **Wake-on-settings-change.** `AppState.backup_scheduler_wake` is
-//!   fired by `update_settings` so a change from 24h to 1h takes
-//!   effect immediately — without it the new interval would only kick
-//!   in at the next natural wake (potentially hours later).
-//!
-//! * **Startup delay.** We wait `STARTUP_DELAY` after boot so the
-//!   first scheduled tick doesn't fight indexing, LSP warm-up, and
-//!   the initial Typst compile. The on-launch check still picks up an
-//!   overdue backup — it just runs once the app has settled.
-//!
-//! * **Failure isolation.** A backend run failure logs + records via
-//!   `runner::record_failure` (which the settings UI surfaces) and the
-//!   scheduler keeps going. We never panic the task or stop the loop.
+//! * One schedule for all noteboxes: when the interval has passed since the
+//!   last success, the open notebox is backed up.
+//! * `update_settings` fires `AppState.backup_scheduler_wake`, so a changed
+//!   interval applies at once.
+//! * The first run waits `STARTUP_DELAY`, to stay clear of indexing, LSP
+//!   start-up and the first compile; an overdue backup still runs then.
+//! * A failed run is logged and recorded with `runner::record_failure` (shown
+//!   in Settings), and the loop carries on.
 
 use std::path::Path;
 use std::sync::atomic::Ordering;
@@ -33,28 +21,20 @@ use crate::state::AppState;
 
 use super::{runner, state};
 
-/// Delay before the first scheduled tick after app boot. Picked to
-/// land *after* the typical indexing/LSP warm-up window so the first
-/// scheduled archive doesn't compete with foreground work.
+/// Delay before the first run after start-up, past the usual indexing and LSP
+/// warm-up.
 const STARTUP_DELAY: Duration = Duration::from_secs(30);
 
-/// Minimum interval we'll honour. Guards against a user typing `1` for
-/// "every hour" but having a millisecond-loop bug elsewhere accidentally
-/// triggering wake notifications in a tight loop. Real value of 1 hour
-/// is unaffected.
+/// Shortest interval allowed, so a bug firing wake-ups in a tight loop can't
+/// run backups back to back.
 const MIN_INTERVAL_SECS: u64 = 60;
 
-/// Spawn the scheduler. Called once at app boot from `lib.rs::run`'s
-/// setup hook. The task holds an `AppHandle` so it can resolve the
-/// managed `AppState` on each tick — keeping no long-lived references
-/// to fields avoids deadlocks and survives runtime state mutations.
+/// Start the scheduler, once, from the setup hook in `lib.rs::run`. It looks up
+/// `AppState` from the `AppHandle` on each run instead of keeping references.
 ///
-/// Uses `tauri::async_runtime::spawn` rather than bare `tokio::spawn`
-/// because the setup hook runs before Tauri's own Tokio reactor is
-/// attached to the current thread — `tokio::spawn` would panic with
-/// "there is no reactor running, must be called from the context of
-/// a Tokio 1.x runtime". The Tauri wrapper hands the task to the
-/// managed runtime regardless of which thread we're on.
+/// Uses `tauri::async_runtime::spawn`: the setup hook runs before Tauri's Tokio
+/// runtime is attached to this thread, so `tokio::spawn` would panic ("there is
+/// no reactor running").
 pub fn spawn(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         run_loop(app).await;
@@ -65,10 +45,9 @@ async fn run_loop(app: AppHandle) {
     tokio::time::sleep(STARTUP_DELAY).await;
 
     loop {
-        // Snapshot what we need on every iteration. Cheap; avoids
-        // holding any state lock across the sleep below. The notebox root
-        // (not just "is one open?") is needed so the next-due calc reads
-        // *this* notebox's last-backup time.
+        // Read what is needed each time, without holding a lock across the
+        // sleep. The notebox root is needed to read this notebox's last backup
+        // time.
         let (settings, notebox_root, wake) = {
             let state = app.state::<AppState>();
             let session = state.session("main").await;
@@ -79,9 +58,8 @@ async fn run_loop(app: AppHandle) {
 
         let sleep_for = compute_sleep_secs(&settings, notebox_root.as_deref());
 
-        // Sleep until either due-time or a settings-change wake. The
-        // `select!` cancellation is safe because both branches are
-        // cancel-safe (sleep and Notify::notified).
+        // Sleep until due or woken by a settings change. Both branches are
+        // cancel-safe.
         match sleep_for {
             Some(secs) => {
                 tokio::select! {
@@ -101,9 +79,8 @@ async fn run_loop(app: AppHandle) {
     }
 }
 
-/// Compute how long to sleep before the next scheduled tick. Returns
-/// `None` when the scheduler should be dormant (interval is 0, path is
-/// unset, or no notebox is open — the runner would fail anyway).
+/// How long to sleep before the next run, or `None` to stay idle (interval 0,
+/// no folder set, or no notebox open).
 fn compute_sleep_secs(settings: &BackupSettings, notebox_root: Option<&Path>) -> Option<u64> {
     if !settings.enabled {
         return None;
@@ -124,9 +101,8 @@ fn compute_sleep_secs(settings: &BackupSettings, notebox_root: Option<&Path>) ->
 
     let last = state::load(notebox_root).last_success_unix;
     if last <= 0 {
-        // Never run before — schedule the first one one full interval
-        // from now. Avoids "open the app, get a backup immediately"
-        // surprise on first launch with a freshly-configured path.
+        // Never run before: the first backup is a full interval from now, not
+        // immediately.
         return Some(interval_secs);
     }
 
@@ -187,19 +163,14 @@ async fn run_one_tick(app: &AppHandle) {
                 report.uncompressed_bytes as f64 / 1024.0 / 1024.0,
                 report.archive_path,
             );
-            // Tell any open UI to refresh the "Last backup" line. The
-            // settings panel listens for this event; if no UI is open
-            // the event is a harmless broadcast.
+            // Tell any open UI to refresh "Last backup".
             emit_state_changed(app);
         }
         Ok(Ok(None)) => {
             log::debug!("scheduled backup skipped (no changes since last run)");
         }
         Ok(Err(crate::errors::InkyCapError::Cancelled)) => {
-            // Cancel happens through a UI button the user pressed.
-            // Don't persist it as a "Last attempt failed" status —
-            // the user knows; record_failure would spam their
-            // settings panel with a false negative.
+            // The user cancelled; don't record it as a failure.
             log::info!("scheduled backup cancelled by user");
         }
         Ok(Err(e)) => {
@@ -222,9 +193,8 @@ fn emit_state_changed(app: &AppHandle) {
     );
 }
 
-/// Fire the wake notifier so the running scheduler reruns its
-/// next-due computation. Cheap to call; idempotent (multiple wakes
-/// before the task observes one just collapse into a single iteration).
+/// Wake the scheduler to recompute when the next backup is due. Repeated wakes
+/// collapse into one.
 pub fn wake_now(state: &AppState) {
     state.backup_scheduler_wake.notify_one();
 }

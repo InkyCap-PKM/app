@@ -87,10 +87,10 @@ export function CitationsSettingsSection() {
                   defaultPath: await noteboxRootDefault(),
                 });
                 if (typeof selected === "string" && selected) {
-                  // The dialog returns a native path (backslashes on Windows);
-                  // the notebox root is already forward-slash normalized. Compare
-                  // and slice in the same canonical shape so an in-notebox bib
-                  // file is stored as a clean relative (Typst-style) path.
+                  // The dialog returns a native path (backslashes on Windows)
+                  // while the notebox root uses forward slashes. Compare and
+                  // slice in the same form so a bib file in the notebox is stored
+                  // as a relative Typst-style path.
                   const sel = normalizePath(selected);
                   const root = noteboxInfo()?.path;
                   if (root && pathStartsWith(sel, root)) {
@@ -188,9 +188,8 @@ export function CitationsSettingsSection() {
               class="settings__detect-btn"
               onClick={async () => {
                 // Copy the chosen CSL into the notebox and store the
-                // notebox-root-absolute path it returns (`/styles/foo.csl`).
-                // A raw OS path can't be read by the sandboxed Typst compiler,
-                // so the style is brought inside the notebox here.
+                // root-absolute path it returns (`/styles/foo.csl`); the
+                // sandboxed compiler can't read paths outside the notebox.
                 const stored = await ipc.importCslStyle(
                   t("settings.citations.cslPickerTitle"),
                   t("settings.citations.cslFilterName"),

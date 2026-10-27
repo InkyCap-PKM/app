@@ -1,6 +1,5 @@
-/* Mycelial View: graph, boxes, viewport controls, panes, context menus.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Mycelial View: graph, boxes, viewport controls, panes, context menus. Part
+   of layout.css, whose import order (see ../layout.css) keeps the cascade. */
 
 /* ─── Mycelial View ─── */
 
@@ -17,9 +16,7 @@
   justify-content: space-between;
   padding-inline: var(--space-6);
   flex-shrink: 0;
-  /* Surface (gradient, lip shadow, stacking) comes from .pane-toolbar. It used
-     to fade downward into --bg-primary, which left no seam against the graph
-     below it. */
+  /* The surface (gradient, lip shadow, stacking) comes from .pane-toolbar. */
 }
 
 .mycelial-view__toolbar-left {
@@ -69,14 +66,13 @@
   cursor: pointer;
 }
 
-/* Everything in the toolbar row lands on the row's own control height, so the
-   depth picker and the buttons beside it match. Each keeps its own padding for
-   horizontal breathing room; only the height is shared. */
+/* Controls in the toolbar share the row's control height, so the depth
+   picker and buttons match; padding stays their own. */
 .mycelial-view__toolbar .mycelial-view__btn,
 .mycelial-view__toolbar .dropdown__trigger {
-  /* height, not min-height: a floor still lets a control with a taller line box
-     or icon grow past it, which is how these drifted apart by a pixel. Both
-     borders are inside the box, so this is the same outer height for each. */
+  /* `height`, not `min-height`, which a taller line box or icon could
+     exceed. Borders are inside the box, so every control has the same outer
+     height. */
   height: var(--pane-toolbar-control-height);
   box-sizing: border-box;
 }
@@ -116,11 +112,10 @@
   height: 100%;
 }
 
-/* Node overlay — plain HTML boxes positioned over the SVG edge layer. It
-   carries the same pan/zoom transform as the SVG `<g>`; `transform-origin`
-   must be the top-left corner to match the SVG's default origin. The layer
-   itself is click-through so empty space still pans the canvas underneath;
-   individual boxes re-enable pointer events. */
+/* Node overlay: HTML boxes over the SVG edge layer, with the same pan and
+   zoom transform as the SVG `<g>` (`transform-origin` at the top-left to
+   match). The layer ignores clicks so empty space still pans the canvas;
+   boxes re-enable pointer events. */
 .mycelial-view__nodes {
   position: absolute;
   inset: 0;
@@ -313,13 +308,12 @@
 }
 
 .mycelial-box:hover {
-  /* A hover lift on an in-canvas node. --popup-shadow would draw its hard
-     ring around the node, which reads as a selection outline.
+  /* Hover lift for a node. --popup-shadow's ring would look like a selection
+     outline.
      token-exempt: in-canvas hover lift, not a floating surface */
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.22);
-  /* Lift the hovered box above its neighbours so the shadow is not clipped.
-     Works because boxes are now positioned HTML siblings, not foreignObjects
-     (which have no z-index). */
+  /* Raise the hovered box above its neighbours so the shadow isn't clipped
+     (possible because boxes are HTML, not foreignObjects). */
   z-index: 1;
 }
 
@@ -330,9 +324,8 @@
   pointer-events: none;
 }
 
-/* Anchor-note spotlight — a few accent-coloured glow pulses, triggered by
-   clicking the "Anchor note" legend item. Three 0.95s cycles ≈ the 2850ms
-   the component keeps the class applied. */
+/* Anchor spotlight: a few accent glow pulses when the "Anchor note" legend
+   item is clicked. Three 0.95s cycles match the component's 2850ms. */
 @keyframes mycelial-pulse {
   0%,
   100% {
@@ -347,13 +340,10 @@
   animation: mycelial-pulse 0.95s ease-in-out 3;
 }
 
-/* Edge beacon — shown when the spotlighted anchor note is off-screen. Its
-   `left`/`top` sit flush on the viewport edge and `translate(-50%, -50%)`
-   centres a soft radial glow on that point; the canvas's `overflow: hidden`
-   clips the outer half, so it reads as a diffuse glow bleeding in from
-   beyond the edge — telling the user which way to scroll without pinning an
-   exact spot. The three 0.95s cycles match the box pulse and the 2850ms
-   timer. */
+/* Edge beacon, shown when the spotlighted anchor is off-screen. `left` /
+   `top` sit on the viewport edge and `translate(-50%, -50%)` centres a soft
+   glow there; the canvas clips its outer half, so it reads as a glow from
+   beyond the edge showing which way to scroll. Same three 0.95s cycles. */
 .mycelial-edge-beacon {
   position: absolute;
   width: 190px;
@@ -584,11 +574,9 @@
 }
 
 .mycelial-controls__btn:hover {
-  /* --bg-hover is a translucent accent tint, designed to sit on top of an
-     opaque surface. These buttons float over the graph, so setting it as the
-     whole background replaced their opaque one and the notes behind showed
-     through. Keep the surface and layer the tint over it: same highlight
-     colour, still reading as a solid control. */
+  /* --bg-hover is a translucent tint meant for an opaque surface; these
+     buttons float over the graph, so keep the opaque surface and layer the
+     tint over it. */
   background-color: var(--popup-bg);
   background-image: linear-gradient(var(--bg-hover), var(--bg-hover));
   border-color: var(--accent);
@@ -617,9 +605,8 @@
   padding: var(--popup-padding-block) 0;
 }
 
-/* Header + hint form a non-interactive caption block. Kept deliberately
-   dimmer and lighter-weight than the picker items below so it doesn't read
-   as another clickable row, and closed off with a dashed rule. */
+/* The header and hint are a caption, dimmer and lighter than the items below
+   so they don't look clickable, ended by a dashed rule. */
 .mycelial-picker__header {
   padding: var(--space-2) var(--space-5);
   font-size: var(--text-sm);
@@ -737,9 +724,8 @@
   flex-direction: column;
 }
 
-/* Property-rule editor for note exclusions. Reuses the FilterBuilder's row
-   component; the panel is much narrower than the collection table, so the row
-   wraps and its fixed-width property picker stretches instead. */
+/* Rule editor for note exclusions, reusing the FilterBuilder's row; the
+   panel is narrow, so the row wraps and the property picker stretches. */
 .concept-filtering__rule-editor {
   display: flex;
   flex-direction: column;
@@ -759,9 +745,9 @@
   align-self: flex-end;
 }
 
-/* ─── Mycelial Growth pane (under-developed pages + open questions) ───
-   Rows reuse the Links pane's `.sidebar-item` + `.link-context` structure;
-   only the pieces with no existing equivalent are styled here. */
+/* ─── Mycelial Growth pane (under-developed pages, open questions) ───
+   Rows reuse the Links pane's `.sidebar-item` and `.link-context`; only what
+   has no equivalent is styled here. */
 
 /* Section heading and its (?) help trigger sit inline. Shared by the Growth
    and Filtering panes. */
@@ -778,9 +764,9 @@
   margin-top: var(--space-2);
 }
 
-/* A question line: reuses `.link-context`'s indent/typography but is a real
-   button (clicking deep-links into the note at the question), wraps instead
-   of truncating, and reads darker than pure context so it stays legible. */
+/* A question: `.link-context`'s indent and type, but a real button (it opens
+   the note at the question), wrapping instead of truncating, and darker for
+   legibility. */
 .mycelial-growth__question {
   display: block;
   width: 100%;
@@ -963,10 +949,10 @@
   color: var(--fg-primary);
 }
 
-/* The context list reuses the left-sidebar search-result styling
-   (.search-panel__file-group / __result-file / __group-chevron /
-   __file-label / __match-count / __result) for cross-panel consistency.
-   Only the hover cross-highlight from the graph is mycelial-specific. */
+/* The context list reuses the search results' styles
+   (.search-panel__file-group, __result-file, __group-chevron, __file-label,
+   __match-count, __result); only the hover highlight from the graph is
+   specific here. */
 .mycelial-context__item--highlighted,
 .mycelial-context__item--highlighted:hover {
   background: color-mix(in srgb, var(--mycelial-latent) 14%, transparent);

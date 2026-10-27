@@ -1,27 +1,16 @@
-//! veraPDF integration smoke test for the merged-book PDF/UA-1 export.
+//! veraPDF check of the merged-book PDF/UA-1 export.
 //!
-//! Builds a minimal merged book through the same pipeline the export
-//! command uses, asks Typst to emit it as PDF/UA-1, and runs veraPDF over
-//! the result to confirm the file passes the UA-1 validation profile.
+//! Builds a small merged book through the export pipeline, has Typst write it
+//! as PDF/UA-1, and checks it with veraPDF against the UA-1 profile. PDF/UA
+//! conformance (heading nesting, tagging, title metadata) is easy to break
+//! unnoticed, and the book pipeline does UA-specific work (heading levels,
+//! `#set document(title:)`, plain page numbers in the TOC).
 //!
-//! veraPDF is a heavyweight Java tool that ships locally as a Flatpak
-//! (`org.verapdf.veraPDF`). We invoke it via `flatpak run` so the test
-//! works on the developer machine; CI and machines without the Flatpak
-//! installed are auto-skipped — the test prints a one-line notice and
-//! returns success rather than blocking the build.
+//! veraPDF runs as a Flatpak (`org.verapdf.veraPDF`) via `flatpak run`. Without
+//! it (as in CI) the test prints a notice and passes.
 //!
-//! The flatpak sandbox refuses to read `/tmp` by default, so the
-//! generated PDF is written under `$HOME/.cache/inkycap-test-pdfs/`
-//! (which the flatpak's default `~` filesystem permission allows) and
-//! cleaned up at the end of the test.
-//!
-//! Why this test exists: PDF/UA-1 conformance is a structural property
-//! of the output (heading nesting, tagged content, document title metadata)
-//! that's far easier to break than to notice in a manual export. The
-//! merged-book pipeline does PDF/UA-specific work (heading-level
-//! normalization, `#set document(title:)` injection, plain-page-number
-//! TOC entries) that we want to lock down with a real validator rather
-//! than a homemade check.
+//! The Flatpak can't read `/tmp`, so the PDF is written under
+//! `$HOME/.cache/inkycap-test-pdfs/` and removed afterwards.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -38,9 +27,8 @@ use inkycap_lib::typst_pipeline::compiler::{PdfStandardPreset, TypstCompiler};
 /// though the friendly app id is `org.verapdf.veraPDF`.
 const VERAPDF_FLATPAK: &str = "org.verapdf.veraPDF";
 
-/// Probe that determines whether the local machine has flatpak + the
-/// veraPDF app installed. Returns the assembled command (still missing
-/// arguments) when both are present.
+/// The veraPDF command (without arguments) if flatpak and the veraPDF app are
+/// installed.
 fn locate_verapdf() -> Option<Command> {
     // Is `flatpak` itself on PATH?
     let flatpak_present = Command::new("flatpak")
@@ -75,10 +63,8 @@ fn merged_book_pdf_ua1_export_is_compliant() {
         return;
     };
 
-    // Build a small two-chapter book through the real merged-book wrapper.
-    // We exercise the heading-normalization path (chapters with mismatched
-    // top-level heading depths) because that's the load-bearing piece for
-    // PDF/UA-1 — the spec rejects gappy heading hierarchies.
+    // A two-chapter book whose chapters start at different heading levels, to
+    // exercise heading normalization: PDF/UA-1 rejects skipped heading levels.
     let dir = tempfile::tempdir().expect("tempdir");
     let notebox_root = canonicalize_root(dir.path()).expect("canonicalize tempdir");
     inkycap_lib::notebox_package::scaffold(&notebox_root);
@@ -149,10 +135,9 @@ fn merged_book_pdf_ua1_export_is_compliant() {
         None, None,
     );
 
-    // Mirror the real export pipeline: book wrapper → document-date
-    // injector → compile. Either step alone is insufficient — UA-1
-    // demands both a document title (set by the wrapper) and a fixed
-    // date (added by `ensure_document_date_for_standard`).
+    // As in the real export: book wrapper, then document date, then compile.
+    // UA-1 needs both the title (from the wrapper) and a fixed date
+    // (`ensure_document_date_for_standard`).
     let source = ensure_document_date_for_standard(source, PdfStandardPreset::PdfUa1);
 
     let book_path = notebox_root.join("__book.typ");
@@ -164,9 +149,7 @@ fn merged_book_pdf_ua1_export_is_compliant() {
         .compile_pdf(&book_path, source, PdfStandardPreset::PdfUa1)
         .expect("compile pdf/ua-1");
 
-    // Drop the PDF somewhere the verapdf flatpak sandbox can read it. The
-    // default `~` permission of org.verapdf.veraPDF gives access to
-    // `$HOME/...`; `/tmp` is sandboxed out.
+    // Somewhere the veraPDF Flatpak can read (`$HOME`, not `/tmp`).
     let cache_dir = home_cache_dir();
     std::fs::create_dir_all(&cache_dir).expect("create cache dir");
     let pdf_path = cache_dir.join("merged-book-ua1-smoke.pdf");
@@ -191,9 +174,8 @@ fn merged_book_pdf_ua1_export_is_compliant() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    // veraPDF's text format prints `PASS` / `FAIL` per file. Anything
-    // other than a clean PASS — including parse failures or non-zero
-    // exit — is a regression and worth surfacing in full.
+    // veraPDF's text output says `PASS` / `FAIL` per file. Anything but a clean
+    // pass, including parse errors or a non-zero exit, is reported in full.
     let passed = stdout.contains("PASS") && !stdout.contains("FAIL");
     assert!(
         output.status.success() && passed,

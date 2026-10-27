@@ -1,24 +1,21 @@
-// Typst comments in the visual editor: whether a comment is complete, and the
-// run of comments one pill stands for. Shared by the decorations (which show
-// the pill), the protected ranges (which lock the comments behind it) and the
-// note header scan.
+// Typst comments in the visual editor: whether one is complete, and the run of
+// comments one pill stands for. Used by the decorations (the pill), the
+// protected ranges (locking the comments) and the note header scan.
 
 import type { EditorState } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
 import type { SyntaxNode } from "@lezer/common";
 
 /**
- * Whether a comment node has its closing delimiter. Typst's parser is
- * error-tolerant, so an unclosed `/*` opens a BlockComment that runs to the end
- * of the document; hiding and locking that would make the rest of the note
- * vanish the moment those two characters are typed. Line comments end at the
- * line break, so they are always complete.
+ * Whether a comment has its closing delimiter. Typst's parser tolerates errors,
+ * so an unclosed `/*` opens a comment running to the end of the document;
+ * hiding and locking it would make the rest of the note vanish as soon as `/*`
+ * is typed. Line comments end at the line break, so they're always complete.
  *
- * Block comments nest, the way Typst's lexer reads them: every opening
- * delimiter inside one deepens it and every closing delimiter closes one
- * level, so a comment is complete only when the depth returns to zero at its
- * end. Checking just the last two characters would accept an unclosed `/*`
- * typed above a note that already ends with a closed comment.
+ * Block comments nest, as in Typst's lexer: each opening delimiter goes one
+ * level deeper and each closing one comes back out, and a comment is complete
+ * only at depth zero. Checking only the last two characters would accept an
+ * unclosed `/*` above a closed comment at the end of the note.
  */
 export function isCommentClosed(
   state: EditorState,
@@ -52,10 +49,9 @@ interface CommentSpan {
 }
 
 /**
- * A run of Typst comments the visual editor shows as one pill. Comments that
- * each fill their own line(s) and sit on consecutive lines form one run, so a
- * comment block written as several `//` lines is a single pill. A comment
- * sharing its line with other text is a run of its own.
+ * A run of comments shown as one pill: comments that each fill their own lines
+ * on consecutive lines form one run, so several `//` lines are one pill. A
+ * comment sharing its line with text is its own run.
  */
 export interface CommentRun {
   /** Start of the first comment: where the pill's source begins and the
@@ -67,11 +63,12 @@ export interface CommentRun {
    *  otherwise just the comment. */
   replaceFrom: number;
   replaceTo: number;
-  /** End of the span locked against editing while the run is collapsed. For a
-   *  run that stands alone it takes the line break after it too, so the caret
-   *  can't sit beside the pill on the pill's own line. So does a `//` comment
-   *  after text: it runs to the end of the line, so anything typed there would
-   *  join the comment. */
+  /**
+   * End of the locked span while the run is collapsed. A standalone run
+   * includes its line break, so the caret can't sit beside the pill. So does a
+   * `//` comment after text, since it runs to the line end and anything typed
+   * there would join it.
+   */
   lockTo: number;
   /** The caret may sit right before the run, and text typed there goes ahead
    *  of it. True for a comment that shares its line with other text. */
@@ -103,9 +100,9 @@ function standsAlone(state: EditorState, c: CommentSpan): boolean {
 }
 
 /**
- * The run containing the complete comment `from..to`. Walks outward over
- * neighbouring lines that hold nothing but a complete comment; a blank line or
- * any other text ends the run.
+ * The run containing the complete comment `from..to`, extended over
+ * neighbouring lines holding only a complete comment; a blank line or other
+ * text ends it.
  */
 export function commentRunAt(state: EditorState, from: number, to: number): CommentRun {
   const doc = state.doc;

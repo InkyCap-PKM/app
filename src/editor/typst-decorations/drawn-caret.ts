@@ -1,30 +1,23 @@
-// A CodeMirror-drawn caret that replaces the native browser caret in the editor
-// content — WITHOUT adopting CodeMirror's selection-range layer.
+// A caret drawn by CodeMirror in place of the browser's, without CodeMirror's
+// selection layer.
 //
-// Why: on WebKitGTK the native caret repaints a frame (or more) late when the
-// inline DOM around it changes — e.g. a list item's bullet widget shifting when
-// you press Tab to indent. The caret is briefly painted on the wrong side of the
-// bullet before the compositor catches up. The caret's logical/DOM position is
-// already correct (measured: `coordsAtPos` and the DOM selection agree at every
-// frame), so this is purely a native-caret paint lag that JS can't observe or
-// nudge. A caret drawn by CodeMirror is positioned by CodeMirror itself and
-// tracks the layout immediately, so there is no lag.
+// On WebKitGTK the native caret repaints a frame or more late when the inline
+// content around it changes (e.g. a list bullet shifting on Tab), so it briefly
+// shows on the wrong side of the bullet. Its position is already correct, so
+// JavaScript can't fix the lag; a caret CodeMirror draws follows the layout at
+// once.
 //
-// Why NOT the stock `drawSelection()`: it bundles a selection-range layer that
-// measures range endpoints with `coordsAtPos`, which is unreliable on WebKitGTK
-// for lines with mixed-height inline content (large headings, a leading pill
-// widget) and can paint the whole row — the exact reason this editor renders
-// selection natively (see `inkycapTheme` in typst-editor.ts). `drawSelection`
-// also makes native `::selection` transparent. This module deliberately keeps
-// only the caret and leaves the reliable native selection rendering alone.
+// The stock `drawSelection()` isn't used because its selection layer measures
+// with `coordsAtPos`, which is unreliable on WebKitGTK for lines with
+// mixed-height content (large headings, a leading pill) and can paint the whole
+// row; that's why this editor draws the selection natively (see `inkycapTheme`
+// in typst-editor.ts). So only the caret is drawn here.
 import { EditorView, layer, RectangleMarker } from "@codemirror/view";
 import { EditorSelection, Prec, type Extension } from "@codemirror/state";
 
-// The caret layer: one drawn caret per empty selection range. Non-empty ranges
-// are left to native `::selection`, so this never measures range geometry (the
-// unreliable path). Reuses the base theme's `.cm-cursorLayer` / `.cm-cursor`
-// styles and blink animation by matching their class names — the same ones the
-// stock cursor layer uses.
+// One drawn caret per empty selection range; non-empty ranges are left to
+// native `::selection`, so range geometry is never measured. Uses the base
+// theme's `.cm-cursorLayer` / `.cm-cursor` classes and blink animation.
 const drawnCaretLayer = layer({
   above: true,
   class: "cm-cursorLayer",
@@ -54,10 +47,8 @@ const drawnCaretLayer = layer({
   },
 });
 
-// Hide the native caret (we draw our own) while leaving `::selection` untouched
-// so native selection ranges still render. A focused nested editable — the
-// verse canvas or a table cell, both `contentEditable` — gets its own native
-// caret back via `:focus`, so typing inside those widgets still shows a caret.
+// Hide the native caret, leaving `::selection` alone. A focused nested editable
+// (verse canvas, table cell) gets its native caret back through `:focus`.
 const hideNativeCaret = Prec.highest(
   EditorView.theme({
     ".cm-line": { caretColor: "transparent !important" },
@@ -71,8 +62,9 @@ const hideNativeCaret = Prec.highest(
   }),
 );
 
-/** A CodeMirror-drawn caret that fixes the WebKitGTK native-caret repaint flash
- *  (most visible as a list bullet's caret jumping left→right on indent) while
- *  leaving native selection rendering and its WebKitGTK-safe `::selection`
- *  styling exactly as-is. */
+/**
+ * A CodeMirror-drawn caret that avoids WebKitGTK's late caret repaint (most
+ * visible as the caret jumping across a list bullet on indent), leaving native
+ * selection as it is.
+ */
 export const drawnCaret: Extension = [drawnCaretLayer, hideNativeCaret];

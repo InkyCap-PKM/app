@@ -1,16 +1,15 @@
-//! Notebox-wide note exclusion rules for the Mycelial View.
+//! Notebox-wide rules that leave notes out of the Mycelial View.
 //!
-//! A notebox often mixes research content with notes that should never steer
-//! the Mycelial statistics — workday reminders, meeting logs, templates. The
-//! rules here let the user drop whole notes from every Mycelial calculation
-//! (graph, latent links, emergent concepts, kindred notes, Growth signals).
+//! A notebox often mixes research with notes that shouldn't affect the
+//! statistics (reminders, meeting logs, templates). These rules drop whole
+//! notes from every Mycelial calculation (graph, latent links, concepts,
+//! kindred notes, Growth).
 //!
-//! Each rule is a collection-filter expression (`file.tags.contains("x")`,
-//! `status == "draft"`, …) evaluated by the same engine that resolves
-//! collection membership. A note matching *any* rule is excluded. Rules live
-//! in `.inkycap/mycelial-exclusions.yaml`, next to the stopword and
-//! hub-exclusion lists, so they travel with the notebox and can be
-//! hand-edited.
+//! Each rule is a collection filter expression (`file.tags.contains("x")`,
+//! `status == "draft"`, …) evaluated by the collection engine; a note matching
+//! any rule is excluded. Rules are in `.inkycap/mycelial-exclusions.yaml`,
+//! beside the stopword and hub-exclusion lists, so they travel with the notebox
+//! and can be edited by hand.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -25,10 +24,9 @@ use crate::link_index::LinkIndex;
 use crate::scanner::property_index::PropertyIndex;
 use crate::state::{AppState, NoteboxSession};
 
-/// On-disk shape of `.inkycap/mycelial-exclusions.yaml`. `any` holds
-/// collection-filter members: expression strings written by the Filtering
-/// pane, plus any nested `and`/`or`/`not` group a user hand-authors (the
-/// evaluator accepts either).
+/// Format of `.inkycap/mycelial-exclusions.yaml`. `any` holds collection filter
+/// members: expressions written by the Filtering pane, plus any
+/// `and`/`or`/`not` groups written by hand.
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct ExclusionsFile {
     #[serde(default)]
@@ -39,9 +37,9 @@ struct ExclusionsFile {
 /// notes they currently rule out.
 #[derive(Debug, Clone, Serialize)]
 pub struct MycelialExclusionInfo {
-    /// Flat expression strings, in file order. Hand-authored nested groups
-    /// are honoured during evaluation and preserved on save, but are not
-    /// editable through the pane so they are not listed here.
+    /// The plain expression rules, in file order. Hand-written groups are
+    /// applied and kept on save, but can't be edited in the pane, so they
+    /// aren't listed.
     pub rules: Vec<String>,
     /// Notes the current rules exclude, out of `note_count` indexed notes.
     pub excluded_count: usize,
@@ -52,9 +50,8 @@ fn exclusions_path(root: &Path) -> PathBuf {
     root.join(".inkycap").join("mycelial-exclusions.yaml")
 }
 
-/// Parse exclusions-file content into an evaluable filter group, or `None`
-/// when it holds no rules or fails to parse — a broken rules file must never
-/// silently exclude notes.
+/// Parse the exclusions file into a filter group, or `None` if it has no rules
+/// or doesn't parse; a broken file must never exclude notes.
 fn parse_exclusions(contents: &str) -> Option<FilterGroup> {
     let parsed: ExclusionsFile = serde_yaml::from_str(contents).ok()?;
     if parsed.any.is_empty() {
@@ -76,11 +73,10 @@ pub(crate) async fn load_exclusion_group(root: &Path) -> Option<FilterGroup> {
     parse_exclusions(&contents)
 }
 
-/// The set of note paths the exclusion rules match. `self_path` for the
-/// evaluator's `this.file.*` references is the exclusions file itself; those
-/// references have no real meaning outside a collection, but pointing them at
-/// a stable file keeps their behaviour deterministic. `links` serves
-/// `file.links` and `file.backlinks`, as it does in collections.
+/// The note paths the rules match. `this.file.*` references point at the
+/// exclusions file itself; they mean nothing outside a collection, but a fixed
+/// file keeps them predictable. `links` supplies `file.links` and
+/// `file.backlinks`, as in collections.
 pub(crate) fn excluded_note_paths(
     index: &PropertyIndex,
     links: &LinkIndex,
@@ -142,9 +138,9 @@ pub async fn get_mycelial_exclusions(
     build_info(&session, &root).await
 }
 
-/// Replace the rule list with `rules` (empty strings are dropped) and return
-/// the refreshed summary. Nested groups hand-authored into the file are kept
-/// as-is; only the flat expression strings are replaced.
+/// Replace the rules with `rules` (empty strings dropped) and return the
+/// updated summary. Hand-written groups in the file are kept; only the plain
+/// expressions are replaced.
 #[tauri::command]
 pub async fn set_mycelial_exclusions(
     rules: Vec<String>,

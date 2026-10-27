@@ -1,25 +1,17 @@
-// Global keyboard shortcut dispatcher. Registered once from App.tsx
-// onMount. Reads keybindings from the command registry, so every command
-// with a `keybinding` field fires automatically — there's no per-key
-// `if (e.key === "x")` ladder to keep in sync.
+// Global keyboard shortcut dispatcher, registered once from App.tsx. Bindings
+// come from the command registry, so any command with a `keybinding` works
+// without code here.
 //
-// The listener runs in **capture phase** (third arg `true`). Two reasons:
+// The listener runs in the capture phase, for two reasons:
 //
-//   1. Suppression must see live state. The rule editor's hotkey-record
-//      field flips `data-hotkey-recording="true"` while active, and its
-//      onKeyDown synchronously clears that flag once a combo is captured.
-//      If our dispatcher ran in bubble phase it would fire *after* that
-//      clear and see `recording=false`, defeating the suppression. In
-//      capture phase, the dispatcher runs before any other handler can
-//      mutate state.
+//   1. The rule editor's hotkey field sets `data-hotkey-recording="true"` and
+//      clears it in its own onKeyDown once a combo is captured. In the bubble
+//      phase this would run after the clear and fire the shortcut.
+//   2. Global shortcuts take precedence over the focused element's keys: a
+//      matched combo is prevented before the input or editor sees it.
 //
-//   2. Global shortcuts should override focused-element keymaps. Capture
-//      lets us preventDefault on a matched combo before the focused
-//      input/editor sees it, instead of racing against its handlers.
-//
-// Two exceptions don't fit the registry model and remain hardcoded:
-//   - Ctrl+1..9 (switch to tab N) is parametric.
-//   - Nothing else.
+// The one exception to the registry is Ctrl+1..9 (switch to tab N), which takes
+// a number.
 
 import { switchToTabByIndex } from "../stores/tabs";
 import { findCommandByKeybinding } from "./command-registry";
@@ -36,19 +28,16 @@ export function destroyKeyboard() {
 }
 
 function handleKeyDown(e: KeyboardEvent) {
-  // The rule editor's "press a combo" field opts out via
-  // `data-hotkey-recording="true"` on the focused element. We run in
-  // capture phase (see top-of-file note) so this check happens before
-  // any other handler can clear the attribute. Without that ordering,
-  // pressing Ctrl+N in the record field both registers a conflict AND
-  // fires the New Simple File command.
+  // The rule editor's "press a combo" field opts out with
+  // `data-hotkey-recording="true"`. Capture phase (see the top of the file)
+  // means this runs before the field clears it; otherwise Ctrl+N in the field
+  // would also create a file.
   if (isHotkeyRecordingActive()) return;
 
   const ctrl = e.ctrlKey || e.metaKey;
 
-  // Parametric shortcut: Ctrl+1..9 → switch to that tab by index.
-  // Not registrable as a single command — handle it directly before
-  // the registry lookup.
+  // Ctrl+1..9 switches to that tab; it can't be a single command, so it's
+  // handled before the registry lookup.
   if (ctrl && !e.shiftKey && !e.altKey && e.key >= "1" && e.key <= "9") {
     e.preventDefault();
     switchToTabByIndex(parseInt(e.key, 10) - 1);

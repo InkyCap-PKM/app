@@ -19,19 +19,17 @@ import { SettingToggle, SettingNumber, SettingText, SettingLabel } from "./share
 
 export function BackupSettingsSection() {
   const t = useI18n();
-  // Keyed on the active notebox path so switching noteboxes refetches —
-  // the backup state is per-notebox and the backend returns the open
-  // notebox's record, so the "Last backup" line must follow the notebox.
+  // Keyed on the notebox path, since backup state is per notebox, so the "Last
+  // backup" line follows a notebox switch.
   const [lastState, { refetch: refetchLastState }] = createResource(
     () => noteboxInfo()?.path,
     () => ipc.getBackupState(),
   );
   const [hasPassword, { refetch: refetchHasPassword }] = createResource(() => ipc.hasBackupPassword());
 
-  // Subscribe to the backend's `backup:state-changed` event so the
-  // "Last backup" line refreshes after either a manual command-
-  // palette run, a scheduled tick, or this section's own button —
-  // without any of them having to know about each other.
+  // Refresh the "Last backup" line on the backend's `backup:state-changed`
+  // event, whether the backup came from the command palette, the schedule or
+  // this section's button.
   onMount(async () => {
     const { listen } = await import("@tauri-apps/api/event");
     const unlisten = await listen("backup:state-changed", () => {
@@ -59,10 +57,9 @@ export function BackupSettingsSection() {
     });
     if (typeof picked !== "string") return;
 
-    // Refuse to set the notebox folder (or any folder inside it) as
-    // the backup destination — the runner already errors at write
-    // time, but catching it here gives a clear message instead of a
-    // silent setting that fails at the next scheduled tick.
+    // Refuse the notebox folder (or a folder inside it) as the destination. The
+    // runner would fail at write time anyway, but this gives a clear message
+    // now instead of a failure at the next scheduled backup.
     const noteboxPath = noteboxInfo()?.path;
     if (noteboxPath && (pathEquals(picked, noteboxPath) || pathStartsWith(picked, noteboxPath))) {
       showToast("error", t("backup.destination.cannotUseNotebox"));
@@ -81,10 +78,9 @@ export function BackupSettingsSection() {
       setPwStatus({ text: t("backup.password.mismatch"), isError: true });
       return;
     }
-    // Changing an existing password is destructive in the sense that
-    // existing archives now require the *previous* password to restore.
-    // First-time setup (hasPassword() === false) skips the prompt: there
-    // are no prior archives to invalidate.
+    // Changing the password means existing archives still need the old one, so
+    // ask first. Setting the first password doesn't ask: there are no archives
+    // yet.
     if (hasPassword()) {
       const ok = await promptConfirm({
         title: t("backup.password.confirmChangeTitle"),
@@ -95,9 +91,8 @@ export function BackupSettingsSection() {
     }
     try {
       await ipc.setBackupPassword(pwInput());
-      // password_protected is the persisted "feature on" flag — the
-      // secret itself lives in the OS keychain. Flip it on now that
-      // a password actually exists there.
+      // password_protected is the saved on/off setting; the password itself is
+      // in the keychain. Turn it on now that one exists.
       updateSetting("backup", "password_protected", true);
       setPwInput("");
       setPwConfirm("");
@@ -138,15 +133,13 @@ export function BackupSettingsSection() {
     return formatUserDateTime(s.last_success_unix * 1000);
   }
 
-  // Same flow as the `tools:backup-now` command — kept inline (rather
-  // than imported from commands.ts) so the running-state spinner stays
-  // local to this section. Both call sites go through the same Tauri
-  // command, and the backend's run-lock serialises them.
+  // Same as the `tools:backup-now` command, kept here so the spinner stays
+  // local to this section. Both call the same backend command, whose lock runs
+  // them one at a time.
   async function runBackupNow() {
     setRunning(true);
-    // Track whether the user clicked the toast's Cancel button so we
-    // can distinguish a user-driven abort from a real failure when the
-    // backupNow promise rejects with InkyCapError::Cancelled.
+    // Whether the user pressed the toast's Cancel, to tell a cancel from a real
+    // failure when backupNow rejects with InkyCapError::Cancelled.
     let cancelRequested = false;
     const progressId = showToast(
       "info",
@@ -156,9 +149,8 @@ export function BackupSettingsSection() {
         persistent: true,
         onCancel: () => {
           cancelRequested = true;
-          // Fire-and-forget: the command just flips the flag and the
-          // archive writer aborts at its next poll. We don't await it
-          // because we want the toast to dismiss immediately.
+          // Not awaited: the command only sets a flag the archive writer
+          // checks, and the toast should close at once.
           void ipc.cancelBackup();
         },
       },
@@ -184,9 +176,8 @@ export function BackupSettingsSection() {
       }
     } catch (e) {
       dismissToast(progressId);
-      // Cancellation by the user isn't an error to surface. The backend
-      // returns InkyCapError::Cancelled, carried over IPC as the stable
-      // machine code "cancelled" (no longer matched on localized text).
+      // A cancel by the user isn't an error to show. The backend returns
+      // InkyCapError::Cancelled, with the code "cancelled".
       if (cancelRequested || errorCode(e) === "cancelled") {
         showToast("info", t("backup.toast.cancelled"));
       } else {

@@ -1,6 +1,5 @@
-/* Creation rules editor.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Creation rules editor. Part of layout.css, whose import order (see
+   ../layout.css) keeps the cascade. */
 
 /* ── Creation Rules Editor ── */
 
@@ -100,9 +99,8 @@
   flex-shrink: 0;
 }
 
-/* Rules that aren't toolbar buttons have nothing to reorder. Hiding the
-   chevrons instead of removing them keeps the space they occupy, so the
-   controls in every row line up. */
+/* Rules that aren't toolbar buttons can't be reordered. The arrows are
+   hidden rather than removed, so every row's controls line up. */
 .creation-rules__reorder--empty {
   visibility: hidden;
 }
@@ -157,9 +155,8 @@
   min-height: 60px;
   font-family: inherit;
   line-height: var(--leading-normal);
-  /* Description gets the wide treatment that Hotkey used to have: it fills
-     the row so the user has room to write longer notes. Width on
-     .settings__text-input is 200px otherwise, which we override here. */
+  /* Description fills the row, for longer notes (overriding
+     .settings__text-input's 200px). */
   width: auto;
   flex: 1;
 }

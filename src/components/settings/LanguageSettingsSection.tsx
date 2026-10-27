@@ -13,10 +13,9 @@ import { linkifyTerm } from "../ExternalLink";
 const HUNSPELL_URL = "https://hunspell.github.io/";
 
 export function LanguageSettingsSection() {
-  // Reactive translator: the interface-language row re-renders live when the
-  // user switches language, demonstrating the seam end-to-end. (The rest of
-  // this panel still uses the static `t` and refreshes on reopen — migrating
-  // those to `useI18n()` is a later phase.)
+  // Reactive translator, so the interface language row updates as soon as the
+  // language changes. The rest of this panel uses the static `t` and updates
+  // when reopened.
   const trans = useI18n();
 
   // Available dictionaries (bundled + user-installed), loaded once for the
@@ -41,9 +40,9 @@ export function LanguageSettingsSection() {
     }
   }
 
-  // Personal dictionary (the shared allow-list). Refetches when its version
-  // bumps — on our own edits and on external changes (right-click "Add to
-  // dictionary", Mycelial rescue) signalled via `inkycap:dictionary-changed`.
+  // The personal dictionary. Fetched again when its version changes: on edits
+  // here and on outside changes (right-click "Add to dictionary", Mycelial
+  // rescue), signalled by `inkycap:dictionary-changed`.
   const [dictVersion, setDictVersion] = createSignal(0);
   const [userWords] = createResource(dictVersion, () => ipc.listUserDictionary());
   const onDictionaryChanged = () => setDictVersion((v) => v + 1);

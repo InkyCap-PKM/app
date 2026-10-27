@@ -1,7 +1,6 @@
-// Parser for canonical-form Typst tables.
-// Returns structured TableData if the table is in a form that the visual
-// widget can render, or null if the table uses non-canonical features
-// (spans, spreads, computed cells, integer column shorthand, etc.).
+// Parser for Typst tables in the form the visual widget can render. Returns
+// TableData, or null for tables using features it can't (spans, spreads,
+// computed cells, …).
 
 export interface TableCell {
   content: string;
@@ -15,18 +14,16 @@ export interface TableData {
   columns: string[];
   align: string[] | null;
   /**
-   * Optional explicit row heights, mirroring Typst's `rows:` argument
-   * (one entry per logical row, header included). `auto` lets a row fit its
-   * content; a length (e.g. `30pt`) is a user override applied by dragging a
-   * row edge. `null` when the table has no `rows:` argument at all.
+   * Explicit row heights from Typst's `rows:` (one per row, header included):
+   * `auto` fits the content, a length (e.g. `30pt`) is set by dragging. `null`
+   * without a `rows:` argument.
    */
   rowSizes: string[] | null;
   /**
-   * Named arguments the widget doesn't model structurally (`stroke`, `inset`,
-   * `fill`, `gutter`, a non-array `align`/`rows`, …), kept verbatim in source
-   * order. They are opaque — InkyCap never interprets the value, only preserves
-   * and re-emits it — so a styled table renders as an editable widget and still
-   * round-trips losslessly through the visual editor. Empty when there are none.
+   * Named arguments the widget doesn't model (`stroke`, `inset`, `fill`,
+   * `gutter`, a non-array `align` / `rows`, …), kept as written, in order, and
+   * written back unchanged, so styled tables can still be edited without loss.
+   * Empty when there are none.
    */
   extraArgs: { key: string; value: string }[];
   header: TableCell[] | null;
@@ -36,18 +33,17 @@ export interface TableData {
 }
 
 /**
- * Parse a `#table(...)` call into structured TableData.
- * Returns null if the table is not in canonical form.
+ * Parse a `#table(...)` call into TableData, or null if the widget can't
+ * represent it. It needs:
  *
- * Canonical form requires:
- * - `columns:` as an explicit array `(...)` of fr/auto/length values
- * - Optional `align:` as an explicit array
- * - Optional `table.header(...)` as the first positional arg
- * - All remaining positional args are `[...]` content blocks
- * - Any other named arg (`stroke`, `inset`, `fill`, `gutter`, a non-array
- *   `align`/`rows`, …) is preserved verbatim on `extraArgs` rather than
- *   blocking the widget — see `TableData.extraArgs`.
- * - No `table.cell(...)`, `table.hline(...)`, spreads, or computed content
+ * - `columns:` as an array `(...)` of fr / auto / length values (or an
+ *   integer);
+ * - an optional array `align:`;
+ * - an optional `table.header(...)` as the first positional argument;
+ * - `[...]` content blocks for every other positional argument;
+ * - no `table.cell(...)`, `table.hline(...)`, spreads or computed content.
+ *
+ * Other named arguments are kept in `extraArgs`.
  */
 export function parseCanonicalTable(text: string): TableData | null {
   // Must start with #table( or table(
@@ -89,9 +85,9 @@ export function parseCanonicalTable(text: string): TableData | null {
         align = parseArrayLiteral(arg.value);
         if (!align) extraArgs.push({ key, value: arg.value });
       } else if (key === "rows") {
-        // Accept an explicit `(…)` array of row heights for per-row drag
-        // handles; a bare length or integer applies cyclically in Typst and
-        // can't be mapped to handles, so preserve it verbatim instead.
+        // An array of row heights gets a drag handle per row; a single length
+        // or integer repeats in Typst and can't map to handles, so it is kept
+        // as written.
         rowSizes = parseArrayLiteral(arg.value);
         if (!rowSizes) extraArgs.push({ key, value: arg.value });
       } else {
@@ -153,17 +149,14 @@ export function parseCanonicalTable(text: string): TableData | null {
   };
 }
 
-/**
- * Serialize a TableData back into Typst source text.
- */
+/** Serialize TableData back to Typst source. */
 export function serializeTable(data: TableData): string {
   const lines: string[] = [];
   lines.push("#table(");
   lines.push(`  columns: (${data.columns.join(", ")}),`);
 
-  // Re-emit preserved styling args (stroke, inset, fill, …) right after
-  // `columns`, near the top where they conventionally sit, so styled tables
-  // round-trip losslessly through an edit.
+  // Write the kept styling arguments right after `columns`, where they usually
+  // sit.
   for (const { key, value } of data.extraArgs ?? []) {
     lines.push(`  ${key}: ${value},`);
   }
@@ -283,10 +276,10 @@ function tryParseNamedArg(
 }
 
 /**
- * Find the end of a top-level argument value: the next `,` (or a stray `)` /
- * `]`) that is not nested inside a code group, a markup block, a string, or
- * inline raw. The argument list is code, so strings count here; inside a
- * `[…]` cell the rules switch to markup (see `skipBracket`).
+ * End of a top-level argument: the next `,` (or a stray `)` / `]`) not inside a
+ * group, markup block, string or inline raw. The argument list is code, so
+ * strings count; inside a `[…]` cell the markup rules apply (see
+ * `skipBracket`).
  */
 function findArgEnd(text: string, start: number): number {
   let i = start;
@@ -321,10 +314,9 @@ function findMatchingParen(text: string, openIdx: number): number {
 }
 
 /**
- * Skip a code-mode `(…)` group starting at `text[start] === "("`. Returns the
- * index just past the closing `)`, or `text.length` if it never closes.
- * Strings, nested groups, and embedded markup blocks are stepped over as
- * units, so a `)` inside `"…"` or `[…]` never closes the group.
+ * Skip a `(…)` group starting at `text[start]`. Returns the index after `)`, or
+ * `text.length` if unclosed. Strings, nested groups and markup blocks are
+ * skipped whole, so a `)` inside them doesn't close it.
  */
 function skipParen(text: string, start: number): number {
   let i = start + 1;
@@ -354,13 +346,12 @@ function skipParen(text: string, start: number): number {
 
 /**
  * Skip a markup block starting at `text[start] === "["`. Returns the index
- * just past the closing `]`, or `text.length` if it never closes.
+ * after `]`, or `text.length` if unclosed.
  *
- * Inside markup, quotes, parentheses, and commas are ordinary text — a cell
- * such as `[She said "no (twice), then left]` is one cell. Only three things
- * change the mode: a nested `[…]`, inline raw, and a `#` expression, whose
- * argument groups are code again (`[#wikilink("a, b")]`). A backslash escapes
- * the next character, so `\]` does not close the block.
+ * In markup, quotes, parens and commas are text: `[She said "no (twice), then
+ * left]` is one cell. Only a nested `[…]`, inline raw and a `#` expression
+ * (whose arguments are code again, `[#wikilink("a, b")]`) change that. `\]`
+ * doesn't close the block.
  */
 function skipBracket(text: string, start: number): number {
   let i = start + 1;
@@ -389,9 +380,9 @@ function skipBracket(text: string, start: number): number {
 }
 
 /**
- * Skip a `#` expression embedded in markup: the name (dots allowed, as in
- * `#table.cell`) followed by any run of `(…)` and `[…]` argument groups, e.g.
- * `#link("https://x.y")[label]`. A `#` not followed by a name is left as text.
+ * Skip a `#` expression in markup: the name (dots allowed, `#table.cell`) and
+ * any `(…)` and `[…]` groups after it, e.g. `#link("https://x.y")[label]`. A
+ * `#` without a name is text.
  */
 function skipHashExpr(text: string, start: number): number {
   let i = start + 1;
@@ -410,10 +401,11 @@ function skipHashExpr(text: string, start: number): number {
   }
 }
 
-/** If `text[start]` opens an inline raw run (one or more backticks), return the
- *  index just past the matching closing run; otherwise return `start`. Brackets,
- *  parens, and quotes inside raw are literal Typst content and must never affect
- *  delimiter matching. Mirrors the raw-skip in the visual decoration matchers. */
+/**
+ * If `text[start]` starts inline raw (backticks), the index after the matching
+ * closing run; otherwise `start`. Brackets and quotes inside raw are literal.
+ * Like the raw skip in the visual decorations.
+ */
 function skipInlineRaw(text: string, start: number): number {
   if (text[start] !== "`") return start;
   let n = 1;
@@ -436,10 +428,7 @@ function skipString(text: string, start: number): number {
   return i;
 }
 
-/**
- * Parse the `columns:` argument, accepting either an array literal
- * `(1fr, 2fr, auto)` or an integer `2`.
- */
+/** Parse `columns:` as an array `(1fr, 2fr, auto)` or an integer `2`. */
 function parseColumnsArg(value: string): string[] | null {
   const trimmed = value.trim();
 
@@ -455,8 +444,8 @@ function parseColumnsArg(value: string): string[] | null {
 }
 
 /**
- * Parse an array literal like `(1fr, 2fr, auto)` into its elements.
- * Returns null if the value is not a parenthesized array.
+ * Elements of an array literal like `(1fr, 2fr, auto)`, or null if it isn't
+ * one.
  */
 function parseArrayLiteral(value: string): string[] | null {
   const trimmed = value.trim();
@@ -469,9 +458,7 @@ function parseArrayLiteral(value: string): string[] | null {
   return items;
 }
 
-/**
- * Parse `table.header([Cell1], [Cell2], ...)` into cells.
- */
+/** Parse `table.header([Cell1], [Cell2], ...)` into cells. */
 function parseTableHeader(text: string, baseRelFrom: number): TableCell[] | null {
   const parenIdx = text.indexOf("(");
   if (parenIdx < 0) return null;
@@ -485,9 +472,7 @@ function parseTableHeader(text: string, baseRelFrom: number): TableCell[] | null
   return parseCellList(inner, innerOffset);
 }
 
-/**
- * Parse a comma-separated list of `[...]` content blocks.
- */
+/** Parse a comma-separated list of `[...]` blocks. */
 function parseCellList(text: string, baseOffset: number): TableCell[] | null {
   const cells: TableCell[] = [];
   let i = 0;
@@ -520,9 +505,7 @@ function parseCellList(text: string, baseOffset: number): TableCell[] | null {
   return cells;
 }
 
-/**
- * Parse a single `[content]` bracket into a TableCell.
- */
+/** Parse one `[content]` block into a TableCell. */
 function parseCellBracket(value: string, baseRelFrom: number): TableCell | null {
   const trimmed = value.trim();
   if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) return null;
@@ -553,8 +536,8 @@ function isAlphanumeric(ch: string): boolean {
 }
 
 /**
- * Parse clipboard event data into a 2D grid of strings.
- * Tries HTML table first, then falls back to tab-separated plain text.
+ * Clipboard data as a grid of strings: an HTML table if present, otherwise
+ * tab-separated text.
  */
 export function parseClipboardAsGrid(e: ClipboardEvent): string[][] | null {
   const html = e.clipboardData?.getData("text/html");
@@ -603,10 +586,9 @@ export function parseTsvToGrid(text: string): string[][] | null {
   const lines = text.split(/\r?\n/).filter(l => l.length > 0);
   if (lines.length === 0) return null;
 
-  // Only treat plain text as tabular when it is genuinely tab-delimited and
-  // at least one row yields two or more columns. Prose — including multi-line
-  // prose with runs of spaces, such as copied verse — has no tab delimiters
-  // and must never be folded into a table.
+  // Plain text is a table only if it has tabs and at least one row has two or
+  // more columns, so prose (even with runs of spaces, like copied verse) is
+  // never turned into a table.
   if (!lines.some(l => l.includes("\t"))) return null;
   const grid = lines.map(l => l.split("\t"));
   if (!grid.some(r => r.length >= 2)) return null;

@@ -3,30 +3,24 @@ import { createHoverGuard } from "../lib/picker-hover";
 
 /**
  * The chips-and-dropdown control the Properties panel uses to pick several
- * values at once — tags, aliases, any list property, and collections.
- *
- * It is one component rather than one per property because the two are the
- * same control: a row of chips that opens a checkable list. Keeping them
- * together is also what makes the keyboard behaviour worth writing once —
- * every list here answers to the same keys:
+ * values (tags, aliases, list properties, collections): a row of chips that
+ * opens a checkable list. Every list answers to the same keys:
  *
  *   Enter / Space / ↓ on the chips row  open the list
  *   ↑ ↓ Home End                        move the highlight
  *   Enter                               add or remove the highlighted value
  *   Escape                              close and return to the chips row
- *   Tab                                 close and carry on out of the panel
+ *   Tab                                 close and move on out of the panel
  *
  * The highlight is a signal, not DOM focus: focus stays in the filter box so
- * the writer can keep typing while arrowing through the matches. Where there
- * is no filter box, the list itself takes focus and answers the same keys.
+ * the user can keep typing while moving through matches. Without a filter box
+ * the list itself takes focus and answers the same keys.
  *
- * For assistive tech, whichever element holds the focus while the list is
- * open is the one that describes it: the filter box is the combobox, and the
- * focused list is a listbox, each naming the highlighted row through
- * `aria-activedescendant`. The chips row is only the button that opens them.
- * Putting the combobox role on the row instead would leave the focused
- * element with nothing a screen reader recognises, so the highlight would go
- * unannounced.
+ * For screen readers, the focused element describes the open list: the filter
+ * box is the combobox, or the focused list is a listbox, each pointing at the
+ * highlighted row with `aria-activedescendant`. The chips row is only the
+ * button that opens them; with the combobox role on the row, the highlight
+ * would go unannounced.
  */
 
 export interface MultiSelectPickerProps {
@@ -46,11 +40,10 @@ export interface MultiSelectPickerProps {
   /** Message shown in place of an empty list. */
   noOptionsLabel: string;
 
-  // The filter box and its "add what I typed" row. These are separate props
-  // rather than one `filter` object because Solid tracks each prop on its own:
-  // a caller that rebuilds an object on every keystroke makes the whole
-  // subtree — including the box being typed into — rebuild with it, which
-  // takes the focus and the next character with it.
+  // The filter box and its "add what I typed" row. Separate props rather than
+  // one `filter` object, because Solid tracks each prop separately: an object
+  // rebuilt on every keystroke would rebuild the box being typed in, losing
+  // focus and the next character.
 
   /** Show a filter box above the list. */
   filterable?: boolean;
@@ -118,9 +111,8 @@ const MultiSelectPicker: Component<MultiSelectPickerProps> = (props) => {
       const value = props.options[index];
       if (value !== undefined) props.onToggle(value);
     }
-    // Saving a value sends the panel back to the note's metadata, and the
-    // redraw that follows can blur whatever had focus. Claim it back so the
-    // writer can keep picking without reaching for the mouse.
+    // Saving a value refreshes the panel, which can lose focus; take it back so
+    // the user can keep picking from the keyboard.
     setTimeout(() => {
       if (props.open) (props.filterable ? inputRef : listRef)?.focus();
     }, 0);
@@ -261,11 +253,10 @@ const MultiSelectPicker: Component<MultiSelectPickerProps> = (props) => {
             aria-activedescendant={
               !props.filterable && rowCount() > 0 ? rowId(highlight()) : undefined
             }
-            /* Bound unconditionally on purpose. A handler written as a
-               conditional expression makes Solid rebuild this whole block
-               whenever anything that expression reads changes — which would
-               replace the filter box mid-keystroke. Nothing double-handles:
-               the filter box is a sibling, so its keys never reach here. */
+            /* Always bound: a conditional handler would make Solid rebuild
+               this block, replacing the filter box mid-keystroke (see
+               AGENTS.md). The filter box is a sibling, so its keys don't
+               arrive here. */
             onKeyDown={handleListKeyDown}
             ref={(el) => (listRef = el)}
           >

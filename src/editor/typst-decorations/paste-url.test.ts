@@ -3,10 +3,9 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { pasteUrlHandler } from "./paste-url";
 
-// The load-bearing invariant: the "Link or plain text?" prompt is only
-// meaningful when pasting *over a selection* (wrap-as-label vs. replace). With
-// a collapsed cursor the visual editor renders the bare URL as clickable
-// either way, so the paste must go in as plain text with no prompt.
+// The "Link or plain text?" prompt only matters when pasting over a selection
+// (use as label, or replace). With no selection the visual editor shows the URL
+// as a link either way, so it is pasted as plain text without asking.
 
 const URL = "https://example.test/page";
 
@@ -70,7 +69,7 @@ describe("pasteUrlHandler", () => {
     "obsidian://open?vault=V&file=N",
     "ftp://files.example.test/x.txt",
     "some-future-app+v2://thing",
-    "mailto:joshua@phydeau.org",
+    "mailto:athena@inkycap.org",
   ])("pastes %s as a #link call into blank space", (url) => {
     const v = mk("foo ", 4);
     expect(pasteUrlHandler(pasteEvent(url), v)).toBe(true);
@@ -83,17 +82,17 @@ describe("pasteUrlHandler", () => {
 
   it("pastes a bare email address as a mailto: link", () => {
     const v = mk("foo ", 4);
-    pasteUrlHandler(pasteEvent("joshua@phydeau.org"), v);
-    expect(v.state.doc.toString()).toBe('foo #link("mailto:joshua@phydeau.org")');
+    pasteUrlHandler(pasteEvent("athena@inkycap.org"), v);
+    expect(v.state.doc.toString()).toBe('foo #link("mailto:athena@inkycap.org")');
     v.destroy();
   });
 
   it("offers the escaped address as the plain-text form of a pasted email", () => {
     const v = mk("foo bar baz", 4, 7);
-    pasteUrlHandler(pasteEvent("joshua@phydeau.org"), v);
+    pasteUrlHandler(pasteEvent("athena@inkycap.org"), v);
     const rows = visibleMenu()!.querySelectorAll<HTMLElement>(".paste-url-menu__item");
     rows[1].dispatchEvent(new MouseEvent("mousedown")); // "Plain text"
-    expect(v.state.doc.toString()).toBe("foo joshua\\@phydeau.org baz");
+    expect(v.state.doc.toString()).toBe("foo athena\\@inkycap.org baz");
     v.destroy();
   });
 

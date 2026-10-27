@@ -2,19 +2,14 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { GitStatusSummary } from "./types";
 
-// Some events belong to one window's notebox and carry no path the frontend
-// could filter on (git status, index build results), so the backend targets
-// each at its owning window via `emit_to(window_label, …)`. But `listen()`
-// defaults to a catch-all (target `Any`) that receives events emitted to ANY
-// target — including a *different* window's — so without scoping, syncing or
-// indexing in one open notebox would reach every other window too. Passing
-// these options scopes a listener to the current window's label, so it ignores
-// events emitted to other windows while still receiving this window's.
-// (File-watcher events need no scoping: listeners already filter by path.)
+// Some events belong to one window's notebox and carry no path to filter on
+// (git status, index build results), so the backend sends each to its window
+// with `emit_to(window_label, …)`. But `listen()` by default also hears events
+// sent to other windows, so these options limit a listener to this window.
+// (File watcher events are already filtered by path.)
 //
-// Resolved lazily (per subscribe) and guarded: `getCurrentWebviewWindow()`
-// throws outside a Tauri webview (e.g. the Vitest/jsdom env), where falling
-// back to the default target is harmless.
+// Resolved per subscribe, with a fallback: `getCurrentWebviewWindow()` throws
+// outside a Tauri webview (e.g. Vitest/jsdom), where the default is fine.
 export function thisWindowOnly(): { target: string } | undefined {
   try {
     return { target: getCurrentWebviewWindow().label };
@@ -81,9 +76,9 @@ export function onIndexRebuilt(
   }).then((unlisten) => unlisten);
 }
 
-// Emitted after the backend rebases bookmark paths in response to an
-// InkyCap-initiated rename or move, so the Bookmarks pane re-queries and drops
-// stale paths. Broadcast (not window-scoped) because bookmarks are app-global.
+// Sent after the backend updates bookmark paths for a rename or move in
+// InkyCap, so the Bookmarks pane reloads. Sent to all windows, since bookmarks
+// are app-wide.
 export function onBookmarksChanged(
   callback: () => void,
 ): Promise<() => void> {
@@ -93,10 +88,10 @@ export function onBookmarksChanged(
 }
 
 // ─────────────────────────── Git collaboration ─────────────────────────────
-// The backend emits `notebox:git-*` throughout the fetch → review →
-// consolidate → push loop (see `src-tauri/src/commands/git.rs` and
-// `commands/notebox.rs::surface_git_status`). The git store subscribes to
-// these to drive the syncing indicator and refresh status.
+// The backend sends `notebox:git-*` events during fetch, review, merge and push
+// (see `src-tauri/src/commands/git.rs` and
+// `commands/notebox.rs::surface_git_status`). The git store uses them for the
+// syncing indicator and status.
 
 /** Emitted on notebox open for a collaborative repo: the configured remote +
  *  branch and a status summary. */

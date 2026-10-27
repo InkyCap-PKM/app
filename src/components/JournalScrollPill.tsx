@@ -1,19 +1,10 @@
-// ---------------------------------------------------------------------------
-// Journal Scroll pill — the on/off toggle. Lives in the right group of
-// `.editor-header`, immediately before the source/visual/read mode toggle.
+// Journal Scroll pill: the on/off toggle, in the right group of
+// `.editor-header` just before the source/visual/read toggle. The scroll's own
+// controls (date direction, return to anchor) are in the right panel beside the
+// Scroll Context indicator, so this stays one button.
 //
-// When scroll is on, the scroll's own controls (date direction and
-// return-to-anchor) live in the right panel, beside the Scroll Context
-// indicator — not here. The pill stays a single button so the editor header
-// isn't crowded.
-//
-// The scroll reads as a date feed sorted by the user's "Sort by" setting and
-// scoped by their "Anchor scope" setting, anchored on whatever note was
-// active when it was switched on.
-//
-// Anchor-connection decoration (accent strips + per-entry header icons) is a
-// built-in, always-on feature of the scroll feed — there is no toggle for it.
-// ---------------------------------------------------------------------------
+// The scroll is a date feed sorted by the user's "Sort by" setting and scoped by
+// "Anchor scope", anchored on the note that was active when it was turned on.
 
 import { Component } from "solid-js";
 import { Scroll, ScrollText } from "lucide-solid";

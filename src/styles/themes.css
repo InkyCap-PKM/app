@@ -10,24 +10,19 @@
  *   Racing Red  #EE2E31 */
 
 :root {
-  /* Pre-JS fallback font stacks. These render only for the brief window
-   * before applyFontSettings() (theme.ts) resolves the user's font
-   * settings into the runtime variables (--md-body-font, --interface-
-   * font, --editor-font-mono). They lead with InkyCap's own bundled
-   * families (see bundled-fonts.css) — guaranteed present because the
-   * app ships them — then a generic keyword. Keep in sync with
-   * SANS_FALLBACK / MONO_FALLBACK in theme.ts. */
+  /* Fallback font stacks, used only until applyFontSettings() (theme.ts)
+   * sets the runtime font variables. They start with InkyCap's bundled
+   * families (see bundled-fonts.css). Keep in sync with SANS_FALLBACK /
+   * MONO_FALLBACK in theme.ts. */
   --editor-font-body: "Inter", system-ui, sans-serif;
   --editor-font-mono: "JuliaMono", ui-monospace, monospace;
 
-  /* Type scale — all UI font sizes reference these tokens.
-   * Adjust these values to scale the entire interface, and keep them in
-   * sync with TOKEN_BASES in src/lib/ui-scale.ts (the runtime rescaler
-   * overwrites these when the editor font size changes).
+  /* Type scale used by every UI font size. Keep in sync with TOKEN_BASES in
+   * src/lib/ui-scale.ts, which rescales these when the editor font size
+   * changes.
    *
-   * The chrome sizes (2xs–lg) step by 1px for dense UI text. The heading
-   * sizes (xl–3xl) step by a ~1.2 ratio ladder (15 → 18 → 22 → 28) so
-   * titles establish hierarchy through scale, not just weight. */
+   * Chrome sizes (2xs–lg) step by 1px; heading sizes (xl–3xl) by about 1.2×
+   * (15 → 18 → 22 → 28). */
   --text-2xs: 10px;
   --text-xs: 11px;
   --text-sm: 12px;
@@ -38,10 +33,9 @@
   --text-2xl: 22px;
   --text-3xl: 28px;
 
-  /* Line-height scale — pair with the type scale so vertical rhythm is
-   * consistent instead of per-rule. none = glyph-height chrome (icon
-   * buttons, pills); tight = headings and single-line labels; normal =
-   * UI body text; relaxed = longer prose (help copy, hints). */
+  /* Line-height scale, paired with the type scale. none: icon buttons and
+   * pills; tight: headings and one-line labels; normal: UI text; relaxed:
+   * longer help text. */
   --leading-none: 1;
   --leading-tight: 1.3;
   --leading-normal: 1.45;
@@ -60,87 +54,60 @@
   --ui-scale: 1;
 
   /* ── Corner-radius scale ────────────────────────────────────────
-     One scale for the whole UI. Reach for a step, never a literal px.
+     One scale for the whole UI; use a step, never a literal px.
        --radius-sm  inputs, badges, chips
-       --radius-md  full/primary buttons, tabs, cards, dropdowns, popups
+       --radius-md  full buttons, tabs, cards, dropdowns, popups
        --radius-lg  modals / dialogs
-     --radius-control is the SMALL-control radius: icon buttons, small
-     pills/toggles, compact (.btn--sm) buttons, and chips. It resolves to
-     --radius-sm because a 7px corner reads as over-rounded at that small
-     footprint (size-proportional radius). Larger surfaces (tabs, cards,
-     full buttons) stay on --radius-md. */
+     --radius-control is for small controls (icon buttons, small pills and
+     toggles, .btn--sm, chips). It resolves to --radius-sm, since 7px looks
+     too round at that size. */
   --radius-xs: 2px;   /* hairline corners: inline marks, match highlights */
   --radius-sm: 4px;
   --radius-md: 7px;
   --radius-lg: 8px;
   --radius-full: 999px;   /* pills and fully-rounded tracks */
   --radius-control: var(--radius-sm);
-  /* Radius for text inputs, textareas, and select/combobox triggers. Unified
-     with --radius-control so form controls share the small-control roundedness
-     — an input or Dropdown sits next to icon buttons and small pills, and a
-     7px field beside a 4px button reads as inconsistent. */
+  /* Text inputs, textareas and select triggers share --radius-control, so a
+     field matches the small buttons beside it. */
   --radius-input: var(--radius-control);
 
   /* ── Editor content surface ─────────────────────────────────────
-     The writing area runs edge to edge with square corners. The page colour
-     meets the chrome along a straight seam, drawn by the column's side
-     hairlines (.main-content__body) and by the lip shadows the toolbar and
-     status bar cast (--lip-* below). Flat is the default because rounding the
-     writing surface softens all four of its edges at once, and this boundary
-     reads better drawn sharply.
+     The writing area runs edge to edge with square corners, its edges drawn
+     by the column's side hairlines (.main-content__body) and the lip shadows
+     (--lip-* below).
 
-     These two tokens are the switch, and the rest of the family follows them.
-     Give them a radius and an inset and the surface becomes a card floating
-     in a gutter of --editor-surface-gutter, with the panel behind it, the
-     reading views and the column's bottom corners all picking up the
-     concentric outer radius. --radius-control and --space-2 are the values
-     that recipe was tuned at. Switching it on also wants the lip shadows and
-     the side hairlines turned off, since a card draws its own edge. */
+     Give these two tokens a radius and an inset to make the surface a card
+     in a gutter of --editor-surface-gutter; the related corners follow. It
+     was tuned at --radius-control and --space-2. A card also wants the lip
+     shadows and side hairlines turned off. */
   --editor-surface-radius: 0;
   --editor-surface-inset: 0;
-  /* Colour of the inset gutter. Only visible while --editor-surface-inset is
-     non-zero. Its own tone rather than plain chrome, so
-     the card reads as sitting in a shallow recess instead of floating on an
-     unbroken field. Derived: nudging --bg-secondary towards
-     --fg-primary steps it further from the page colour in every palette —
-     darker than the chrome in light themes, lighter in dark ones, where the
-     chrome is already the lighter of the two. Lower the percentage for a
-     stronger band, raise it towards 100% to fade back into the chrome. */
+  /* Colour of the inset gutter, visible only when --editor-surface-inset is
+     non-zero. --bg-secondary nudged towards --fg-primary, so it is a step
+     away from the page in every palette. Lower the percentage for a stronger
+     band. */
   --editor-surface-gutter: color-mix(in srgb, var(--bg-secondary) 96%, var(--fg-primary));
-  /* Radius for the panel that holds the writing surface. Concentric with the
-     card: inner radius plus the gutter width, so the two curves share a centre
-     and the gutter stays an even thickness all the way round the corner. Any
-     surface that paints over the panel's corners (toolbar, reading view) has
-     to repeat the matching corners, since the panel can't use overflow:hidden
-     — the toolbar's overflow menu drops outside it. */
+  /* Radius of the panel holding the writing surface: the card's radius plus
+     the gutter, so the gutter is even round the corner. Surfaces painting
+     over the panel's corners (toolbar, reading view) must repeat these
+     corners, because the panel can't clip with overflow: hidden (the
+     toolbar's overflow menu extends past it). */
   --editor-surface-radius-outer: calc(var(--editor-surface-radius) + var(--editor-surface-inset));
 
   /* ── Active editor tab ──────────────────────────────────────────
-     The active tab is a small card on the tab strip. Its fill is the primary
-     cue and should always read as a step *towards the light* from the strip
-     it sits on — brighter in light themes, lighter in dark ones. Do not
-     reach for --bg-primary here: in the dark palettes the page colour is
-     darker than the chrome, so using it sinks the active tab into the strip
-     instead of lifting it out.
+     The active tab is a small card. Its fill should be a step lighter than
+     the strip in every theme. Don't use --bg-primary: in dark palettes the
+     page is darker than the chrome.
 
-     The edge and the shadow are supporting cues only, kept faint so they
-     define the card's shape without outlining it. All three add up, so each
-     one stays quiet on its own — a firm edge drawn on top of a shadow is
-     what makes the tab shout rather than simply sit forward.
-
-     Light themes have real headroom above the chrome, so the fill is the
-     page white and the edge can stay soft. A palette whose chrome is already
-     nearly white has no headroom, and has to lean on the edge instead — see
-     the warm light override. Raise the border percentage for a crisper
-     outline, lower it to let fill and shadow carry the lift alone. */
+     Keep the edge and shadow faint; they only support the fill. A palette
+     whose chrome is nearly white relies on the edge instead (see the warm
+     light override). */
   --tab-active-bg: var(--bg-primary);
   --tab-active-border: color-mix(in srgb, var(--border-input) 45%, var(--bg-secondary));
 
   /* ── Spacing scale ──────────────────────────────────────────────
-     Geometric-ish step scale for padding/gap. The recurring ad-hoc
-     paddings (2px 6px, 4px 8px, 6px 14px) map onto these. Multiplied
-     by --density so a single toggle rescales interface tightness
-     (see [data-density="compact"] override below). */
+     Steps for padding and gap, multiplied by --density (see
+     [data-density="compact"] below). */
   --density: 1;
   --space-1: calc(2px * var(--density));
   --space-2: calc(4px * var(--density));
@@ -153,166 +120,111 @@
   --space-8: calc(32px * var(--density));
   --space-9: calc(48px * var(--density));
 
-  /* Callout frame: a thin corner bracket at the top-left and bottom-right of
-     the box, in the callout's colour. Across and down are how far the bracket
-     runs along the horizontal and vertical edges; width is the line
-     thickness. Strength is how opaque the bracket is: it sits on the box's
-     tint, so 30% lands 30% of the way from the tint to the full colour. Used by
-     the visual editor and Reading mode. */
+  /* Callout frame: a corner bracket at the top-left and bottom-right, in the
+     callout's colour. Across and down are its length along each edge, width
+     its thickness, strength its opacity over the box's tint. Used by the
+     visual editor and Reading mode. */
   --callout-corner-across: 5em;
   --callout-corner-down: 2em;
   --callout-corner-width: 2px;
   --callout-corner-strength: 30%;
 
-  /* Thickness of every scrollbar in the app (see reset.css). Layout that must
-     keep clear of a scrollbar, such as the status bar's right end, measures
-     from this. */
+  /* Thickness of every scrollbar (see reset.css). Layout that must clear a
+     scrollbar uses this. */
   --scrollbar-size: 12px;
 
-  /* The panel resize handles (.resize-handle) are built from two widths.
-     --resize-handle-width is the bar you SEE on hover. --resize-handle-hit is
-     the invisible strip that DETECTS the hover; it straddles the panel divider
-     so the pointer finds the handle without pixel-hunting for a 3px line.
-     Splitting the two lets the target grow without thickening the bar.
+  /* Panel resize handles (.resize-handle): --resize-handle-width is the bar
+     shown on hover; --resize-handle-hit is the wider invisible strip that
+     detects the pointer.
 
-     Anything under the hit strip stops being clickable, which is why each
-     strip sits wholly inside its own side panel instead of straddling the
-     divider: it never reaches into the content column, where it would land on
-     the editor's own scrollbar. Inside the left sidebar it does cover that
-     panel's scrollbar, so a sidebar scroll region stops the full hit width
-     short of its right edge (see `.left-sidebar__pane-body`). Keep both
-     handles on these two values so the left and right panels stay
-     symmetrical.
-
-     That last point is why the hit width is also the width of the empty band
-     between a sidebar list's scrollbar and the panel divider — every pixel of
-     hit strip is a pixel the scrollbar has to give up. 8px keeps a pointer
-     target well clear of the 3px bar it grabs (and wider than the 4-5px
-     dividers most desktop apps ship) while leaving the band narrow enough
-     that the scrollbar still reads as sitting at the panel's edge. */
+     The hit strip blocks clicks beneath it, so each sits inside its own side
+     panel rather than over the content column's scrollbar. In the left
+     sidebar it covers the panel's scrollbar, so sidebar scroll regions stop
+     short of it (see `.left-sidebar__pane-body`). The hit width is therefore
+     also the gap between a sidebar's scrollbar and the divider. Use these
+     values for both panels. */
   --resize-handle-width: 3px;
   --resize-handle-hit: 8px;
 
   /* ── Buttons & focus ────────────────────────────────────────────
-     Shared button geometry consumed by the .btn utility (layout.css).
-     The focus ring is the single keyboard-focus affordance, applied via
-     :focus-visible across interactive elements. */
-  /* One opacity for every :disabled control. Low enough to read as
-     inert at a glance — a barely-dimmed disabled control invites
-     clicks it will swallow. */
+     Button geometry for the .btn utility (layout.css). The focus ring is the
+     one keyboard-focus indicator. */
   --disabled-opacity: 0.4;
 
   --btn-pad-y: 6px;
   --btn-pad-x: 14px;
   --btn-radius: var(--radius-md);
-  /* One colour, two shapes, because a ring is drawn two ways in this app.
-     --focus-ring is the box-shadow form, used by controls that override the
-     outline themselves (.btn, .ui-icon-btn and friends). --focus-ring-outline
-     is the outline form, used by the base rule in reset.css that catches
-     everything with no ring of its own. Both sit immediately outside the
-     border box and follow its corner radius, so the two are interchangeable
-     to look at. Retune --focus-ring-color and the whole app follows.
+  /* The focus ring in two forms: --focus-ring (box-shadow, for controls that
+     replace the outline, such as .btn and .ui-icon-btn) and
+     --focus-ring-outline (outline, for the base rule in reset.css). They
+     look the same. Change --focus-ring-color to restyle both.
 
-     --focus-ring-drawn is the extra step between the colour and the shapes.
-     It exists so the ring can be switched off wholesale (see the pointer rule
-     just below) without that switch having to out-specify the per-theme and
-     prefers-contrast overrides of --focus-ring-color further down the file. */
+     --focus-ring-drawn lets the ring be turned off as a whole (see the
+     pointer rule below) without overriding the per-theme and high-contrast
+     colours. */
   --focus-ring-color: color-mix(in srgb, var(--accent-color, #1D7874) 45%, transparent);
   --focus-ring-drawn: var(--focus-ring-color);
   --focus-ring: 0 0 0 2px var(--focus-ring-drawn);
   --focus-ring-outline: 2px solid var(--focus-ring-drawn);
-  /* Text fields mark focus by thickening their border as well as recolouring
-     it, so focus shows by shape and not only by colour. Drawn inside the
-     border so the field doesn't change size. Unlike the ring above, this
-     stays on for mouse users: a text field always needs to show where typing
-     will go. */
+  /* Text fields show focus with a thicker border as well as colour, drawn
+     inside so the field doesn't resize. Unlike the ring, this also shows for
+     mouse users. */
   --input-focus-edge-width: 1px;
   --input-focus-edge: inset 0 0 0 var(--input-focus-edge-width) var(--border-input-focus);
 
   /* ── Motion ─────────────────────────────────────────────────────
-     Consistent micro-interaction timing. Keep transitions short and
-     uniform so the UI feels responsive, not animated. */
-  /* The motion vocabulary, in full: transient surfaces (menus,
-     dropdowns, palettes, tooltips, modals) fade in with surface-in
-     over --dur-fast; toasts slide from their edge; state changes
-     transition over --dur-fast/--dur-base; only progress indicators
-     animate continuously. Nothing else moves. */
+     Keep transitions short and consistent. Menus, dropdowns, palettes,
+     tooltips and modals fade in with surface-in over --dur-fast; toasts
+     slide in from their edge; state changes take --dur-fast or --dur-base;
+     only progress indicators animate continuously. */
   --ease-out: cubic-bezier(0.2, 0, 0, 1);
   --dur-fast: 120ms;
   --dur-base: 200ms;
 
   /* ── Elevation tiers ────────────────────────────────────────────
-     Named surface levels for layered chrome. These alias the per-theme
-     background primitives (resolved at use time, so they stay correct
-     under every theme/palette): surface-0 = base content, surface-1 =
-     raised chrome (sidebars, panels), surface-2 = active/selected. */
+     Aliases of the per-theme backgrounds: surface-0 base content, surface-1
+     raised chrome (sidebars, panels), surface-2 active or selected. */
   --surface-0: var(--bg-primary);
   --surface-1: var(--bg-secondary);
   --surface-2: var(--bg-active);
 
   /* ── Surface roles ──────────────────────────────────────────────
-     Two coordinated UI-surface styles, distinguished by element ROLE,
-     not by where on screen the element is triggered (a menu is a menu
-     whether it opens from a sidebar or inside the editor).
+     Two surface styles, chosen by the element's role, not by where it opens.
 
-       --popup-*  Floating, transient surfaces: context menus,
-                  dropdowns, command/slash palettes, suggestion &
-                  autocomplete popups, hover preview tooltips, the
-                  visual-editor pill menu, floating toolbars.
-       --modal-*  Centered, backdropped, dismiss-to-continue dialogs:
-                  Settings, Export, Quick Open, busy overlay.
+       --popup-*  Floating, transient surfaces: context menus, dropdowns,
+                  command and slash palettes, suggestion popups, hover
+                  previews, the pill menu, floating toolbars.
+       --modal-*  Centred, backdropped dialogs: Settings, Export, Quick Open,
+                  busy overlay.
 
-     RULE: every such element references these tokens — never hardcode
-     a popup/modal background, border, radius, shadow, or z-index.
-     Stacking uses the --z-menu < --z-modal < --z-toast scale below.
-     The tokens work in plain CSS, CodeMirror EditorView.theme objects,
-     and inline style strings alike. Adding a new menu means pointing
-     at these, not copying literal values from a neighbour. Colour
-     tokens reference the per-theme primitives via var(), so they
-     resolve correctly under every theme/palette — retune the whole
-     UI's popup or modal look from here. (See also CLAUDE.md →
-     Coding Standards → UI surfaces.) */
+     Every such element uses these tokens; never hardcode a popup or modal
+     background, border, radius, shadow or z-index. Stacking uses --z-menu <
+     --z-modal < --z-toast. The tokens work in CSS, CodeMirror themes and
+     inline styles. (See AGENTS.md → UI surfaces.) */
 
   /* Popup surface — floating menus, dropdowns, suggestion popups. */
   --popup-bg: var(--bg-primary);
-  /* The perimeter line, and the strongest line anywhere on the surface.
-     Derived from the theme's own ink and surface colours so it lands at the
-     same visual strength in every palette: clearly darker than a light menu,
-     clearly lighter than a dark one.
-
-     This 1px border is the ONLY thing that draws the edge. Adding a second
-     hairline outside it (a 0-blur ring, say) doubles the perimeter to 2px,
-     and a 2px edge reads as thick and soft rather than thin and sharp — the
-     opposite of the intent. If the edge needs more presence, raise this
-     percentage; don't add another line.
-
-     The percentage is NOT the same in light and dark — see the override in
-     the dark block below. */
+  /* The popup's border, derived from the theme's ink and surface colours so
+     it has the same strength in every palette. This 1px border is the only
+     edge: a second hairline makes the edge look thick and soft. To
+     strengthen it, raise the percentage. Dark themes use a different
+     percentage (see below). */
   --popup-border-color: color-mix(in srgb, var(--fg-primary) 25%, var(--popup-bg));
   /* Divider between groups of rows INSIDE a menu. Deliberately lighter than
      the perimeter, so the outline still reads as the edge of the object. */
   --popup-separator-color: var(--border-subtle);
   --popup-radius: var(--radius-md);
-  /* Radius for a dropdown that hangs off a control (combobox, path field,
-     font picker) instead of floating free. It matches the control's own
-     corner so the field and its list read as one object. */
+  /* Radius of a dropdown attached to a control (combobox, path field, font
+     picker), matching the control so they read as one. */
   --popup-radius-attached: var(--radius-input);
-  /* Elevation. The shadow never touches the edge — that is the border's job
-     alone — so both layers hang below and around the surface rather than
-     sitting on the boundary blurring it.
-
-     The weighting is the part that matters: the wide ambient layer is the
-     HEAVIER of the two. That is what makes a menu look lifted off the page.
-     A tight blur carrying more weight than the wide one is what makes an
-     edge look smudged, which is how this token was originally written.
-     Colours are set per theme below, because a dark surface swallows a
-     black shadow that a light one shows plainly. */
+  /* Elevation. The shadow sits below and around the surface, never on its
+     edge. The wide ambient layer is the heavier of the two; that is what
+     lifts a menu, while a heavy tight layer looks smudged. Colours are set
+     per theme, since dark surfaces swallow black shadows. */
   --popup-shadow:
     0 1px 2px var(--popup-shadow-contact),
     0 6px 16px var(--popup-shadow-ambient);
-  /* Same surface opened upwards (a drop-up, when there is no room below).
-     Identical weights, mirrored so the menu still lifts away from its
-     anchor rather than casting back onto it. */
+  /* The same shadow mirrored, for a menu that opens upwards. */
   --popup-shadow-up:
     0 -1px 2px var(--popup-shadow-contact),
     0 -6px 16px var(--popup-shadow-ambient);
@@ -323,10 +235,8 @@
   --modal-bg: var(--bg-primary);
   --modal-border-color: var(--border-primary);
   --modal-radius: var(--radius-lg);
-  /* Same two-layer shape as --popup-shadow, scaled up for a dialog: a tight
-     contact layer, then a wider ambient layer carrying most of the weight.
-     A dialog sits on a dimmed backdrop, which already separates it from the
-     page, so its edge needs less help than a menu's does. */
+  /* The popup shadow scaled up for a dialog. The backdrop already separates
+     a dialog from the page, so its edge needs less help. */
   --modal-shadow: 0 2px 6px rgba(0, 0, 0, 0.3), 0 10px 24px rgba(0, 0, 0, 0.18);
   --modal-backdrop: rgba(0, 0, 0, 0.45);
 
@@ -335,35 +245,26 @@
   --z-menu: 1000;
   --z-modal: 2000;
   --z-toast: 3000;
-  /* A menu/popover *triggered from within a modal* — e.g. a HelpButton's
-     "?" popover inside Settings, or a dropdown opened in the Export dialog.
-     It is Portaled to <body>, so it becomes a sibling of the modal and a
-     plain --z-menu would paint behind it. This layer floats above modals
-     while still sitting below --z-toast, so errors surface over everything.
-     Use it for floating surfaces that can open from inside a modal. */
+  /* For a menu or popover opened from inside a modal (e.g. a help popover in
+     Settings). It is portalled to <body>, so plain --z-menu would sit behind
+     the modal. Still below --z-toast. */
   --z-menu-over-modal: 2500;
 }
 
-/* Compact density — rescales the --space-* padding/gap scale in one
-   lever. Set data-density="compact" on <html> (Settings → Appearance).
-   Only paddings expressed through the spacing scale shrink; the scale's
-   adoption grows as more rules migrate off hardcoded px. */
+/* Compact density: set data-density="compact" on <html> (Settings →
+   Appearance). Only paddings using the spacing scale shrink. */
 [data-density="compact"] {
   --density: 0.85;
 }
 
 :root,
 [data-theme="light"] {
-  /* Native form controls (scrollbars, checkboxes, date pickers) follow
-     the theme rather than the desktop palette. App dropdowns are the
-     custom <Dropdown> component, not native <select>. */
+  /* Native controls (scrollbars, checkboxes, date pickers) follow the theme. */
   color-scheme: light;
 
-  /* Backgrounds — neutral gray palette. --bg-primary is the bright
-     main-content surface; --bg-secondary is the chrome (sidebars, tab
-     bar, right panel, status bar, vertical toolbar). The writing surface
-     is pure white so the editor and the HTML preview match the paper
-     colour of the paged reading view. */
+  /* Backgrounds. --bg-primary is the main content surface; --bg-secondary
+     the chrome (sidebars, tab bar, right panel, status bar, toolbar). The
+     writing surface is white to match the paper of the paged reading view. */
   --bg-primary: #ffffff;
   --bg-editor-toolbar: #f5f5f5;
   --bg-secondary: #f2f2f2;
@@ -371,9 +272,8 @@
   --bg-hover: color-mix(in srgb, var(--accent-color, #1D7874) 12%, transparent);
   --bg-highlight: #d9d9d9;
   --bg-input: #ffffff;
-  /* Selection tint. The editor uses native browser `::selection` (no
-     `drawSelection` layer — see inkycapTheme in typst-editor.ts), so this
-     translucent colour is painted directly on the selected glyphs. */
+  /* Selection tint. The editor uses native `::selection` (see inkycapTheme
+     in typst-editor.ts), so this is painted on the selected text. */
   --bg-selection: color-mix(in srgb, var(--accent-color, #1D7874) 20%, transparent);
   --bg-matching-bracket: #d9d9d9;
   --bg-search-match: #f4dfc0;
@@ -383,10 +283,7 @@
   --border-subtle: #e6e6e6;
   --border-input: #c8c8c8;
   --border-input-focus: var(--accent-color, #1D7874);
-  /* A whisper of elevation for the active editor tab, so it lifts off the
-     strip as a solid card. Kept deliberately faint, and spread over a wider
-     blur than its offset — a diffuse pool reads as ambient depth, where a
-     tight dark drop reads as an object hovering above the row. */
+  /* A faint, diffuse shadow for the active tab. */
   --tab-active-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
   /* Off-state background for toggle switches — a clearly neutral grey so
      "off" reads as distinct from the accent-coloured "on" state. */
@@ -402,12 +299,9 @@
   --fg-gutter: #8a9e9a;
   --fg-separator: #d6d6d6;
 
-  /* Floating selection toolbar — a deliberately contrasting surface so it
-     stands out against the document text it overlaps (plain --popup-bg
-     equals --bg-primary, so it reads as the page). Light themes get a
-     dark toolbar; the dark theme overrides these with an elevated
-     surface. Derived from --fg-primary / --bg-primary so every palette
-     adapts automatically. */
+  /* Floating selection toolbar: a contrasting surface so it stands out from
+     the text it covers (--popup-bg matches the page). Dark in light themes;
+     the dark theme overrides it. */
   --toolbar-float-bg: color-mix(in srgb, var(--fg-primary) 94%, var(--bg-primary));
   --toolbar-float-fg: color-mix(in srgb, var(--bg-primary) 80%, var(--fg-primary));
   --toolbar-float-fg-strong: var(--bg-primary);
@@ -418,9 +312,8 @@
      reads as a raised object rather than a hole cut in the page. */
   --toolbar-float-highlight: rgba(255, 255, 255, 0.08);
 
-  /* Popup elevation — the two shadow layers of --popup-shadow. The contact
-     layer only seats the menu against the surface under it; the ambient
-     layer carries the lift, so it is the heavier of the two. */
+  /* The two layers of --popup-shadow. The contact layer seats the menu; the
+     ambient layer, the heavier one, lifts it. */
   --popup-shadow-contact: rgba(0, 0, 0, 0.10);
   --popup-shadow-ambient: rgba(0, 0, 0, 0.20);
 
@@ -436,11 +329,8 @@
   --accent-danger: #c42025;
   --accent-danger-bg: #fde8e8;
 
-  /* Semantic status family — one hue per meaning, app-wide. Any UI that
-     communicates a state (an error row, a success check, a caution note,
-     an informational hint) uses these rather than an ad-hoc colour, so
-     the meaning of each hue stays learnable across the whole app.
-     Danger is the pre-existing --accent-danger above. */
+  /* Status colours, one hue per meaning across the app: use these for any
+     error, success, warning or info state. Danger is --accent-danger above. */
   --accent-warn: #d97706;
   --accent-success: #2a6a50;
   --accent-info: #2563eb;
@@ -496,11 +386,10 @@
   --highlight-bg: #f9e8cc;
   --highlight-mark: #8a9e9a;
 
-  /* Highlighter palette presets (see PRESET_HIGHLIGHT_VARS in
-     visual-colors.ts). Light mode shows the literal fill that the Typst
-     source carries; dark mode substitutes a slightly muted equivalent so
-     the marker doesn't glare against the dark editor. Text on highlights is
-     pinned near-black, so dark-mode values stay light enough to read on. */
+  /* Highlighter presets (see PRESET_HIGHLIGHT_VARS in visual-colors.ts).
+     Light mode uses the fill from the Typst source; dark mode a slightly
+     muted one. Text on highlights is near-black, so dark values must stay
+     light. */
   --hl-red: #ff9f97;
   --hl-orange: #ffd6a8;
   --hl-yellow: #f2ed61;
@@ -531,64 +420,37 @@
   --callout-example: #6a5ea8;
   --callout-quote: color-mix(in srgb, var(--accent-color, #1D7874) 50%, white);
 
-  /* Status bar — blends with the chrome. Tracks --bg-secondary rather than
-     repeating its value, so the two can't drift when one is retuned. Every
-     palette below inherits this: --bg-secondary is re-declared per palette
-     and the substitution picks up whichever value wins the cascade. */
-  /* The lip shadows: cast down by a pane toolbar (.pane-toolbar) and up by the
-     status bar (.main-content::after), so content reads as passing underneath
-     rather than stopping at a seam. Two strengths because the toolbar sits
-     closer to the eye than the status bar does. They have to be tokens: a
-     black shadow has plenty of range to darken a near-white surface, almost
-     none on a near-black one, so the dark themes need a much heavier alpha to
-     land the same visible step. */
-  /* Height of the row directly below the 38px chrome tier, right across the
-     window: a pane's toolbar (.pane-toolbar — Editor, Journal Scroll, Mycelial
-     View) and the first section header of the left sidebar and right panel
-     (.left-sidebar__section-header / .right-panel__section-header). One value
-     so the three columns read as a single band, and so switching a tab between
-     pane types doesn't shift the content below by a few pixels each time. It
-     is a floor, not a cap: controls in the row have to fit inside it, which is
-     why the Mycelial depth picker uses the compact Dropdown. One step shorter
-     than the chrome tier above it, because it sits inside a pane. */
+  /* Status bar background follows --bg-secondary, including per-palette
+     values.
+
+     Lip shadows: cast down by a pane toolbar (.pane-toolbar) and up by the
+     status bar (.main-content::after), so content seems to pass beneath
+     them. Dark themes need a heavier alpha for the same visible step.
+
+     Height of the row below the 38px chrome tier: pane toolbars and the
+     first section header of each sidebar, so the three columns form one band
+     and switching pane types doesn't shift content. A minimum; controls in
+     it must fit (hence the compact Dropdown for the Mycelial depth picker). */
   --pane-toolbar-height: 32px;
-  /* Height for the controls inside that row: what the row leaves once its own
-     padding is taken off. Derived so the two stay in step, and shared so a
-     picker and a button side by side line up instead of each sizing itself
-     from its own padding and font. Every control in the band uses it —
-     toolbar buttons and panel-header buttons alike — so they all end on the
-     same line. */
+  /* Height of controls in that row (the row minus its padding), shared by
+     toolbar and panel-header buttons so they line up. */
   --pane-toolbar-control-height: calc(var(--pane-toolbar-height) - 2 * var(--space-2));
 
   --lip-shadow-toolbar: rgba(0, 0, 0, 0.19);
   --lip-shadow-status: rgba(0, 0, 0, 0.19);
   --lip-height: 4px;
-  /* The hard edge under each lip. The lip's soft cast is tapered to the width
-     of the text column (see --lip-fade), so out at the column's edges it
-     carries no separation at all; this 1px line is what still marks the
-     boundary there. Read them as a pair: the hairline says where the boundary
-     is, the lip says which side is on top. One value for both ends,
-     unlike the two --lip-shadow-* tones, because a hairline sits on the
-     boundary rather than casting across a surface, so it does not need to be
-     retuned per direction. Defaults to the theme's own subtle border so it
-     matches the panel edges already on screen; a theme can override it. */
+  /* The 1px line under each lip. The lip fades out beyond the text column
+     (see --lip-fade), so this line marks the boundary there. Defaults to the
+     theme's subtle border. */
   --lip-hairline: var(--border-subtle);
-  /* Both lips are drawn across the full width of the column, and --lip-fade
-     tapers their ends so neither one arrives at a side hairline as a hard
-     stop. The taper is tied to the writing measure: the lip is at full
-     strength for exactly as wide as the text column (--md-max-width, set by
-     TypstEditor from the "readable line length" setting) and dissolves across
-     the gutters on either side. So the seam reads as a line under the text
-     that fades away where the text stops, and it re-fits itself when the user
-     changes the line width or resizes the pane.
+  /* Fades the ends of both lips: full strength across the text column
+     (--md-max-width, from the "readable line length" setting), fading across
+     the gutters, so the seam follows the text width as it changes.
 
-     100% here resolves against the lip strip, which spans the pane, and the
-     column is centred in it, so half the leftover space is the taper on each
-     side. max() pins the taper to 0 when the measure is off (--md-max-width is
-     100%) or when the pane is narrower than the column, in which case the lip
-     runs edge to edge. For a shorter, fixed run-out instead, replace the whole
-     value with a plain length such as 30px. A mask takes its alpha from the
-     gradient, so the colour in it is arbitrary. */
+     100% is the pane-wide lip strip; half the leftover space is the fade on
+     each side. max() makes it 0 when there is no measure or the pane is
+     narrower than the column. For a fixed fade, use a plain length such as
+     30px. */
   --lip-fade: max(0px, calc((100% - var(--md-max-width, 100%)) / 2));
   --lip-fade-mask: linear-gradient(
     to right,
@@ -597,12 +459,10 @@
     #000 calc(100% - var(--lip-fade)),
     transparent
   );
-  /* --md-max-width is expressed in `ch`, which is sized by whatever font the
-     element using it has. The lips live on chrome elements that carry the UI
-     font, so anything reading --lip-fade must first adopt the editor body font
-     for its `ch` to mean the same thing the editor's column means. Apply this
-     to the lip element (see .pane-toolbar::after / .main-content::after). It
-     sets no text, only the unit basis. */
+  /* --md-max-width is in `ch`, which depends on the element's font. Apply
+     this to the lip element (see .pane-toolbar::after /
+     .main-content::after) so its `ch` matches the editor's. It sets no
+     visible text. */
   --lip-fade-font-basis: var(--md-body-size, 17px) / 1
     var(--md-body-font, var(--editor-font-body, sans-serif));
 
@@ -615,25 +475,14 @@
   --scrollbar-thumb: #c8c8c8;
 }
 
-/* The focus ring belongs to keyboard navigation, so it is drawn only while the
-   keyboard is what the user is navigating with. `data-input-modality` is set
-   on <html> by src/lib/input-modality.ts and already gates the file tree's and
-   the list panels' own keyboard cursors, so the ring joins a policy the app
-   had already settled on rather than inventing a second one.
+/* The focus ring is for keyboard navigation, so it is drawn only while the
+   keyboard is in use. `data-input-modality` is set on <html> by
+   src/lib/input-modality.ts.
 
-   This is also what stops a ring appearing around the last-clicked control
-   every time the window regains focus. WebKitGTK re-matches :focus-visible on
-   return, including for an element the user reached with the mouse, so
-   :focus-visible on its own cannot express the answer here. Blanking the
-   colour leaves nothing to paint with either way, and it covers both ring
-   shapes at once without any specificity contest against the component rules
-   that draw them. Controls that mark focus some other way, such as the text
-   inputs that shift their border colour, are unaffected: they never asked for
-   the ring.
-
-   This only holds while the modality attribute is right, which is why
-   input-modality.ts goes to some trouble to ignore the key chords the desktop
-   binds for switching windows. */
+   This also stops a ring reappearing on the last-clicked control when the
+   window regains focus: WebKitGTK re-matches :focus-visible then. Blanking
+   the colour removes both ring forms without a specificity contest.
+   Text-field focus borders are unaffected. */
 html[data-input-modality="pointer"] {
   --focus-ring-drawn: transparent;
 }
@@ -663,16 +512,11 @@ html[data-input-modality="pointer"] {
   --border-subtle: #0f3035;
   --border-input: #2a5a52;
   --border-input-focus: var(--accent-color, #1D7874);
-  /* The active tab lifts off the strip rather than dropping to the page
-     colour, which in the dark palettes is the darker of the two. Nudging the
-     chrome towards the text colour is the same trick --editor-surface-gutter
-     uses, and it resolves per palette: Ink Black's chrome warms towards its
-     teal-tinted text, warm dark's towards its neutral grey. 90% is roughly
-     the step a browser puts between its tab strip and its active tab.
-     Because the fill now carries the cue, the derived edge lands close
-     enough to the fill to read as no border at all — which is what we want
-     here. The shadow stays only to settle the card's lower edge; dark
-     surfaces swallow a faint one, so it is cast a touch wider. */
+  /* The active tab is the chrome nudged towards the text colour (as
+     --editor-surface-gutter does), because the dark page colour is darker
+     than the chrome. With the fill carrying the cue, the edge all but
+     disappears. The shadow is a little wider, since dark surfaces swallow
+     faint ones. */
   --tab-active-bg: color-mix(in srgb, var(--bg-secondary) 90%, var(--fg-primary));
   --tab-active-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
   /* Off-state background for toggle switches — a desaturated grey, kept
@@ -687,12 +531,8 @@ html[data-input-modality="pointer"] {
   --fg-gutter: #7a9490;
   --fg-separator: #1a4045;
 
-  /* Floating selection toolbar — uses the same dark teal as the light
-     theme's toolbar (#162B2F) so the popup reads identically in both modes,
-     sitting *below* either dark page palette while the border defines the
-     rounded edge. Defined once here and inherited by warm dark (its selector
-     matches the same element via [data-theme="dark"], so no override is
-     needed). */
+  /* Floating selection toolbar: the same dark teal as the light theme, so it
+     looks the same in both modes. Warm dark inherits it. */
   --toolbar-float-bg: #162B2F;
   --toolbar-float-fg: #c0c0c0;
   --toolbar-float-fg-strong: #e0e0e0;
@@ -703,21 +543,13 @@ html[data-input-modality="pointer"] {
      teal in both, so the highlight that lifts it is the same too. */
   --toolbar-float-highlight: rgba(255, 255, 255, 0.08);
 
-  /* Popup edge — a lighter percentage than the light themes use, because the
-     mix is not symmetric. Lifting a near-black surface towards the near-white
-     foreground is a much larger perceptual step than darkening white towards
-     near-black ink, and it washes the surface's hue out on the way: at the
-     light theme's 25%, this palette's deep teal gets a flat grey rim that
-     reads as a differently-coloured outline rather than an edge. Keeping the
-     mix low holds the hue and leaves the heavier shadow below to define the
-     surface. */
+  /* Popup edge: a lower percentage than the light themes. Lifting near-black
+     towards near-white is a bigger step than the reverse and greys out the
+     surface's hue; the heavier shadow defines the surface instead. */
   --popup-border-color: color-mix(in srgb, var(--fg-primary) 15%, var(--popup-bg));
 
-  /* Popup elevation — see the light block. A dark surface swallows a black
-     shadow, so both layers are carried much harder here; without this the
-     menu would sit flat against the chrome instead of above it. Warm dark
-     inherits these (its selector matches the same element via
-     [data-theme="dark"]), so no override is needed there. */
+  /* Popup elevation (see the light block), much stronger here because dark
+     surfaces swallow black shadows. Warm dark inherits it. */
   --popup-shadow-contact: rgba(0, 0, 0, 0.36);
   --popup-shadow-ambient: rgba(0, 0, 0, 0.58);
 
@@ -787,9 +619,8 @@ html[data-input-modality="pointer"] {
   --highlight-bg: #3d2e18;
   --highlight-mark: #4d706a;
 
-  /* Muted dark-mode equivalents of the highlighter palette (see light
-     theme above). Kept light enough for the pinned near-black highlight
-     text to remain legible. */
+  /* Muted dark-mode highlighter colours, light enough for the near-black
+     highlight text. */
   --hl-red: #e89189;
   --hl-orange: #f2c088;
   --hl-yellow: #e8e29a;
@@ -832,12 +663,9 @@ html[data-input-modality="pointer"] {
 [data-palette="warm"][data-theme="light"],
 [data-palette="warm"]:not([data-theme="dark"]) {
   --bg-primary: #ffffff;
-  /* Sits 3 levels below --bg-secondary on every channel, so the header band's
-     gradient (see .pane-toolbar) is a pure lightness step and holds the
-     chrome's warmth from top to bottom. It used to be #f4f2eb, a much
-     creamier tone: the blue channel alone travelled 11 levels, so the band
-     visibly changed temperature down its height rather than reading as one
-     flat surface. Keep any new value on the same hue as --bg-secondary. */
+  /* Three levels below --bg-secondary on every channel, so the header band's
+     gradient (see .pane-toolbar) changes only in lightness. Keep any new
+     value on the same hue as --bg-secondary. */
   --bg-editor-toolbar: #f6f5f3;
   --bg-secondary: #F9F8F6;
   --bg-active: #e4e1d8;
@@ -850,11 +678,8 @@ html[data-input-modality="pointer"] {
   --border-subtle: #e4e1d8;
   --border-input: #c2bfb5;
 
-  /* This palette's chrome is only a couple of levels below white, so the
-     active tab's white fill barely registers and the edge has to do the
-     work the fill does elsewhere. Held at the weight of an ordinary input
-     border — defined, but not a dark stroke — with the shadow lifted
-     slightly to match. */
+  /* This palette's chrome is nearly white, so the active tab's fill barely
+     shows and the edge does the work, at the weight of an input border. */
   --tab-active-border: color-mix(in srgb, var(--border-input) 85%, var(--bg-secondary));
   --tab-active-shadow: 0 1px 3px rgba(0, 0, 0, 0.09);
 
@@ -914,12 +739,10 @@ html[data-input-modality="pointer"] {
    Both blocks override tokens only, so they retune every theme and
    palette from one place; component rules need no awareness of them. */
 
-/* Reduced motion: micro-interaction timing collapses via the motion
-   tokens, and the blanket rule catches keyframe animations plus any
-   literal durations that predate the token scale. Spinners and loading
-   dots freeze on their first frame — still visible, no longer moving.
-   Nothing in the app listens for transitionend/animationend, so
-   near-zero durations are safe. */
+/* Reduced motion: the motion tokens collapse, and the blanket rule stops
+   keyframe animations and literal durations. Spinners freeze on their first
+   frame. Nothing listens for transitionend/animationend, so near-zero
+   durations are safe. */
 @media (prefers-reduced-motion: reduce) {
   :root {
     --dur-fast: 1ms;
@@ -936,10 +759,9 @@ html[data-input-modality="pointer"] {
   }
 }
 
-/* Higher contrast: quiet hairlines take the strong border tier, the
-   dimmest text tier is folded into muted, and the keyboard focus ring
-   strengthens. Selectors repeat with attributes so these win over the
-   per-theme and per-palette blocks above at equal-or-higher specificity. */
+/* Higher contrast: hairlines use the strong border, the dimmest text becomes
+   muted, and the focus ring is stronger. Selectors repeat attributes so
+   these win over the theme and palette blocks. */
 @media (prefers-contrast: more) {
   :root,
   :root[data-theme],
@@ -950,18 +772,14 @@ html[data-input-modality="pointer"] {
   }
 }
 
-/* Colourblind-friendly colours (Settings > Appearance). Replaces only the
-   colours that carry meaning, so it works with either background palette
-   and leaves the accent colour alone. Based on the Okabe-Ito palette:
-   errors are vermilion, success and "added" are blue, warnings are amber,
-   info is reddish purple. Pairs that must be told apart also differ in
-   lightness, which every type of colour blindness still sees.
+/* Colourblind-friendly colours (Settings > Appearance), based on the
+   Okabe-Ito palette: errors vermilion, success and "added" blue, warnings
+   amber, info reddish purple. Pairs that must be told apart also differ in
+   lightness. Only meaning-carrying colours change, not the accent.
 
-   colourblind-palette.test.ts checks each value's contrast against every
-   background and that the important pairs stay distinct under simulated
-   colour blindness; run it after changing any value here. Not changed on
-   purpose: user-chosen highlight colours, and callout, suggestion and
-   annotation colours, which match what the notebox's Typst package prints. */
+   colourblind-palette.test.ts checks contrast and distinctness; run it after
+   changing a value. Highlight, callout, suggestion and annotation colours
+   are left alone, since they match the notebox's Typst output. */
 :root[data-colourblind]:not([data-theme="dark"]) {
   --accent-danger: #7F2500;
   --accent-danger-bg: color-mix(in srgb, var(--accent-danger) 10%, var(--bg-primary));
@@ -1040,9 +858,8 @@ html[data-input-modality="pointer"] {
   white-space: nowrap;
 }
 
-/* Group header in the reference (`@`) popup — separates Bibliography from
-   Headings / Figures / Equations / Tables. Mixed-case, distinguished by weight
-   + muted colour per the UI typography rule (no uppercase transforms). */
+/* Group header in the `@` popup (Bibliography, Headings, Figures, …), set
+   apart by weight and colour. */
 .wikilink-suggest__group {
   padding: 4px 12px 2px;
   font-size: var(--text-sm);
@@ -1093,9 +910,8 @@ html[data-input-modality="pointer"] {
   font-style: italic;
 }
 
-/* Discoverability hint pinned to the bottom of the suggestion list (e.g.
-   "Type :: to link to a heading"). Sticky so it stays visible while the
-   item list scrolls. */
+/* Hint pinned to the bottom of the suggestion list (e.g. "Type :: to link to
+   a heading"), sticky while the list scrolls. */
 .wikilink-suggest__footer {
   position: sticky;
   bottom: calc(-1 * var(--popup-padding-block));

@@ -1,30 +1,21 @@
-// Remembers which tabs were open in each notebox, so the "Open previous tabs"
-// startup behaviour can put them back the way a web browser restores its tabs.
+// Remembers which tabs were open in each notebox, for the "Open previous tabs"
+// startup option.
 //
-// This state is per-*machine* and deliberately lives **outside** every notebox,
-// in `$CONFIG_DIR/inkycap/tab-sessions.json`, keyed by canonical notebox path.
-// Two reasons:
+// Stored per machine outside every notebox, in
+// `$CONFIG_DIR/inkycap/tab-sessions.json`, keyed by canonical notebox path: it
+// describes how one person left one computer, so it must never travel with the
+// notebox (through git, a zip or a copied folder; `.inkycap/local.json` would
+// travel with a copy), and which files someone had open is private.
 //
-//   - It describes how one person left one computer, not anything about the
-//     notebox itself, so it must never travel through git collaboration, a
-//     notebox zip, or a folder copied to another machine. (`.inkycap/local.json`
-//     is gitignored but still sits inside the notebox folder, so it would
-//     travel with a copy — hence the config dir instead.)
-//   - Which files someone had open is private. Keeping it in the user's own
-//     config dir keeps it out of anything they might share.
+// Paths are stored notebox-relative, so a moved or renamed notebox still
+// restores, and sent to the frontend as absolute paths. Nothing is recorded
+// unless the user chose the "previous tabs" option.
 //
-// Recorded paths are stored notebox-relative so a notebox that is moved or
-// renamed still restores; they are handed to the frontend as absolute paths
-// (the shape the rest of the app compares against). Nothing is recorded unless
-// the user has actually chosen the "previous tabs" startup behaviour.
-//
-// A tab whose file freezes or crashes the app would otherwise be reopened at
-// every start, with the setting that stops it out of reach. So a reopen has to
-// prove it worked: `start_restore` marks the notebox's record as "reopen in
-// progress", and the frontend clears the mark once the window has stayed
-// responsive for a while. A mark still set at the next start means the last
-// reopen never got that far, and the tabs are held back for the user to reopen
-// by hand. Starting with `--no-restore` holds them back too.
+// A tab that freezes or crashes the app would otherwise reopen at every start.
+// So `start_restore` marks the record "reopen in progress", and the frontend
+// clears the mark once the window has stayed responsive for a while. A mark
+// still set at the next start means the last reopen failed, and the tabs are
+// held back for the user to reopen by hand. `--no-restore` holds them back too.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -39,9 +30,8 @@ use crate::storage::{to_frontend_string, validate_notebox_path};
 /// bounds the file if someone leaves hundreds of tabs open.
 const MAX_TABS: usize = 200;
 
-/// One remembered tab. Mirrors the subset of the frontend `Tab` that is worth
-/// restoring: what it shows, and how the user was viewing it. Transient tabs
-/// (empty tabs, version-diff compare views) are never recorded.
+/// One remembered tab: what it shows and how it was viewed. Empty tabs and
+/// version-diff views are never recorded.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SessionTab {
@@ -67,9 +57,8 @@ pub struct SessionTab {
 #[serde(default)]
 pub struct NoteboxTabSession {
     pub tabs: Vec<SessionTab>,
-    /// Set while a reopen of these tabs has not yet proved it worked (see the
-    /// module comment). Kept by the backend: [`save`] ignores whatever the
-    /// frontend sends here.
+    /// Set while a reopen hasn't yet proved it worked (see the module comment).
+    /// Kept by the backend; [`save`] ignores what the frontend sends.
     pub restore_pending: bool,
 }
 
@@ -109,9 +98,8 @@ struct TabSessionStore {
     noteboxes: HashMap<String, NoteboxTabSession>,
 }
 
-/// Serializes read-modify-write cycles on the shared file. Several windows can
-/// each be recording their own notebox's tabs at the same time, and they all
-/// write this one file.
+/// Serializes read-modify-write of the shared file, which several windows may
+/// write at once.
 static FILE_LOCK: Mutex<()> = Mutex::new(());
 
 fn store_path() -> PathBuf {
@@ -138,15 +126,11 @@ fn write_store(store: &TabSessionStore) -> Result<()> {
     Ok(())
 }
 
-/// Make a recorded path relative to the notebox root, so the record survives
-/// the notebox being moved or renamed. A path outside the notebox, or one
-/// that climbs out of it with `..`, is rejected by returning `None` so it is
-/// dropped rather than persisted.
-///
-/// Resolution goes through [`validate_notebox_path`] rather than a bare
-/// `std::fs::canonicalize`: the notebox root is held without the Windows
-/// `\\?\` verbatim prefix, and only that helper resolves the tab's path to the
-/// same shape, so the prefix strip below works on every platform.
+/// A tab path relative to the notebox root, so the record survives the notebox
+/// moving. `None` for a path outside the notebox (or leaving it with `..`),
+/// which is dropped. Uses [`validate_notebox_path`], which resolves paths to
+/// the same form as the root (without Windows' `\\?\`), so stripping the root
+/// works everywhere.
 fn to_relative(canonical_root: &Path, path: &str) -> Option<String> {
     if path.is_empty() {
         return Some(String::new());
@@ -164,10 +148,9 @@ fn to_absolute(canonical_root: &Path, relative: &str) -> String {
     to_frontend_string(&canonical_root.join(relative))
 }
 
-/// Decide whether the tabs recorded for this notebox are reopened or held back
-/// (see the module comment), and mark a reopen as in progress. Paths come back
-/// absolute, and tabs whose file has since been deleted are dropped. Empty when
-/// nothing was recorded.
+/// Decide whether this notebox's recorded tabs are reopened or held back (see
+/// the module comment) and mark a reopen in progress. Paths are absolute; tabs
+/// whose file is gone are dropped. Empty without a record.
 pub fn start_restore(canonical_root: &Path, no_restore: bool) -> Result<TabRestore> {
     let _guard = FILE_LOCK.lock();
     let mut store = read_store();
@@ -199,9 +182,9 @@ fn decide_restore(
     TabRestore { tabs, held_back }
 }
 
-/// Mark or clear "reopen in progress" for the notebox at `canonical_root`. The
-/// frontend sets it before reopening held-back tabs by hand and clears it once
-/// the window has stayed responsive. Does nothing for a notebox with no record.
+/// Set or clear "reopen in progress" for this notebox: set before reopening
+/// held-back tabs by hand, cleared once the window has stayed responsive.
+/// Nothing for a notebox without a record.
 pub fn set_restore_pending(canonical_root: &Path, pending: bool) -> Result<()> {
     let _guard = FILE_LOCK.lock();
     let mut store = read_store();
@@ -258,10 +241,8 @@ pub fn save(canonical_root: &Path, session: &NoteboxTabSession) -> Result<()> {
     write_store(&store)
 }
 
-/// Forget every notebox's tabs — used when the user turns the startup
-/// behaviour off, so no record lingers after they stop asking for it. The
-/// behaviour is a user-wide setting, so the whole store goes, not just the
-/// notebox that happens to be open.
+/// Forget every notebox's tabs, when the user turns the option off. It is a
+/// per-user setting, so the whole store goes.
 pub fn clear_all() -> Result<()> {
     let _guard = FILE_LOCK.lock();
     match std::fs::remove_file(store_path()) {

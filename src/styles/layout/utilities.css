@@ -1,18 +1,16 @@
-/* Shared utilities: .btn system, .badge, .ui-icon-btn, control surface, focus ring.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Shared utilities: .btn, .badge, .ui-icon-btn, control surface, focus ring.
+   Part of layout.css, whose import order (see ../layout.css) keeps the cascade. */
 
 /* ── Shared button system ────────────────────────────────────────────
-   Canonical text/action button utility. Compose `.btn` + one variant
-   (and optionally `.btn--sm` for a compact footprint). Geometry and
-   colour come from the --btn-*, --radius-*, --space-*, --accent* and
-   --focus-ring tokens (themes.css) so the whole app retunes from one
-   place. Prefer this over authoring a new component-scoped button class.
+   Text and action buttons: `.btn` plus one variant (and `.btn--sm` for a
+   compact size). Geometry and colour come from the --btn-*, --radius-*,
+   --space-*, --accent* and --focus-ring tokens (themes.css). Use this rather
+   than a new component button class.
      .btn--primary    accent-filled call to action
      .btn--secondary  neutral bordered action
      .btn--danger     destructive action (outlined, accent-danger)
      .btn--ghost      borderless text action
-   For square icon-only panel/header buttons use .ui-icon-btn instead. */
+   Square icon-only buttons use .ui-icon-btn. */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -90,12 +88,10 @@
 }
 
 /* ── Shared badge / chip ─────────────────────────────────────────────
-   Small inline label or chip (tags, scope labels, source markers).
-   Compose `.badge` + an optional variant. For a numeric count use
-   `.badge--count` (fully rounded pill). Prefer this over a new
-   component-scoped badge class. Status indicators that are a bare dot
-   or coloured text (e.g. tab unread dot, git status line) are a
-   different role and intentionally stay separate. */
+   Small inline labels (tags, scope labels, source markers): `.badge` plus an
+   optional variant; `.badge--count` for a rounded count. Use this rather
+   than a new badge class. Bare dots or coloured status text (a tab's unread
+   dot, the git status line) are a different thing. */
 .badge {
   display: inline-flex;
   align-items: center;
@@ -127,10 +123,9 @@
   color: var(--accent-danger);
 }
 
-/* THE shared icon-button style — every square icon button in the app
-   (panel headers, search toggles, header actions) uses this class, with
-   an `is-active` modifier for toggled states. Sized by padding around
-   the icon so it scales with the icon tokens. */
+/* The icon button for every square icon button in the app (panel headers,
+   search toggles, header actions), with `is-active` for toggled states.
+   Sized by padding, so it scales with the icon tokens. */
 .ui-icon-btn {
   display: inline-flex;
   align-items: center;
@@ -145,9 +140,8 @@
   flex: 0 0 auto;
 }
 
-/* Circular variant, for a dialog's close button: matches the round close
-   button of GNOME and other desktops' window title bars. Equal padding keeps
-   the hover shape a true circle. */
+/* Round variant for dialog close buttons, like desktop title bars. Equal
+   padding keeps the hover shape circular. */
 .ui-icon-btn--round {
   border-radius: var(--radius-full);
   padding: var(--space-2);
@@ -158,9 +152,9 @@
   border-color: var(--border-input);
 }
 
-/* Outlined variant: the border shows all the time rather than only on hover,
-   for a button that would otherwise not read as clickable (the Help panel's
-   documentation buttons, which sit beside outlined fields). */
+/* Outlined variant, with a permanent border, for buttons that wouldn't
+   otherwise look clickable (the Help panel's documentation buttons beside
+   outlined fields). */
 .ui-icon-btn--outlined {
   border-color: var(--border-input);
 }
@@ -180,9 +174,8 @@
   cursor: default;
 }
 
-/* Unified keyboard-focus affordance for the icon-button utilities — these
-   otherwise had no visible focus state. Pointer users never see it
-   (:focus-visible), keyboard users get the shared --focus-ring. */
+/* Keyboard focus for the icon buttons, with the shared --focus-ring (only
+   for :focus-visible). */
 .ui-icon-btn:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
@@ -190,13 +183,11 @@
 
 
 /* ─── .pane-toolbar ───────────────────────────────────────────────────
-   Surface for the control strip at the top of a pane's content: the editor's
-   header, the Mycelial View's toolbar. Only the surface lives here — layout,
-   padding and the controls themselves stay with each toolbar, since those
-   differ. The gradient darkens downward from the chrome tone to the toolbar
-   tone, and the lip shadow casts onto whatever sits below, so content reads as
-   passing underneath rather than starting at an invisible seam. A new pane
-   type gets the same seam by adding this class, not by copying the gradient. */
+   The surface of the strip at the top of a pane (the editor header, the
+   Mycelial toolbar). Layout, padding and controls stay with each toolbar.
+   The gradient darkens from the chrome tone to the toolbar tone, and the lip
+   shadow falls on what is below, so content seems to pass underneath. New
+   pane types add this class rather than copying the gradient. */
 .pane-toolbar {
   /* Vertical rhythm lives here so every pane toolbar is the same height;
      each one still sets its own padding-inline and layout. */
@@ -207,17 +198,13 @@
   /* Lift above the scrollable content so the lip shadow casts over it. */
   position: relative;
   z-index: 2;
-  /* The hairline that closes the band, drawn as a shadow rather than a
-     border-bottom so it costs no height: the toolbar shares
-     --pane-toolbar-height with the sidebar and right-panel headers, and a
-     border would push this one row 1px taller than the rest of the band. */
+  /* The hairline under the band, as a shadow rather than a border, so the
+     toolbar stays exactly --pane-toolbar-height like the sidebar headers. */
   box-shadow: 0 1px 0 var(--lip-hairline);
 }
 
-/* The lip. It was a box-shadow, which always spans the element's full width and
-   can't be tapered; as a strip its ends can fade out before they reach the
-   content panel's rounded corners. Mirror of .main-content::after, which does
-   the same at the other end. */
+/* The lip, as a strip rather than a box-shadow, so its ends can fade out
+   before the panel's corners. Counterpart of .main-content::after. */
 .pane-toolbar::after {
   content: "";
   position: absolute;
@@ -237,9 +224,8 @@
 }
 
 /* ── Drag to reorder ──
-   Rows reordered with lib/drag-reorder.ts: dim the row being dragged and
-   draw a line on the side of the row a drop would land. Same recipe as
-   .property-row in the right panel. */
+   For lists reordered with lib/drag-reorder.ts: dim the dragged row and draw
+   a line where it would land. As .property-row in the right panel. */
 .reorder--dragging {
   opacity: 0.4;
 }
@@ -251,10 +237,10 @@
 }
 
 /* ── Highlighted text ────────────────────────────────────────────────
-   A highlighted stretch of text (HighlightedText.tsx): search matches, and
-   the links to the open note in link previews and Compose cards. Same fill
-   as a match in the editor, plus bold so it stands out by weight and not
-   only by colour (as in Quick Open and the command palette). */
+   Highlighted text (HighlightedText.tsx): search matches, and links to the
+   open note in link previews and Compose cards. The editor's match fill plus
+   bold, so it stands out by weight as well as colour (as in Quick Open and
+   the command palette). */
 .text-highlight {
   background: var(--bg-search-match);
   color: inherit;

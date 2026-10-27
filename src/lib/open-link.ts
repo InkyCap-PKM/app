@@ -19,20 +19,20 @@ export function startsWithSchemeAndSlashes(text: string): boolean {
 }
 
 /**
- * Open a link target authored in a note.
+ * Open a link target written in a note.
  *
- * - **InkyCap links** — `inkycap://` links are followed inside InkyCap
- *   directly, which also works where the scheme is not registered with the
- *   system (a development build, for example).
- * - **URLs** — anything carrying a URI scheme (`http(s)`, `mailto`, and
- *   custom app schemes like `zotero://` / `obsidian://`) are handed to the
- *   OS default handler so notes can link into other desktop apps.
- * - **Notebox files** — schemeless targets (notebox-root-absolute like
- *   `/Assets/report.pdf`, or relative) are resolved within the notebox root
- *   and opened in the system default application.
+ * - **InkyCap links**: `inkycap://` links are followed inside InkyCap, which
+ *   also works where the scheme isn't registered with the system (e.g. a
+ *   development build).
+ * - **URLs**: anything with a URI scheme (`http(s)`, `mailto`, and app schemes
+ *   like `zotero://` / `obsidian://`) goes to the system's handler, so notes
+ *   can link into other apps.
+ * - **Notebox files**: targets without a scheme (root-absolute like
+ *   `/Assets/report.pdf`, or relative) are resolved in the notebox and opened
+ *   in the default application.
  *
- * A leading `/` always marks a path, never a URL; a Windows drive letter
- * (`C:\…`) is treated as a path, not the `c:` scheme.
+ * A leading `/` always means a path; a Windows drive letter (`C:\…`) is a path,
+ * not the `c:` scheme.
  */
 export async function openLink(target: string): Promise<void> {
   const url = target.trim();

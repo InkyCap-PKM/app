@@ -44,10 +44,8 @@ async fn detect_pdf_engine() -> Result<String, ()> {
 
 // ── Pandoc export ───────────────────────────────────────────────
 
-/// Export a note via Pandoc to the specified format.
-///
-/// `metadata_mode`: "exclude" (strip all) or "properties" (set as document
-/// properties without body rendering).
+/// Export a note with Pandoc to `format`. `metadata_mode` is "exclude" (none)
+/// or "properties" (set as document properties, not shown in the body).
 #[tauri::command]
 pub async fn export_via_pandoc(
     path: String,
@@ -72,9 +70,8 @@ pub async fn export_via_pandoc(
     let path_buf = std::path::PathBuf::from(&path);
     let raw_content = storage.read_file(&path_buf).await?;
 
-    // Document properties are read straight from the note's `#note(...)` call and
-    // injected into the finished file afterwards — independent of how the body is
-    // converted, so they survive regardless of the intermediate format.
+    // Document properties are read from the note's `#note(...)` call and added to
+    // the finished file afterwards, whatever the intermediate format.
     let raw_metadata = if metadata_mode == "properties" {
         extract_metadata_raw(&raw_content)
     } else {
@@ -91,11 +88,10 @@ pub async fn export_via_pandoc(
     );
     let content = companion.prepare_note(&storage, &path_buf, &content);
 
-    // Compile the note to HTML with the *real* Typst compiler, then let Pandoc
-    // convert from HTML — a format it fully supports. This sidesteps Pandoc's
-    // partial built-in Typst reader, so `#include`, the inkycap-notebox package,
-    // symbols (`#sym.*`), and layout all resolve natively instead of erroring on
-    // an unknown identifier or module method.
+    // Compile the note to HTML with the real Typst compiler and let Pandoc
+    // convert from HTML, which it fully supports, rather than using Pandoc's
+    // partial Typst reader, so `#include`, the inkycap-notebox package, symbols
+    // (`#sym.*`) and layout all work.
     let content = crate::notebox_package::ensure_import(&content);
     let source = super::super::typst::inject_style_cascade(&content, &path_buf, &state).await;
     let source =
@@ -193,12 +189,11 @@ pub async fn export_via_pandoc(
     companion.copy().await
 }
 
-/// Pandoc's HTML reader sizes images from the `width`/`height` *attributes*,
-/// not the inline CSS that Typst's HTML export emits (`<img … style="width:
-/// 25%">`). With no attribute, Pandoc falls back to the image's intrinsic pixel
-/// size, which overflows the page in DOCX/ODT. Mirror any width/height in the
-/// style onto real attributes (when not already present) so the author's sizing
-/// carries through. `auto`/empty values are skipped; existing attributes win.
+/// Pandoc's HTML reader sizes images from `width`/`height` attributes, not the
+/// inline CSS Typst writes (`<img … style="width: 25%">`), and otherwise uses
+/// the image's pixel size, which overflows the page in DOCX/ODT. Copy width and
+/// height from the style into attributes (unless already present) so the sizing
+/// carries over. `auto` and empty values are skipped.
 pub(super) fn mirror_img_style_size_to_attrs(html: &str) -> String {
     let img_re = regex::Regex::new(r"(?is)<img\b[^>]*>").unwrap();
     let style_re = regex::Regex::new(r#"(?i)style\s*=\s*["']([^"']*)["']"#).unwrap();
@@ -249,9 +244,9 @@ fn css_prop(style: &str, prop: &str) -> Option<String> {
 
 // ── Format-specific post-processing ─────────────────────────────
 
-/// Post-process a DOCX file: strip title block paragraphs from the body
-/// and inject metadata into `docProps/core.xml` to guarantee document
-/// properties are set (Pandoc's --metadata doesn't always write them).
+/// Fix up a DOCX file: remove the title block from the body and write the
+/// metadata into `docProps/core.xml`, since Pandoc's --metadata doesn't always
+/// set it.
 fn postprocess_docx(path: &str, metadata: &[(String, String)]) -> Result<(), InkyCapError> {
     use std::io::{Read as _, Write as _};
 
@@ -479,9 +474,8 @@ pub(super) fn inject_odt_meta_properties(xml: &str, metadata: &[(String, String)
     result
 }
 
-/// Post-process LaTeX output: strip `\title`, `\author`, `\date`, and
-/// `\maketitle` so metadata only appears via `\hypersetup` (PDF properties),
-/// not as visible content in the body.
+/// Fix up LaTeX output: remove `\title`, `\author`, `\date` and `\maketitle`,
+/// so metadata appears only in `\hypersetup` (PDF properties), not in the body.
 async fn postprocess_latex(path: &str, metadata: &[(String, String)]) -> Result<(), InkyCapError> {
     let latex = tokio::fs::read_to_string(path)
         .await

@@ -7,12 +7,10 @@ import { inlineOnlyFacet, scopeRangeConfig, scopeRangeField } from "./cell-scope
 import { typst } from "codemirror-lang-typst";
 import { buildDecorations } from "./visual-plugin";
 
-// Regression guard for the `[[` wikilink shortcut. `closeBrackets()` lives in
-// the editor's baseExtensions, ahead of the visual-mode wikilinkSuggest, so
-// its inputHandler outranks the wikilink one unless the latter is raised to a
-// higher precedence. When it loses, closeBrackets pairs the second `[` itself
-// and the shortcut never records the `]]` as its own, so finishing the link
-// leaves them behind. This locks in that the wikilink handler wins.
+// The `[[` wikilink shortcut. `closeBrackets()` comes before the visual mode
+// wikilinkSuggest, so its input handler wins unless the wikilink one has higher
+// precedence; then closeBrackets pairs the second `[` itself and finishing the
+// link leaves `]]` behind.
 function mk() {
   return new EditorView({
     state: EditorState.create({
@@ -36,17 +34,17 @@ function typeChar(view: EditorView, ch: string) {
   for (const h of handlers) {
     if (h(view, from, to, ch, insert)) return;
   }
-  // Tagged the way CodeMirror tags a real keystroke it applies itself, so the
-  // `[[` shorthand can tell a bracket the user just typed from one already in
-  // the note (see `typedOpenBracket` in wikilink-suggest.ts).
+  // Tagged as CodeMirror tags real typing, so the `[[` shortcut can tell a
+  // just-typed bracket from one already in the note (see `typedOpenBracket` in
+  // wikilink-suggest.ts).
   view.dispatch(view.state.replaceSelection(ch), { userEvent: "input.type" });
 }
 
 describe("[[ wikilink bracket input", () => {
   it("typing [[ keeps the closing pair, with the caret in the middle", () => {
-    // Balanced at every keystroke: an open `[[` with no closers would make the
-    // parser pair the surrounding block's own `]` with the shorthand, and a
-    // block quote or callout would lose its frame while the name is typed.
+    // Balanced after every keystroke: an open `[[` without closers would let
+    // the parser pair the block's own `]` with it, and a quote or callout would
+    // lose its frame while the name is typed.
     const v = mk();
     typeChar(v, "[");
     typeChar(v, "[");
@@ -73,9 +71,8 @@ describe("[[ wikilink bracket input", () => {
   });
 });
 
-// A user who hand-types the closing `]]` (instead of picking from the popup)
-// should still get a `#wikilink(...)` call — including for brand-new pages that
-// aren't in the suggestion list yet.
+// Typing the closing `]]` by hand (instead of choosing from the popup) still
+// gives a `#wikilink(...)` call, including for new pages not yet in the list.
 describe("[[ wikilink manual close (]])", () => {
   function typeAll(v: EditorView, s: string) {
     for (const ch of s) typeChar(v, ch);
@@ -131,11 +128,10 @@ describe("[[ wikilink manual close (]])", () => {
   });
 });
 
-// A block quote, callout or any other `#func[…]` call puts a `[` right behind
-// the caret and a `]` right ahead of it — the same shape as a half-typed `[[`.
-// The shorthand used to adopt that opening bracket, and finishing the link then
-// ate the block's closing one, leaving `#quote(block: true)[#wikilink("Name")`
-// with nothing to close it.
+// A block quote, callout or other `#func[…]` call has a `[` right behind the
+// caret and a `]` right ahead, like a half-typed `[[`. The shortcut must not
+// take that opening bracket, or finishing the link eats the block's closing
+// one, leaving `#quote(block: true)[#wikilink("Name")` unclosed.
 describe("[[ wikilink inside a block's own brackets", () => {
   /** `marked` is the note with `|` standing in for the caret. */
   function typeInside(marked: string, typed: string): string {

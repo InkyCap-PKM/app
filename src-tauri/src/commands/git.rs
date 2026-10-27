@@ -1,15 +1,13 @@
-//! IPC commands for notebox-level git collaboration.
+//! IPC commands for notebox git collaboration.
 //!
-//! The collaboration model is **merge-first** (see [`run_sync`]): a Sync /
-//! package import always folds incoming changes into the working tree (taking
-//! *theirs* on an overlap) and never pauses for review. The user reviews and
-//! reverts afterwards from the Changes pane — see [`git_changes_since_sync`],
-//! [`git_note_sync_diff`], and the revert commands, backed by
-//! [`crate::git::sync_review`].
+//! Sync and package import always merge incoming changes into the working tree,
+//! taking the incoming side where edits overlap, and never pause. The user
+//! reviews and reverts afterwards from the Changes pane (see
+//! [`git_changes_since_sync`], [`git_note_sync_diff`] and the revert commands,
+//! backed by [`crate::git::sync_review`]).
 //!
-//! The whole git interaction runs on a blocking task: [`git2`] is synchronous
-//! and [`GitBackend`] is not `Sync`, so it is created, used, and dropped inside
-//! one `spawn_blocking` closure rather than held in shared state.
+//! [`git2`] is synchronous and [`GitBackend`] is not `Sync`, so each command
+//! creates, uses and drops the backend inside one `spawn_blocking` closure.
 
 use std::path::{Path, PathBuf};
 
@@ -31,12 +29,11 @@ use crate::storage::to_frontend_string;
 use crate::storage::traits::NoteboxStorage;
 use crate::typst_pipeline::package_vendor;
 
-/// The remote name InkyCap uses for a notebox's collaboration remote. The URL
-/// lives in [`NoteboxGitConfig::remote`]; the named remote is created/synced
-/// from it on each fetch so the command works without a separate setup step.
+/// Name of the collaboration remote. Its URL is [`NoteboxGitConfig::remote`];
+/// the remote is created or updated from it on each fetch.
 pub(crate) const REMOTE_NAME: &str = "origin";
 
-// ─────────────────────────── Phase 4: setup, status, sign-in ───────────────
+// ─────────────────────────── Setup, status, sign-in ─────────────────────────
 
 /// Outcome of turning a notebox into a collaborative git repo.
 #[derive(Debug, Clone, Serialize)]
@@ -49,11 +46,10 @@ pub struct GitSetupResult {
     pub status: GitStatusSummary,
 }
 
-/// The git-side of setup, factored out of the Tauri command so it can be tested
-/// against a temp dir without app state: initialize-or-adopt the repo, write the
-/// collaboration `.gitignore`, point the `origin` remote at `remote`, and store
-/// the optional sign-in username + password and commit identity. Does **not**
-/// touch notebox settings — the command persists those after this returns.
+/// The git side of setup, separate from the command so it can be tested without
+/// app state: initialize or adopt the repo, write the `.gitignore`, point
+/// `origin` at `remote`, and store the optional sign-in and commit identity.
+/// Doesn't touch notebox settings.
 fn apply_setup(
     root: &Path,
     remote: &str,
@@ -65,21 +61,18 @@ fn apply_setup(
     let initialized = !GitBackend::is_repo(root);
     let backend = GitBackend::open_or_init(root)?;
     ensure_collaboration_gitignore(root)?;
-    // Package-handoff setup passes an empty remote (no server): skip the remote
-    // and the sign-in credentials. The notebox is still a git repo — version
-    // history and package export/import all work without one.
+    // Package handoff passes an empty remote: no remote or credentials, but
+    // still a git repo.
     if !remote.trim().is_empty() {
         backend.set_remote(REMOTE_NAME, remote)?;
     }
-    // A freshly init'd repo defaults to `master`; make the first commit land on
-    // the configured branch so the eventual push of `refs/heads/<branch>` has
-    // something to send. No-op when an existing repo (with commits) is adopted.
+    // A new repo defaults to `master`; put the first commit on the configured
+    // branch so the push has something to send. No-op for an existing repo.
     backend.ensure_initial_branch(branch)?;
 
     if !remote.trim().is_empty() {
-        // Username + password are per-repository sign-in details (HTTPS). Only
-        // write a non-empty value, so re-running setup to change the branch
-        // doesn't wipe a previously-entered password the user left blank.
+        // Only store non-empty values, so re-running setup with a blank
+        // password keeps the saved one.
         if let Some(username) = username.filter(|u| !u.trim().is_empty()) {
             auth::set_username_for_remote(remote, username.trim())?;
         }
@@ -101,12 +94,10 @@ fn apply_setup(
     })
 }
 
-/// Turn the open notebox into a collaborative git repo and persist its
-/// [`NoteboxGitConfig`]. Idempotent: re-running adopts the existing repo and
-/// updates the remote/branch. Everything here is per-machine and stays out of
-/// the shared, committed settings: the remote + branch live in the gitignored
-/// `local.json`, the username in a per-installation store, the password in the
-/// OS keychain, and the commit identity in its own per-installation store. The
+/// Make the open notebox a collaborative git repo and store its
+/// [`NoteboxGitConfig`]. Safe to re-run. Everything here is per machine: the
+/// remote and branch in the gitignored `local.json`, the username and commit
+/// identity in per-installation stores, the password in the OS keychain. The
 /// notebox must be open.
 #[tauri::command]
 pub async fn git_setup_collaboration(
@@ -159,9 +150,8 @@ pub async fn git_setup_collaboration(
     .await
     .map_err(|e| InkyCapError::Git(format!("setup task failed: {e}")))??;
 
-    // Persist the config into notebox settings (it travels through git) and
-    // mirror it into shared state so the fetch/consolidate commands see it
-    // without a notebox reopen.
+    // Save the config and update shared state so the other commands see it
+    // without reopening the notebox.
     let mut settings = session.notebox_settings.read().await.clone();
     settings.git = Some(NoteboxGitConfig { remote, branch });
     crate::notebox_settings::save_settings(&root, &settings)?;
@@ -170,12 +160,9 @@ pub async fn git_setup_collaboration(
     Ok(result)
 }
 
-/// Reconnect collaboration for a notebox that is already a git repo with an
-/// `origin` remote but carries no collaboration config (an external clone, or a
-/// config that was dropped/never written). Reads the remote + current branch
-/// from the repo itself and persists them as the notebox's [`NoteboxGitConfig`]
-/// — no user input, no re-`init`. The counterpart to the `notebox:git-reconnectable`
-/// offer surfaced on open.
+/// Restore collaboration for a git repo with an `origin` remote but no collaboration
+/// config (e.g. an external clone), using the repo's remote and current branch.
+/// Answers the `notebox:git-reconnectable` offer made on open.
 #[tauri::command]
 pub async fn git_reconnect_collaboration(
     state: State<'_, AppState>,
@@ -226,10 +213,9 @@ pub async fn git_reconnect_collaboration(
     })
 }
 
-/// The current git status summary for the open notebox, or `None` when it is
-/// not collaborative or not yet a repo. Lets the panel/status-bar refresh after
-/// a consolidate, publish, or push without waiting for the next notebox-open
-/// event. Fills in `unpushed` (which needs the configured remote + branch).
+/// Git status summary for the open notebox, or `None` when it isn't
+/// collaborative or a repo. Lets the UI refresh after a commit or push. Fills
+/// in `unpushed`.
 #[tauri::command]
 pub async fn git_status(
     state: State<'_, AppState>,
@@ -258,12 +244,10 @@ pub async fn git_status(
     .map_err(|e| InkyCapError::Git(format!("status task failed: {e}")))?
 }
 
-/// Whether the notebox has local work collaborators haven't received yet — the
-/// "Changes to share" signal. Server mode trusts the remote-tracking ref (dirty
-/// or unpushed commits, which a push clears). Package mode has no server, so a
-/// commit count never resets and is meaningless; instead compare HEAD against
-/// the last-exported commit recorded in `local.json` (dirty, or HEAD moved past
-/// it). The export records the new HEAD, so this flips back to "shared".
+/// Whether there is local work collaborators haven't received ("Changes to
+/// share"). With a server: uncommitted or unpushed changes. In package mode
+/// commit counts never reset, so the working tree is compared with the last
+/// shared baseline in `local.json` instead.
 fn has_unshared_changes(
     backend: &GitBackend,
     root: &Path,
@@ -273,24 +257,18 @@ fn has_unshared_changes(
     if !git.is_package_mode() {
         return Ok(summary.dirty || summary.unpushed > 0);
     }
-    // Package mode: "to share" = the working tree differs in *content* from the
-    // last point we shared or received. Comparing commit oids would mislead — an
-    // import writes a two-parent merge commit whose oid differs from the received
-    // tip even when its content is identical, so an oid compare reports "changes
-    // to share" forever and the same file ping-pongs between collaborators. The
-    // export and the import both record their baseline (the shared / received
-    // tip), and `changed_since` diffs the working tree against that baseline's
-    // tree — so a pure receive with no local edits reports clean.
+    // Compare content, not commit ids: an import creates a merge commit whose id
+    // differs from the received tip even when the content matches, which would
+    // report changes to share forever. Export and import both record their
+    // baseline, so a receive with no local edits reports clean.
     let last_shared = crate::notebox_settings::load_local_state(root)
         .last_shared_oid
         .and_then(|s| git2::Oid::from_str(&s).ok());
     Ok(!backend.changed_since(last_shared)?.is_empty())
 }
 
-/// List the files an export/sync would carry to collaborators — the working
-/// tree changed since the last share. Drives the "Changes to share" preview in
-/// the collaboration panel. Empty when the notebox isn't a git repo or nothing
-/// has changed since the last share.
+/// Files changed since the last share, for the "Changes to share" preview.
+/// Empty when the notebox isn't a repo or nothing changed.
 #[tauri::command]
 pub async fn git_changes_to_share(
     state: State<'_, AppState>,
@@ -310,10 +288,8 @@ pub async fn git_changes_to_share(
             return Ok(vec![]);
         }
         let backend = GitBackend::open(&root)?;
-        // Baseline the diff against the last point collaborators received: the
-        // last-exported HEAD (package mode, recorded in local.json) or the
-        // upstream tip (server mode). `None` falls back to an empty tree, so a
-        // never-shared notebox lists every file as an add.
+        // Baseline: the last-exported HEAD (package mode) or the upstream tip.
+        // With none, every file is listed as added.
         let base = if git.is_package_mode() {
             crate::notebox_settings::load_local_state(&root)
                 .last_shared_oid
@@ -347,13 +323,11 @@ pub struct UnresolvedEntry {
     pub count: u32,
 }
 
-/// List the notes that still have unresolved `#suggestion(...)` tracked changes
-/// awaiting **this user's** decision — the notebox-wide "changes to resolve"
-/// signal. The metadata cache gives the candidate notes (those with any open
-/// suggestion); each candidate's working source is then re-counted excluding
-/// suggestions the local user authored themselves (their `by:` matches this
-/// notebox's commit identity) — those are the user's to *send*, not to resolve.
-/// Empty when the notebox isn't collaborative or nothing is outstanding.
+/// Notes with unresolved `#suggestion(...)` changes awaiting this user's
+/// decision. Candidates come from the metadata cache; each is recounted without
+/// the suggestions this user wrote (`by:` matches their commit identity), which
+/// are theirs to send, not resolve. Empty when not collaborative or nothing is
+/// outstanding.
 #[tauri::command]
 pub async fn git_unresolved_changes(
     state: State<'_, AppState>,
@@ -414,10 +388,9 @@ pub async fn git_unresolved_changes(
     Ok(out)
 }
 
-/// The notebox's chosen commit identity on this machine: the per-notebox value
-/// in `local.json` if complete, else the legacy per-remote store (for noteboxes
-/// set up before the identity moved per-notebox). `None` ⇒ fall back to git
-/// config. Per-notebox so two clones of one repo can commit as different people.
+/// This notebox's commit identity on this machine: from `local.json` if
+/// complete, else the older per-remote store. `None` falls back to git config.
+/// Per notebox, so two clones of one repo can commit as different people.
 fn resolved_local_identity(root: &Path, remote: &str) -> Option<GitIdentity> {
     if let Some(id) = crate::notebox_settings::load_local_state(root).git_identity {
         if id.is_complete() {
@@ -434,10 +407,10 @@ fn resolved_local_identity(root: &Path, remote: &str) -> Option<GitIdentity> {
     None
 }
 
-/// The commit-author name InkyCap stamps on this notebox's changes: the resolved
-/// per-notebox identity if set, else the git-config `user.name` (repo, then
-/// global). Mirrors [`git_default_commit_identity`] and the `by:` the frontend
-/// writes onto a suggestion, so the two compare equal. Empty when unset.
+/// The author name InkyCap puts on this notebox's changes: the per-notebox
+/// identity, else git config's `user.name`. Matches
+/// [`git_default_commit_identity`] and the `by:` the frontend writes on
+/// suggestions. Empty when unset.
 fn local_commit_author_name(root: &Path, remote: &str) -> String {
     if let Some(id) = resolved_local_identity(root, remote) {
         return id.name;
@@ -449,12 +422,10 @@ fn local_commit_author_name(root: &Path, remote: &str) -> String {
         .unwrap_or_default()
 }
 
-/// Record the merge-first "Changes since last sync" baseline in the gitignored
-/// `local.json`: `baseline` is the local HEAD as it stood *before* this sync
-/// folded in incoming changes (the point a revert restores to), and
-/// `conflicted` is the set of paths the sync resolved by taking *theirs* (so the
-/// Changes pane can flag them for priority review). Called once per sync that
-/// pulled, after the merge resolved.
+/// Record the "Changes since last sync" baseline in `local.json`: `baseline` is
+/// the local HEAD before this sync merged (what a revert restores), and
+/// `conflicted` the paths that took the incoming side. Called once per sync that
+/// pulled.
 fn record_sync_baseline(
     root: &Path,
     baseline: Option<git2::Oid>,
@@ -482,17 +453,10 @@ pub async fn git_saved_username(remote: String) -> Result<Option<String>> {
     Ok(auth::username_for_remote(remote.trim()))
 }
 
-/// Stop collaborating on the open notebox: drop its [`NoteboxGitConfig`].
-///
-/// By default the `.git` directory and stored credentials are left intact, so
-/// disabling is reversible (re-run setup / reconnect finds the credentials,
-/// which are keyed by the remote). When `delete_history` is true, the whole
-/// `.git` directory is removed as well — reclaiming the version-history disk
-/// space and turning the notebox back into a plain folder. That is
-/// irreversible (the local history is gone; only a collaborator's copy or the
-/// remote could restore it), so the frontend gates it behind an explicit
-/// opt-in. Credentials are left even then: they are keyed by the remote and may
-/// be shared with another notebox cloned from the same repository.
+/// Stop collaborating: remove the notebox's [`NoteboxGitConfig`]. `.git` and
+/// credentials are kept, so this can be undone. With `delete_history`, `.git`
+/// is deleted too (irreversible). Credentials are kept even then, as they are
+/// keyed by remote and may serve another clone.
 #[tauri::command]
 pub async fn git_disable_collaboration(
     delete_history: bool,
@@ -513,9 +477,8 @@ pub async fn git_disable_collaboration(
     *session.notebox_settings.write().await = settings;
 
     if delete_history {
-        // Remove the repository itself. `.git` is watcher-ignored, and we hold
-        // no open `git2::Repository` handle here, so the directory is free to
-        // delete. A missing `.git` is success (idempotent).
+        // `.git` is ignored by the watcher and no repository handle is open, so
+        // it can be deleted. Already missing is success.
         let git_dir = root.join(".git");
         match std::fs::remove_dir_all(&git_dir) {
             Ok(()) => {}
@@ -534,9 +497,8 @@ pub async fn git_disable_collaboration(
     Ok(())
 }
 
-/// The git-side of cloning, factored out for testing without app state: clone
-/// `remote` (optionally a specific `branch`) into `dest` with the standard auth
-/// callbacks. `dest` must not already exist as a non-empty directory.
+/// The git side of cloning, testable without app state: clone `remote`
+/// (optionally `branch`) into `dest`, which must not be a non-empty directory.
 fn clone_into(remote: &str, branch: Option<&str>, dest: &Path) -> Result<()> {
     let mut fo = git2::FetchOptions::new();
     fo.remote_callbacks(auth::remote_callbacks(remote));
@@ -549,13 +511,10 @@ fn clone_into(remote: &str, branch: Option<&str>, dest: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Clone a collaborative notebox from a git remote into `dest`, so a
-/// collaborator can join entirely in-app (no command-line git). Returns the
-/// cloned notebox path (frontend form) for the caller to register and open.
-/// Saves the optional sign-in username + password first so the clone can
-/// authenticate; the cloned notebox opens non-collaborative until the user
-/// confirms the reconnect offer (collaboration config is per-machine and does
-/// not travel in the repo). Does not touch the currently-open notebox.
+/// Clone a collaborative notebox into `dest` and return its path for the caller
+/// to register and open. Saves the optional sign-in first. The clone opens
+/// without collaboration until the user accepts the reconnect offer, since the
+/// config is per machine. Doesn't touch the open notebox.
 #[tauri::command]
 pub async fn git_clone_notebox(
     remote: String,
@@ -604,28 +563,18 @@ pub async fn git_clone_notebox(
     Ok(to_frontend_string(&cloned))
 }
 
-// ─────────────────────────── Phase 5: Sync model ───────────────────────────
+// ─────────────────────────────── Sync ───────────────────────────────
 //
-// `git_sync` (pull + merge + push) and `git_check_updates` (pull + merge, no
-// push) are the two user-facing gestures. They share one algorithm:
+// `git_sync` (pull, merge, push) and `git_check_updates` (read-only fetch) are
+// the two user actions. A sync:
 //
-//   1. Commit my working edits, if any, → `M` (so the merge sees them).
-//   2. Fetch → `T` (the remote tip).
-//   3. Nothing incoming (`T` absent / `T == M` / `merge_base(M,T) == T`) ⇒
-//      Sync pushes if ahead, Check is up to date.
-//   4. Local hasn't diverged (`M` absent / `merge_base(M,T) == M`) ⇒
-//      fast-forward the working tree to `T` (a pure pull, no merge commit).
-//   5. Diverged ⇒ a real libgit2 3-way merge:
-//      • clean ⇒ a two-parent merge commit (parents `[M, T]`) + checkout;
-//        Sync pushes (the commit descends from `T`, so it fast-forwards).
-//      • conflicts ⇒ auto-apply the clean files to the working tree, render the
-//        conflicted notes as inline `#suggestion`s in `.inkycap/incoming/`, and
-//        **pause** — returning the conflict list + the incoming digest. The user
-//        resolves the staged copies, then `git_sync_finalize` builds the merged
-//        tree, makes the merge commit, and pushes (for a Sync).
-//
-// A merge commit parented on `T` is what keeps the push a fast-forward — no
-// rebase, and the commit is atomic, so there is no partial-merge data-loss trap.
+//   1. Commits working edits, if any → `M`.
+//   2. Fetches → `T`, the remote tip.
+//   3. Nothing incoming: pushes if ahead.
+//   4. Not diverged: fast-forwards the working tree to `T`.
+//   5. Diverged: a 3-way merge. Clean files merge; overlapping edits take
+//      `T`'s side and are listed in `conflicted`. The result is a merge commit
+//      with parents `[M, T]`, so the push is a fast-forward.
 
 /// Frontend status string for a changed path. `"renamed"` carries both paths
 /// (the entry's `path` is the new location; `old_path` the previous one).
@@ -676,10 +625,9 @@ pub struct SyncOutcome {
     /// What collaborators changed since the merge base — the non-blocking
     /// "what landed" summary.
     pub digest: Vec<DigestEntry>,
-    /// Notebox-relative paths (frontend form) where the merge took *theirs* over
-    /// an overlapping local edit. The merge-first model never pauses, so these
-    /// are surfaced for after-the-fact review (the user can revert any of them
-    /// from the Changes pane). Empty for a clean merge / fast-forward.
+    /// Notebox-relative paths where the merge took the incoming side over a
+    /// local edit, listed for review in the Changes pane. Empty for a clean
+    /// merge.
     pub conflicted: Vec<String>,
     /// The incoming tip commit's author/message, for the digest banner.
     pub incoming: Option<CommitInfo>,
@@ -689,23 +637,16 @@ pub struct SyncOutcome {
 /// at the start of a sync.
 const LOCAL_EDITS_MESSAGE: &str = "Update notes";
 
-/// Pull (and optionally push) the collaborative notebox, merging incoming
-/// changes. `push` distinguishes Sync (`true`) from a no-push reconcile
-/// (`false`) — the latter is offline **package import**, which fetches from a
-/// transient local-path remote (the extracted package) and has no server to
-/// push to. Pure + blocking-safe (no async, no `AppHandle`) so it can be
-/// unit-tested against a bare remote and two clones — and, for package mode,
-/// against a local-path remote.
+/// Pull and merge incoming changes, then push if `push` is true. `push = false`
+/// is package import, which fetches from a temporary local-path remote (the
+/// extracted package). No async or `AppHandle`, so it can be tested against a
+/// bare remote and two clones.
 ///
-/// The remote is taken from `git.remote`, which is a server URL for a Sync and
-/// the extracted-package path for an import. An empty `remote` (a package-mode
-/// notebox at rest, e.g. when finalizing) skips the `set_remote` — the
-/// remote-tracking ref already lives in `.git`.
+/// The remote is `git.remote`: a server URL for Sync, the extracted package for
+/// an import. An empty remote (package mode) skips `set_remote`.
 ///
-/// Merge-first: this never pauses. Incoming changes always land (clean hunks
-/// merge; overlapping edits take *theirs*), and the user reverts anything they
-/// disagree with afterwards from the Changes pane — git history makes that
-/// lossless.
+/// Never pauses: clean hunks merge, overlapping edits take the incoming side,
+/// and the user can revert from the Changes pane.
 fn run_sync(root: &Path, git: &NoteboxGitConfig, push: bool) -> Result<SyncOutcome> {
     let backend = GitBackend::open(root)?;
     // The per-notebox commit identity (local.json), resolved once for every
@@ -717,11 +658,10 @@ fn run_sync(root: &Path, git: &NoteboxGitConfig, push: bool) -> Result<SyncOutco
 
     let mut out = SyncOutcome::default();
 
-    // 0. When bundling is on, vendor the notebox's Typst packages (and their
-    //    transitive deps) into `.inkycap/packages/` so they travel with the
-    //    push. Gated on a dirty tree: new package imports always arrive as
-    //    dirty note edits, so a no-op sync skips the scan entirely. Best-effort
-    //    — a copy failure logs but must not block syncing notes.
+    // With bundling on, copy the notebox's Typst packages (and their
+    // dependencies) into `.inkycap/packages/` so they travel with the push.
+    // Only when the tree is dirty, since new imports arrive as note edits. A
+    // copy failure is logged and doesn't block the sync.
     if backend.status_summary()?.dirty
         && crate::notebox_settings::load_local_state(root).bundle_packages
     {
@@ -774,10 +714,9 @@ fn run_sync(root: &Path, git: &NoteboxGitConfig, push: bool) -> Result<SyncOutco
         .map(digest_entry)
         .collect();
 
-    // Record the pre-merge local tip as the "Changes since last sync" baseline
-    // *before* the working tree changes, so the user can review and revert what
-    // this sync brings in. The conflict branch overwrites the conflicted list
-    // once it knows which paths took theirs; FF / clean merges leave it empty.
+    // Record the pre-merge tip as the "Changes since last sync" baseline before
+    // the working tree changes. The conflict path fills in the conflicted list
+    // later.
     record_sync_baseline(root, m, &[])?;
 
     // 4. Fast-forward (local hasn't diverged: unborn, or M is an ancestor of T).
@@ -805,24 +744,20 @@ fn run_sync(root: &Path, git: &NoteboxGitConfig, push: bool) -> Result<SyncOutco
             Ok(out)
         }
         MergeOutcome::Conflicts(_) => {
-            // Merge-first: land the cleanly-merged files, then resolve every
-            // remaining conflict in favour of *theirs* and commit — no pause.
-            // `apply_clean_merge` writes the merged blob for non-conflicting
-            // paths (hunk-level merges survive); conflicting notes are left at
-            // *ours*, so we overwrite each with *theirs* below.
+            // Write the cleanly merged files, then overwrite each conflicted
+            // note (left at our side by `apply_clean_merge`) with the incoming
+            // side, and commit.
             let application = backend.apply_clean_merge(m, t)?;
 
-            // settings.json keeps its structured key-level merge so distinct
-            // config edits on both sides both survive; a same-key clash takes
-            // theirs (consistent with the note path) rather than pausing.
+            // settings.json merges by key, so different edits on each side both
+            // survive; a clash on one key takes the incoming side.
             let settings_path = settings_rel();
             for rel in &application.conflicts {
                 if *rel == settings_path {
                     merge_settings_favoring_theirs(&backend, root, m, t, base)?;
                 } else {
-                    // Take theirs for this conflicted note. The user reverts it
-                    // from the Changes pane if they'd rather keep their version
-                    // (recoverable: ours is preserved in history).
+                    // Our version stays in history; the user can revert from
+                    // the Changes pane.
                     take_theirs_into_working(&backend, root, t, rel)?;
                     out.conflicted.push(to_frontend_string(rel));
                 }
@@ -846,12 +781,9 @@ fn run_sync(root: &Path, git: &NoteboxGitConfig, push: bool) -> Result<SyncOutco
     }
 }
 
-/// Overwrite a conflicted note in the working tree with *theirs* (the incoming
-/// blob), or delete it when theirs removed it. The merge-first path uses this to
-/// resolve a conflict without pausing — the incoming content wins, and the user
-/// reverts from the Changes pane if they disagree. A git-level working-tree
-/// write (like [`GitBackend::apply_clean_merge`]), so it bypasses
-/// `NoteboxStorage` deliberately.
+/// Overwrite a conflicted note with the incoming blob, or delete it if the
+/// incoming side removed it. A git-level working-tree write like
+/// [`GitBackend::apply_clean_merge`], so it bypasses `NoteboxStorage`.
 fn take_theirs_into_working(
     backend: &GitBackend,
     root: &Path,
@@ -884,10 +816,8 @@ fn take_theirs_into_working(
     Ok(())
 }
 
-/// Structurally merge a conflicted `settings.json`, taking *theirs* for any
-/// same-key clash (distinct-key edits on both sides still both survive), and
-/// write the result over the working file. The merge-first counterpart of
-/// [`auto_merge_settings`], which instead held clashes back for a hand pick.
+/// Merge a conflicted `settings.json` by key, taking the incoming side for a
+/// clash, and write it over the working file.
 fn merge_settings_favoring_theirs(
     backend: &GitBackend,
     root: &Path,
@@ -931,9 +861,8 @@ fn merge_message(incoming: &Option<CommitInfo>) -> String {
     }
 }
 
-/// Sync the collaborative notebox: pull + merge incoming changes, then push.
-/// Merge-first — never pauses; overlapping edits take *theirs* and the user
-/// reverts afterwards from the Changes pane.
+/// Sync the collaborative notebox: pull and merge, then push. Overlapping edits
+/// take the incoming side.
 #[tauri::command]
 pub async fn git_sync(
     state: State<'_, AppState>,
@@ -951,22 +880,16 @@ pub async fn git_sync(
         .await
         .map_err(|e| InkyCapError::Git(format!("sync task failed: {e}")))?;
     emit_sync_events(&app_handle, window.label(), &result);
-    // A pull rewrites notes in the working tree; rebuild the session indexes so
-    // backlinks, search, and the Mycelial View reflect the incoming changes. The
-    // file watcher alone can miss a large merge (its OS event queue overflows on
-    // bulk writes), so don't depend on it. `build_indexes` is incremental, so a
-    // small sync only re-parses the handful of files that changed.
+    // A pull rewrites notes, so rebuild the indexes. The file watcher can miss
+    // events on a large merge. `build_indexes` is incremental.
     if matches!(&result, Ok(o) if o.pulled) {
         crate::commands::notebox::spawn_index_rebuild(app_handle.clone(), session.clone());
     }
     result
 }
 
-/// A **read-only** check for incoming changes: fetch the remote and report
-/// whether (and how much) the local branch is behind — **without** merging,
-/// committing, or touching the working tree. Lets a writer see "there are
-/// updates, Sync to get them" without pulling files into the notebox. (`fetch`
-/// downloads git objects into `.git`, but the notebox's files are untouched.)
+/// Read-only check for incoming changes: fetch and report how far behind the
+/// local branch is, without merging or touching the working tree.
 #[tauri::command]
 pub async fn git_check_updates(
     state: State<'_, AppState>,
@@ -1048,11 +971,8 @@ fn run_check(root: &Path, git: &NoteboxGitConfig) -> Result<CheckResult> {
     Ok(out)
 }
 
-/// Translate a sync result into the `notebox:git-*` event vocabulary the store
-/// listens on (completion + a friendly error on rejection/failure). Scoped to
-/// the `window` that ran the gesture — these events carry no notebox path, so
-/// other windows can't self-scope them; broadcasting would make a sync in one
-/// window light up every other window's status. See [`publish`].
+/// Emit the `notebox:git-*` events for a sync result. Sent only to the `window`
+/// that ran it, because the events carry no notebox path. See [`publish`].
 fn emit_sync_events(app_handle: &tauri::AppHandle, window: &str, result: &Result<SyncOutcome>) {
     match result {
         Ok(r) if r.rejected => {
@@ -1119,7 +1039,7 @@ fn write_merged_settings(root: &Path, merged: &serde_json::Value) -> Result<()> 
     Ok(())
 }
 
-// ─────────────────────────── Phase 6: version history ──────────────────────
+// ─────────────────────────── Version history ───────────────────────────────
 
 /// Normalize a path from the frontend (which may send an absolute path) to a
 /// notebox-relative one for git + storage.
@@ -1151,11 +1071,9 @@ pub async fn git_note_history(
             return Ok(Vec::new());
         }
         let mut versions = GitBackend::open(&root)?.file_history(&rel, 200)?;
-        // If the last sync resolved this note by taking *theirs* over the user's
-        // overlapping edit, flag the user's pre-sync version (the `last_sync_oid`
-        // commit) so the History view can mark "this is what the merge replaced —
-        // click to compare with the current note". `last_sync_oid` is the local
-        // tip recorded just before the merge, so its blob is the user's version.
+        // If the last sync replaced the user's edit to this note, flag their
+        // pre-sync version (the `last_sync_oid` commit) so the History view can
+        // offer a comparison.
         let local = crate::notebox_settings::load_local_state(&root);
         let took_theirs = local.last_sync_conflicted.contains(&rel_frontend);
         if took_theirs {
@@ -1174,9 +1092,8 @@ pub async fn git_note_history(
     .map_err(|e| InkyCapError::Git(format!("history task failed: {e}")))?
 }
 
-/// Restore a past version: write its content back to the working note (through
-/// [`NoteboxStorage`]) as a new edit. Non-destructive — history is untouched and
-/// the restore becomes an ordinary change the user then Syncs.
+/// Restore a past version by writing it to the note (through [`NoteboxStorage`])
+/// as a new edit. History is untouched.
 #[tauri::command]
 pub async fn git_restore_note_version(
     path: String,
@@ -1207,9 +1124,8 @@ pub async fn git_restore_note_version(
     Ok(())
 }
 
-/// A note's UTF-8 content at a specific past commit, for the read-only
-/// version-compare (diff) view. `commit` is a full hash from
-/// [`git_note_history`]. Errors if the version is absent or not valid UTF-8.
+/// A note's content at a past commit, for the compare view. `commit` is a full
+/// hash from [`git_note_history`]. Errors if absent or not UTF-8.
 #[tauri::command]
 pub async fn git_note_version_text(
     path: String,
@@ -1238,15 +1154,12 @@ fn read_version_text(backend: &GitBackend, commit: git2::Oid, rel: &Path) -> Res
         })
 }
 
-// ──────────────────── Merge-first: Changes since last sync ──────────────────
+// ──────────────────────── Changes since last sync ───────────────────────
 //
-// The merge-first model never pauses: a Sync / import always lands incoming
-// changes (taking *theirs* on an overlap) and the user reviews and reverts
-// afterwards. These commands back that "revert later" surface. They diff each
-// note against the baseline recorded in `local.json` (`last_sync_oid` — the
-// local HEAD before the last sync) and let the user restore the baseline form
-// of a whole note or a single hunk. History stays intact: a revert is an
-// ordinary edit the user then re-syncs.
+// These commands back the review after a sync. They compare each note with
+// the baseline in `local.json` (`last_sync_oid`, the local HEAD before the
+// last sync) and restore a whole note or one hunk. A revert is an ordinary
+// edit; history is untouched.
 
 /// The recorded "Changes since last sync" baseline commit, or `None` when no
 /// incoming merge has happened on this machine yet.
@@ -1276,11 +1189,9 @@ pub struct SinceSyncEntry {
     pub conflicted: bool,
 }
 
-/// List the notes the most recent sync changed, relative to the recorded
-/// pre-sync baseline (`last_sync_oid` → current HEAD), each flagged whether the
-/// merge took theirs over a local edit. Drives the notebox-wide Changes list and
-/// the status-bar / panel indicator. Empty when nothing has been synced yet, the
-/// notebox isn't a repo, or the last sync changed nothing locally.
+/// Notes the last sync changed (`last_sync_oid` → HEAD), each flagged if the
+/// merge took the incoming side over a local edit. Empty before the first sync,
+/// when not a repo, or when nothing changed.
 #[tauri::command]
 pub async fn git_changes_since_sync(
     state: State<'_, AppState>,
@@ -1340,34 +1251,29 @@ pub async fn git_changes_since_sync(
     .map_err(|e| InkyCapError::Git(format!("changes-since-sync task failed: {e}")))?
 }
 
-/// One note's hunk-level review, split by *where each change came from*. The
-/// last sync is the dividing line: the merge commit (HEAD) holds what the sync
-/// brought in, and any working-tree edits on top of it are the user's own work
-/// since. Keeping the two apart stops a user's own new note/edit from being
-/// labelled "incoming" (it isn't), which the single-baseline view conflated.
+/// One note's review, split by origin: the merge commit (HEAD) holds what the
+/// sync brought in, and working-tree edits on top are the user's own work
+/// since. This keeps a user's own edits from being labelled incoming.
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncNoteDiff {
     /// Changes the last sync folded in: pre-sync baseline (`last_sync_oid`) →
     /// HEAD. These are *theirs* — what to review and possibly revert.
     pub incoming: Vec<crate::git::sync_review::SyncHunk>,
-    /// The user's own uncommitted edits since the sync: HEAD → working text.
-    /// Informational (no revert) — your own in-progress work, not something the
-    /// sync did.
+    /// The user's uncommitted edits since the sync (HEAD → working text).
+    /// Informational; not revertible here.
     pub local: Vec<crate::git::sync_review::SyncHunk>,
-    /// The sync *added* this note (it had no pre-sync version). The frontend
-    /// shows a single "added" status under Incoming instead of a whole-file hunk
-    /// whose first line is the (auto-managed) import preamble.
+    /// The sync added this note. Shown as a single "added" status instead of a
+    /// whole-file hunk.
     pub incoming_created: bool,
     /// The note is brand-new local work, not yet in HEAD. The frontend shows a
     /// single "created" status under Local activity for the same reason.
     pub local_created: bool,
 }
 
-/// Review one note's changes since the last sync, split into incoming (theirs,
-/// `last_sync_oid` → HEAD) and local (yours, HEAD → working). Empty when nothing
-/// has been synced on this machine yet. The import preamble is filtered from
-/// both sides — it is auto-managed, never a reviewable change.
+/// One note's changes since the last sync: incoming (`last_sync_oid` → HEAD) and
+/// local (HEAD → working). Empty before the first sync. The import line is left
+/// out of both.
 #[tauri::command]
 pub async fn git_note_sync_diff(
     path: String,
@@ -1384,9 +1290,7 @@ pub async fn git_note_sync_diff(
         .ok_or(InkyCapError::NoteboxNotOpen)?;
     let rel = notebox_relative(&root, &path);
 
-    // "Since last sync" is only meaningful once a sync has happened on this
-    // machine. With no recorded baseline, the review surface is empty (mirrors
-    // the notebox-wide changes-since-sync list).
+    // Without a recorded baseline there is nothing to review.
     let has_baseline = {
         let root = root.clone();
         tokio::task::spawn_blocking(move || sync_baseline_oid(&root).is_some())
@@ -1451,9 +1355,8 @@ async fn read_head_text(root: &Path, rel: &Path) -> Result<String> {
     .map_err(|e| InkyCapError::Git(format!("head-read task failed: {e}")))?
 }
 
-/// Read a note's text at the pre-sync baseline. Empty string when nothing has
-/// been synced yet or the note did not exist in the baseline (incoming added
-/// it) — both mean "nothing to revert to," which the hunk engine handles.
+/// A note's text at the pre-sync baseline. Empty when there is no baseline or
+/// the note didn't exist in it.
 async fn read_sync_baseline_text(root: &Path, rel: &Path) -> Result<String> {
     let root = root.to_path_buf();
     let rel = rel.to_path_buf();
@@ -1472,11 +1375,10 @@ async fn read_sync_baseline_text(root: &Path, rel: &Path) -> Result<String> {
     .map_err(|e| InkyCapError::Git(format!("baseline-read task failed: {e}")))?
 }
 
-/// Revert a single hunk of a note to its pre-sync baseline form, leaving the
-/// note's other changes intact. `currentStart`/`currentEnd` identify the hunk by
-/// its current-side line range (from [`git_note_sync_diff`]). The write goes
-/// through [`NoteboxStorage`] as an ordinary edit. Errors with a 400 when the
-/// range no longer matches a hunk (the note changed since the diff — refetch).
+/// Revert one hunk of a note to the baseline, leaving its other changes. The
+/// hunk is identified by its current line range (from [`git_note_sync_diff`]).
+/// Writes through [`NoteboxStorage`]. Errors with 400 if the range no longer
+/// matches a hunk.
 #[tauri::command]
 pub async fn git_revert_sync_hunk(
     path: String,
@@ -1512,10 +1414,8 @@ pub async fn git_revert_sync_hunk(
     Ok(())
 }
 
-/// Revert a whole note to its pre-sync baseline: restore the baseline content,
-/// or delete the note when the sync *added* it (it has no baseline version).
-/// The write goes through [`NoteboxStorage`] as an ordinary edit; history is
-/// untouched and the revert becomes a change the user then re-syncs.
+/// Revert a whole note to the baseline, or delete it if the sync added it.
+/// Writes through [`NoteboxStorage`] as an ordinary edit.
 #[tauri::command]
 pub async fn git_revert_note_since_sync(
     path: String,
@@ -1565,9 +1465,8 @@ pub async fn git_revert_note_since_sync(
 
 // ─────────────────────────── Identity & review session ─────────────────────
 
-/// Set the commit identity for *this* notebox. Stored per-notebox in the
-/// gitignored `local.json` (never enters the repo, never travels), so two clones
-/// of one repo on a machine can commit as different people.
+/// Set this notebox's commit identity, stored in the gitignored `local.json`
+/// (never shared), so two clones of a repo can commit as different people.
 #[tauri::command]
 pub async fn git_set_identity(
     name: String,
@@ -1592,9 +1491,8 @@ pub async fn git_set_identity(
     .map_err(|e| InkyCapError::Git(format!("set-identity task failed: {e}")))?
 }
 
-/// The commit identity configured for this notebox, if any (for the setup UI to
-/// display / seed). Per-notebox (local.json), with the legacy per-remote store
-/// as a fallback for noteboxes set up before the move.
+/// This notebox's commit identity, if any, from `local.json` or the older
+/// per-remote store.
 #[tauri::command]
 pub async fn git_get_identity(
     state: State<'_, AppState>,
@@ -1613,12 +1511,10 @@ pub async fn git_get_identity(
         .map_err(|e| InkyCapError::Git(format!("get-identity task failed: {e}")))
 }
 
-/// The commit identity InkyCap **would** stamp on this notebox's commits, for
-/// pre-filling the identity fields so the author is never a mystery: the
-/// per-notebox identity chosen for this remote if set, otherwise the git-config
-/// identity (`user.name`/`user.email`) it falls back to. `None` when neither
-/// exists (the user must then enter one). Works before collaboration is set up
-/// (reads the global git config), so the setup form can pre-fill too.
+/// The identity InkyCap would put on this notebox's commits, for pre-filling
+/// the identity fields: the per-notebox identity, else git config's `user.name`
+/// / `user.email`. `None` when neither exists. Works before collaboration is
+/// set up.
 #[tauri::command]
 pub async fn git_default_commit_identity(
     state: State<'_, AppState>,
@@ -1671,18 +1567,15 @@ pub async fn git_default_commit_identity(
     .map_err(|e| InkyCapError::Git(format!("identity task failed: {e}")))?
 }
 
-// ───────────────────── Phase 7: offline package handoff ────────────────────
+// ─────────────────────────── Offline package handoff ──────────────────────────
 //
-// Collaborate with no hosted git server. `git_export_package` zips the open
-// notebox's whole `.git` (its full history) to a single file; the recipient
-// either imports it as a brand-new notebox (`git_import_package_as_notebox`) or,
-// if they already have the notebox, reconciles it into theirs
-// (`git_import_package`). Reconciliation rides the Phase 5 engine unchanged: the
-// package is extracted to a temp staging repo, a transient local-path remote is
-// pointed at it, and `run_sync(..., push = false)` does the same 3-way merge as
-// a server Sync — conflicts pause and finalize via `git_sync_finalize(false)`.
-// A package-handoff notebox is marked by an empty `NoteboxGitConfig::remote`
-// (see `is_package_mode`); `git_setup_package_handoff` creates one.
+// Collaboration without a git server. `git_export_package` zips the notebox's
+// `.git` into one file. The recipient imports it as a new notebox
+// (`git_import_package_as_notebox`) or merges it into theirs
+// (`git_import_package`), which extracts it to a temporary repo, points a
+// local-path remote at it and runs `run_sync(..., push = false)`. A
+// package-mode notebox has an empty `NoteboxGitConfig::remote` (see
+// `is_package_mode`).
 
 /// Outcome of [`git_export_package`].
 #[derive(Debug, Clone, Serialize)]
@@ -1697,16 +1590,13 @@ pub struct PackageExportResult {
     /// When `include_packages` was set: canonical specs (`@ns/name:ver`) of the
     /// Typst packages vendored into the notebox so they travel with the export.
     pub vendored_packages: Vec<String>,
-    /// Package specs the notebox imports but that couldn't be located locally
-    /// (e.g. a never-installed `@local` package) and so were NOT bundled. The
-    /// recipient may be unable to compile notes that need them.
+    /// Packages the notebox imports that couldn't be found locally (e.g. an
+    /// uninstalled `@local` package) and weren't bundled.
     pub unresolved_packages: Vec<String>,
 }
 
-/// Export the open notebox — with its full git history — to a single
-/// (optionally AES-256-encrypted) package file. Commits any pending working
-/// edits first so the package carries the latest. Works for any collaborative
-/// notebox (server-backed or package-mode).
+/// Export the notebox with its full git history to one package file, optionally
+/// AES-256 encrypted. Pending edits are committed first.
 #[tauri::command]
 pub async fn git_export_package(
     dest: String,
@@ -1729,10 +1619,8 @@ pub async fn git_export_package(
 
     let (path, summary, vendor) = tokio::task::spawn_blocking(
         move || -> Result<(PathBuf, package::PackageSummary, package_vendor::VendorReport)> {
-            // When the notebox is set to bundle packages, vendor them into
-            // `.inkycap/packages/` first so the commit below captures them and
-            // they travel inside the exported history. Done before the dirty
-            // check so any newly-copied files are part of the package.
+            // With bundling on, copy packages into `.inkycap/packages/` before
+            // the dirty check, so the commit includes them.
             let vendor = if crate::notebox_settings::load_local_state(&root).bundle_packages {
                 package_vendor::vendor_notebox_packages(&root)?
             } else {
@@ -1766,11 +1654,8 @@ pub async fn git_export_package(
     })
 }
 
-/// Import a received package into the **currently open** notebox, reconciling
-/// its history with ours through the same merge as Sync (no push — there is no
-/// server). Returns a [`SyncOutcome`]: on a conflict it pauses exactly like a
-/// Sync, and the frontend finalizes with `git_sync_finalize(push = false)`.
-/// Use this when you already have the notebox; a first-time recipient uses
+/// Import a received package into the open notebox, merging as Sync does
+/// (without pushing). A first-time recipient uses
 /// [`git_import_package_as_notebox`].
 #[tauri::command]
 pub async fn git_import_package(
@@ -1795,10 +1680,9 @@ pub async fn git_import_package(
 
     let result = tokio::task::spawn_blocking(move || -> Result<SyncOutcome> {
         let staging = package::extract_to_temp(&archive_path, password.as_deref())?;
-        // Point a transient remote at the extracted repo (a local path). The
-        // fetch copies its objects + the `origin/<branch>` ref into our `.git`,
-        // so once this returns the staging dir is no longer needed — a paused
-        // merge finalizes against that persisted ref.
+        // Point a temporary remote at the extracted repo. The fetch copies its
+        // objects and `origin/<branch>` ref into our `.git`, so the staging folder
+        // isn't needed afterwards.
         // path-stringification-ok: consumed by libgit2 as a local-path remote,
         // not compared on the frontend.
         let staging_remote = staging.path().to_string_lossy().into_owned();
@@ -1807,13 +1691,9 @@ pub async fn git_import_package(
             branch: git.branch.clone(),
         };
         let outcome = run_sync(&root, &tmp_git, false)?;
-        // Record the *received* tip as the package-handoff baseline. After
-        // importing, we're even with what the sender gave us, so the status
-        // reads "shared" until a new local edit — without this the import's
-        // merge commit looks like an unshared change forever, and the same file
-        // ping-pongs between collaborators (the never-ending-share bug). Using
-        // the received tip (not local HEAD) means a user who had their *own*
-        // unshared edits still correctly sees "changes to share" for those.
+        // Record the received tip as the package baseline, so the status reads
+        // "shared" until a new local edit. The received tip rather than HEAD,
+        // so the user's own unshared edits still show.
         let backend = GitBackend::open(&root)?;
         if let Some(t) = backend.remote_tracking_oid(REMOTE_NAME, &git.branch)? {
             let mut local = crate::notebox_settings::load_local_state(&root);
@@ -1826,22 +1706,16 @@ pub async fn git_import_package(
     .await
     .map_err(|e| InkyCapError::Git(format!("import task failed: {e}")))?;
     emit_sync_events(&app_handle, window.label(), &result);
-    // Reconciling a package into the open notebox rewrites notes in the working
-    // tree; rebuild the session indexes so the imported changes are reflected
-    // (the file watcher can miss a bulk reconcile). Incremental, like git_sync.
+    // Rebuild the indexes after a merge, as `git_sync` does.
     if matches!(&result, Ok(o) if o.pulled) {
         crate::commands::notebox::spawn_index_rebuild(app_handle.clone(), session.clone());
     }
     result
 }
 
-/// Import a received package as a **new** notebox at `dest` — for a first-time
-/// recipient who does not already have this notebox. Extracts the package,
-/// clones it into `dest` (materializing the working tree), and drops the
-/// transient `origin` remote (it pointed at the temp staging dir), so a
-/// package-handoff notebox carries no dangling remote. Returns the new notebox
-/// path (frontend form) for the caller to register and open. Sibling of
-/// [`git_clone_notebox`]; does not touch the currently-open notebox.
+/// Import a received package as a new notebox at `dest`: extract it, clone it
+/// into `dest` and remove the temporary `origin`. Returns the new path for the
+/// caller to register and open. Doesn't touch the open notebox.
 #[tauri::command]
 pub async fn git_import_package_as_notebox(
     archive: String,
@@ -1874,10 +1748,8 @@ pub async fn git_import_package_as_notebox(
         // path-stringification-ok: consumed by libgit2 as a local clone source.
         let staging_path = staging.path().to_string_lossy().into_owned();
         clone_into(&staging_path, None, &dest)?;
-        // The clone's `origin` points at the temp staging dir; drop it. A
-        // server-backed package re-adds `origin` on its first Sync (its URL
-        // travels in the committed `.inkycap/settings.json`); a package-mode one
-        // never needs it.
+        // `origin` points at the temporary folder; remove it. A server-backed
+        // notebox re-adds it on its first Sync.
         let backend = GitBackend::open(&dest)?;
         backend.remove_remote(REMOTE_NAME)?;
         // A first-time recipient has exactly what was shared with them — nothing
@@ -1892,11 +1764,8 @@ pub async fn git_import_package_as_notebox(
     Ok(to_frontend_string(&cloned))
 }
 
-/// Set up the open notebox for **server-less** collaboration (offline package
-/// handoff): init/adopt the git repo with no remote, so the notebox is
-/// collaborative — version history and package export/import all work — without
-/// a hosted git server. The counterpart to [`git_setup_collaboration`];
-/// persists a [`NoteboxGitConfig`] with an empty `remote` (package mode).
+/// Set up the open notebox for collaboration without a server: a git repo with
+/// no remote, storing a [`NoteboxGitConfig`] with an empty `remote`.
 #[tauri::command]
 pub async fn git_setup_package_handoff(
     branch: Option<String>,
@@ -1970,10 +1839,9 @@ pub async fn git_get_bundle_packages(
     Ok(crate::notebox_settings::load_local_state(&root).bundle_packages)
 }
 
-/// Set whether the open notebox bundles its Typst packages when sharing (Sync
-/// push or package export). Stored per-machine. Enabling vendors the notebox's
-/// current packages immediately so the toggle takes visible effect now rather
-/// than only on the next share; the returned report says what was bundled.
+/// Set whether the notebox bundles its Typst packages when sharing (stored per
+/// machine). Enabling bundles the current packages right away and reports what
+/// was bundled.
 #[tauri::command]
 pub async fn git_set_bundle_packages(
     enabled: bool,
@@ -2092,9 +1960,9 @@ mod tests {
         assert!(res.message.is_some());
     }
 
-    /// Setup initializes a fresh repo, writes the collaboration `.gitignore`,
-    /// and points `origin` at the remote. Token/identity are left `None` so the
-    /// test never touches the real keychain or per-installation identity store.
+    /// Setup initializes a repo, writes the `.gitignore` and sets `origin`.
+    /// Credentials and identity are `None` so the test doesn't touch the
+    /// keychain.
     #[test]
     fn setup_initializes_repo_gitignore_and_remote() {
         let dir = tempfile::tempdir().unwrap();
@@ -2120,11 +1988,9 @@ mod tests {
         );
     }
 
-    /// Mirrors the *app's* setup path (a plain folder `init`'d, not a clone): a
-    /// freshly initialized repo must put its first commit on the *configured*
-    /// branch, not libgit2's default `master`, or the push of
-    /// `refs/heads/<branch>` fails with "src refspec ... does not match any
-    /// existing object". Regression test for that bug.
+    /// A newly initialized repo must put its first commit on the configured
+    /// branch, not `master`, or the push fails with "src refspec ... does not
+    /// match".
     #[test]
     fn setup_then_publish_lands_on_configured_branch() {
         let bare = tempfile::tempdir().unwrap();
@@ -2159,10 +2025,8 @@ mod tests {
         );
     }
 
-    /// The outgoing primitives a first Sync relies on: a freshly set-up notebox
-    /// commits its working tree and pushes the initial content. After the push
-    /// the local remote-tracking ref is updated, so `unpushed_count` reads 0, and
-    /// a second clone sees the content.
+    /// A set-up notebox commits and pushes its content; afterwards
+    /// `unpushed_count` is 0 and a second clone sees the content.
     #[test]
     fn first_sync_commits_working_tree_and_pushes_initial() {
         let bare = tempfile::tempdir().unwrap();
@@ -2227,7 +2091,7 @@ mod tests {
         );
     }
 
-    // ── Phase 5: Sync model (run_sync) ────────────────────────────────────────
+    // ── Sync (run_sync) ───────────────────────────────────────────────────────
 
     /// A bare remote whose HEAD points at `main` (libgit2 inits on `master`).
     fn bare_remote() -> (tempfile::TempDir, String) {
@@ -2318,9 +2182,8 @@ mod tests {
         );
     }
 
-    /// Same-region edits conflict: merge-first takes *theirs*, commits, and
-    /// pushes — no pause. The overlap is flagged in `conflicted` so the user can
-    /// revert it from the Changes pane if they'd rather keep their version.
+    /// Same-region edits take the incoming side, commit and push without
+    /// pausing, and the path is listed in `conflicted`.
     #[test]
     fn sync_conflict_takes_theirs_and_pushes() {
         let (_bare, url) = bare_remote();
@@ -2353,9 +2216,8 @@ mod tests {
         );
     }
 
-    /// A take-theirs sync records the "Changes since last sync" baseline: the
-    /// pre-merge local tip is stored, the conflicted path is flagged, and the
-    /// baseline→HEAD diff (what `git_changes_since_sync` reports) lists the note.
+    /// A sync that took the incoming side records the baseline, flags the path,
+    /// and the baseline → HEAD diff lists the note.
     #[test]
     fn sync_records_changes_since_baseline() {
         let (_bare, url) = bare_remote();
@@ -2391,9 +2253,8 @@ mod tests {
         );
     }
 
-    /// Both sides change the same binary → merge-first takes *theirs* (whole
-    /// file) and pushes; the path is flagged in `conflicted`. The user reverts
-    /// from the Changes pane to get their version back (preserved in history).
+    /// Both sides change the same binary file: the incoming side wins, the push
+    /// goes through and the path is flagged.
     #[test]
     fn binary_conflict_takes_theirs() {
         let (_bare, url) = bare_remote();
@@ -2466,9 +2327,8 @@ mod tests {
         assert_eq!(read_settings(&cp), serde_json::json!({ "a": 5, "b": 9 }));
     }
 
-    /// Both sides set the *same* key differently → merge-first takes *theirs*
-    /// for the clashing key (distinct-key edits still both survive) and pushes,
-    /// with no pause.
+    /// Both sides set the same settings key: the incoming value wins, other
+    /// keys from both sides survive, and the push goes through.
     #[test]
     fn settings_same_key_clash_takes_theirs() {
         let (_bare, url) = bare_remote();
@@ -2495,13 +2355,9 @@ mod tests {
         assert_eq!(read_settings(&cp), serde_json::json!({ "view": "live" }));
     }
 
-    /// Package mode (no remote): "unshared" is true while the working tree
-    /// *content* differs from the last shared/received baseline, and resets once
-    /// that baseline is recorded — so the status reads "Changes to share" →
-    /// shared → "Changes to share" across an export-then-edit cycle. The check is
-    /// content-based (not a commit-oid compare), which is what stops the
-    /// never-ending-share loop where an import's merge commit looked unshared
-    /// forever even with identical content.
+    /// Package mode: "unshared" is true while the content differs from the last
+    /// shared baseline and resets once a baseline is recorded. Content-based, so
+    /// an import's merge commit doesn't look unshared forever.
     #[test]
     fn package_unshared_tracks_shared_baseline() {
         let d = tempfile::tempdir().unwrap();
@@ -2509,9 +2365,8 @@ mod tests {
         git2::Repository::init(root).unwrap();
         set_git_identity(root);
         let backend = GitBackend::open(root).unwrap();
-        // A real collaborative notebox gitignores `.inkycap/local.json`, so
-        // recording the baseline (which writes local.json) is not itself a
-        // change — the content-based check relies on that.
+        // `local.json` is gitignored, so recording the baseline isn't itself a
+        // change.
         crate::git::backend::ensure_collaboration_gitignore(root).unwrap();
         let git = NoteboxGitConfig {
             remote: String::new(),
@@ -2639,7 +2494,7 @@ mod tests {
         assert!(res.up_to_date && res.behind == 0);
     }
 
-    // ── Phase 7: offline package handoff (server-less, local-path remote) ──────
+    // ── Offline package handoff (no server, local-path remote) ─────────────────
 
     /// A package-mode notebox seeded with `files`, no remote. Returns its dir
     /// (kept alive by the caller) and an opened backend.
@@ -2679,9 +2534,8 @@ mod tests {
         run_sync(into, &tmp, false).unwrap()
     }
 
-    /// Two package-mode noteboxes sharing history reconcile divergent edits to
-    /// *different* files with a clean merge and **no push** — the Sync engine
-    /// driven by the extracted package as a local-path remote.
+    /// Two package-mode noteboxes merge edits to different files cleanly,
+    /// without pushing.
     #[test]
     fn package_handoff_merges_clean_divergent_edits() {
         let (adir, a) = package_notebox(&[("x.typ", "x base\n"), ("y.typ", "y base\n")]);
@@ -2720,9 +2574,8 @@ mod tests {
         assert_eq!(out.digest.len(), 1, "only x landed from the package");
     }
 
-    /// A same-line conflict in a package import takes *theirs* and commits
-    /// locally (no server, no pause) under the package-mode (empty-remote)
-    /// config; the path is flagged in `conflicted`.
+    /// A same-line conflict in a package import takes the incoming side and
+    /// commits locally; the path is flagged.
     #[test]
     fn package_handoff_conflict_takes_theirs() {
         let (adir, a) = package_notebox(&[("note.typ", "line one\nline two\n")]);
@@ -2790,9 +2643,9 @@ mod tests {
         );
     }
 
-    /// The load-bearing guarantee: an incoming change to a note the importer
-    /// *also* edited in a different region merges cleanly and keeps *both*
-    /// edits — merge-first only takes theirs when the regions actually overlap.
+    /// An incoming change to a note the importer edited elsewhere merges
+    /// cleanly and keeps both edits; the incoming side wins only where edits
+    /// overlap.
     #[test]
     fn merge_first_combines_nonoverlapping_edits() {
         let (adir, a) = package_notebox(&[("note.typ", "line1\nline2\nline3\n")]);

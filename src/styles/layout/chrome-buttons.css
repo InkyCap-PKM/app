@@ -1,6 +1,5 @@
-/* Late chrome additions: new-tab button, palette category headers, status-bar toggles.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* New tab button, palette category headers, status bar toggles. Part of layout.css,
+   whose import order (see ../layout.css) keeps the cascade. */
 
 /* ─── Tab bar: new-tab button ─── */
 
@@ -22,10 +21,8 @@
   flex-shrink: 0;
 }
 
-/* The button box stays 24px; the glyph within it is kept small so it reads as
-   a quiet control rather than an attention-getting icon. This overrides the
-   em-scaled svg.lucide default, which would otherwise size the icon off the
-   button's font-size. */
+/* The button is 24px with a small icon, so it stays quiet. Overrides the
+   em-based svg.lucide size. */
 .tab-bar__new svg {
   width: 14px;
   height: 14px;
@@ -36,11 +33,10 @@
   color: var(--fg-primary);
 }
 
-/* WebView2 (Windows) draws a default blue text-selection / tap highlight on
-   buttons whose label is a bare text glyph ("+", "×"); WebKitGTK (Linux/macOS)
-   does not, so this only surfaces on Windows. Suppress the platform default on
-   the tab-bar's text-glyph buttons, and give them the shared keyboard-focus
-   affordance they otherwise lack (pointer users never see :focus-visible). */
+/* WebView2 (Windows) draws a blue selection or tap highlight on buttons
+   whose label is a text character ("+", "×"). Remove it on the tab bar's
+   text buttons, and give them the shared keyboard focus style (pointer users
+   never see :focus-visible). */
 .tab-bar__new,
 .tab__close,
 .tab-bar__scroll {

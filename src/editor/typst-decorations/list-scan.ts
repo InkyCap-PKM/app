@@ -1,17 +1,12 @@
-// The one place InkyCap asks "where are this document's list items?".
+// Finds the document's list items.
 //
-// Like heading-scan.ts, the answer is parser-first: a `- x` line typed inside a
-// ``` fence, a comment, or a string is not a list item, and only Typst's parser
-// draws that boundary reliably (a line regex only sees the start of the line).
-// So a cheap regex proposes candidate lines and the syntax tree rules on each
-// one via the shared O(log n) descent in `nodeStartingAt` — the same
-// index-then-confirm technique that keeps the heading scan fast enough to run
-// on every keystroke, which matters here because an outline is mostly list
-// lines.
+// As in heading-scan.ts, Typst's parser decides: a `- x` line inside a ```
+// fence, a comment or a string isn't a list item, which a line regex can't
+// tell. A quick regex finds candidate lines and the syntax tree confirms each
+// with `nodeStartingAt`, which is fast enough to run on every keystroke.
 //
-// Nesting itself (which item sits under which) is plain indentation and is
-// computed by the caller over the raw lines; this module only reports the
-// confirmed marker lines and their indent depth.
+// Nesting is plain indentation, worked out by the caller from the lines; this
+// only reports the confirmed lines and their indent.
 
 import { syntaxTree } from "@codemirror/language";
 import type { EditorState, Text } from "@codemirror/state";
@@ -21,11 +16,10 @@ import { nodeStartingAt } from "./heading-scan";
 /** The parser's marker nodes for unordered (`-`) / ordered (`+`, `N.`) items. */
 const LIST_MARKER_NAMES = new Set(["ListMarker", "EnumMarker"]);
 
-// A line that *might* open a list item: optional indent, then a `-`/`+`/`N.`
-// marker followed by a separating space or tab. Deliberately looser than
-// Typst's rule — the tree decides; this only says where to look. Requiring the
-// separator mirrors the visual editor's rule that a bare marker with no
-// following space is just typed text, not a list item.
+// A line that might start a list item: optional indent, a `-`/`+`/`N.` marker,
+// then a space or tab. Looser than Typst's rule, since the tree decides.
+// Requiring the space matches the visual editor, where a marker without one is
+// just text.
 const CANDIDATE_RE = /^([ \t]*)(?:[-+]|\d+\.)[ \t]/;
 
 export interface ListItemSpan {
@@ -71,15 +65,13 @@ export function leadingWhitespace(text: string): number {
 }
 
 /**
- * Last line (1-based) belonging to the subtree of a list item at
- * `itemLineNumber` whose leading indent is `indent`: the deepest run of
- * following lines indented strictly deeper than the item. Blank lines are
- * skipped — a blank line between two deeper lines stays inside the subtree,
- * while trailing blank lines after the last deeper line are excluded. Returns
- * `itemLineNumber` itself when the item has no children (a leaf).
+ * Last line (1-based) of the subtree of the list item at `itemLineNumber` with
+ * indent `indent`: the following lines indented deeper than the item. Blank
+ * lines between deeper lines are inside it; trailing blank lines aren't. A leaf
+ * returns `itemLineNumber`.
  *
- * This is the shared definition of "an item and everything nested under it",
- * used both to compute a list fold's range and to move a whole subtree.
+ * The shared definition of "an item and everything under it", for folding a
+ * list and moving a subtree.
  */
 export function listSubtreeEndLine(doc: Text, itemLineNumber: number, indent: number): number {
   let end = itemLineNumber;

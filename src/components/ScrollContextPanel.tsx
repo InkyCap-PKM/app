@@ -1,20 +1,15 @@
 // ---------------------------------------------------------------------------
-// Scroll Context panel — right-panel surface that summarises the
-// currently-visible window of the Journal Scroll. Four sub-panes:
-//
-//   1. Outline — headings across visible entries, click → scroll-to-heading.
-//   2. Connections — notes outside the scroll that link to / from any
-//      visible entry, click → open in new tab. Notes a visible entry links
-//      to that aren't written yet are listed too, marked with a dashed page;
-//      clicking one creates it.
-//   3. Tag concentration — tags occurring across visible entries.
-//   4. Citations — aggregated citations across visible entries.
-//
-// Subscribes to `getVisibleEntries(tabId)` from the journal-scroll store;
-// the JournalScrollView IntersectionObservers publish the visible set.
-//
-// Section collapse state persists to localStorage so it survives both
-// tab-switches and full app restarts.
+// Scroll Context panel: a right-panel summary of what is visible in the Journal
+// Scroll:
+//   1. Outline: headings in the visible entries; click to scroll to one.
+//   2. Connections: notes outside the scroll linking to or from a visible
+//      entry; click to open in a new tab. Linked notes not written yet are
+//      listed with a dashed page, and clicking creates them.
+//   3. Tags in the visible entries.
+//   4. Citations in the visible entries.
+// Reads `getVisibleEntries(tabId)` from the journal-scroll store, published by
+// JournalScrollView's IntersectionObservers. Collapsed sections are remembered
+// in localStorage.
 // ---------------------------------------------------------------------------
 
 import {
@@ -98,20 +93,13 @@ function saveSections(state: SectionState) {
 
 // ── Cross-mount persistence ────────────────────────────────────────────────
 //
-// The panel unmounts whenever the user views a non-scroll tab and remounts on
-// return; without help, all four sub-pane resources would re-issue their IPC
-// and the pane would visibly rebuild over a second or two. Two module-level
-// caches bridge that gap:
-//
-//   * `lastVisibleByTab` keeps the most recent non-empty visible set, so the
-//     `visible()` memo doesn't collapse to empty during the window where the
-//     JournalScrollView has unmounted but not yet re-published its observers.
-//   * `dataCache` keeps the last computed datasets per tab; each resource
-//     seeds its `initialValue` from it so the pane paints instantly on
-//     remount, then refreshes in the background.
-//
-// Both are keyed by tabId and capped so a long session can't grow them
-// without bound.
+// The panel unmounts on non-scroll tabs, and on return every sub-pane would
+// reload and visibly rebuild. Two caches avoid that:
+//   * `lastVisibleByTab` keeps the last non-empty visible set, so `visible()`
+//     doesn't go empty before JournalScrollView republishes.
+//   * `dataCache` keeps each tab's last data, used as the resources'
+//     `initialValue` so the pane paints at once and refreshes behind.
+// Both are keyed by tab and capped.
 
 interface ContextData {
   outline: OutlineRow[];
@@ -180,9 +168,8 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
   const visible = createMemo<VisibleNote[]>(() => {
     const paths = getVisibleEntries(props.tabId);
     if (paths.length === 0) {
-      // Empty during the JournalScrollView remount window (tab just
-      // re-shown). Fall back to the last known visible set so the sub-panes
-      // keep their content instead of flashing empty and rebuilding.
+      // Empty while JournalScrollView remounts; use the last visible set so the
+      // panes don't flash empty.
       return lastVisibleByTab.get(props.tabId) ?? [];
     }
     const entries = getEntries(props.tabId);
@@ -215,9 +202,9 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
     { initialValue: dataCache.get(props.tabId)?.outline ?? [] },
   );
 
-  // Keyed on `propertyVersion` too, which changes once the index has taken
-  // in a created or edited note, so a note written from this list stops
-  // showing as unwritten.
+  // Also keyed on `propertyVersion`, which changes once a created or edited
+  // note is indexed, so a note written from this list stops showing as
+  // unwritten.
   const [connections] = createResource<
     ConnectionRow[],
     { notes: VisibleNote[]; pv: number }
@@ -360,11 +347,10 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
   }
 
   // ── Citation highlight ──────────────────────────────────────────────────
-  // Clicking a citation card outlines every occurrence of that key across the
-  // visible scroll entries (the compiled HTML tags each citation with
-  // `data-cite-key`). The glow on an occurrence persists while it is on
-  // screen and clears once it has been seen and then scrolled fully out of
-  // view — so the marks don't linger. A new click clears any leftovers.
+  // Clicking a citation outlines every occurrence of its key in the visible
+  // entries (each citation has `data-cite-key` in the HTML). An occurrence's
+  // glow stays while on screen and clears once it has been seen and scrolled
+  // away. A new click clears the rest.
   let highlightObserver: IntersectionObserver | undefined;
   let highlighted: Element[] = [];
 
@@ -386,10 +372,7 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
     highlighted = els;
     for (const el of els) el.classList.add("citation-highlight");
 
-    // If no occurrence is currently on screen, bring the *first* one (in
-    // document order — `querySelectorAll` returns elements in order) into
-    // view, so a key cited several times across the page lands on its first
-    // mention rather than whichever happens to be nearest.
+    // If none is on screen, scroll to the first occurrence in document order.
     const containerRect = container.getBoundingClientRect();
     const inView = (el: Element) => {
       const r = el.getBoundingClientRect();
@@ -420,14 +403,13 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
 
   onCleanup(clearCitationHighlight);
 
-  /** Scroll to a specific heading inside a visible scroll entry. Headings in
-   *  the compiled HTML appear in document order, matching the order of
-   *  `getNoteHeadings`, so the heading's index in that list selects the
-   *  corresponding rendered element. Deep headings that Typst lowers to
-   *  `<div role="heading">` are included so the mapping stays 1:1. An entry
-   *  showing only an excerpt (Neighbourhood) renders fewer headings; there
-   *  the heading is found by its text, or the entry's top is used when the
-   *  excerpt leaves it out. */
+  /**
+   * Scroll to a heading in a visible entry. Headings in the HTML are in
+   * document order, as `getNoteHeadings` returns them, so the index picks the
+   * element; deep headings rendered as `<div role="heading">` are included. An
+   * excerpt (Neighbourhood) has fewer headings, so there the heading is found
+   * by text, or the entry's top is used.
+   */
   function scrollToHeading(row: OutlineRow, headingIndex: number) {
     const entry = document.querySelector(
       `.journal-scroll [data-path="${CSS.escape(row.path)}"]`,

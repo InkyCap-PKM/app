@@ -1,9 +1,6 @@
-//! SQLite schema definition and migrations for the metadata cache.
-//!
-//! Bumping `SCHEMA_VERSION` triggers a full cache wipe + recreate on next
-//! open. Because the cache is disposable (it's rebuilt from the filesystem),
-//! we don't ship migration scripts — losing the cache costs one slow startup,
-//! not user data.
+//! SQLite schema for the metadata cache. Raising `SCHEMA_VERSION` deletes and
+//! recreates the cache on the next open; it is rebuilt from the files, so there
+//! are no migrations and the cost is one slow start.
 
 use rusqlite::Connection;
 
@@ -16,9 +13,8 @@ pub const CREATE_STATEMENTS: &[&str] = &[
         root_path TEXT NOT NULL UNIQUE,
         last_opened_at INTEGER NOT NULL
     )",
-    // Tags and links are normalized into their own tables (rather than packed
-    // into JSON columns on `files`) so a future `.collection` query evaluator can
-    // compile to SQL with proper indexes — see the architecture plan.
+    // Tags and links have their own tables (not JSON columns on `files`), so
+    // `.collection` queries could later be compiled to indexed SQL.
     "CREATE TABLE IF NOT EXISTS files (
         notebox_id INTEGER NOT NULL REFERENCES noteboxes(id) ON DELETE CASCADE,
         path TEXT NOT NULL,
@@ -53,9 +49,9 @@ pub const CREATE_STATEMENTS: &[&str] = &[
     "CREATE INDEX IF NOT EXISTS idx_file_links_target ON file_links(notebox_id, target_text)",
 ];
 
-/// Initialize the schema, wiping and recreating if the stored version is older
-/// than [`SCHEMA_VERSION`]. Foreign keys are enabled here so the cascading
-/// deletes on `noteboxes` / `files` actually fire.
+/// Set up the schema, deleting and recreating it if the stored version is older
+/// than [`SCHEMA_VERSION`]. Foreign keys are turned on here so deletes cascade
+/// from `noteboxes` / `files`.
 pub fn init(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch("PRAGMA foreign_keys = ON;")?;
 
@@ -93,9 +89,8 @@ pub fn init(conn: &Connection) -> rusqlite::Result<()> {
         [SCHEMA_VERSION],
     )?;
 
-    // Verify that the schema matches expectations. If a prior wipe didn't
-    // fully take effect (e.g. stale WAL journal) we surface it as an error
-    // so the caller can delete the file and retry from scratch.
+    // Check the schema. If an earlier wipe didn't fully apply (e.g. a stale WAL
+    // journal), return an error so the caller deletes the file and starts over.
     verify_schema(conn)?;
 
     Ok(())
@@ -112,9 +107,8 @@ fn has_any_table(conn: &Connection) -> bool {
         > 0
 }
 
-/// Verify that the `files` table has the expected columns. Returns an error
-/// if the schema doesn't match, which triggers the delete-and-retry path
-/// in [`MetadataCache::open`].
+/// Check that the `files` table has the expected columns. An error leads to the
+/// delete-and-retry in [`MetadataCache::open`].
 fn verify_schema(conn: &Connection) -> rusqlite::Result<()> {
     let has_content: bool = conn.prepare("SELECT content FROM files LIMIT 0").is_ok();
     if !has_content {

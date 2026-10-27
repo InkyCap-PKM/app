@@ -1,25 +1,14 @@
-// A reusable Solid directive that keeps a floating surface (sort menu,
-// dropdown, popup) open until the user deliberately interacts away from it —
-// an outside mouse-down, the Escape key, or a viewport resize.
+// A Solid directive that keeps a floating surface (sort menu, dropdown, popup) open
+// until the user clicks outside it, presses Escape or resizes the window. Like
+// `Dropdown`'s listener, it listens for mousedown in the capture phase, so a
+// trigger's `stopPropagation` can't block it. As a directive it is removed when the
+// element unmounts.
 //
-// It replaces the older `onMouseLeave` dismissal scattered across the panel
-// sort menus, which closed the menu the instant the pointer drifted off it.
-// Users found that fragile: nudging the mouse while reaching for an item made
-// the menu vanish. Click-outside is the expected desktop behaviour.
-//
-// Modelled on the dismissal listener inside `Dropdown` (capture-phase
-// mousedown, so an inner `stopPropagation` on a trigger button can't swallow
-// the dismiss). Because it's a directive, its listener is torn down
-// automatically when the menu element unmounts — no manual cleanup at the
-// call site.
-//
-// Usage:
 //   <div use:clickOutside={{ onDismiss: () => setOpen(false), ignore: triggerRef }}>
 //
-// `ignore` is the toggle trigger (or any element) whose clicks must NOT count
-// as "outside". Without it, clicking the trigger while the menu is open would
-// dismiss the menu via this listener and then immediately reopen it via the
-// trigger's own toggle handler, leaving the menu flickering open.
+// `ignore` is the trigger (or any element) whose clicks don't count as outside;
+// otherwise clicking the trigger would close the menu here and reopen it in the
+// trigger's own handler.
 
 import { onCleanup } from "solid-js";
 import { menuIsOpen } from "./menu-nav";
@@ -28,11 +17,11 @@ export interface ClickOutsideOptions {
   onDismiss: () => void;
   /** Element(s) — typically the toggle trigger — whose clicks don't dismiss. */
   ignore?: HTMLElement | undefined | (HTMLElement | undefined)[];
-  /** CSS selector(s) for surfaces that should not count as "outside" even
-   *  though they live elsewhere in the DOM — notably a portaled popup nested
-   *  inside this one (e.g. a DatePicker's calendar). Matched with
-   *  `target.closest(selector)`. Without this, clicking inside such a popup
-   *  would dismiss the parent before the nested interaction completes. */
+  /**
+   * Selectors for surfaces elsewhere in the DOM that don't count as outside,
+   * such as a portalled popup inside this one (a DatePicker's calendar).
+   * Matched with `target.closest(selector)`.
+   */
   ignoreSelector?: string | string[];
 }
 
@@ -64,17 +53,15 @@ export function clickOutside(
   };
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key !== "Escape") return;
-    // The element only exists while the surface is open, so this Escape has
-    // done its job: claim it, or the sidebar's Escape-to-editor handler would
-    // also move the focus away.
+    // The element exists only while open, so claim the Escape; otherwise the
+    // sidebar's Escape-to-editor would also move focus.
     e.preventDefault();
     value().onDismiss();
   };
   const onResize = () => value().onDismiss();
 
-  // Capture phase mirrors Dropdown's listener so a trigger's `stopPropagation`
-  // can't prevent the dismiss. Resize closes fixed-positioned menus that would
-  // otherwise drift away from their anchor.
+  // Capture phase, as in Dropdown. Resizing closes fixed-position menus that
+  // would drift from their anchor.
   document.addEventListener("mousedown", onMouseDown, true);
   document.addEventListener("keydown", onKeyDown, true);
   window.addEventListener("resize", onResize);
@@ -86,20 +73,14 @@ export function clickOutside(
 }
 
 /**
- * Escape closes a transient surface, for the surfaces that can't use the
- * directive above.
+ * Escape closes a transient surface that can't use the directive: a right-click
+ * menu opened by a signal and closed by its component's own click handler. Call
+ * once beside that handler with the same close function; it lasts as long as
+ * the component.
  *
- * A right-click menu is opened by a signal and dismissed by the component's own
- * document-click handler rather than by a directive on the element, so there is
- * nothing for `clickOutside` to attach to. This gives those the other half of
- * the same contract: call it once, next to the existing click dismissal, with
- * the same close function. Registers for the lifetime of the calling component.
- *
- * The listener lives as long as the component, not the menu, so it cannot tell
- * from its own state whether there is anything to close. It asks the menu
- * controller instead: when a menu is on screen the Escape is claimed, so the
- * handlers further along (Escape-to-editor, distraction-free mode) leave the
- * focus where it is; otherwise the key passes through untouched.
+ * Since it outlives the menu, it asks the menu controller whether one is open:
+ * if so the Escape is claimed (so Escape-to-editor and distraction-free mode
+ * leave focus alone), otherwise it passes through.
  */
 export function dismissOnEscape(close: () => void): void {
   const onKeyDown = (e: KeyboardEvent) => {

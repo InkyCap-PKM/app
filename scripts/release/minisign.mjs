@@ -1,15 +1,15 @@
 // Checks a Tauri updater signature against the public key in tauri.conf.json,
-// the same way the updater plugin inside the app will. Run after signing so a
-// release signed with the wrong key (for example a stale key file on one of
-// several computers) is caught before users' Upgrade buttons reject it.
+// as the updater in the app will. Run after signing, so a release signed with
+// the wrong key (e.g. an old key file on one of several computers) is caught
+// before users' Upgrade buttons reject it.
 //
-// Formats (minisign, wrapped by Tauri in one extra layer of base64):
+// Formats (minisign, with one extra layer of base64 from Tauri):
 //   public key: base64 of "untrusted comment: …\n<base64 of: 'Ed' + key id (8) + key (32)>"
 //   signature:  base64 of "untrusted comment: …\n<base64 of: alg (2) + key id (8) + sig (64)>\n
 //               trusted comment: …\n<base64 of: global sig (64)>"
-// alg "ED" means the signature covers the BLAKE2b-512 hash of the file; "Ed"
-// means it covers the file itself. The global signature covers the file
-// signature followed by the trusted comment text.
+// alg "ED" signs the BLAKE2b-512 hash of the file; "Ed" signs the file itself.
+// The global signature covers the file signature followed by the trusted
+// comment.
 
 import { createHash, createPublicKey, verify } from "node:crypto";
 
@@ -42,11 +42,10 @@ export function parsePublicKey(tauriPubkey) {
 export const keyIdHex = (keyId) => Buffer.from(keyId).reverse().toString("hex").toUpperCase();
 
 /**
- * Check `tauriSig` (the contents of a `.sig` file) against `fileBytes`.
- * Returns `{ ok: true, signedVersion }` or `{ ok: false, reason }`.
- * `signedVersion` is the `version:` field newer Tauri CLIs record in the
- * trusted comment (null when absent); the updater plugin refuses an update
- * whose feed announces a different version than the one signed.
+ * Check `tauriSig` (a `.sig` file's contents) against `fileBytes`. Returns `{
+ * ok: true, signedVersion }` or `{ ok: false, reason }`. `signedVersion` is the
+ * `version:` newer Tauri CLIs put in the trusted comment (null if absent); the
+ * updater refuses an update whose feed names a different version.
  */
 export function verifySignature(fileBytes, tauriSig, publicKey) {
   const lines = unwrap(tauriSig);

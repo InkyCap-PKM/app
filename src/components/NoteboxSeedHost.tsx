@@ -1,6 +1,6 @@
-// Renders the active "Copy settings + rules from an existing notebox?"
-// dialog (if any). Mounted once at the app root; driven by the
-// activeNoteboxSeed signal in stores/notebox-seed.ts.
+// Renders the active "Copy settings and rules from an existing notebox?"
+// dialog. Mounted once at the app root and driven by activeNoteboxSeed in
+// stores/notebox-seed.ts.
 
 import { Component, Show, For, createSignal, createEffect } from "solid-js";
 import {
@@ -50,9 +50,8 @@ const NoteboxSeedHost: Component = () => {
       skip();
     } else if (e.key === "Enter") {
       e.preventDefault();
-      // "Use defaults" is the default action — copying from another notebox is
-      // the deliberate, opt-in choice, so Enter should not silently inherit
-      // another notebox's settings.
+      // Enter means "Use defaults": copying another notebox's settings must be
+      // a deliberate choice.
       skip();
     }
   }

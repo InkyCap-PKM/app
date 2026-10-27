@@ -1,6 +1,5 @@
-/* Collection filter builder: boolean groups, rows, property picker.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Collection filter builder: groups, rows, property picker. Part of
+   layout.css, whose import order (see ../layout.css) keeps the cascade. */
 
 /* Filter builder */
 .filter-builder {
@@ -29,10 +28,10 @@
 
 /* Filter-builder footer buttons use the shared .btn system (see markup). */
 
-/* A boolean group: a combinator header, its member rows / sub-groups, and
-   the add buttons. The root group is unadorned (the .filter-builder box is
-   its frame); nested groups are inset with a left accent rule so the
-   boolean structure reads at a glance. */
+/* A group: its type header, its rows and subgroups, and the add buttons. The
+   root group has no frame of its own (.filter-builder is its frame); nested
+   groups are indented with an accent line on the left so the structure is
+   easy to see. */
 .filter-builder__group {
   display: flex;
   flex-direction: column;

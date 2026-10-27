@@ -1,45 +1,29 @@
-//! "Is there a newer release?" check.
+//! Checks whether a newer release exists, so the UI can offer it with download
+//! links. Installing in place (Upgrade) is `commands::upgrade`, which reads its
+//! own signed feed from the same folder.
 //!
-//! This command finds the latest published release so the UI can show a
-//! "version X is available" notice with links to download it. Installing it in
-//! place (the Upgrade button) is a separate step in `commands::upgrade`, which
-//! reads its own signed feed from the same folder as the release feed.
+//! ## Source
 //!
-//! ## Where the answer comes from
-//!
-//! The app asks a **release feed**: a small static JSON file on a host InkyCap
-//! controls (`DEFAULT_FEED_URL`). The feed, not the app, knows which code forge
-//! the releases actually live on, so moving the project between forges is a
-//! change to one uploaded file rather than a new app release. The feed also
-//! supplies the "releases" and "download" page links, so those stop being baked
-//! into the binary too.
-//!
-//! If the feed can't be reached, the check falls back to querying the forge's
-//! releases API directly (`FALLBACK_FORGE_API`). That keeps the check working
-//! if the domain lapses or its host has an outage, and it is the same path
-//! builds before 26.9 used exclusively.
+//! A **release feed**: a small static JSON file on InkyCap's host
+//! (`DEFAULT_FEED_URL`). The feed says which forge hosts the releases and
+//! supplies the release and download links, so moving forges means changing one
+//! file, not releasing the app. If the feed can't be reached, the forge's
+//! releases API (`FALLBACK_FORGE_API`) is asked directly.
 //!
 //! ## Privacy and safety
 //!
-//! Per CLAUDE.md security: this sends no note content and no filesystem paths —
-//! only a GET to a fixed host — and is the module's sole network access. It runs
-//! only on explicit user action, or on startup if the user opted in (never
-//! silently — local-first, no telemetry). The check runs in Rust rather than the
-//! webview because neither host sends CORS headers (a webview `fetch` would be
-//! blocked), which also keeps the one outbound call on the backend's narrow
-//! surface and lets it carry a `User-Agent`.
-//!
-//! Every URL that comes back — from the feed or the forge — is checked to be
-//! `http(s)` before it reaches the frontend, because the frontend hands it to
-//! the OS URL opener.
+//! Only a GET to a fixed host, with no note content or paths; this module's only
+//! network access. Runs only when the user asks, or at startup if they opted in.
+//! In Rust because neither host sends CORS headers, and so it can send a
+//! `User-Agent`. Every URL returned is checked to be `http(s)` before reaching
+//! the frontend, which passes it to the OS URL opener.
 
 use serde::{Deserialize, Serialize};
 
 use crate::errors::InkyCapError;
 
-/// InkyCap's own release feed, written at each release by
-/// `scripts/release-feeds.mjs`; the file's shape is built in
-/// `scripts/release/feeds.mjs`.
+/// InkyCap's release feed, written at each release by
+/// `scripts/release-feeds.mjs` (format in `scripts/release/feeds.mjs`).
 pub(crate) const DEFAULT_FEED_URL: &str = "https://inkycap.org/releases/latest.json";
 
 /// Forge releases API used when the feed is unreachable. This is the API root
@@ -50,9 +34,8 @@ const FALLBACK_FORGE_API: &str = "https://codefloe.com/api/v1/repos/InkyCap/app"
 const DEFAULT_RELEASES_URL: &str = "https://codefloe.com/InkyCap/app/releases";
 const DEFAULT_DOWNLOAD_URL: &str = "https://inkycap.org/download";
 
-/// The only feed schema this build understands. A feed that needs to break
-/// compatibility must be published at a *new* URL, leaving schema 1 in place at
-/// `DEFAULT_FEED_URL` — otherwise already-installed builds stop checking.
+/// The only feed schema this build reads. A breaking change must use a new URL
+/// and leave schema 1 at `DEFAULT_FEED_URL`, or installed builds stop checking.
 const SUPPORTED_SCHEMA: u32 = 1;
 
 /// What the frontend needs to show the "update available" notice.
@@ -108,9 +91,9 @@ struct FeedRelease {
 }
 
 impl Feed {
-    /// Pick the release to offer. Stable-only by default; with `include_beta`,
-    /// whichever channel is numerically newer (a beta is not always ahead of
-    /// stable — `26.6.9` beta predates `26.6.10` stable).
+    /// The release to offer: stable only by default; with `include_beta`,
+    /// whichever channel is newer (a beta isn't always ahead: `26.6.9` beta
+    /// predates `26.6.10` stable).
     fn choose(&self, include_beta: bool) -> Option<(&FeedRelease, bool)> {
         let stable = self.channels.stable.as_ref();
         if !include_beta {
@@ -173,11 +156,9 @@ struct ForgeRelease {
     prerelease: bool,
 }
 
-/// The endpoint that answers "newest release" for a channel.
-///
-/// `/releases/latest` already excludes drafts and pre-releases, so it *is* the
-/// stable channel. The list endpoint returns newest-first, so `[0]` is the
-/// newest release of any kind.
+/// The endpoint for a channel's newest release. `/releases/latest` excludes
+/// drafts and pre-releases, so it is the stable channel; the list endpoint is
+/// newest-first, so `[0]` is the newest of any kind.
 fn forge_url(api_base: &str, include_beta: bool) -> String {
     let base = api_base.trim_end_matches('/');
     if include_beta {
@@ -228,9 +209,8 @@ fn version_key(version: &str) -> (u32, u32, u32) {
     )
 }
 
-/// Accept a URL only if it is `http(s)`. Everything returned by this module is
-/// handed to the OS URL opener by the frontend, and the feed is remote data, so
-/// a `file:`/`javascript:` value must never get that far.
+/// Accept only `http(s)` URLs: the frontend passes them to the OS opener, and
+/// the feed is remote data.
 fn web_url(url: Option<&str>) -> Option<String> {
     let url = url?.trim();
     let lower = url.to_ascii_lowercase();
@@ -241,10 +221,9 @@ fn web_url(url: Option<&str>) -> Option<String> {
     }
 }
 
-/// A user-supplied feed URL, rejected unless it is `https`. Plain `http` is not
-/// allowed here: an override points the update check at a third party, and a
-/// downgrade to cleartext would let a network attacker choose the download link
-/// the user is shown.
+/// A user feed URL, rejected unless `https`: it points the check at a third
+/// party, and cleartext would let a network attacker choose the download link
+/// shown.
 pub(crate) fn validate_feed_override(url: &str) -> Result<String, InkyCapError> {
     let url = url.trim();
     if url.to_ascii_lowercase().starts_with("https://") && url.len() > "https://".len() {
@@ -281,16 +260,10 @@ async fn get_text(url: &str) -> Result<String, InkyCapError> {
 
 // ── The command ──────────────────────────────────────────────────────
 
-/// Fetch the latest release. With `include_beta`, pre-releases are considered;
-/// otherwise only the stable channel.
-///
-/// `feed_url` overrides the default release feed (`settings.updates.feed_url`),
-/// for forks and self-builders. When it is set the forge fallback is skipped:
-/// someone who redirected the check would not expect it to quietly reach
-/// InkyCap's own hosts instead.
-///
-/// Errors as `InkyCapError::Network` on any transport/HTTP/parse failure so the
-/// UI can degrade to "couldn't check" rather than crashing.
+/// Fetch the latest release; `include_beta` includes pre-releases. `feed_url`
+/// replaces the default feed (`settings.updates.feed_url`), and then the forge
+/// fallback is skipped, so a redirected check never reaches InkyCap's hosts.
+/// Any failure is `InkyCapError::Network`, so the UI can say "couldn't check".
 #[tauri::command]
 pub async fn check_latest_release(
     include_beta: bool,

@@ -1,6 +1,5 @@
-/* Search panel header (input, tips, options rows).
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Search panel header (input, tips, option rows). Part of layout.css, whose
+   import order (see ../layout.css) keeps the cascade. */
 
 /* ── Search Panel ── */
 
@@ -8,10 +7,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  /* Fill the sidebar content box so the input + controls stay pinned at the
-     top and only the results list scrolls (see `.search-panel__results`).
-     Without this the whole panel grows and the search box is pushed off the
-     top of the pane. */
+  /* Fill the sidebar so the input and controls stay at the top and only the
+     results scroll (see `.search-panel__results`). */
   flex: 1;
   min-height: 0;
 }
@@ -22,9 +19,8 @@
   flex-shrink: 0;
 }
 
-/* Exception: the search tips list is tall, so on a short window it shrinks to
-   the space left below the input and scrolls, rather than running off the
-   bottom of the pane. */
+/* Except the search tips, which are tall: on a short window they shrink to
+   the space below the input and scroll. */
 .search-panel > .search-panel__hints {
   flex-shrink: 1;
   min-height: 0;

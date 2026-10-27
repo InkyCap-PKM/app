@@ -6,22 +6,20 @@ import { openTab } from "../stores/tabs";
 import { toastError } from "../stores/toasts";
 import { useI18n, tPlural } from "../lib/i18n";
 
-/// Reports notebox entry names that will not survive a copy to Windows or
-/// macOS, plus note names that make a wikilink ambiguous.
+/// Reports names in the notebox that won't survive a copy to Windows or macOS,
+/// and note names that make a wikilink ambiguous.
 ///
-/// The damage these describe happens *during a copy*, before InkyCap runs on
-/// the other machine: Windows merges two folders differing only in case, and
-/// overwrites one of two files that do. So the check has to be something the
-/// user can run ahead of time, from the command palette.
+/// The damage happens during the copy, before InkyCap runs on the other
+/// computer (Windows merges two folders differing only in case and overwrites
+/// one of two such files), so this is a check to run beforehand, from the
+/// command palette.
 ///
-/// Report-only by design — see the module docs in
-/// `src-tauri/src/commands/name_audit.rs` for why there is no repair button.
-/// "Save report" writes the findings to a note at the notebox root, where the
-/// duplicate-name section carries wikilinks, so the report doubles as a
-/// worklist you can keep open while renaming files.
+/// Report only; see `src-tauri/src/commands/name_audit.rs` for why there's no
+/// repair. "Save report" writes the findings to a note at the notebox root,
+/// with wikilinks in the duplicate-name section, to keep open while renaming.
 ///
-/// Shares the `audit-dialog__*` shell with TypAuditDialog; add a third audit by
-/// reusing those classes rather than copying them.
+/// Shares the `audit-dialog__*` classes with TypAuditDialog; reuse them for
+/// another audit.
 const NameAuditDialog: Component<{
   open: boolean;
   onClose: () => void;
@@ -84,9 +82,9 @@ const NameAuditDialog: Component<{
     }
   });
 
-  /// Open one duplicate in its own tab, leaving the dialog up so the user can
-  /// work down the list. `newTabAction` defers to the user's "switch to new
-  /// tabs immediately" preference rather than yanking focus every click.
+  /// Open one duplicate in its own tab, keeping the dialog open to work down
+  /// the list. `newTabAction` follows the "switch to new tabs immediately"
+  /// setting.
   function openNote(p: ipc.DuplicateNotePath) {
     openTab(
       { type: "file", title: p.rel.split("/").pop()?.replace(/\.typ$/i, "") ?? p.rel, path: p.abs },

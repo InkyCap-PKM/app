@@ -8,10 +8,9 @@ pub struct CollectionInfo {
     pub path: String,
     pub view_count: usize,
     pub icon: Option<String>,
-    /// Unix epoch seconds for the `.collection` file, mirroring
-    /// [`crate::storage::traits::FileTreeNode`]. Zero when the platform
-    /// doesn't expose the stat field — the frontend treats zero as
-    /// "unknown" when sorting by date.
+    /// Unix seconds for the `.collection` file, as in
+    /// [`crate::storage::traits::FileTreeNode`]. Zero when the platform doesn't
+    /// provide it; the frontend sorts zero as unknown.
     pub modified_time: u64,
     pub created_time: u64,
 }
@@ -21,10 +20,9 @@ pub struct CollectionData {
     pub columns: Vec<String>,
     pub rows: Vec<CollectionRow>,
     pub views: Vec<ViewInfo>,
-    /// Distinct scalar values present per column across the view's member set
-    /// (before the view's own per-column quick filters narrow it). Powers the
-    /// multi-select checklist in a list/commalist column's header filter.
-    /// Sorted; columns with too many distinct values (or none) are omitted.
+    /// Distinct values per column across the view's members (before its column
+    /// filters), for the checklist in a list/commalist column's header filter.
+    /// Sorted; columns with too many distinct values, or none, are left out.
     #[serde(rename = "columnValues")]
     pub column_values: HashMap<String, Vec<String>>,
 }

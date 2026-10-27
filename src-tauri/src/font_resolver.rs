@@ -1,18 +1,14 @@
-//! Resolve a `FontChoice` to a concrete font family name.
+//! Resolve a `FontChoice` to a font family name.
 //!
 //! Roles:
-//! - Interface / Editor — used on the frontend (CSS). Editor's "follow"
-//!   mode resolves to Interface's resolved value.
-//! - Monospace / Text / Verse — used in compiled Typst output. Verse's
-//!   "follow" mode resolves to Text's resolved value. Text's
-//!   "typst-default" mode resolves to None, signalling the caller to
-//!   omit `#set text(font: ...)` and let Typst pick.
+//! - Interface / Editor: used by the frontend (CSS). Editor's "follow" uses
+//!   Interface's result.
+//! - Monospace / Text / Verse: used in compiled Typst. Verse's "follow" uses
+//!   Text's result. Text's "typst-default" gives None: the caller omits `#set
+//!   text(font: ...)` and Typst chooses.
 //!
-//! The OS-defaults lookup runs once per process via `OnceLock`. The
-//! values it returns are concrete family names (e.g. "Cantarell",
-//! "Segoe UI", ".AppleSystemUIFont"). They reflect what fontconfig /
-//! the OS reports at the time of the first call; rarely changes during
-//! a session.
+//! The OS defaults (e.g. "Cantarell", "Segoe UI", ".AppleSystemUIFont") are
+//! looked up once per run.
 
 use std::sync::OnceLock;
 
@@ -20,9 +16,8 @@ use serde::Serialize;
 
 use crate::settings::{FontChoice, FontSettings};
 
-/// Family name shipped as InkyCap's "bundled" option per role.
-/// Bumping this requires updating both this constant and the
-/// `src-tauri/assets/fonts/` bundle.
+/// The family InkyCap bundles for each role. Changing one also means changing
+/// the fonts in `src-tauri/assets/fonts/`.
 pub const BUNDLED_INTERFACE: &str = "Inter";
 pub const BUNDLED_TEXT: &str = "Junicode";
 pub const BUNDLED_MONO: &str = "JuliaMono";
@@ -44,12 +39,9 @@ pub fn system_defaults() -> &'static SystemFontDefaults {
 
 #[cfg(target_os = "linux")]
 fn resolve_system_defaults() -> SystemFontDefaults {
-    // GNOME (and many GNOME-derived DEs) stores the user's UI/mono
-    // font preference in dconf and doesn't propagate it into
-    // fontconfig — so `fc-match sans-serif` on a system where the
-    // user picked Inter in Tweaks still returns the distro's generic
-    // "Noto Sans". Prefer gsettings when available, then fall through
-    // to fontconfig.
+    // GNOME stores the user's interface and monospace fonts in dconf without
+    // passing them to fontconfig, so `fc-match sans-serif` can return the
+    // distro default. Try gsettings first, then fontconfig.
     let sans = gsettings_font("org.gnome.desktop.interface", "font-name")
         .or_else(|| fc_match("sans-serif"))
         .unwrap_or_else(|| "DejaVu Sans".into());
@@ -79,11 +71,10 @@ fn fc_match(alias: &str) -> Option<String> {
     }
 }
 
-/// Read a font family from a gsettings key. The value comes back as a
-/// quoted GVariant string like `'Inter Variable 11'` — strip the outer
-/// quotes and the trailing point-size token to get the bare family
-/// name. Returns `None` if gsettings isn't on the PATH, the schema
-/// isn't installed (non-GNOME systems), or the value is empty.
+/// A font family from a gsettings key. The value is a quoted string like
+/// `'Inter Variable 11'`; the quotes and size are removed. `None` if gsettings
+/// is missing, the schema isn't installed (non-GNOME systems) or the value is
+/// empty.
 #[cfg(target_os = "linux")]
 fn gsettings_font(schema: &str, key: &str) -> Option<String> {
     let output = std::process::Command::new("gsettings")
@@ -172,11 +163,8 @@ fn role_system(role: FontRole, sys: &SystemFontDefaults) -> &str {
     }
 }
 
-/// Resolve a single role to a concrete family name.
-///
-/// Returns `None` only for the text role when set to "typst-default",
-/// signalling that the caller should omit the `#set text(font: ...)`
-/// injection entirely.
+/// Resolve one role to a family name. `None` only for the text role set to
+/// "typst-default": the caller then leaves out `#set text(font: ...)`.
 pub fn resolve_role(role: FontRole, fonts: &FontSettings) -> Option<String> {
     let choice = match role {
         FontRole::Interface => &fonts.interface,
@@ -265,12 +253,10 @@ mod tests {
 
     #[test]
     fn default_compile_roles_are_all_embedded() {
-        // The out-of-box config must keep every role that's injected into the
-        // Typst compile (text, verse, monospace) on a bundled/embedded family,
-        // so a fresh install renders identically on every OS and never needs the
-        // system font collection just to draw a default note. interface/editor
-        // are frontend CSS and intentionally still system; they're not asserted
-        // here (and resolving them would invoke the OS-dependent defaults).
+        // By default every role used in Typst output (text, verse, monospace)
+        // must be a bundled font, so a new install renders the same on every OS
+        // without loading system fonts. Interface and editor are CSS and use
+        // system fonts, so they aren't checked here.
         let fonts = FontSettings::default();
         assert_eq!(
             resolve_role(FontRole::Text, &fonts).as_deref(),

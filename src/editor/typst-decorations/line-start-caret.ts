@@ -1,30 +1,20 @@
 // Keeps the caret out of the blind spot in front of a line's hidden markup.
 //
 // The visual editor replaces a list marker (`- `, `+ `, `1. `) with a bullet
-// widget that a negative `margin-left` pulls one bullet-width into the left
-// margin, so the item's text and its wrapped continuations share one column
-// (see the hanging-indent notes in visual-plugin.ts and visual-theme.ts). The
-// side effect is that the widget's margin box is zero wide: the caret before
-// the marker and the caret after it are drawn at the *same* x. Two document
-// positions, one pixel column — the writer aims for "just before my text" and
-// lands, some of the time, in front of the marker instead.
+// pulled into the margin by a negative `margin-left`, so the text and its
+// wrapped lines share a column (see the hanging-indent notes in
+// visual-plugin.ts and visual-theme.ts). The bullet's margin box is then zero
+// wide, so the caret before and after the marker are drawn at the same place,
+// and the writer sometimes lands in front of the marker. Then:
+//   * typing inserts before the marker (`x- item`);
+//   * a selection ending there leaves the marker behind, so deleting items
+//     produces `- - item`, which Typst reads as a nested list that Shift+Tab
+//     can't outdent.
 //
-// Two failures follow from that, and this module exists to stop both:
-//
-//   * Typing there inserts before the marker (`x- item`), so the characters
-//     appear in front of the bullet even though the caret looked like it was
-//     after it.
-//   * Ending a selection there leaves the marker behind, so deleting a run of
-//     items merges two markers into `- - item`. Typst reads that as a nested
-//     list, so the surviving item looks indented, and Shift+Tab can't outdent
-//     it because there is no leading whitespace to take away — the only fix is
-//     to switch to source mode and delete the stray marker by hand.
-//
-// The rule is that a line start covered by replaced markup is an alias for the
-// position after that markup. CodeMirror's own `atomicRanges` almost gets
-// there, but it only skips positions strictly *inside* a range; a range's
-// start edge is normally distinguishable because there is text before it. At a
-// line start there is no such text, so that edge is handled here.
+// So a line start covered by replaced markup is treated as the position after
+// it. CodeMirror's `atomicRanges` only skips positions strictly inside a range;
+// at a line start there is no text before the range to tell its start edge
+// apart, so that edge is handled here.
 
 import {
   EditorSelection,
@@ -38,15 +28,11 @@ import {
 import { expandFunc } from "./effects";
 
 /**
- * Where a caret at `pos` should really sit.
- *
- * Unchanged unless `pos` is a line start that some replaced range covers, in
- * which case it moves to the far end of that range — the farthest, when
- * several markup ranges open the same line.
- *
- * `atoms` are the visual layer's replaced ranges. A range that runs past the
- * line break stands for the whole line rather than markup in front of content,
- * so it is left alone: its start is the only position the caret has there.
+ * Where a caret at `pos` should sit: unchanged unless `pos` is a line start
+ * covered by a replaced range, in which case the far end of that range (the
+ * farthest, if several open the line). `atoms` are the visual layer's replaced
+ * ranges. A range running past the line break stands for the whole line, so its
+ * start is left alone.
  */
 export function pastLineLeadingMarkup(
   atoms: RangeSet<RangeValue>,
@@ -63,9 +49,8 @@ export function pastLineLeadingMarkup(
 }
 
 /**
- * End of a list item's marker and its one separating space (`- `, `+ `,
- * `1. `), the same span the visual editor folds into its bullet widget, or
- * null when the line is not a list item.
+ * End of a list item's marker and its separating space (`- `, `+ `, `1. `), the
+ * span the bullet widget replaces, or null for other lines.
  */
 export function listMarkerEnd(line: Line): number | null {
   const match = line.text.match(/^\s*(?:[-+]|\d+\.)[ \t]/);
@@ -73,34 +58,24 @@ export function listMarkerEnd(line: Line): number | null {
 }
 
 /**
- * Selection filter that keeps the caret — and the forward end of a selection —
- * out of the dead position in front of a line's hidden leading markup.
+ * Selection filter keeping the caret, and the forward end of a selection, out
+ * of the position in front of a line's hidden markup. `atomsFor` gives the
+ * replaced ranges, the same set the visual layer makes atomic.
  *
- * `atomsFor` supplies the replaced ranges, so callers can hand over the same
- * set the visual layer already makes atomic and the two can't disagree about
- * what counts as markup.
+ * A caret landing there moves forward past the markup, except when it stepped
+ * back from the same line (Left, Ctrl+Left, …), where CodeMirror has already
+ * moved it to the range's start; moving it forward again would trap it, so it
+ * goes to the end of the previous line instead. A click is never a step.
  *
- * A caret that lands there normally moves forward, past the markup. The one
- * exception is a caret that stepped *back* onto it from the same line — Left,
- * Ctrl+Left, and the like — which CodeMirror's atomic handling has already
- * pushed from the content side to the range's start. Sending that caret
- * forward again would pin it at the start of the item's text, so it goes where
- * the writer was heading: the end of the previous line. A pointer click is
- * never a step, whatever the caret was doing before it.
+ * For a list bullet, stepping back from the start of the text instead reveals
+ * the marker as source (through `expandFunc`, keyed on the line start), with
+ * the caret in front of it, so the item can be selected or deleted with its
+ * bullet; the next step reaches the previous line.
  *
- * A list bullet is the exception to the exception. Stepping back from the
- * start of the item's text reveals the marker as source (through `expandFunc`,
- * keyed on the line start) and leaves the caret in front of it, where it can
- * now be told apart from the caret after it. That is how the writer selects
- * or deletes an item together with its bullet; the next step back reaches the
- * previous line as usual.
- *
- * Only the *forward* end of a non-empty selection moves, and only when the
- * selection starts mid-line. Pulling the start end forward as well would leave
- * the first selected item's marker behind, which is the `- - item` bug wearing
- * a different hat. And a selection that begins at a line start is a whole-line
- * selection — triple-click, Ctrl+A, Shift+Down from a line start — where both
- * ends belong on line boundaries and the following item must keep its marker.
+ * Only the forward end of a non-empty selection moves, and only when the
+ * selection starts mid-line: moving the start too would leave the first item's
+ * marker behind. A selection starting at a line start (triple-click, Ctrl+A,
+ * Shift+Down) is a whole-line selection whose ends belong on line boundaries.
  */
 export function lineStartCaretFilter(
   atomsFor: (state: EditorState) => RangeSet<RangeValue>,
@@ -117,9 +92,8 @@ export function lineStartCaretFilter(
     if (atoms.size === 0) return tr;
     const doc = tr.startState.doc;
     const before = tr.startState.selection.ranges;
-    // Cursor-motion commands annotate their transactions as "select"; a click
-    // is "select.pointer". Anything else (a search hit, a restored selection)
-    // is a jump, not a step.
+    // Motion commands tag transactions "select"; a click is "select.pointer".
+    // Anything else (a search hit, a restored selection) is a jump, not a step.
     const keyboardMove = tr.isUserEvent("select") && !tr.isUserEvent("select.pointer");
 
     let moved = false;

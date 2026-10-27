@@ -1,24 +1,14 @@
-//! Name ordering for user-facing lists, the Rust counterpart to the
-//! frontend's `compareName` in `src/lib/sort.ts`.
+//! Name ordering for lists the user sees, the counterpart of `compareName` in
+//! `src/lib/sort.ts`.
 //!
-//! Most listings the user sees are sorted in the webview, but three orderings
-//! are decided here and shipped to the frontend already sorted: collection
-//! table rows, the journal scroll's paginated entries, and the scaffold
-//! picker. Those need the same rules the rest of the app follows, or a
-//! `10 Chapter` note lands between `1 Chapter` and `2 Chapter` in one surface
-//! and after `9 Chapter` in the next.
+//! A few lists are sorted here and sent already ordered (collection rows, the
+//! journal scroll's entries, the scaffold picker); they must follow the same
+//! rules as the rest of the app, or `10 Chapter` would sit in different places
+//! in different views. Both sides use the same collation: the frontend
+//! `Intl.Collator`, this module ICU4X (the same Unicode collation). Code-point
+//! order isn't collation order (`Étude` would sort after `zebra`).
 //!
-//! Both halves therefore run the *same* collation algorithm rather than two
-//! approximations of it: the frontend uses the browser's `Intl.Collator`, and
-//! this module uses ICU4X, which is the same Unicode collation the browser
-//! implements. A hand-rolled comparator lived here briefly and got the easy
-//! cases right (digits, ASCII case) while disagreeing with the frontend on
-//! accented letters — `Étude` sorted after `zebra` instead of with the `E`s,
-//! because code-point order is not collation order.
-//!
-//! `icu_collator` costs nothing to depend on: Typst's bibliography engine
-//! (Hayagriva) already pulls it and its data into the binary, so this is a
-//! direct dependency on a crate that was being compiled anyway.
+//! `icu_collator` adds nothing to the build: Hayagriva already depends on it.
 
 use icu_collator::{
     options::CollatorOptions, preferences::CollationNumericOrdering, Collator, CollatorBorrowed,
@@ -27,53 +17,42 @@ use icu_collator::{
 use std::cmp::Ordering;
 use std::sync::OnceLock;
 
-/// Process-wide collator. Construction parses locale data, so it happens once
-/// rather than per comparison — these sorts run O(n log n) over collection
-/// tables that can hold thousands of rows.
+/// One collator for the process, since building it parses locale data and these
+/// sorts can run over thousands of rows.
 static COLLATOR: OnceLock<Option<CollatorBorrowed<'static>>> = OnceLock::new();
 
 fn collator() -> Option<&'static CollatorBorrowed<'static>> {
     COLLATOR
         .get_or_init(|| {
             let mut prefs = CollatorPreferences::default();
-            // The `-u-kn` numeric-ordering preference: digit runs compare by
-            // value, so `2 Draft` precedes `10 Draft`. This is the whole
-            // reason the module exists.
+            // Numeric ordering (`-u-kn`): digit runs compare by value, so `2
+            // Draft` precedes `10 Draft`.
             prefs.numeric_ordering = Some(CollationNumericOrdering::True);
             Collator::try_new(prefs, CollatorOptions::default()).ok()
         })
         .as_ref()
 }
 
-/// Compare two names for an *ascending* sort, using Unicode collation with
-/// numeric ordering. Callers wanting descending order swap the arguments
-/// (`compare_name(b, a)`) rather than negating, so a tie stays a tie.
+/// Compare two names for an ascending sort with Unicode collation and numeric
+/// ordering. For descending, swap the arguments (`compare_name(b, a)`) so ties
+/// stay ties.
 ///
-/// Properties that callers depend on:
+/// * Numbers order by value: `2 Draft` before `10 Draft`.
+/// * Accents sort with their base letter: `Étude` among the `E`s.
+/// * Case is a tie-breaker, never equality: `apple` before `Zebra`, and `notes`
+///   / `Notes` / `NOTES` are distinct, lowercase first. Folders differing only
+///   in case can coexist, and calling them equal would let them swap between
+///   queries, breaking the journal scroll's pagination.
 ///
-/// * **Numbers order by value.** `2 Draft` before `10 Draft`.
-/// * **Accents fold to their base letter.** `Étude` sorts among the `E`s, not
-///   after `z`.
-/// * **Case is a tertiary difference, never an equality.** `apple` precedes
-///   `Zebra`, and `notes` / `Notes` / `NOTES` are distinct and ordered
-///   lowercase-first. Two directories differing only in case can coexist on a
-///   case-sensitive filesystem, and a comparator that called them equal would
-///   let them swap places between queries — which breaks the journal scroll,
-///   whose pagination requires a total, reproducible order.
-///
-/// Collation uses the CLDR root locale rather than the user's UI language.
-/// The frontend collator uses the host locale, so the two can in principle
-/// disagree for languages whose collation reorders base letters (Swedish
-/// sorts `å` after `z`; root sorts it with `a`). They agree for every locale
-/// InkyCap currently ships. Threading the UI locale down to these call sites
-/// is the fix if that ever stops being true.
+/// Uses the CLDR root locale, not the UI language. The frontend uses the host
+/// locale, so they could differ for languages that reorder letters (Swedish
+/// puts `å` after `z`); they agree for every language InkyCap ships. If that
+/// changes, pass the UI locale down to these calls.
 pub fn compare_name(a: &str, b: &str) -> Ordering {
     match collator() {
         Some(c) => c.compare(a, b),
-        // Unreachable in practice: `icu_collator`'s default `compiled_data`
-        // feature bakes the root collation into the binary, so construction
-        // cannot fail for lack of data. Degrade to byte order rather than
-        // panic in a sort comparator.
+        // Can't happen in practice (the root collation is built in); fall back
+        // to byte order rather than panic in a comparator.
         None => a.cmp(b),
     }
 }
@@ -123,10 +102,8 @@ mod tests {
 
     #[test]
     fn matches_the_frontend_collator_exactly() {
-        // This list is asserted verbatim by `src/lib/sort.test.ts`'s
-        // "matches the Rust collator exactly" case. The two comparators must
-        // agree, or the file tree and a collection table disagree about the
-        // same notes. Change one side and you must change the other.
+        // `src/lib/sort.test.ts` checks this list verbatim ("matches the Rust
+        // collator exactly"). Change both sides together.
         assert_eq!(
             sorted(&[
                 "10 Conclusion",

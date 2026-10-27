@@ -1,17 +1,16 @@
-// RecurrenceEditor: the Outlook-style "Repeat" control for a dated reminder.
-// A toggle enables recurrence; when on, the user picks "every N day/week/month/
-// year", optional weekdays (weekly only), and an optional "until" date. Emits a
-// whole `Recurrence` (or `null` when off) — it owns no persistence, so it works
-// the same wherever it's mounted (the property panel today).
+// RecurrenceEditor: the "Repeat" control for a dated reminder. A toggle turns
+// it on; then the user picks "every N day/week/month/year", weekdays (weekly
+// only) and an optional "until" date. Emits a whole `Recurrence` (or `null`
+// when off) and saves nothing itself, so it works wherever it's placed
+// (currently the property panel).
 //
-// Recurrence is reminder-only, so this never appears for a checkbox task; the
-// caller decides when to show it (a date that isn't a task).
+// Only reminders recur, so it never shows for a checkbox task; the caller
+// decides when to show it.
 //
-// Edits are accumulated in a local working copy and only reseeded from
-// `props.value` when that diverges for an external reason (a different note).
-// Without this, a burst of edits (toggle a weekday, then pick an "until" date)
-// would each re-derive from a `props.value` that still lags behind the async
-// persist/refetch round-trip, silently dropping earlier changes.
+// Edits go into a local copy, which is reset from `props.value` only when that
+// changes for another reason (a different note). Otherwise quick successive
+// edits (a weekday, then an "until" date) would each start from a `props.value`
+// not yet updated by the save, losing earlier changes.
 
 import { Component, For, Show, createSignal, createEffect, untrack } from "solid-js";
 import type { Recurrence } from "../lib/types";
@@ -47,9 +46,9 @@ const RecurrenceEditor: Component<RecurrenceEditorProps> = (props) => {
   const t = useI18n();
 
   const [draft, setDraft] = createSignal<Recurrence | null>(props.value);
-  // Reseed only on an external change (switching notes), never from our own
-  // write echoing back through a metadata refetch — comparing by value keeps
-  // an in-progress edit from being clobbered by the pre-edit props.
+  // Reset only on an outside change (another note), never from our own save
+  // coming back through a metadata refetch; comparing values keeps an edit from
+  // being overwritten by the old props.
   createEffect(() => {
     const incoming = props.value;
     if (JSON.stringify(incoming) !== JSON.stringify(untrack(draft))) {

@@ -2,10 +2,9 @@ import { describe, it, expect } from "vitest";
 import { classHighlighter, highlightTree } from "@lezer/highlight";
 import { isTypstFenceLang, typstSnippetSupport } from "./typst-snippet-lang";
 
-// Typst code blocks (```typ / ```typst) inside a note, highlighted with
-// Typst's own parser rather than a hand-written grammar. See
-// typst-snippet-lang.ts for why snippets need a parser instance separate from
-// the one the editor runs against the note itself.
+// Typst code blocks (```typ / ```typst) in a note, highlighted with Typst's own
+// parser. See typst-snippet-lang.ts for why snippets need their own parser
+// instance.
 
 /** Highlight `code` and return `[text, class]` pairs, the same spans the two
  *  raw-block highlighters turn into decorations / DOM. */
@@ -66,10 +65,9 @@ describe("Typst snippet highlighting", () => {
   });
 
   it("parses consecutive snippets independently", () => {
-    // The load-bearing invariant. The underlying parser builds its WASM state
-    // from the first input it sees and caches the resulting tree, so without a
-    // reset per parse the second block would be highlighted against the
-    // first's tree — offsets landing on unrelated text.
+    // The parser builds its WASM state from the first input and caches the
+    // tree, so without a reset per parse a second block would be highlighted
+    // against the first's tree.
     const first = spansOf("#let alpha = 1\n#let beta = 2\n#let gamma = 3");
     expect(first.length).toBeGreaterThan(3);
 
@@ -82,10 +80,9 @@ describe("Typst snippet highlighting", () => {
   });
 
   it("returns an empty tree for an empty snippet instead of hanging", () => {
-    // `Parser.parse` loops until `advance()` yields non-null, and the Typst
-    // parse context's `advance()` is nullable — hence the empty-tree fallback.
-    // A regression here locks up the editor rather than failing a render, so
-    // it is worth pinning explicitly.
+    // `Parser.parse` loops until `advance()` returns non-null, and the Typst
+    // parse context's `advance()` can return null, hence the empty-tree
+    // fallback. Getting this wrong freezes the editor, so it's tested.
     expect(spansOf("")).toEqual([]);
     expect(spansOf("\n\n")).toEqual([]);
   });

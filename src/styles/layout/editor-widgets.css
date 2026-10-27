@@ -1,6 +1,6 @@
-/* Visual-editor widgets: callouts, code blocks, math, mermaid, embeds, footnote tooltip.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Visual editor widgets: callouts, code blocks, math, mermaid, embeds, footnote
+   tooltip. Part of layout.css, whose import order (see ../layout.css) keeps the
+   cascade. */
 
 /* Callout rendering */
 .cm-callout {

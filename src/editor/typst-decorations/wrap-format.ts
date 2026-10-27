@@ -8,27 +8,18 @@ export interface WrapTransaction {
 }
 
 /**
- * Compute the transaction that toggles an inline wrapper (`before`…`after`,
- * e.g. `*`…`*` for bold or `#strike[`…`]` for strikethrough) around the
- * current selection.
+ * The transaction that toggles an inline wrapper (`before`…`after`, e.g.
+ * `*`…`*` for bold or `#strike[`…`]`) around the selection. Applying the same
+ * format again must remove it, never nest another pair:
  *
- * Toggling — not merely wrapping — is the load-bearing behaviour: invoking the
- * same format a second time must REMOVE it, never nest another pair. Three
- * "already wrapped" shapes are recognized, then stripped:
+ *  1. Empty selection: insert an empty pair with the caret between.
+ *  2. The selection includes the delimiters (a source-mode selection of `*…*`):
+ *     remove them.
+ *  3. The delimiters sit just outside the selection (visual mode, where the
+ *     markup is hidden and only the inner text is selected): remove them.
+ *  4. Otherwise wrap.
  *
- *  1. Empty selection → insert an empty pair, caret placed between the
- *     delimiters.
- *  2. The selection itself spans the delimiters — a source-mode selection that
- *     includes the raw `*…*` / `#strike[…]` markup.
- *  3. The delimiters sit just OUTSIDE the selection — the visual-mode case: the
- *     markup is decorated away, so the user selects only the inner text and the
- *     `before`/`after` live in the document immediately around the selection.
- *     This is the shape that previously fell through to "wrap again", producing
- *     the nesting bug, because only shape (2) was checked.
- *
- * Only when none of these match is a fresh wrapper inserted. Shared by the
- * keyboard shortcuts (keymaps.ts) and the selection toolbar so the toggle rule
- * lives in exactly one place.
+ * Shared by the shortcuts (keymaps.ts) and the selection toolbar.
  */
 export function toggleWrap(
   state: EditorState,
@@ -38,11 +29,9 @@ export function toggleWrap(
 ): WrapTransaction {
   const { from, to } = state.selection.main;
 
-  // `caretInWrapper` is for wrappers that have an inner slot distinct from the
-  // wrapped text — e.g. `#link("")[…]`, where the caret should land in the
-  // empty URL string (offset 7, between the quotes), not on the label. When
-  // omitted, the caret defaults to just after `before`. Only the insert cases
-  // (1) and (4) honour it; the unwrap cases (2) and (3) are unaffected.
+  // For wrappers with an inner slot separate from the wrapped text, e.g.
+  // `#link("")[…]`, where the caret goes in the empty URL (offset 7). Defaults
+  // to just after `before`. Only used by the inserting cases (1) and (4).
   const insertCaret = caretInWrapper ?? before.length;
 
   // (1) Empty selection: drop an empty pair and put the caret inside it.
@@ -60,9 +49,9 @@ export function toggleWrap(
   const stripped = unwrapIfWrapped(state, before, after);
   if (stripped) return stripped;
 
-  // (4) Not wrapped → wrap. With an explicit inner slot, collapse the caret
-  // into it (e.g. the URL quotes of `#link("")[label]`); otherwise keep the
-  // wrapped text selected so re-toggling or typing replaces it.
+  // (4) Wrap. With an inner slot, put the caret there (the URL quotes of
+  // `#link("")[label]`); otherwise keep the text selected so toggling again or
+  // typing replaces it.
   if (caretInWrapper != null) {
     const at = from + caretInWrapper;
     return {
@@ -77,16 +66,8 @@ export function toggleWrap(
 }
 
 /**
- * Recognize an existing `before`…`after` wrapper around the selection and
- * return the transaction that removes it, or `null` when none is present.
- *
- * Two shapes count as "already wrapped":
- *
- *  2. The selection itself spans the delimiters — a source-mode selection that
- *     includes the raw `*…*` / `#strike[…]` markup.
- *  3. The delimiters sit just OUTSIDE the selection — the visual-mode case: the
- *     markup is decorated away, so the user selects only the inner text and the
- *     `before`/`after` live in the document immediately around the selection.
+ * The transaction removing a `before`…`after` wrapper around the selection, or
+ * `null` if there is none. Handles cases (2) and (3) of `toggleWrap`.
  */
 function unwrapIfWrapped(
   state: EditorState,
@@ -136,11 +117,9 @@ function unwrapIfWrapped(
 
 /* ── Bold / italic: shorthand markers vs. the function form ──────────────── */
 
-// Typst only treats `*` and `_` as bold/italic delimiters when the characters
-// on either side of the marker are NOT both "wordy". These two patterns mirror
-// the `in_word` test in Typst's own lexer: alphanumeric counts as wordy, except
-// for scripts written without spaces, where a marker between two characters is
-// still a valid delimiter.
+// Typst treats `*` and `_` as delimiters only when the characters on both sides
+// aren't both "wordy". These match the `in_word` test in Typst's lexer:
+// alphanumerics are wordy, except in scripts written without spaces.
 const WORDY_CHAR = /[\p{Alphabetic}\p{Nd}\p{Nl}\p{No}]/u;
 const SPACELESS_SCRIPT = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
 
@@ -161,14 +140,10 @@ function charAfter(state: EditorState, pos: number): string | undefined {
 }
 
 /**
- * Whether a one-character shorthand marker placed at both ends of the current
- * selection would actually be read as a delimiter by Typst.
- *
- * A marker with a letter or digit on both sides is plain text to Typst, so
- * `l'*a*ppropriation` does not bold the `a`: the opening `*` starts a bold run
- * that the `*` after `a` cannot close, and the run instead ends at the next
- * usable `*` further along the line. Only the outward-facing neighbours matter
- * — the marker itself sits between the surrounding text and the wrapped text.
+ * Whether a shorthand marker at both ends of the selection would be read as a
+ * delimiter. With a letter or digit on both sides it is plain text: in
+ * `l'*a*ppropriation` the `*` after `a` can't close, and the bold runs on to
+ * the next usable `*`. Only the outer neighbours matter.
  */
 function shorthandWorksHere(state: EditorState): boolean {
   const { from, to } = state.selection.main;
@@ -187,14 +162,10 @@ function shorthandWorksHere(state: EditorState): boolean {
 }
 
 /**
- * Toggle bold or italic, choosing the markup form that Typst will actually
- * read at this position.
- *
- * Away from word interiors this writes the familiar shorthand (`*bold*`,
- * `_italic_`). Inside a word it writes the function form instead
- * (`#strong[…]`, `#emph[…]`), which carries no position restriction and is the
- * same document to Typst. Both forms toggle back off, so a user who typed the
- * shorthand by hand still gets it removed on the second invocation.
+ * Toggle bold or italic in a form Typst will read here: the shorthand
+ * (`*bold*`, `_italic_`) normally, the function form (`#strong[…]`, `#emph[…]`)
+ * inside a word, which has no position restriction. Both forms toggle off,
+ * including hand-typed shorthand.
  *
  * @param marker  Shorthand delimiter: `*` for bold, `_` for italic.
  * @param funcName  Matching Typst function: `strong` or `emph`.

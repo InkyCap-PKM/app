@@ -1,17 +1,13 @@
-// The callout kinds: their order, their colours, and how a callout's heading
-// and accent colour are resolved.
+// Callout kinds: their order and colours, and how a callout's heading and
+// colour are worked out.
 //
-// A callout is InkyCap's own construct, not a Typst built-in: `#callout(kind,
-// title: none, color: none)[…]` lives in inkycap-notebox/lib.typ, and the kind
-// selects a default colour and a default heading word there. This module is
-// the editor's copy of that table, used to draw the visual-editor preview and
-// to build the pill menu, and `callout-kinds.test.ts` fails if the two copies
-// ever disagree.
+// `#callout(kind, title: none, color: none)[…]` is defined in
+// inkycap-notebox/lib.typ, where the kind picks a default colour and heading.
+// This is the editor's copy of that table, for the visual editor preview and
+// the pill menu; `callout-kinds.test.ts` fails if the two differ.
 //
-// Both defaults can be overridden per callout: `title:` replaces the word,
-// `color:` replaces the colour. The kind still travels with the note, so a
-// callout that overrides both keeps a sensible fallback if the override is
-// removed.
+// `title:` and `color:` override the defaults per callout. The kind is still
+// kept, so removing an override falls back sensibly.
 
 import { t } from "../../lib/i18n";
 
@@ -24,10 +20,11 @@ export const CALLOUT_KINDS = [
 
 export type CalloutKind = (typeof CALLOUT_KINDS)[number];
 
-/** The colour each kind uses when a callout carries no `color:` override.
- *  Must match `_callout-colors` in inkycap-notebox/lib.typ. These are part of
- *  the document (the compiled note shows them in every Typst tool), not app
- *  chrome, so they stay literal colours rather than theme tokens. */
+/**
+ * Each kind's colour when there's no `color:`. Must match `_callout-colors` in
+ * inkycap-notebox/lib.typ. They are document colours (shown in any Typst tool),
+ * not app colours, so they aren't theme tokens.
+ */
 export const CALLOUT_COLORS: Record<string, string> = {
   note: "#448aff",
   tip: "#00bfa5",
@@ -50,12 +47,12 @@ export const CALLOUT_COLORS: Record<string, string> = {
  *  from a newer version of the notebox library. Matches lib.typ's fallback. */
 export const CALLOUT_FALLBACK_COLOR = CALLOUT_COLORS.note;
 
-/** Heading shown for a callout: an explicit `title` wins, otherwise the
- *  localized kind label (falling back to a capitalized kind for any kind not
- *  in the known set). Shared by the visual-editor callout widgets and the pill
- *  menu so the editor decoration and the menu always agree on the wording, and
- *  both follow the UI language. The compiled reading view / export localizes
- *  from the document language in inkycap-notebox/lib.typ. */
+/**
+ * A callout's heading: `title` if given, otherwise the translated kind name (or
+ * the capitalized kind for unknown kinds). Shared by the callout widgets and
+ * the pill menu, so both match and follow the UI language. The compiled note
+ * translates from the document language in inkycap-notebox/lib.typ.
+ */
 export function calloutKindLabel(kind: string, title?: string | null): string {
   if (title) return title;
   return (CALLOUT_KINDS as readonly string[]).includes(kind)
@@ -66,13 +63,12 @@ export function calloutKindLabel(kind: string, title?: string | null): string {
 /**
  * The hex colour in a `color: rgb("#rrggbb")` argument.
  *
- * Null when there is no colour argument, or when it is written in some other
- * form — a named Typst colour, a gradient, a `cmyk(…)` call. The compiled note
- * still honours whatever is written there; only this preview falls back to the
- * kind's own colour, since the editor does not evaluate Typst expressions.
+ * Null with no colour argument, or one written another way (a named colour, a
+ * gradient, `cmyk(…)`). The compiled note still uses it; only this preview
+ * falls back to the kind's colour, since the editor doesn't evaluate Typst.
  *
- * `argsText` must be the call's argument list, not the whole call: a body that
- * mentions `color:` is prose, not an argument.
+ * `argsText` must be the argument list, not the whole call: `color:` in the
+ * body is text, not an argument.
  */
 export function readCalloutColorArg(argsText: string): string | null {
   const m = argsText.match(/\bcolor\s*:\s*(rgb\(\s*"#[0-9a-fA-F]{3,8}"\s*\))/);

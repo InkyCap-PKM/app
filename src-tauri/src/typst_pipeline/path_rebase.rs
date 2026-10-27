@@ -1,38 +1,30 @@
-//! AST-based rewriter for path-bearing Typst function calls.
+//! Rewrites path arguments of Typst calls using the syntax tree.
 //!
-//! When a note's content is inlined into another document (today: merged
-//! collection export), Typst resolves relative path arguments — to
-//! `image()`, `read()`, `bibliography()` — against the *outer*
-//! document's directory, not the source note's. That breaks every
-//! `image("daisy.png")` style call as soon as the note moves into a
-//! foreign anchor.
+//! When a note is inlined into another document (the book export), Typst
+//! resolves relative paths in `image()`, `read()` and `bibliography()` against
+//! the outer document's folder, so `image("daisy.png")` breaks.
 //!
-//! [`rebase_relative_paths`] walks the parsed Typst AST, finds calls to
-//! the recognized functions whose first positional argument is a
-//! string-literal *relative* path, and rewrites that argument to a
-//! notebox-root-absolute path computed from the note's own directory.
-//! Already-absolute paths (leading `/`) and non-string arguments are
-//! left untouched, so the rewriter is safe to run on any source.
+//! [`rebase_relative_paths`] finds those calls whose first argument is a
+//! relative string path and rewrites it as a notebox-root-absolute path from
+//! the note's own folder. Absolute paths and non-string arguments are left
+//! alone, so it is safe on any source.
 //!
-//! Per CLAUDE.md's Typst-first principle: parsing uses `typst::syntax`
-//! directly — the same parser the compiler uses — so we operate on byte
-//! ranges from typed nodes and preserve multi-byte UTF-8 verbatim.
+//! Per CLAUDE.md's Typst-first principle it parses with `typst::syntax`,
+//! working on byte ranges from typed nodes, so multi-byte text is preserved.
 
 use std::path::{Component, Path, PathBuf};
 
 use typst::syntax::{ast, parse, LinkedNode, SyntaxKind};
 
-/// Typst function names whose first positional argument is a path that
-/// should be rebased. Exact identifier match, case-sensitive. `video` and
-/// `audio` are the inkycap-notebox media functions; their paths follow the
-/// same notebox-root-absolute convention as `image`.
+/// Calls whose first positional argument is a path to rebase (exact,
+/// case-sensitive). `video` and `audio` are the notebox package's media
+/// functions.
 const PATH_BEARING_CALLS: &[&str] = &["image", "read", "bibliography", "video", "audio"];
 
-/// `link`'s first argument is a URL, not a path, so a relative value
-/// (`"pic.pdf"`, `"mailto:…"`) is never a notebox file. Only the
-/// notebox-root-absolute form InkyCap writes (`"/Assets/paper.pdf"`) names
-/// one, and only that form is read, renamed or moved along with the file.
-/// Relative rebasing leaves `link` alone.
+/// `link`'s first argument is a URL, so a relative value (`"pic.pdf"`,
+/// `"mailto:…"`) never names a notebox file. Only the root-absolute form
+/// InkyCap writes (`"/Assets/paper.pdf"`) does, and only that form follows file
+/// renames and moves. Relative rebasing skips `link`.
 const LINK_CALL: &str = "link";
 
 /// Whether a call to `name` names a notebox file with first argument `value`:
@@ -58,19 +50,15 @@ fn callee_name<'a>(node: &'a LinkedNode<'a>) -> Option<&'a str> {
     }
 }
 
-/// Rewrite relative path arguments to notebox-root-absolute paths.
+/// Rewrite relative path arguments as notebox-root-absolute paths.
 ///
 /// - `source`: the note's Typst source.
-/// - `note_dir`: the directory the note's relative paths are anchored to
-///   — typically the note file's parent directory. Must be a notebox-
-///   relative path (e.g. `notes/sub`); pass an empty path for a note at
-///   the notebox root.
+/// - `note_dir`: the notebox-relative folder its relative paths are anchored to
+///   (e.g. `notes/sub`), usually the note's parent; empty for the root.
 ///
-/// Returns the rewritten source. If no rewrites apply, returns a copy of
-/// the input.
-///
-/// Paths that escape the notebox after rebasing (e.g. `../../outside.png`
-/// from a top-level note) are left unchanged and a warning is logged.
+/// Returns the rewritten source (a copy if nothing changed). Paths that would
+/// leave the notebox (e.g. `../../outside.png` from a top-level note) are kept
+/// and a warning is logged.
 pub fn rebase_relative_paths(source: &str, note_dir: &Path) -> String {
     let root = parse(source);
     let link = LinkedNode::new(&root);
@@ -91,16 +79,13 @@ pub fn rebase_relative_paths(source: &str, note_dir: &Path) -> String {
     out
 }
 
-/// The notebox files `source` references through path-bearing calls
-/// (`image`, `read`, `bibliography`, `video`, `audio`) and root-absolute
-/// `link`s, as notebox-relative paths with `/` separators and no leading
-/// slash (`Assets/fig.png`).
+/// The notebox files `source` references through path calls (`image`, `read`,
+/// `bibliography`, `video`, `audio`) and root-absolute `link`s, as
+/// notebox-relative paths with `/` and no leading slash (`Assets/fig.png`).
 ///
-/// Absolute arguments (`/Assets/fig.png`) are taken as written; relative ones
-/// are anchored at `note_dir`, the note's notebox-relative folder. URLs,
-/// paths that escape the notebox, and non-literal arguments (variables,
-/// function calls) are skipped, since their target can't be known from the
-/// source alone. Each path appears once, in order of first appearance.
+/// Absolute arguments are taken as written; relative ones are anchored at
+/// `note_dir`. URLs, paths leaving the notebox and non-literal arguments are
+/// skipped. Each path appears once, in order.
 pub fn referenced_notebox_paths(source: &str, note_dir: &Path) -> Vec<String> {
     referenced_paths_where(source, note_dir, &names_notebox_file)
 }
@@ -132,9 +117,8 @@ fn referenced_paths_where(
     out
 }
 
-/// Resolve a path argument as Typst would see it to a notebox-relative path
-/// without the leading slash, or `None` for a URL, an empty value, or a
-/// relative path that climbs out of the notebox.
+/// A path argument as a notebox-relative path without the leading slash, or
+/// `None` for a URL, an empty value or a path leaving the notebox.
 fn resolve_notebox_rel(value: &str, note_dir: &Path) -> Option<String> {
     if value.is_empty() || value.contains("://") {
         return None;
@@ -214,10 +198,8 @@ fn collect_edits(
     }
 }
 
-/// Inspect the first positional argument of a FuncCall LinkedNode. If it's
-/// a string literal whose value is a relative path, compute the rebased
-/// path and return a `(range, replacement)` edit covering the string
-/// literal (quotes included). Returns `None` when no rewrite applies.
+/// If the call's first positional argument is a relative string path, the edit
+/// (range including quotes, replacement) that rebases it; otherwise `None`.
 fn rebase_first_string_arg(
     call_node: &LinkedNode<'_>,
     note_dir: &Path,
@@ -226,10 +208,8 @@ fn rebase_first_string_arg(
         .children()
         .find(|c| c.kind() == SyntaxKind::Args)?;
 
-    // Walk args children in source order. The first thing that's either a
-    // string literal (positional) or a Named/Spread node decides whether
-    // we have a string positional in the first slot. Trivia, parens, and
-    // commas are skipped.
+    // The first string or Named/Spread child decides whether there is a string
+    // in the first positional slot; trivia, parens and commas are skipped.
     for child in args_node.children() {
         match child.kind() {
             SyntaxKind::LeftParen
@@ -249,9 +229,8 @@ fn rebase_first_string_arg(
                 if value_str.starts_with('/') {
                     return None;
                 }
-                // Non-path-like (e.g. a URL) — bibliography accepts strings
-                // that look like CSL style names. Heuristic: anything
-                // containing `://` is not a notebox path.
+                // `bibliography` also takes style names and URLs; anything with
+                // `://` isn't a notebox path.
                 if value_str.contains("://") {
                     return None;
                 }
@@ -283,28 +262,22 @@ fn rebase_first_string_arg(
                 return Some((child.range(), replacement));
             }
 
-            // Any other expression kind in the first positional slot
-            // means the path isn't a literal we can rewrite (variable,
-            // function call, raw, etc.). Leave the whole call alone.
-            //
-            // Named/Spread in the first slot means there's no positional;
-            // also leave alone.
+            // Anything else first (a variable, a call, a named or spread
+            // argument) means there is no literal path to rewrite.
             _ => return None,
         }
     }
     None
 }
 
-/// Compute the notebox-root-absolute path for `value` anchored at
-/// `note_dir`. Returns `None` if the result escapes the notebox root via
-/// `..`. The returned string always starts with `/`.
+/// The notebox-root-absolute path for `value` anchored at `note_dir`, starting
+/// with `/`. `None` if `..` leaves the notebox.
 fn rebase_path(value: &str, note_dir: &Path) -> Option<String> {
     let mut joined: PathBuf = note_dir.to_path_buf();
     joined.push(value);
 
-    // Resolve `.` and `..` lexically against the notebox root. We don't
-    // touch the filesystem — this is purely a string operation against
-    // the notebox-relative layout.
+    // Resolve `.` and `..` as strings against the notebox root, without
+    // touching the filesystem.
     let mut normalized: Vec<&std::ffi::OsStr> = Vec::new();
     for component in joined.components() {
         match component {
@@ -330,17 +303,11 @@ fn rebase_path(value: &str, note_dir: &Path) -> Option<String> {
     Some(format!("/{joined}"))
 }
 
-/// Rewrite path-bearing function calls whose string-literal argument
-/// begins with `/<old_prefix_segment>/` so the prefix becomes
-/// `/<new_prefix_segment>/`. Used by Phase C's attachment-folder
-/// migration: when the user renames `assets` → `media`, every
-/// `#image("/assets/foo.png")` across the notebox becomes
-/// `#image("/media/foo.png")`. Non-matching calls and non-string
-/// arguments are left untouched.
-///
-/// `old_segment` and `new_segment` are bare folder names (no slashes).
-/// Matching is exact and case-sensitive — same surface as the
-/// underlying filesystem operation.
+/// Change a leading `/<old_segment>/` in path-call string arguments to
+/// `/<new_segment>/`, for renaming the attachment folder
+/// (`#image("/assets/foo.png")` → `#image("/media/foo.png")`). Other calls and
+/// arguments are unchanged. The segments are bare folder names; matching is
+/// exact and case-sensitive.
 pub fn replace_absolute_prefix(source: &str, old_segment: &str, new_segment: &str) -> String {
     if old_segment == new_segment || old_segment.is_empty() || new_segment.is_empty() {
         return source.to_string();
@@ -374,10 +341,8 @@ pub fn replace_absolute_prefix(source: &str, old_segment: &str, new_segment: &st
     out
 }
 
-/// Count path-bearing calls in `source` whose string-literal argument
-/// begins with `/<segment>/`. Cheap pre-flight metric for the
-/// attachment-folder migration's preview counts — does not allocate
-/// edit lists.
+/// Number of path calls whose string argument starts with `/<segment>/`, for
+/// the attachment-folder rename preview.
 pub fn count_absolute_prefix_matches(source: &str, segment: &str) -> usize {
     if segment.is_empty() || segment.contains('/') {
         return 0;
@@ -390,18 +355,15 @@ pub fn count_absolute_prefix_matches(source: &str, segment: &str) -> usize {
     count
 }
 
-/// Rewrite path-bearing calls (`image`/`read`/`bibliography`/`video`/
-/// `audio`, and root-absolute `link`s) whose first string argument
-/// references the attachment at notebox-relative
-/// `old_rel`, repointing them at `new_rel`. Used when a collaborative
-/// attachment is renamed on import to dodge a filename collision: every member
-/// note that referenced it is updated in lockstep so it still resolves.
+/// Point path calls (`image`, `read`, `bibliography`, `video`, `audio` and
+/// root-absolute `link`s) that reference `old_rel` at `new_rel` instead. Used
+/// when an imported attachment is renamed to avoid a collision, so every note
+/// using it still resolves.
 ///
-/// Matching is by *resolved notebox-relative path*: a leading `/` is normalized
-/// off both sides, and a relative argument is first anchored at `note_dir`, so
-/// it catches both the absolute form InkyCap emits (`/dir/file.png`) and a
-/// hand-authored relative one. The replacement is always written in the
-/// leading-`/` absolute form. Non-matching calls are left untouched.
+/// Matches by resolved notebox-relative path: leading `/` is ignored and
+/// relative arguments are anchored at `note_dir`, so both InkyCap's absolute
+/// form and hand-written relative paths match. The replacement is written in
+/// absolute form.
 pub fn rewrite_referenced_path(
     source: &str,
     old_rel: &str,
@@ -561,10 +523,9 @@ pub enum FileLinkExport {
     PlainText,
 }
 
-/// Rewrite every `link` to a notebox file (root-absolute first argument, see
-/// [`LINK_CALL`]) as `decide` says. `decide` receives the file's
-/// notebox-relative path without the leading slash (`Assets/paper.pdf`).
-/// Other links and calls are left untouched.
+/// Rewrite each `link` to a notebox file (root-absolute first argument, see
+/// [`LINK_CALL`]) as `decide` says. `decide` gets the notebox-relative path
+/// without the leading slash. Other calls are unchanged.
 pub fn rewrite_file_links(source: &str, mut decide: impl FnMut(&str) -> FileLinkExport) -> String {
     let root = parse(source);
     let link = LinkedNode::new(&root);
@@ -611,10 +572,10 @@ fn collect_file_link_edits(
     }
 }
 
-/// The edit that replaces the `link` call at `call_node` with its text. In
-/// markup, `#link("/a.pdf")[Paper]` becomes `Paper` and a link without a
-/// body becomes the escaped file name; in code, the call becomes its content
-/// block or the file name as a string.
+/// The edit replacing the `link` call at `call_node` with its text. In markup,
+/// `#link("/a.pdf")[Paper]` becomes `Paper`, and a link without a body becomes
+/// the escaped file name; in code, the call becomes its content block or the
+/// file name as a string.
 fn link_as_text(
     call_node: &LinkedNode<'_>,
     source: &str,
@@ -650,10 +611,8 @@ fn link_as_text(
     }
 }
 
-/// Escape a string for inclusion in a Typst string literal. Typst's
-/// string-literal grammar accepts `\\` and `\"` escapes; we round-trip
-/// only those because path values never legitimately contain control
-/// characters.
+/// Escape for a Typst string literal: `\\` and `\"` only, since paths don't
+/// contain control characters.
 fn escape_typst_string(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {

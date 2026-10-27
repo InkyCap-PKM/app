@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { parseInlineBody, type BodySegment } from "./block-body-parse";
 
-// `parseInlineBody` is what lets a `#task(...)`, `#tag(...)`, `#wikilink(...)`
-// or `#link(...)` written *inside* a callout / quote render as its
-// semantic element in the cursor-away block preview, instead of as raw Typst
-// source (Bug 2: a task inside a callout showed the literal `#task("…")` text).
+// `parseInlineBody` lets a `#task(...)`, `#tag(...)`, `#wikilink(...)` or
+// `#link(...)` inside a callout or quote show as its element in the block
+// preview, not as raw Typst (e.g. a task inside a callout showing
+// `#task("…")`).
 
 // `start` (the in-body offset) is asserted separately; strip it recursively
 // (including from nested `format` children) for the shape checks so they read

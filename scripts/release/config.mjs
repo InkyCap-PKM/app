@@ -1,9 +1,9 @@
-// Shared facts for the release scripts: where things live, which files a
-// release ships, and the addresses the feeds are published at.
+// Shared values for the release scripts: locations, which files a release
+// includes, and the feed addresses.
 //
-// The feed addresses below are read by installed copies of InkyCap and are
-// therefore permanent. A breaking change to a feed's format goes to a NEW
-// address, with the old one left serving the old format.
+// Installed copies read the feed addresses below, so they must never change. A
+// breaking change to a feed's format goes to a new address, leaving the old one
+// serving the old format.
 
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -21,12 +21,12 @@ export const KEY_FILE = join(RELEASE_HOME, "updater.key");
 /** Where a release's downloaded build outputs are gathered (git-ignored). */
 export const artifactsDir = (version) => join(ROOT, "release-artifacts", version);
 
-// Where releases live today. Change these, regenerate the feeds, upload, and
-// every installed copy follows without an app release.
+// Where releases are. Change these, regenerate and upload the feeds, and
+// installed copies follow without an app release.
 //
-// Each release is on CodeFloe, with its notes and installers. CodeFloe refuses
-// attachments over a size limit, so any installer larger than that goes on a
-// release with the same tag on the GitHub build mirror instead.
+// Releases are on CodeFloe with their notes and installers. CodeFloe refuses
+// attachments over a size limit, so larger installers go on a release with the
+// same tag on the GitHub build mirror.
 export const RELEASES_URL = "https://codefloe.com/InkyCap/app/releases";
 export const LARGE_FILE_RELEASES_URL = "https://github.com/InkyCap-PKM/app/releases";
 export const releaseTagUrl = (version) => `${RELEASES_URL}/tag/v${version}`;
@@ -51,14 +51,13 @@ export const LATEST_FEED_URL = `${FEED_BASE_URL}/latest.json`;
 export const updaterFeedUrl = (channel) => `${FEED_BASE_URL}/updater/${channel}.json`;
 
 /**
- * The installers the Upgrade button can install, and the updater-feed keys
- * each one answers to. The plugin looks up `{os}-{arch}-{installer}` first and
- * falls back to `{os}-{arch}`. The plain key is listed only for macOS, where
- * `.app` is the one install type; on Linux and Windows a plain key would hand
- * an unknown install type the wrong package.
+ * The installers the Upgrade button can install, and the updater feed keys for
+ * each. The plugin looks up `{os}-{arch}-{installer}`, then `{os}-{arch}`. The
+ * plain key is listed only for macOS, where `.app` is the only install type; on
+ * Linux and Windows it would give an unknown install type the wrong package.
  *
- * The Flatpak is deliberately absent: it cannot update itself from a bundle
- * file, and the updater must never run inside it.
+ * The Flatpak isn't listed: it can't update itself from a bundle, and the
+ * updater must never run in it.
  */
 export const ARTIFACTS = [
   { label: "Linux .deb", file: (v) => `InkyCap_${v}_amd64.deb`, platforms: ["linux-x86_64-deb"] },

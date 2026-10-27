@@ -1,56 +1,48 @@
-//! The in-app Upgrade: download, verify and install a newer release.
+//! In-app upgrade: download, verify and install a newer release.
 //!
-//! The Tauri updater plugin does the work. It reads a feed listing one
-//! installer per platform, picks the one matching how this copy was installed,
-//! refuses any download not signed with the public key in tauri.conf.json, and
-//! runs the system installer (`pkexec dpkg`/`rpm` on Linux, the NSIS or MSI
-//! installer on Windows, replacing the `.app` on macOS), or replaces the
-//! AppImage file with the new one. This module decides
-//! whether this copy may upgrade itself at all, points the plugin at the right
-//! feed, reports download progress, and restarts the app afterwards.
+//! The Tauri updater plugin does the work: it reads a feed with one installer
+//! per platform, picks the one for how this copy was installed, rejects
+//! downloads not signed with the key in tauri.conf.json, and runs the installer
+//! (`pkexec dpkg` / `rpm` on Linux, NSIS or MSI on Windows, replacing the
+//! `.app` on macOS) or replaces the AppImage. This module decides whether this
+//! copy may upgrade itself, points the plugin at the feed, reports progress and
+//! restarts the app.
 //!
 //! ## Which copies may upgrade themselves
 //!
-//! Only copies installed by one of InkyCap's own installers (see
-//! [`detect_support`]). Everything else keeps the Download button only,
-//! except copies whose updates come from where they were installed:
+//! Only copies from InkyCap's own installers (see [`detect_support`]). Others
+//! get the Download button only, except:
 //!
-//! - **Updated by a software centre or package manager** (Flathub): the
-//!   package sets the environment variable [`UPDATES_MANAGED_ENV`] to `1`
-//!   (for Flathub, `--env=INKYCAP_UPDATES_MANAGED=1` in the manifest's
-//!   `finish-args`). Such a copy offers no check, Download or Upgrade at all,
-//!   since installing a release from elsewhere would replace the managed one.
-//!   Flatpak can't tell from inside the sandbox where an app was installed
-//!   from, so the package has to say so. The bundle file built by
+//! - **Managed by a software centre** (Flathub): the package sets
+//!   [`UPDATES_MANAGED_ENV`] to `1` (for Flathub,
+//!   `--env=INKYCAP_UPDATES_MANAGED=1` in `finish-args`), and no check,
+//!   Download or Upgrade is offered. Flatpak can't tell from inside where it
+//!   came from, so the package has to say; the bundle from
 //!   `scripts/build-flatpak.sh` doesn't set it.
-//! - **Flatpak:** a Flatpak installed from a bundle file cannot update itself,
-//!   and the plugin must never run inside it: the Flatpak repackages the
-//!   `.deb`, so the plugin would believe it is a `.deb` install and try `dpkg`
-//!   inside the sandbox.
+//! - **Flatpak:** a bundle-installed Flatpak can't update itself, and the
+//!   plugin must never run inside one: it repackages the `.deb`, so the plugin
+//!   would try `dpkg` in the sandbox.
 //! - **Repackaged or self-built copies** (NixOS, other distributions, `cargo
-//!   build`): these may still report `.deb` (nixpkgs builds a `.deb` and
-//!   unpacks it) or no installer at all, in which case the plugin would
-//!   overwrite the running program as if it were an AppImage. So a `.deb` or
-//!   `.rpm` copy upgrades itself only when the system's package manager
-//!   confirms it owns the running program.
-//! - **AppImages it can't replace:** the plugin swaps the AppImage file named
-//!   by `APPIMAGE` for the new one, so an AppImage upgrades itself only when
-//!   that file exists and InkyCap may write to its folder. Only InkyCap's own
-//!   AppImage build reports the AppImage bundle type
-//!   (`scripts/build-appimage.sh` sets it).
+//!   build`) may report `.deb` or no installer, and the plugin would then
+//!   overwrite the program as if it were an AppImage. So `.deb` and `.rpm`
+//!   copies upgrade only when the package manager confirms it owns the running
+//!   program.
+//! - **AppImages that can't be replaced:** the plugin swaps the file named by
+//!   `APPIMAGE`, so only when it exists and its folder is writable. Only
+//!   InkyCap's own AppImage build (`scripts/build-appimage.sh`) reports the
+//!   AppImage type.
 //!
-//! ## Where the feed comes from
+//! ## Feed
 //!
-//! `updater/<channel>.json` in the same folder as the release feed that
-//! `commands::updates` reads, so the advanced `updates.feed_url` setting
-//! points both at another folder (used to test an upgrade privately, and by
-//! forks). A redirected feed is still only trusted if its downloads are signed
-//! with the key built into this copy.
+//! `updater/<channel>.json` beside the release feed `commands::updates` reads,
+//! so `updates.feed_url` moves both (for testing an upgrade privately, or
+//! forks). Downloads from another feed must still be signed with the built-in
+//! key.
 //!
 //! ## Privacy
 //!
-//! Per CLAUDE.md security: only GETs to the feed and the download it names;
-//! no note content or paths leave the device. Nothing runs without a click.
+//! Only GET requests to the feed and the download it names; no note content or
+//! paths leave the device. Nothing runs without a click.
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -87,11 +79,10 @@ pub enum UpgradeSupport {
     Unsupported,
 }
 
-/// Decide whether this copy may upgrade itself. `managed` is whether the
-/// package set [`UPDATES_MANAGED_ENV`]. `program` is what an upgrade
-/// replaces: the AppImage file for an AppImage, otherwise the running
-/// program. `confirm_linux_install` checks a Linux install with the system
-/// (see [`linux_install_confirmed`]).
+/// Whether this copy may upgrade itself. `managed`: the package set
+/// [`UPDATES_MANAGED_ENV`]. `program`: what an upgrade replaces (the AppImage
+/// file, otherwise the running program). `confirm_linux_install` checks a Linux
+/// install with the system (see [`linux_install_confirmed`]).
 fn detect_support(
     managed: bool,
     in_flatpak: bool,
@@ -168,9 +159,8 @@ fn linux_install_confirmed(kind: BundleType, program: &Path) -> bool {
     }
 }
 
-/// Whether the updater can swap `appimage` for the new version: it moves the
-/// old file aside and writes the new one in its place, so `appimage` must be
-/// a file in a folder this user may write to.
+/// Whether the updater can replace `appimage`: it moves the old file aside and
+/// writes the new one, so the folder must be writable.
 #[cfg(target_os = "linux")]
 fn appimage_is_replaceable(appimage: &Path) -> bool {
     use std::ffi::CString;
@@ -191,9 +181,8 @@ fn appimage_is_replaceable(_appimage: &Path) -> bool {
     false
 }
 
-/// Whether this copy can upgrade itself. The frontend shows the Upgrade button
-/// only for `available`, and for `managed` shows no update controls at all;
-/// otherwise the Download button is shown.
+/// Whether this copy can upgrade itself. Upgrade is shown only for `available`;
+/// `managed` shows no update controls; otherwise Download.
 #[tauri::command]
 pub fn upgrade_support() -> UpgradeSupport {
     let bundle = tauri::utils::platform::bundle_type();
@@ -257,13 +246,13 @@ pub struct DownloadProgress {
     total: Option<u64>,
 }
 
-/// Download the newest release for this system and verify its signature.
-/// Nothing is installed yet: the frontend saves open notes, then calls
-/// `upgrade_install`. Returns the version downloaded.
+/// Download the newest release and verify its signature, without installing
+/// (the frontend saves open notes, then calls `upgrade_install`). Returns the
+/// version.
 ///
-/// `feed_url` is the advanced `updates.feed_url` setting (or null). Refuses
-/// to run unless [`upgrade_support`] says `available`, which is what keeps the
-/// updater from ever running inside the Flatpak or on a repackaged copy.
+/// `feed_url` is the `updates.feed_url` setting or null. Runs only when
+/// [`upgrade_support`] says `available`, which keeps the updater out of Flatpak
+/// and repackaged copies.
 #[tauri::command]
 pub async fn upgrade_download(
     app: AppHandle,
@@ -325,11 +314,10 @@ pub async fn upgrade_download(
     Ok(version)
 }
 
-/// Install the update `upgrade_download` fetched. On Linux this asks for the
-/// administrator password (the system's own prompt); cancelling it returns
-/// the `cancelled` error. On Linux and macOS the app keeps running the old
-/// version until `upgrade_restart`; on Windows the installer closes the app
-/// and reopens it when done, so this call does not return.
+/// Install what `upgrade_download` fetched. On Linux the system asks for the
+/// administrator password; cancelling returns `cancelled`. On Linux and macOS
+/// the old version keeps running until `upgrade_restart`; on Windows the
+/// installer closes and reopens the app, so this doesn't return.
 #[tauri::command]
 pub async fn upgrade_install(pending: State<'_, PendingUpgrade>) -> Result<(), InkyCapError> {
     let (update, bytes) = pending
@@ -347,9 +335,8 @@ pub async fn upgrade_install(pending: State<'_, PendingUpgrade>) -> Result<(), I
 /// Restart InkyCap so the newly installed version runs.
 #[tauri::command]
 pub fn upgrade_restart(app: AppHandle) {
-    // Release the single-instance claim first. The new copy starts while this
-    // one is still running, and would otherwise hand itself over to this copy
-    // and exit, leaving InkyCap closed after the upgrade.
+    // Release the single-instance claim first; otherwise the new copy would
+    // hand itself to this one and exit, leaving InkyCap closed.
     tauri_plugin_single_instance::destroy(&app);
     app.restart()
 }

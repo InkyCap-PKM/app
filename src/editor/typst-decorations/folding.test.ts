@@ -5,13 +5,12 @@ import { ensureSyntaxTree, foldEffect } from "@codemirror/language";
 import { typst } from "codemirror-lang-typst";
 import { typstFolding, typstFoldRange } from "./folding";
 
-// Folding now runs on CodeMirror's real fold engine (see folding.ts). These
-// tests pin the two load-bearing halves:
-//   • `typstFoldRange` — the range a heading section or a nested list subtree
-//     collapses to. This is what both the keyboard shortcuts and the hover
-//     chevron fold. Headings come from the parser, so a `= …` inside a ```
-//     fence is neither a fold point nor a section boundary (issue #21).
-//   • the rendered result — a folded heading actually hides its section.
+// Folding uses CodeMirror's fold engine (see folding.ts). These test:
+//
+// • `typstFoldRange`: what a heading section or nested list collapses to, for
+// both the keyboard shortcuts and the hover chevron. Headings come from the
+// parser, so `= …` inside a ``` fence neither folds nor ends a section (issue
+// #21). • the result: a folded heading really hides its section.
 
 const views: EditorView[] = [];
 afterEach(() => {

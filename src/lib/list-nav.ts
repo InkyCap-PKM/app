@@ -1,22 +1,21 @@
-// Reusable keyboard navigation for the app's simple list panels (outline,
-// bookmarks, references, annotations, tags, templates, agenda, …).
+// Keyboard navigation for simple list panels (outline, bookmarks, references,
+// annotations, tags, templates, agenda, …).
 //
-// Most panel rows are click `<div>`s, not natively focusable, so rather than
-// retrofit every one with focus/keydown wiring we use the same model as the
-// file tree: the *container* is the single Tab stop, and ↑/↓/Home/End move a
-// virtual cursor (the `.is-kbd-active` row, surfaced via aria-activedescendant)
-// while Enter/Space clicks the active row — so each row keeps its existing
-// onClick with no extra wiring.
+// Rows are clickable `<div>`s, not focusable, so this works like the file tree:
+// the container is the one Tab stop, ↑/↓/Home/End move a cursor (the
+// `.is-kbd-active` row, announced with aria-activedescendant), and Enter/Space
+// clicks the active row, so rows keep their onClick.
 //
 // Usage:
 //   <div class="…" ref={attachListNav}> … rows with data-list-item … </div>
-// Mark each navigable row with `data-list-item`. That's the whole contract.
+// Mark each navigable row with `data-list-item`.
 
 let idCounter = 0;
 
-/** Attach roving keyboard navigation to a list container. Idempotent-safe to
- *  pass directly as a Solid `ref`. Listeners live on the element, so they're
- *  collected when it unmounts — no explicit cleanup needed. */
+/**
+ * Add keyboard navigation to a list container. Safe to pass straight as a Solid
+ * `ref`. The listeners are on the element, so they go when it unmounts.
+ */
 export function attachListNav(container: HTMLElement): void {
   if (container.dataset.listNav === "on") return; // already wired
   container.dataset.listNav = "on";

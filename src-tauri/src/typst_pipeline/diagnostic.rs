@@ -1,6 +1,5 @@
-//! Convert Typst's compile-time `SourceDiagnostic` values into a serializable
-//! shape the frontend can render. We surface severity, message, hints, and a
-//! source span resolved to (file, byte-range) when available.
+//! Turn Typst's `SourceDiagnostic`s into a form the frontend can show:
+//! severity, message, hints, and the span's file and byte range when known.
 
 use std::ops::Range;
 
@@ -26,22 +25,22 @@ pub struct TypstDiagnostic {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct TypstSpan {
-    /// Path of the file the span points into, notebox-rootless (e.g.
-    /// `"notes/heidegger.typ"`). `None` if Typst could not resolve a file —
-    /// usually because the span is in a synthesized synthetic source.
+    /// Notebox-relative path of the span's file (e.g. `"notes/heidegger.typ"`).
+    /// `None` if Typst couldn't resolve one, usually because the span is in
+    /// generated source.
     pub path: Option<String>,
     /// Byte offsets into the file's UTF-8 source.
     pub start: usize,
     pub end: usize,
-    /// 1-based line and column of `start`, resolved via the file's `Source`.
-    /// Far more actionable for a writer than the raw byte offset; `None` when
-    /// the offset couldn't be mapped (e.g. a synthesized source).
+    /// 1-based line and column of `start`, which is more useful to a writer
+    /// than a byte offset. `None` when it can't be mapped (e.g. generated
+    /// source).
     ///
-    /// NOTE: these are positions in the source as *compiled*. InkyCap injects
-    /// style/notebox lines into the main note before compiling, so for the main
-    /// file the command layer shifts `line` back to the user's on-disk file —
-    /// see `remap_diagnostic_lines` in `commands/typst.rs`. `is_main` tells it
-    /// which spans need that shift.
+    /// These are positions in the compiled source. InkyCap adds style and
+    /// notebox lines to the main note before compiling, so for the main file
+    /// the command layer shifts `line` back to the file on disk
+    /// (`remap_diagnostic_lines` in `commands/typst.rs`); `is_main` says which
+    /// spans need it.
     pub line: Option<usize>,
     pub column: Option<usize>,
     /// True when this span points into the note being compiled (as opposed to
@@ -67,10 +66,9 @@ fn severity_str(severity: Severity) -> &'static str {
     }
 }
 
-/// Resolve a `DiagSpan` to a byte range within `source`. In 0.15 a diagnostic
-/// span is one of three shapes (detached / numbered-into-a-file / raw byte
-/// range); a numbered span must be looked up against the source tree, while a
-/// raw range is used directly. Shared by `recovery` and `source_lint`.
+/// A `DiagSpan`'s byte range in `source`. A span is detached, numbered (looked
+/// up in the source tree) or a raw byte range (used as is). Shared by
+/// `recovery` and `source_lint`.
 pub(crate) fn diag_span_range(span: DiagSpan, source: &Source) -> Option<Range<usize>> {
     match span.get() {
         DiagSpanKind::Detached => None,

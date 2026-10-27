@@ -1,10 +1,7 @@
-// Outline panel: heading list for the active editor.
-//
-// Reads the heading signal published by the CM6 heading tracker
-// and renders a clickable, collapsible tree. Clicking a heading scrolls
-// the editor to that position. Each heading with sub-headings gets a
-// caret to expand/collapse its children. An expand/collapse-all button
-// lives in the panel header.
+// Outline panel: the active editor's headings as a clickable, collapsible tree.
+// Clicking a heading scrolls the editor there; headings with subheadings have a
+// caret to expand or collapse them, and the header has an expand/collapse-all
+// button.
 
 import { Component, For, Show, createSignal, createMemo } from "solid-js";
 import {
@@ -59,9 +56,8 @@ function collectKeys(nodes: HeadingNode[], acc: Set<number>): Set<number> {
   return acc;
 }
 
-// Top-level parents stay expanded when the user clicks "collapse all" so the
-// minimum-visibility state still surfaces all second-level headings — anything
-// deeper than the top level is what actually collapses.
+// Top-level parents stay expanded on "collapse all", so second-level headings
+// stay visible; only deeper levels collapse.
 function collectTopLevelKeys(nodes: HeadingNode[]): Set<number> {
   const out = new Set<number>();
   for (const n of nodes) {
@@ -97,9 +93,8 @@ const OutlinePanel: Component = () => {
     setExpandedKeys(collectKeys(tree(), new Set()));
   }
 
-  // "Collapse all" preserves the top-level parents' expanded state so every
-  // direct child of the root (typically the h2 layer) stays visible — the
-  // minimum useful outline state.
+  // "Collapse all" keeps the top-level parents expanded, so every direct child
+  // of the root (usually the h2 level) stays visible.
   function collapseAll() {
     setExpandedKeys(collectTopLevelKeys(tree()));
   }

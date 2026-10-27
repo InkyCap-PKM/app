@@ -2,12 +2,11 @@ import { describe, it, expect } from "vitest";
 import { buildGroups, scoreReferenceQuery } from "./reference-suggest";
 import type { DocLabel } from "./document-labels";
 
-// The `@` citation popup matches a query against a candidate's
-// `key + title + authors` search text. The load-bearing invariant is that a
-// query may span spaces (most titles/authors contain them), and the popup stays
-// alive only while *every* typed word still matches — the moment a word matches
-// nothing, the writer has left the citation for prose and the candidate drops
-// out (and, when every candidate drops, the popup closes).
+// The `@` citation popup matches the query against each candidate's key, title
+// and authors. A query may contain spaces (titles and authors do), and a
+// candidate stays only while every typed word matches; once a word matches
+// nothing, the user has moved on to prose and the candidate drops out (the
+// popup closes when all have).
 describe("scoreReferenceQuery", () => {
   const einstein = "einstein1905 On the Electrodynamics of Moving Bodies Albert Einstein";
 
@@ -33,10 +32,8 @@ describe("scoreReferenceQuery", () => {
   });
 
   it("matches whole words only, not scattered letters", () => {
-    // The relevance fix: a word must appear as a contiguous substring. "etrb"
-    // is a scattered subsequence of "Elec*t*rodynamics ... *B*odies" but not a
-    // substring, so it must NOT match — that scattered behaviour was the source
-    // of unrelated results.
+    // Each word must appear as a substring. "etrb" is in "Elec*t*rodynamics ...
+    // *B*odies" only as scattered letters, so it must not match.
     expect(scoreReferenceQuery("etrb", einstein)).toBeNull();
     expect(scoreReferenceQuery("mvng", einstein)).toBeNull();
   });

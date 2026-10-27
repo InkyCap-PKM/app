@@ -17,9 +17,10 @@ interface SuggestState {
   /** Start of the form being edited (the `[[` for bracket form, the `#`
    *  of `#wikilink(` for func form). Used as the replacement anchor. */
   from: number;
-  /** End of the form being edited. For func form, the offset just after
-   *  the closing `)`; left undefined for bracket form, where acceptItem
-   *  computes the end from cursor + trailing `]]`. */
+  /**
+   * End of the form being edited: just after `)` for the function form;
+   * undefined for the bracket form, where acceptItem works it out.
+   */
   to?: number;
   query: string;
   mode: SuggestMode;
@@ -40,9 +41,10 @@ interface SuggestItem {
   name: string;
   /** Set in heading mode only. */
   targetKind?: TargetKind;
-  /** Absolute note path. Carried through so callers can disambiguate
-   *  notes that share a file stem in different folders, and so future
-   *  resolution paths can avoid re-deriving from `name`. */
+  /**
+   * Absolute note path, to tell apart notes with the same name in different
+   * folders.
+   */
   notePath?: string;
   label?: string;
   level?: number;
@@ -56,9 +58,10 @@ interface SuggestItem {
 
 let filteredItems: SuggestItem[] = [];
 
-/** Rows as rendered: one untitled section in note mode, one per anchor kind in
- *  heading mode. `filteredItems` stays the flat view keyboard selection indexes
- *  into. */
+/**
+ * Rows as shown: one untitled section for notes, one per anchor kind for
+ * headings. Keyboard selection uses the flat `filteredItems`.
+ */
 interface SuggestSection {
   /** Group header shown above the section; omitted for a single unlabelled run. */
   title?: string;
@@ -88,18 +91,15 @@ function isPopupVisible(): boolean {
   return !!popup && popup.style.display !== "none";
 }
 
-// Match `#wikilink("name")` or `#wikilink("name", display: "...")` or
-// `#wikilink("name", label: "...")`. Group 1 = note name, group 2 = optional
-// second-arg key (display | label), group 3 = optional second-arg value.
+// `#wikilink("name")`, optionally with `display:` or `label:`. Groups: name,
+// second argument's key, its value.
 const WIKILINK_CALL_RE = /#wikilink\("([^"]*)"(?:,\s*(\w+):\s*"([^"]*)")?\)/g;
 
-/** Detect whether the cursor sits inside an editable wikilink quoted arg
- *  (the `"name"` or the `"label"` value) and, if so, return the picker
- *  state for that position. Returns EMPTY otherwise.
- *
- *  This piggy-backs on the autoExpand-on-cursor behaviour: when the cursor
- *  is on a wikilink line the visual decorations drop to raw source, so the
- *  call text we're scanning is actually present in the document. */
+/**
+ * If the cursor is inside a wikilink's quoted name or label, the picker state
+ * for that spot; otherwise EMPTY. The cursor's line shows raw source in the
+ * visual editor, so the call text is there to scan.
+ */
 function detectFuncWikilinkContext(text: string, lineFrom: number, cursorInLine: number): SuggestState {
   WIKILINK_CALL_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
@@ -115,10 +115,8 @@ function detectFuncWikilinkContext(text: string, lineFrom: number, cursorInLine:
 
     if (cursorInLine > firstOpen && cursorInLine <= firstClose) {
       const argContent = text.substring(firstOpen + 1, cursorInLine);
-      // A `::` typed inside the name arg switches to heading mode, mirroring the
-      // bracket-form `[[Note::heading]]` shorthand. This makes `::` work while
-      // editing a wikilink shown as `[[Name]]` in the visual editor — accepting
-      // a heading rewrites the call to `#wikilink("Name", label: "…")`.
+      // `::` in the name switches to heading mode, as `[[Note::heading]]` does;
+      // choosing a heading rewrites the call to `#wikilink("Name", label: "…")`.
       const sep = argContent.indexOf("::");
       if (sep >= 0) {
         return {
@@ -158,9 +156,8 @@ function detectFuncWikilinkContext(text: string, lineFrom: number, cursorInLine:
       }
     }
 
-    // Cursor is inside the call but not inside an editable arg — don't
-    // trigger the picker (avoids it firing when the user clicks on
-    // `display:` keyword text or whitespace).
+    // Inside the call but not in an editable argument (e.g. on `display:`): no
+    // picker.
     return EMPTY;
   }
   return EMPTY;
@@ -176,10 +173,8 @@ function detectWikilinkContext(view: EditorView): SuggestState {
   // and the cursor).
   const textBefore = lineText.slice(0, cursorInLine);
   const bracketIdx = textBefore.lastIndexOf("[[");
-  // A `[[` written inside an inline raw span (`` `[[` ``) — e.g. a callout body
-  // that documents the wikilink shortcut — is literal text, not the start of a
-  // link. Don't pop the picker for it (it would otherwise fire endlessly with
-  // the rest of the line as the query).
+  // A `[[` inside inline raw is literal text (e.g. a callout explaining the
+  // shortcut), so no picker.
   if (bracketIdx >= 0 && !inVerbatimLineContext(view.state, line.from + bracketIdx + 1)) {
     const afterBrackets = textBefore.slice(bracketIdx + 2);
     if (!afterBrackets.includes("]")) {
@@ -228,9 +223,8 @@ async function showPopup(view: EditorView, state: SuggestState) {
       return;
     }
 
-    // Both anchor kinds a wikilink can point at: the target note's headings and
-    // the labels its writer attached to prose, figures, or equations. Fetched
-    // together so the picker offers every place in that note a link can land.
+    // Both kinds of anchor in the target note: headings and labels on prose,
+    // figures and equations.
     let headings: ipc.HeadingInfo[] = [];
     let noteLabels: ipc.LabelInfo[] = [];
     try {
@@ -295,9 +289,8 @@ async function showPopup(view: EditorView, state: SuggestState) {
     const notes = fileList();
     const query = state.query;
 
-    // Score filename matches. `notePath` is carried alongside the stem
-    // so we can dedup against aliases keyed on path (two notes can share
-    // a stem in different folders).
+    // Score file-name matches, keeping `notePath` to dedupe against aliases
+    // (two notes can share a name).
     const scored: {
       name: string;
       notePath: string;
@@ -391,9 +384,7 @@ async function showPopup(view: EditorView, state: SuggestState) {
     }
   }
 
-  // Prompt the user toward the linking affordances they can't otherwise
-  // discover — `::` to jump to a heading, and the Tab shortcut that fills the
-  // `::` in for the selected page (each hint is its own line).
+  // Hints for `::` (link to a heading) and Tab (fills in `::`), one per line.
   const footer = document.createElement("div");
   footer.className = "wikilink-suggest__footer";
   const hintKeys = state.mode === "heading"
@@ -468,9 +459,8 @@ async function acceptItem(view: EditorView, state: SuggestState, item: SuggestIt
   let insert: string;
   if (state.mode === "heading") {
     let label = item.label;
-    // Headings can be picked before they carry a label; writing one into the
-    // target note is what makes the link stable. A label row already *is* the
-    // anchor, so nothing needs creating.
+    // A heading may have no label yet; writing one into the target note makes
+    // the link stable. A label row is already an anchor.
     if (!label && item.targetKind !== "label") {
       const path = resolveNotePath(state.noteName);
       if (path) {
@@ -506,25 +496,21 @@ function updateSelection(delta: number) {
   (items[selectedIndex] as HTMLElement)?.scrollIntoView({ block: "nearest" });
 }
 
-/** A `[` the user typed on the previous keystroke. `close` is where bracket
- *  auto-pairing put its partner `]`, or null when nothing was paired (the
- *  setting can be off, and CodeMirror also skips pairing in some spots). */
+/**
+ * A `[` typed on the last keystroke. `close` is where auto-pairing put its `]`,
+ * or null if nothing was paired.
+ */
 interface TypedBracket {
   open: number;
   close: number | null;
 }
 
 /**
- * Remembers the `[` from the keystroke just gone, so the `[[` shorthand below
- * can tell one the user is typing right now from one that was already in the
- * note. The two look identical in the text: with the caret between a block
- * quote's own brackets, `#quote(block: true)[|]` has a `[` behind the caret
- * and a `]` ahead of it, exactly like a half-typed `[[|]`. Reading the text
- * alone, the shorthand adopted the block's bracket and its completion then ate
- * the block's closing `]`, leaving the quote unterminated.
- *
- * Anything other than typing a `[` clears this, so the shorthand only ever
- * forms from two consecutive keystrokes.
+ * The `[` from the last keystroke, so the `[[` shorthand only forms from two
+ * consecutive keystrokes. In the text, a caret inside `#quote(block: true)[|]`
+ * looks exactly like a half-typed `[[|]`; reading only the text, the shorthand
+ * took over the quote's bracket and its completion removed the quote's `]`.
+ * Anything other than typing `[` clears this.
  */
 const typedOpenBracket = StateField.define<TypedBracket | null>({
   create: () => null,
@@ -558,13 +544,10 @@ const typedOpenBracket = StateField.define<TypedBracket | null>({
 const setParkedClosers = StateEffect.define<{ from: number; to: number } | null>();
 
 /**
- * The two `]` the `[[` shorthand parked after the caret.
- *
- * A `]` after the caret is just a `]` in the text, whether it closes this
- * shorthand or the block quote the caret is sitting inside, so the shorthand
- * records its own and the steps that finish a link consume nothing else. The
- * range follows the note name being typed in front of it, and goes away if
- * those brackets are deleted.
+ * The two `]` the `[[` shorthand placed after the caret. A `]` in the text
+ * could belong to a surrounding block, so the shorthand records its own and
+ * only those are consumed. The range follows the name being typed and is
+ * cleared if the brackets are deleted.
  */
 const parkedClosers = StateField.define<{ from: number; to: number } | null>({
   create: () => null,
@@ -578,9 +561,8 @@ const parkedClosers = StateField.define<{ from: number; to: number } | null>({
 });
 
 /**
- * How many `]` sitting at `pos` the wikilink flow parked there itself, and may
- * therefore fold into the `#wikilink(...)` call it writes. Zero for anything
- * the note itself contains.
+ * How many `]` at `pos` the wikilink flow placed itself and may fold into the
+ * `#wikilink(...)` call. Zero for brackets already in the note.
  */
 function parkedCloserCount(state: EditorState, pos: number): number {
   const parked = state.field(parkedClosers, false) ?? null;
@@ -589,19 +571,14 @@ function parkedCloserCount(state: EditorState, pos: number): number {
   return state.doc.sliceString(pos, pos + count) === "]".repeat(count) ? count : 0;
 }
 
-// The `[[` shorthand. Typing the second `[` makes `[[|]]`: the brackets the
-// note reads while the name is typed stay balanced, and the two closers are
-// recorded as the shorthand's own (see `parkedClosers`) so finishing the link
-// folds them into the `#wikilink(...)` call. Balance matters: with an open
-// `[[` and no closers, the parser pairs the block quote's or callout's own
-// `]` with the shorthand instead, and the block loses its frame until the
-// link is complete. A table cell has the same need, since an unbalanced cell
-// stops the table parsing.
+// The `[[` shorthand: the second `[` produces `[[|]]`, keeping brackets
+// balanced while the name is typed (otherwise the parser pairs a surrounding
+// block's or table cell's `]` with it and the block breaks). The closers are
+// recorded in `parkedClosers` and folded into the `#wikilink(...)` call at the
+// end.
 //
-// High precedence so this beats `closeBrackets()` for the second `[`; its
-// default-precedence inputHandler (added in baseExtensions, ahead of the
-// visual-mode wikilinkSuggest) would otherwise pair the bracket first and
-// leave a `]]` this flow never recorded.
+// High precedence, so this runs before `closeBrackets()` pairs the second `[`
+// itself.
 const wikilinkBracketHandler = Prec.high(EditorView.inputHandler.of((view, from, to, text) => {
   if (text !== "[") return false;
   if (from === 0 || view.state.doc.sliceString(from - 1, from) !== "[") return false;
@@ -609,23 +586,17 @@ const wikilinkBracketHandler = Prec.high(EditorView.inputHandler.of((view, from,
   const scope = view.state.field(scopeRangeField, false);
   if (scope && from - 1 < scope.from) return false;
 
-  // Only a `[` from the keystroke just gone starts the shorthand. One that was
-  // already in the note — a block quote's or callout's own content bracket,
-  // most often — belongs to the note, and adopting it made the finished link
-  // swallow that block's closing `]`.
+  // Only a `[` typed on the last keystroke starts the shorthand, not one
+  // already in the note (such as a block's content bracket).
   const typed = view.state.field(typedOpenBracket, false) ?? null;
   if (!typed || typed.open !== from - 1) return false;
   // Whether the `]` at the caret is the one auto-pairing added for that `[`.
   // If it isn't, it is the note's own and must be left alone.
   const autoClosed = typed.close === from;
 
-  // Selection-wrap case. On the first `[`, closeBrackets wrapped the selection
-  // as `[sel]` and kept `sel` selected (so `from..to` still spans it, with the
-  // auto-paired `]` sitting at `to`). Forming the second `[` here must produce
-  // `[[sel]]` — insert the inner `[` before the selection and a second `]`
-  // after the existing one — and drop the caret just after `sel` so the picker
-  // queries it. Without this we'd insert a lone `[` and lose the closing `]`,
-  // leaving the broken `[[sel]` seen in practice.
+  // With a selection, the first `[` made `[sel]` and kept `sel` selected, with
+  // the paired `]` at `to`. The second `[` must make `[[sel]]`, with the caret
+  // after `sel` so the picker searches for it.
   if (from !== to) {
     const closer = view.state.doc.sliceString(to, to + 1) === "]" ? to + 1 : to;
     view.dispatch({
@@ -656,10 +627,8 @@ const wikilinkBracketHandler = Prec.high(EditorView.inputHandler.of((view, from,
 }));
 
 /**
- * A typed `]` that is not sealing a link steps over a closer the shorthand
- * parked at the caret, the way bracket auto-pairing steps over its own.
- * Auto-pairing only knows the one `]` it inserted itself; the twin the
- * shorthand added would otherwise be typed in as a third bracket.
+ * A typed `]` that doesn't finish a link steps over a closer the shorthand
+ * placed at the caret, as auto-pairing does with its own `]`.
  */
 function stepOverParkedCloser(view: EditorView, from: number): boolean {
   if (parkedCloserCount(view.state, from) === 0) return false;
@@ -667,15 +636,9 @@ function stepOverParkedCloser(view: EditorView, from: number): boolean {
   return true;
 }
 
-// Hand-typing the closing `]]` of a `[[Name]]` (or `[[Note::Heading]]`) should
-// seal it into a `#wikilink(...)` call — exactly as if the user had chosen the
-// matching entry or the "Create new page" row in the picker. Without this, a
-// manually closed `[[Name]]` stayed inert literal text: detectWikilinkContext
-// hides the picker the moment a `]` appears before the cursor, so nothing ever
-// rewrote it. Users who know they're making a new page (and don't want to scan
-// a long suggestion list) reasonably expect the `]]` they typed to complete the
-// link. We fire on the *second* `]`, consuming it so the brackets collapse into
-// the call rather than being left behind.
+// Typing the closing `]]` of `[[Name]]` (or `[[Note::Heading]]`) turns it into
+// a `#wikilink(...)` call, as if the matching row or "Create new page" were
+// chosen. Fires on the second `]`, consuming it.
 const wikilinkCloseHandler = Prec.high(EditorView.inputHandler.of((view, from, to, text) => {
   if (text !== "]") return false;
   if (from !== to) return false;
@@ -763,9 +726,9 @@ const suggestKeyHandler = Prec.highest(keymap.of([
       if (!isPopupVisible()) return false;
       const item = filteredItems[selectedIndex];
       if (!item) return true;
-      // Tab drills into heading mode. In bracket form it appends `::`;
-      // in func form it rewrites to include `label: ""`. For heading
-      // mode or "create new" items, fall back to Enter-style commit.
+      // Tab drills into heading mode: `::` in bracket form, `label: ""` in
+      // function form. In heading mode, or on "create new", it commits like
+      // Enter.
       const state = currentSuggestState;
       if (state.mode !== "note" || item.isCreate) {
         acceptItem(view, state, item);
@@ -795,9 +758,8 @@ const suggestKeyHandler = Prec.highest(keymap.of([
     key: "Escape",
     run: (view) => {
       if (!isPopupVisible()) return false;
-      // Bracket-form heading dismissal (typed `Foo::` then escaped):
-      // finalize without a label so we don't leave stray `[[Foo::]]`.
-      // Func-form needs no fixup — the source is already a valid call.
+      // Escaping bracket-form heading mode (after `Foo::`): finish without a
+      // label so no `[[Foo::]]` is left. The function form is already valid.
       if (currentSuggestState.mode === "heading" && currentSuggestState.to === undefined) {
         const state = currentSuggestState;
         const cursor = view.state.selection.main.from;

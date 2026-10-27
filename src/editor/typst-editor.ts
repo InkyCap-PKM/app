@@ -57,9 +57,10 @@ import {
 } from "./typst-decorations/search-matches";
 import { hiddenMatchPills } from "./typst-decorations/hidden-match-pills";
 
-/** Focus mode and dimming are independent: either alone needs the extension.
- *  Both are visual-editor affordances, so source mode shows the document
- *  plainly. Shared by editor creation and the live setting update. */
+/**
+ * Focus mode and dimming are independent; either needs the extension. Visual
+ * editor only.
+ */
 function focusModeExtensionFor(mode: FocusMode, dim: boolean, isVisual: boolean) {
   return isVisual && (mode !== "none" || dim) ? focusModeExtension(mode, dim) : [];
 }
@@ -80,17 +81,18 @@ export interface TypstEditorHandle {
   setAutoPairBrackets(enabled: boolean): void;
   setSelectionToolbar(enabled: boolean): void;
   setCommandPalette(enabled: boolean): void;
-  /** Refresh editor-owned UI that captured translated strings, after a
-   *  UI-language switch. Today that's the search panel (its labels are built
-   *  on open); a panel that's open during the switch is rebuilt so its strings
-   *  update live. This is the editor-side extension point for i18n: as more
-   *  CM6 surfaces (selection toolbar, command palette) move onto `t(...)` in a
-   *  later phase, their compartment reconfigures belong here too. */
+  /**
+   * Refresh editor UI holding translated strings after a language switch:
+   * currently the search panel, which is rebuilt if open. Other CM6 surfaces
+   * that capture strings belong here too.
+   */
   relocalize(): void;
   ensureParsed(timeout?: number): void;
-  /** Force the visual decoration field to rebuild from a fully-parsed tree.
-   *  Call after setText() during external reloads (sidebar property edits)
-   *  to avoid stale Replace ranges blanking the editor. */
+  /**
+   * Rebuild the visual decorations from a fully parsed tree. Call after
+   * `setText()` on external reloads, or stale replace ranges can blank the
+   * editor.
+   */
   rebuildVisual(): void;
   setLsp(client: LspClient | null, documentUri: string): void;
   focus(): void;
@@ -101,9 +103,10 @@ export interface TypstEditorHandle {
   setSearchMatches(ranges: SearchMatchRange[]): void;
   /** Serialize doc + selection + undo history. Pair with `restoreState`. */
   serializeState(): unknown;
-  /** Capture the current scroll position as a document-anchored effect. Pair
-   *  with the `restoreScroll` option so a remount of this tab returns the
-   *  reader to where they left off. */
+  /**
+   * The scroll position as a document-anchored effect, for the `restoreScroll`
+   * option.
+   */
   scrollSnapshot(): StateEffect<unknown>;
   destroy(): void;
 }
@@ -129,17 +132,15 @@ export interface TypstEditorOptions {
   onUpdate?: (text: string) => void;
   extensions?: Extension[];
   /**
-   * Snapshot from a previous `serializeState()` call. When provided, the
-   * editor restores the doc, selection, and undo history from the snapshot
-   * instead of starting fresh from `doc`. Used to preserve Ctrl-Z across
-   * tab switches that unmount/remount the editor component.
+   * State from `serializeState()`. When given, the doc, selection and undo
+   * history are restored from it instead of starting from `doc`, so undo
+   * survives tab switches.
    */
   restoreState?: unknown;
   /**
-   * Scroll effect from a previous `scrollSnapshot()` call. When provided, the
-   * view restores this scroll position on its first measure (via CM6's
-   * `EditorViewConfig.scrollTo`), so reactivating a tab returns the reader to
-   * where they had scrolled rather than the top of the document.
+   * Effect from `scrollSnapshot()`, applied on first measure
+   * (`EditorViewConfig.scrollTo`) so a reactivated tab returns to where the
+   * reader was.
    */
   restoreScroll?: StateEffect<unknown>;
 }
@@ -148,16 +149,11 @@ const inkycapTheme = EditorView.theme({
   "&": {
     height: "100%",
   },
-  // Selection: native browser selection (no `drawSelection` layer). CodeMirror's
-  // drawn selection measures each endpoint with `coordsAtPos`, which is
-  // unreliable on WebKitGTK for lines with non-trivial inline structure — a
-  // large-font heading span, or a leading pill widget — so a partial selection
-  // could paint the whole row. The browser's own `::selection` paints directly
-  // on the selected glyphs with no measurement, so it is always exact. We tint
-  // it with `--bg-selection` (the same translucent colour the opaque-span
-  // `::selection` overrides in visual-theme use, so the whole selection reads as
-  // one colour). WebKitGTK honours only `background-color` inside `::selection`,
-  // not the `background` shorthand.
+  // Native browser selection, without CodeMirror's `drawSelection`, which
+  // measures with `coordsAtPos` and can paint a whole row on WebKitGTK for lines
+  // with large headings or pills. Tinted with `--bg-selection`, as the overrides
+  // in visual-theme are. WebKitGTK only honours `background-color` inside
+  // `::selection`.
   "& .cm-content ::selection": {
     backgroundColor: "var(--bg-selection)",
   },
@@ -170,17 +166,14 @@ const inkycapTheme = EditorView.theme({
     fontSize: "var(--md-body-size, 17px)",
   },
   ".cm-content": {
-    // max-width + margin auto handles the wide-screen centering. The inline
-    // padding adds an outer gap that floors the distance between the
-    // content and the panel/gutter edge on narrow viewports; max-width adds
-    // both sides of it back so the user's intended column count is
-    // preserved. The padding lives on .cm-content (not .cm-scroller) so the
-    // gutter stays flush to the panel edge in source mode.
+    // `max-width` and auto margins centre the column on wide screens. The
+    // inline padding keeps a minimum gap to the panel edge on narrow ones, and
+    // `max-width` adds it back so the column width is unchanged. It sits on
+    // `.cm-content` so the gutter stays at the edge in source mode.
     //
-    // Sizing stays border-box (CodeMirror's default) so the base theme's
-    // `min-height: 100%` includes the scroll-past-end and typewriter
-    // padding. With content-box that padding sat on top of a full editor
-    // height, and even a short note scrolled most of a screen past its end.
+    // Sizing stays border-box so the base theme's `min-height: 100%` includes
+    // the scroll-past-end and typewriter padding; otherwise a short note would
+    // scroll most of a screen past its end.
     maxWidth: "calc(var(--md-max-width, 100%) + 2 * var(--md-side-padding-min, 0px))",
     margin: "0 auto",
     paddingBlock: "1em",
@@ -198,11 +191,9 @@ const inkycapTheme = EditorView.theme({
   ".cm-activeLine": {
     backgroundColor: "color-mix(in srgb, var(--bg-hover) 60%, transparent)",
   },
-  // No `.cm-cursor` rule: the editor uses the native caret (no `drawSelection`
-  // layer), coloured via `caret-color` on `.cm-content` above.
-  // Only the current match is highlighted while searching — the always-on
-  // all-match highlight is suppressed so it can't be confused with the
-  // "All" (select-all-matches) action. See search-panel.ts.
+  // The native caret is used, coloured by `caret-color` above. While searching,
+  // only the current match is highlighted, so the all-match highlight isn't
+  // confused with the "All" action (see search-panel.ts).
   ".cm-searchMatch": {
     backgroundColor: "transparent",
   },
@@ -213,17 +204,13 @@ const inkycapTheme = EditorView.theme({
     outline: "1.5px solid var(--fg-muted)",
     borderRadius: "var(--radius-xs)",
   },
-  // The search panel's "All" toggle adds this class to the editor root to
-  // bring back the highlight on every match (otherwise only the current
-  // match is shown). See search-panel.ts.
+  // The search panel's "All" toggle adds this class to highlight every match.
   "&.cm-search-highlight-all .cm-searchMatch": {
     backgroundColor: "var(--bg-search-match)",
   },
-  // Current Ctrl+F match painted inside a verse canvas (see
-  // verseSearchHighlighter in widgets.ts). CM's own match highlight can't
-  // reach into the atomic verse widget, so this mirrors the selected-match
-  // colour there. `box-decoration-break` keeps the background continuous if
-  // the match wraps across a line within the canvas.
+  // The current Ctrl+F match inside a verse canvas (see verseSearchHighlighter
+  // in widgets.ts), in the selected-match colour. `box-decoration-break` keeps
+  // it continuous across a wrap.
   ".cm-typst-verse-canvas .cm-verse-search-hit": {
     backgroundColor: "var(--bg-search-match)",
     borderRadius: "var(--radius-xs)",
@@ -262,18 +249,14 @@ const inkycapTheme = EditorView.theme({
   },
   ".cm-panels.cm-panels-bottom": {
     borderTop: "1px solid var(--border-subtle)",
-    // Carry the content area's bottom "lip" shadow onto the panel's top edge
-    // so editor content still appears to slide underneath when the panel is
-    // open. Mirrors the editor header's lip (.editor-header in
-    // styles/layout/editor-header.css).
+    // Continue the content's lip shadow onto the panel's top edge, like the
+    // editor header's (styles/layout/editor-header.css).
     position: "relative",
     zIndex: "2",
     boxShadow: "0 -4px 6px -4px var(--lip-shadow-status)",
   },
-  // In-page find/replace panel (Ctrl+F). InkyCap supplies its own panel DOM
-  // (see search-panel.ts); these rules style it with app tokens so it reads
-  // correctly in both themes and matches the rest of the UI. The whole block
-  // is centred horizontally while its rows stay left-justified within it.
+  // The Ctrl+F find/replace panel (DOM from search-panel.ts), styled with app
+  // tokens and centred, with left-aligned rows.
   ".cm-panel.cm-search": {
     display: "flex",
     justifyContent: "center",
@@ -306,11 +289,8 @@ const inkycapTheme = EditorView.theme({
   ".cm-search--replace-open .cm-search__row--replace": {
     display: "flex",
   },
-  // Each text field is wrapped so a clear button can sit at its right edge.
-  // Find and Replace share one width so the two rows align cleanly.
-  // Wraps a text field + its clear button; the relative box the absolutely
-  // positioned clear button centres against. A plain block, so its height is
-  // exactly the input's — like the references-panel filter field.
+  // Wrapper for a text field and its clear button. A plain block, so its height
+  // is the input's; Find and Replace share one width so the rows align.
   ".cm-search__field": {
     position: "relative",
     display: "block",
@@ -328,26 +308,17 @@ const inkycapTheme = EditorView.theme({
     display: "block",
     width: "100%",
     boxSizing: "border-box",
-    // @codemirror/search's base theme sets `margin: .2em .6em .2em 0` on every
-    // input/button/label under .cm-panel.cm-search; clear it so the field's
-    // box height is exactly the input and nothing is nudged off-axis.
+    // Clear the margin @codemirror/search's base theme puts on every control in
+    // the panel.
     margin: "0",
   },
-  // Selector is qualified with `.cm-panel.cm-search` so it out-specifies
-  // @codemirror/search's base-theme rule `.cm-panel.cm-search button`
-  // (0,2,1), which sets `margin: .2em .6em .2em 0` on every button in the
-  // panel. On this absolutely positioned button that .2em top margin pushed
-  // it ~3px below centre; a bare `.cm-search__clear` (0,2,0) loses the
-  // cascade, so the margin reset below only takes effect at this specificity.
+  // Qualified with `.cm-panel.cm-search` to beat the base theme's
+  // `.cm-panel.cm-search button` rule, whose top margin pushed the button off
+  // centre.
   ".cm-panel.cm-search .cm-search__clear": {
-    // Absolutely positioned inside the field wrapper (which is
-    // position:relative) over the input's reserved 26px right padding, so it
-    // sits *within* the text-entry box rather than after it. Being out of
-    // normal flow, toggling its visibility with the field's contents never
-    // reflows the row — the Next/Previous/All buttons stay put.
-    //
-    // Vertically centred against the (block) wrapper, which is exactly the
-    // input's height — the same recipe the references-panel filter clear uses.
+    // Positioned over the input's reserved right padding, so it sits inside the
+    // field and showing or hiding it never reflows the row. Centred against the
+    // wrapper, as in the references-panel filter.
     margin: "0",
     position: "absolute",
     right: "6px",
@@ -372,12 +343,9 @@ const inkycapTheme = EditorView.theme({
   ".cm-panel.cm-search .cm-search__clear[hidden]": {
     display: "none",
   },
-  // "{n} of {m}" indicator, absolutely positioned inside the field just left
-  // of the clear button (which sits at right:6px, ~22px wide). Out of normal
-  // flow like the clear button, so showing/hiding it never reflows the row.
-  // `updateCount` reserves matching right-padding on the input so typed text
-  // never slides under it. Dim hint colour, tabular figures so the width
-  // doesn't jitter as the digits change while stepping through matches.
+  // "{n} of {m}", positioned inside the field just left of the clear button, so
+  // it never reflows the row. `updateCount` reserves matching padding on the
+  // input. Tabular figures keep its width steady.
   ".cm-panel.cm-search .cm-search__count": {
     position: "absolute",
     right: "28px",
@@ -519,21 +487,17 @@ const inkycapHighlight = HighlightStyle.define([
   { tag: tags.invalid, color: "var(--accent-danger)", textDecoration: `underline ${ERROR_UNDERLINE_STYLE}` },
 ]);
 
-// Obsidian-style "scroll past the end", but half as far as CodeMirror's
-// built-in `scrollPastEnd()`. The stock version pads the bottom by a full
-// editor height (last line scrolls to the very top); we want the last line to
-// rise only to roughly the middle, so we use half that. Mirrors CM's own
-// plugin (padding via the contentAttributes facet) — non-typable space, no
-// real blank lines inserted.
+// Scroll past the end, half as far as CodeMirror's `scrollPastEnd()`: the last
+// line rises to about the middle. Works like CM's plugin (padding through
+// contentAttributes), with no real lines added.
 const scrollPastEndHalf = (() => {
   const plugin = ViewPlugin.fromClass(
     class {
       height = 0;
       attrs: { style: string } = { style: "padding-bottom: 0px" };
       update(update: { view: EditorView }) {
-        // Use the cached editor height (same field CM's own scrollPastEnd
-        // reads) rather than `scrollDOM.clientHeight`, which would force a
-        // synchronous reflow on every update.
+        // Use the cached editor height, as CM's own plugin does; reading
+        // `clientHeight` would force a reflow.
         const view = update.view as EditorView & { viewState: { editorHeight: number } };
         const full = view.viewState.editorHeight
           - view.defaultLineHeight - view.documentPadding.top - 0.5;
@@ -551,24 +515,20 @@ const scrollPastEndHalf = (() => {
   ];
 })();
 
-// Lines of breathing room kept below the cursor when the editor scrolls to
-// keep it in view — so typing or arrowing down never leaves the caret flush
-// against the bottom edge with nothing visible beneath it.
+// Lines kept visible below the cursor when the editor scrolls it into view.
 const CURSOR_BOTTOM_MARGIN_LINES = 2;
 
-// Applies only when the editor itself scrolls the cursor into view (typing,
-// cursor keys, jumps); wheel and scrollbar scrolling are untouched. Typewriter
-// mode centres the caret and so never reaches this margin.
+// Only when the editor scrolls to the cursor (typing, arrows, jumps), not for
+// wheel or scrollbar. Typewriter mode centres the caret instead.
 const cursorBottomMargin = EditorView.scrollMargins.of((view) => ({
   bottom: view.defaultLineHeight * CURSOR_BOTTOM_MARGIN_LINES,
 }));
 
 /**
- * What a table cell editor is made of: the same language, theme, caret,
- * bracket and input helpers as the note, the visual decorations kept
- * inline, and the suggestion popups. The note's editor owns undo history and
- * spell-check settings; the cell editor borrows the latter and forwards the
- * former (see table-cell-editor.ts).
+ * A table cell editor's configuration: the note's language, theme, caret,
+ * bracket and input helpers, inline-only visual decorations and the suggestion
+ * popups. The note's editor owns undo history and spell-check; the cell editor
+ * uses the latter and forwards the former (see table-cell-editor.ts).
  */
 function tableCellEditorConfig(options: TypstEditorOptions): Extension {
   return cellEditorConfig.of({
@@ -580,9 +540,8 @@ function tableCellEditorConfig(options: TypstEditorOptions): Extension {
         inkycapTheme,
         drawnCaret,
         domCaretResync,
-        // The cell editor is a view of its own, so it needs its own copy of
-        // the note's pairing setting. It is built fresh each time a cell is
-        // opened, so reading the note's facet here keeps the two in step.
+        // The cell editor needs its own copy of the pairing setting, read from
+        // the note when the cell opens.
         autoPairBracketsExtension(main.state.facet(autoPairBracketsFacet)),
         autocompletion({ activateOnTyping: true }),
         tooltips({ position: "fixed" }),
@@ -604,15 +563,13 @@ function baseExtensions(options: TypstEditorOptions): Extension[] {
   const exts: Extension[] = [
     lineNumbers(),
     highlightSpecialChars(),
-    // Outliner folding (headings + nested list items) lives in the base config,
-    // not the visual-mode compartment, so folds work in both source and visual
-    // mode and survive switching between them. Uses a hover chevron, so the
-    // standard fold gutter is deliberately omitted. See folding.ts.
+    // Folding (headings and nested lists) is in the base config, so it works in
+    // both modes and survives switching. It uses a hover chevron, so there's no
+    // fold gutter. See folding.ts.
     typstFolding(),
-    // Rectangular selection + the Alt "crosshair" cursor are code-editor
-    // affordances: in a prose/notebox editor they add little, and the crosshair
-    // turned holding Alt (e.g. for the Alt-Shift line-move shortcut) into a
-    // confusing "+" pointer. Dropped in favour of plain prose-style selection.
+    // No rectangular selection or Alt crosshair: they add little in a prose
+    // editor, and the crosshair appeared whenever Alt was held (e.g. for
+    // Alt-Shift line moves).
     indentOnInput(),
     bracketMatching(),
     autocompletion({ activateOnTyping: true }),
@@ -649,9 +606,7 @@ function baseExtensions(options: TypstEditorOptions): Extension[] {
     lintGutter(),
     diagnosticTheme,
     EditorView.lineWrapping,
-    // Obsidian-style "scroll past the end": lets the last line scroll up toward
-    // the middle of the viewport instead of staying pinned to the bottom while
-    // typing. Half the reach of CM's built-in scrollPastEnd (see definition).
+    // Scroll past the end (see scrollPastEndHalf).
     scrollPastEndHalf,
     cursorBottomMargin,
   ];
@@ -678,11 +633,9 @@ function baseExtensions(options: TypstEditorOptions): Extension[] {
   return exts;
 }
 
-/// Minimal read-only Typst rendering extensions, for embedding note source in
-/// a non-editing surface (the collaboration review diff's `@codemirror/merge`
-/// panes). Reuses the same parser, highlight style, and theme as the main
-/// editor so the markup reads identically — but with editing disabled. Kept
-/// here so Typst highlighting stays owned by one module.
+/// Read-only Typst extensions for showing note source outside the editor (the
+/// review diff's `@codemirror/merge` panes), with the same parser, highlighting
+/// and theme.
 export function readOnlyTypstExtensions(): Extension[] {
   return [
     typstLanguage(),
@@ -694,12 +647,10 @@ export function readOnlyTypstExtensions(): Extension[] {
   ];
 }
 
-/// Minimal *editable* Typst extensions for a standalone editor that isn't a
-/// note — e.g. the collection's "Custom Typst" modal. Reuses the same parser,
-/// highlight style, and theme as the main editor so markup reads identically,
-/// but omits the note-only machinery (visual mode, LSP, wikilinks, decoration
-/// trackers). Editing essentials only: history, bracket matching/closing,
-/// indentation, and the standard keymaps.
+/// Editable Typst extensions for a standalone editor that isn't a note, such as
+/// the collection's "Custom Typst" dialog. Same parser, highlighting and theme,
+/// without visual mode, LSP, wikilinks or note decorations: history, brackets,
+/// indentation and the standard keymaps.
 export function editableTypstExtensions(options: { autoPairBrackets?: boolean } = {}): Extension[] {
   return [
     lineNumbers(),
@@ -731,18 +682,15 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
   const smartIndentCompartment = new Compartment();
   const enterLineBreakCompartment = new Compartment();
   const autoPairCompartment = new Compartment();
-  // history() lives in a compartment so setText() can reset the undo stack
-  // when loading new file content — otherwise prior edits' offsets persist
-  // against a freshly-replaced doc and Ctrl-Z eventually empties the file.
+  // `history()` is in a compartment so `setText()` can reset undo for new
+  // content; old offsets against a replaced doc could otherwise empty the file
+  // on undo.
   const historyCompartment = new Compartment();
   const selectionToolbarCompartment = new Compartment();
   const commandPaletteCompartment = new Compartment();
-  // Single source of truth for the visual-mode extension set, used both for the
-  // initial config and for setVisualMode()'s compartment reconfigure — so the
-  // two can never drift (a past drift silently dropped the suggest popups and
-  // verse search highlighting when toggling source→visual). Note: folding is
-  // NOT here — it lives in the base config so folds persist across mode
-  // switches (see typstFolding in baseExtensions).
+  // The visual-mode extensions, used for both the initial config and
+  // `setVisualMode()` so the two can't drift. Folding isn't here; it is in the
+  // base config (see typstFolding).
   const visualModeExtensions = () => [
     typstVisualMode(), verseFocusRouter, verseSearchHighlighter,
     wikilinkSuggest, referenceSuggest, visualModeFacet.of(true),
@@ -760,15 +708,10 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
   let typewriterEnabled = !!options.typewriterMode;
   let focusModeSetting: FocusMode = options.focusMode ?? "none";
   let focusDimSetting = !!options.focusDim;
-  // The auto-`\` linebreak is a *visual-mode* affordance: pressing Enter there
-  // inserts a Typst linebreak that the visual editor renders invisibly and
-  // manages as an atomic "soft break" (see visual-plugin.ts), so the writer
-  // sees a real new line without ever touching the `\`. Source mode never
-  // auto-inserts the `\` — Enter stays a plain newline there; the `\` only
-  // becomes *visible* in source mode (as ordinary text) once it exists. The
-  // keymap stays a pure consumer of the facet; this closure recomputes the
-  // effective value (setting AND visual mode) whenever either the setting or
-  // the mode changes (see setVisualMode / setEnterInsertsLineBreak below).
+  // The automatic `\` on Enter is visual-mode only: the visual editor hides it
+  // as a soft break (see visual-plugin.ts), while in source mode Enter is a
+  // plain newline. The facet is recomputed from the setting and the mode
+  // whenever either changes (see setVisualMode / setEnterInsertsLineBreak).
   let enterLineBreakSetting = options.enterInsertsLineBreak !== false;
 
   const stateConfig = {
@@ -815,19 +758,16 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
     setText(text: string) {
       const current = view.state.doc.toString();
       if (current === text) return;
-      // Programmatic loads (initial file open, sidebar property reload) must
-      // never appear in the undo stack — Ctrl-Z should only revert edits the
-      // user made themselves. Drop the history field, apply the replacement
-      // outside of history, then re-add a fresh history field.
+      // Programmatic loads stay out of the undo stack: remove the history
+      // field, replace the text, then add a fresh one.
       view.dispatch({
         changes: { from: 0, to: current.length, insert: text },
         effects: historyCompartment.reconfigure([]),
         annotations: [
           Transaction.addToHistory.of(false),
-          // Tells protectedChangeFilter to skip — otherwise the filter would
-          // preserve the OLD #note(...) source against this full-doc replace,
-          // shredding body content and leaving the editor visually broken
-          // until the user switches tabs and back (which destroys + remounts).
+          // Tells protectedChangeFilter to skip, or it would keep the old
+          // `#note(...)` against this whole-document replace and break the
+          // content.
           externalReload.of(true),
         ],
       });
@@ -839,17 +779,10 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
       ensureSyntaxTree(view.state, view.state.doc.length, timeout);
     },
     rebuildVisual() {
-      // The naive path — ensureParsed + dispatch — is fragile: ensureSyntaxTree
-      // may return early on large docs (timeout hits before parse completes),
-      // and rebuildVisualDecorations then runs against a partial tree. Tree
-      // iteration finds nothing, but pre-existing Replace decorations from the
-      // prior doc may still anchor across the new content via mapping, leaving
-      // the editor visually blank.
-      //
-      // Strategy: try a generous synchronous parse; if the tree still doesn't
-      // span the doc, retry on rAF until it does (cap retries to avoid an
-      // infinite loop on degenerate input). Always dispatch at least once so
-      // visualField doesn't stay anchored to the old doc.
+      // `ensureParsed` can time out on large docs, leaving a partial tree, and
+      // old replace decorations can then blank the new content. So parse
+      // generously, retry on each frame (a limited number of times) until the
+      // tree covers the doc, and always dispatch at least once.
       const dispatch = () => {
         view.dispatch({ effects: rebuildVisualDecorations.of(null) });
       };
@@ -887,9 +820,7 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
           // Typewriter scrolling is visual-mode only, like focus mode.
           typewriterCompartment.reconfigure(enabled && typewriterEnabled ? typewriterMode() : []),
           focusModeCompartment.reconfigure(focusModeExtensionFor(focusModeSetting, focusDimSetting, enabled)),
-          // Auto-linebreak is visual-mode only; entering visual mode turns it
-          // on (subject to the setting), leaving it returns Enter to a plain
-          // newline in source mode.
+          // Automatic line breaks are visual-mode only.
           enterLineBreakCompartment.reconfigure(enterInsertsLineBreakFacet.of(enterLineBreakSetting && enabled)),
         ],
       });
@@ -900,10 +831,8 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
       });
     },
     relocalize() {
-      // The search panel builds its labels via `t(...)` in its constructor,
-      // so a panel opened AFTER the switch already shows the new language.
-      // Only an already-open panel is stale — close and reopen it to rebuild.
-      // Both commands preserve the active query.
+      // The search panel builds its labels when it opens, so only an already
+      // open one is stale: close and reopen it, keeping the query.
       if (searchPanelOpen(view.state)) {
         closeSearchPanel(view);
         openSearchPanel(view);
@@ -975,10 +904,9 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
       if (ranges && ranges.length > 0) {
         pos = Math.max(...ranges.map((r) => r.to));
       }
-      // Also skip past the collapsible style/code preamble (#set/#show/#let),
-      // whose range isn't in protectedRangesField. Otherwise the cursor lands on
-      // it and the preamble chip auto-expands the moment a note opens. (`.to` is
-      // a line end, so +1 steps onto the next line.)
+      // Also skip the collapsible style preamble (#set/#show/#let), which isn't
+      // protected; otherwise the cursor lands in it and expands the chip. `.to`
+      // is a line end, so +1 is the next line.
       const preamble = findStylePreamble(view.state);
       if (preamble) pos = Math.max(pos, Math.min(preamble.to + 1, doc.length));
       pos = Math.min(pos, doc.length);

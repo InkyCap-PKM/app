@@ -1,22 +1,14 @@
-//! Typst-AST-driven plain-prose extraction for the external-tool bridge and
-//! for link previews, which can also mark where chosen nodes ended up.
+//! Plain prose from Typst source, for external tools and link previews (which
+//! can also mark where chosen nodes ended up).
 //!
-//! Grammar checkers, style linters, and LLM helpers want a writer's *prose*,
-//! not raw Typst source. Piping the source verbatim sends a note's
-//! `#import "/.inkycap/…": *` preamble, its `#note(title: …, tags: …)`
-//! metadata block, `#wikilink(…)` / `#tag(…)` markup, math, and code through
-//! to the tool — noise that wastes the tool's budget (and, for network tools,
-//! leaks structural metadata) without improving the check.
-//!
-//! Per CLAUDE.md's Typst-first principle, we do not strip markup with regex.
-//! We parse the source with `typst::syntax::parse` — the same parser the
-//! compiler uses — and walk the AST emitting the text leaves while pruning the
-//! structural nodes. Markup wrappers (`Strong`, `Emph`, headings, list items,
-//! content-bracket function calls) fall away naturally because their delimiters
-//! (`*`, `_`, `=`, `-`) are their own non-`Text` tokens. This mirrors the
-//! search indexer in [`crate::search::text_projection`], but produces a single
-//! contiguous prose string (with paragraph breaks preserved) rather than the
-//! offset-tagged token stream the search engine needs.
+//! Grammar checkers and similar tools want prose, not source: the import, the
+//! `#note(...)` block, `#wikilink(…)` / `#tag(…)` markup, math and code are
+//! noise (and, for network tools, metadata leaving the device). Per CLAUDE.md's
+//! Typst-first principle, the source is parsed with `typst::syntax::parse` and
+//! the tree walked for text, pruning structure; markup wrappers drop out
+//! because their delimiters are separate tokens. Like
+//! [`crate::search::text_projection`], but producing one prose string with
+//! paragraph breaks.
 
 use std::ops::Range;
 
@@ -25,9 +17,9 @@ use typst::syntax::{ast, parse, LinkedNode, SyntaxKind};
 /// Decides which nodes' text [`extract_marked_text`] marks.
 pub type MarkNode<'f> = &'f dyn Fn(&LinkedNode<'_>) -> bool;
 
-/// Placeholders written around a marked node's text during the walk and
-/// removed afterwards. Private-use characters never show up in prose, and
-/// any that do are dropped from text leaves so they can't be misread.
+/// Placeholders around a marked node's text during the walk, removed
+/// afterwards. Private-use characters don't occur in prose, and any that do are
+/// dropped from text.
 const MARK_OPEN: char = '\u{E000}';
 const MARK_CLOSE: char = '\u{E001}';
 
@@ -39,16 +31,12 @@ pub struct MarkedText {
     pub marks: Vec<Range<usize>>,
 }
 
-/// Extract plain prose from a note's Typst source (or a selected fragment).
-///
-/// Drops the leading `#import` and the `#note(...)` properties block, unwraps
-/// inline markup to its text, keeps headings and list items as their words,
-/// pulls the user-visible label out of `#wikilink` / `#tag` / `#link-ref` and
-/// the body prose out of content-bracket calls (`#callout[…]`, `#quote[…]`,
-/// `#suggestion[…]`, custom wrappers), and skips math, code, raw spans,
-/// labels, references, and comments entirely. Whitespace is normalized: source
-/// line wraps collapse to single spaces, blank lines collapse to a single
-/// paragraph break.
+/// Plain prose from a note's source or a selection. Drops the import and
+/// `#note(...)`, unwraps inline markup, keeps headings and list items as words,
+/// takes the visible text of `#wikilink` / `#tag` / `#link-ref` and the body of
+/// content-bracket calls (`#callout[…]`, `#quote[…]`, `#suggestion[…]`, custom
+/// wrappers), and skips math, code, raw text, labels, references and comments.
+/// Line wraps become spaces and blank lines one paragraph break.
 pub fn extract_plain_text(source: &str) -> String {
     extract_marked_text(source, &|_| false).text
 }
@@ -74,9 +62,8 @@ fn walk(node: &LinkedNode<'_>, out: &mut String, mark: MarkNode<'_>) {
     }
 }
 
-/// Default behaviour is "descend into every child"; the arms below either
-/// emit a text leaf, emit normalized whitespace, prune a non-prose subtree,
-/// or dispatch a function call.
+/// Descends into every child unless an arm below emits text or whitespace,
+/// prunes a subtree, or handles a call.
 fn walk_node(node: &LinkedNode<'_>, out: &mut String, mark: MarkNode<'_>) {
     match node.kind() {
         // Structural / non-prose subtrees — never descend.
@@ -94,10 +81,9 @@ fn walk_node(node: &LinkedNode<'_>, out: &mut String, mark: MarkNode<'_>) {
         // produces noise (a grammar tool flags every snake_case token).
         | SyntaxKind::Raw => return,
 
-        // Text leaves and whitespace. Source line wraps (`Space` carrying a
-        // single newline) become spaces — Typst treats them as inline space —
-        // while `Parbreak` (a blank line) becomes a real paragraph break, so
-        // the tool sees the same paragraph structure the reader does.
+        // Line wraps (a `Space` with one newline) become spaces, as Typst
+        // treats them; `Parbreak` becomes a paragraph break, so the structure
+        // matches what readers see.
         SyntaxKind::Text => {
             let text = node.leaf_text().as_str();
             if text.contains([MARK_OPEN, MARK_CLOSE]) {
@@ -131,9 +117,9 @@ fn walk_node(node: &LinkedNode<'_>, out: &mut String, mark: MarkNode<'_>) {
             return;
         }
 
-        // Headings and list/enum/term items are block-level: bracket them with
-        // breaks so a heading never fuses onto the paragraph that follows and
-        // each item lands on its own line.
+        // Headings and list items are blocks: break before and after, so a
+        // heading doesn't run into the next paragraph and items get their own
+        // lines.
         SyntaxKind::Heading => {
             ensure_paragraph_break(out);
             for child in node.children() {
@@ -143,9 +129,8 @@ fn walk_node(node: &LinkedNode<'_>, out: &mut String, mark: MarkNode<'_>) {
             return;
         }
         SyntaxKind::ListItem | SyntaxKind::EnumItem | SyntaxKind::TermItem => {
-            // Newline *before* each item only; the inter-item `Space` node plus
-            // the next item's guard supply the separation. Appending a newline
-            // here too would fuse with that `Space` into a blank line.
+            // A newline before each item only; the `Space` between items and
+            // the next item's check provide the separation.
             ensure_newline(out);
             for child in node.children() {
                 walk(&child, out, mark);
@@ -166,10 +151,9 @@ fn walk_node(node: &LinkedNode<'_>, out: &mut String, mark: MarkNode<'_>) {
     }
 }
 
-/// Function-call dispatch. The InkyCap primitives whose user-visible text is a
-/// string *argument* are special-cased; everything else falls back to
-/// "descend into `ContentBlock` arguments only", so content-bracket wrappers
-/// yield their inner prose without enumerating every function.
+/// Function calls. InkyCap functions whose visible text is a string argument
+/// are handled specially; other calls contribute only their `ContentBlock`
+/// arguments.
 fn handle_func_call(node: &LinkedNode<'_>, out: &mut String, mark: MarkNode<'_>) {
     let Some(call) = node.cast::<ast::FuncCall>() else {
         return;
@@ -209,9 +193,8 @@ fn handle_func_call(node: &LinkedNode<'_>, out: &mut String, mark: MarkNode<'_>)
             }
         }
 
-        // `#link("https://…")[display]` — the URL is not prose; the display
-        // body (if any) lives in a ContentBlock. Same for annotation/suggestion
-        // bodies and every other content-bracket wrapper.
+        // `#link("…")[display]`: the URL isn't prose; the display text, like
+        // annotation bodies and other wrappers, is in a ContentBlock.
         _ => descend_into_content_blocks(node, out, mark),
     }
 }
@@ -289,9 +272,8 @@ fn ensure_newline(out: &mut String) {
     }
 }
 
-/// Collapse the walk's raw output to clean prose: horizontal whitespace runs
-/// per line become a single space, and runs of blank lines become a single
-/// paragraph break. Leading/trailing blank lines are trimmed.
+/// Clean the output: runs of spaces become one space, runs of blank lines one
+/// paragraph break, and leading and trailing blank lines are trimmed.
 fn normalize(raw: &str) -> String {
     // `split_whitespace` collapses each line's internal whitespace runs; a
     // blank line is kept at most once in a row to bound paragraph gaps.

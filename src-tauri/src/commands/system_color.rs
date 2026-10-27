@@ -1,20 +1,14 @@
-//! OS-accent-color query.
+//! The operating system's accent colour as `#rrggbb`, or `None` where there's
+//! no reliable source. The "Match OS" accent falls back to InkyCap's default on
+//! `None`.
 //!
-//! Returns the operating system's accent color as `#rrggbb` if a reliable
-//! source is available on the current platform, or `None` otherwise. The
-//! frontend ("Match OS" accent source) calls this and silently falls back
-//! to InkyCap's default when `None` comes back, so callers should treat
-//! the result as advisory rather than mandatory.
-//!
-//! Per-platform sources:
-//! - **Windows** — `DwmGetColorizationColor` (the same color the OS uses
-//!   for window chrome and "Show accent color on Start, taskbar, and
-//!   action center"). Available since Vista.
-//! - **macOS** — `NSColor.controlAccentColor` (added in 10.14 Mojave),
-//!   converted into the device-RGB space.
-//! - **Linux** — best-effort: GNOME 47+ exposes a named accent via
-//!   `org.gnome.desktop.interface accent-color`; KDE writes the hex into
-//!   `~/.config/kdeglobals`. Other DEs return `None`.
+//! Sources:
+//! - **Windows**: `DwmGetColorizationColor`, the colour used for window frames
+//!   and the Start menu.
+//! - **macOS**: `NSColor.controlAccentColor` (10.14+), converted to device RGB.
+//! - **Linux**: GNOME 47+ has a named accent in `org.gnome.desktop.interface
+//!   accent-color`; KDE writes a hex value in `~/.config/kdeglobals`. Other
+//!   desktops give `None`.
 
 /// Return the OS accent color as `#rrggbb`, or `None` if unavailable on this platform.
 #[tauri::command]
@@ -73,9 +67,8 @@ fn macos_accent() -> Option<String> {
     }
 
     let accent = NSColor::controlAccentColor();
-    // Convert into a device-RGB space so the channel getters return
-    // sRGB-ish values; the system color may be in a named space that
-    // raises if we read components directly.
+    // Convert to device RGB first: the system colour may be in a named colour
+    // space, where reading components raises an exception.
     let rgb_space = NSColorSpace::deviceRGBColorSpace();
     let color = accent.colorUsingColorSpace(&rgb_space)?;
 
@@ -99,9 +92,8 @@ fn linux_accent() -> Option<String> {
 #[cfg(target_os = "linux")]
 fn gnome_accent() -> Option<String> {
     use std::process::Command;
-    // GNOME 47+ exposes the accent as a named color string. Older GNOME
-    // versions don't have this key and `gsettings` exits non-zero — we
-    // map both to `None`.
+    // GNOME 47+ gives a named colour. Older versions lack the key and
+    // `gsettings` fails; both give `None`.
     let output = Command::new("gsettings")
         .args(["get", "org.gnome.desktop.interface", "accent-color"])
         .output()
@@ -115,9 +107,7 @@ fn gnome_accent() -> Option<String> {
         .trim_matches('\'')
         .trim_matches('"')
         .to_lowercase();
-    // Hex map of GNOME's named accents (from libadwaita's accent palette).
-    // Kept inline rather than as a constant table because the list is small
-    // and the only caller is right here.
+    // Hex values of GNOME's named accents (libadwaita's palette).
     let hex = match name.as_str() {
         "blue" => "#3584E4",
         "teal" => "#2190A4",
@@ -135,9 +125,8 @@ fn gnome_accent() -> Option<String> {
 
 #[cfg(target_os = "linux")]
 fn kde_accent() -> Option<String> {
-    // KDE Plasma stores the accent under `[General]` → `AccentColor` as
-    // either a hex string ("#rrggbb") or three comma-separated decimals
-    // ("r,g,b"). Both forms appear in the wild; handle both.
+    // KDE Plasma keeps the accent in `[General]` → `AccentColor`, as "#rrggbb"
+    // or "r,g,b"; both are handled.
     let path = dirs::config_dir()?.join("kdeglobals");
     let contents = std::fs::read_to_string(path).ok()?;
     let mut in_general = false;

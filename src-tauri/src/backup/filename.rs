@@ -1,45 +1,29 @@
-//! Filename pattern substitution for backup archives.
-//!
-//! The user-configurable pattern (e.g.
-//! `"inkycap-{notebox}-{YYYY}{MM}{DD}-{HH}{mm}.zip"`) gets resolved against
-//! a notebox name and a `chrono::DateTime` here. Substituted values are
-//! sanitized against Windows-reserved characters (`< > : " / \ | ? *` plus
-//! ASCII control characters) and Windows reserved device names (CON, PRN,
-//! AUX, NUL, COM1–9, LPT1–9) so a notebox named `Aux Notes` still produces
-//! a writable backup on every OS. Forward and backslashes in substituted
-//! values are also stripped so a malicious or pasted notebox name can't
-//! redirect the output into a different folder.
-//!
-//! The pattern itself is *not* sanitized — the user owns it and may
-//! deliberately include subfolder slashes if they want; only token
-//! substitutions are scrubbed.
+//! File names for backup archives from the user's pattern (e.g.
+//! `"inkycap-{notebox}-{YYYY}{MM}{DD}-{HH}{mm}.zip"`), a notebox name and a
+//! time. Substituted values are made safe for every OS: Windows-reserved
+//! characters (`< > : " / \ | ? *` and controls) and device names (CON, PRN,
+//! AUX, NUL, COM1–9, LPT1–9) are handled, so `Aux Notes` still gives a valid
+//! name, and slashes are removed so a notebox name can't redirect the output.
+//! The pattern itself isn't changed; it may contain subfolders on purpose.
 
 use chrono::{DateTime, Datelike, Local, Timelike};
 
-/// Windows reserved single-token names, lowercase. Compared case-
-/// insensitively against the *stem* (filename without extension) of any
-/// substituted value to catch e.g. `CON.foo` which is reserved too.
+/// Windows reserved names, lowercase, compared case-insensitively with the stem
+/// (before the first dot), since `CON.foo` is reserved too.
 const WINDOWS_RESERVED_STEMS: &[&str] = &[
     "con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8",
     "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
 ];
 
-/// Whether `ch` is rejected by Windows in a filename.
-///
-/// The nine reserved punctuation characters plus every ASCII control (Windows
-/// rejects `0x00..=0x1F` outright; other systems allow them, but a filename
-/// with a newline in it is hostile to every tool that has to display it).
-/// Shared with the notebox name audit so the two agree on what "illegal"
-/// means.
+/// Whether Windows rejects `ch` in a file name: the nine reserved punctuation
+/// characters and every ASCII control (other systems allow controls, but a
+/// newline in a name breaks every tool showing it). Shared with the name audit.
 pub fn is_windows_illegal_char(ch: char) -> bool {
     matches!(ch, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') || (ch as u32) < 0x20
 }
 
-/// Whether `name`'s stem is a Windows reserved device name (`CON`, `LPT1`, …).
-///
-/// The check is on the portion before the first dot, so `CON.typ` is caught
-/// even though the full string isn't an exact reserved name. Such a file
-/// cannot be created on Windows at all.
+/// Whether `name`'s stem (before the first dot) is a Windows device name
+/// (`CON`, `LPT1`, …), so `CON.typ` counts. Windows can't create such a file.
 pub fn is_windows_reserved_stem(name: &str) -> bool {
     let stem = name.split('.').next().unwrap_or(name);
     WINDOWS_RESERVED_STEMS
@@ -53,45 +37,32 @@ pub fn has_trailing_dot_or_space(name: &str) -> bool {
     name.ends_with('.') || name.ends_with(' ')
 }
 
-/// Sanitize a value that will be substituted into a filename. Replaces
-/// reserved characters with `_`, collapses runs of `_` to a single one,
-/// trims leading/trailing whitespace and dots (Windows strips those at
-/// write time, so we do it deterministically here), and rewrites any
-/// reserved stem to `<stem>_` so the result is always a writable name.
-///
-/// Returns `"untitled"` if the input collapses to empty — the caller
-/// shouldn't have to special-case that.
+/// Make a substituted value safe for a file name: reserved characters become
+/// `_` (runs collapsed), leading and trailing whitespace and dots are trimmed
+/// (Windows strips trailing ones on write), and a reserved stem becomes
+/// `<stem>_`. `"untitled"` if nothing is left.
 pub fn sanitize_token_value(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     for ch in input.chars() {
         out.push(if is_windows_illegal_char(ch) { '_' } else { ch });
     }
 
-    // Collapse runs of underscores so "Foo // Bar" doesn't become
-    // "Foo___Bar" — visually noisy and makes the filename longer than it
-    // needs to be on already-tight Windows path-length budgets.
+    // Collapse `_` runs, so "Foo // Bar" doesn't become "Foo___Bar".
     while out.contains("__") {
         out = out.replace("__", "_");
     }
 
-    // Windows strips trailing dots and spaces silently at write time; we
-    // do it ourselves so the on-disk name matches the one we report back
-    // to the user. Leading whitespace/dots are also trimmed for symmetry
-    // (no Windows quirk but a bare-dot prefix is rarely intended).
+    // Windows drops trailing dots and spaces on write; trim them so the name on
+    // disk matches the one reported. Leading ones too, for symmetry.
     let trimmed = out.trim_matches(|c: char| c.is_whitespace() || c == '.');
 
-    // If the entire value collapsed to nothing but underscores (input
-    // was purely reserved characters like `///` or `::`), treat that as
-    // empty and fall through to the "untitled" fallback. A legitimate
-    // input like `foo_bar` is unaffected because it still contains real
-    // characters.
+    // Only underscores left (the input was all reserved characters): use
+    // "untitled".
     if trimmed.is_empty() || trimmed.chars().all(|c| c == '_') {
         return "untitled".to_string();
     }
 
-    // Rewrite reserved stems case-insensitively. The check is on the
-    // portion before the first dot so `CON.notebox` (stem "CON") gets
-    // caught even though the full string isn't an exact reserved name.
+    // Reserved stems, checked before the first dot (`CON.notebox` → "CON").
     if is_windows_reserved_stem(trimmed) {
         return format!("{trimmed}_");
     }
@@ -99,17 +70,13 @@ pub fn sanitize_token_value(input: &str) -> String {
     trimmed.to_string()
 }
 
-/// Resolve a pattern against a notebox name and a timestamp. Unknown
-/// `{tokens}` are passed through verbatim — the user might genuinely
-/// want a literal `{foo}` in their filename, and we shouldn't silently
-/// eat it.
+/// Fill in a pattern for a notebox name and time. Unknown `{tokens}` are kept
+/// as written.
 pub fn resolve(pattern: &str, notebox_name: &str, when: DateTime<Local>) -> String {
     let notebox = sanitize_token_value(notebox_name);
 
-    // chrono's format strings would do this for us, but mixing
-    // user-supplied template text with chrono format codes ("%Y") is
-    // fragile — a literal '%' in a user's filename would get
-    // misinterpreted. Hand-substituting keeps the boundary clear.
+    // Substituted by hand rather than with chrono format codes, so a `%` in the
+    // user's pattern isn't misread.
     let replacements: &[(&str, String)] = &[
         ("{notebox}", notebox),
         ("{YYYY}", format!("{:04}", when.year())),
@@ -127,20 +94,12 @@ pub fn resolve(pattern: &str, notebox_name: &str, when: DateTime<Local>) -> Stri
     out
 }
 
-/// Glob-like matcher for "is this filename a backup archive produced by
-/// the given pattern?" Used by the retention pruner to find candidates
-/// to delete without touching unrelated files in the backup folder.
-///
-/// The match is built by replacing every `{token}` in the pattern with
-/// a wildcard placeholder, then doing a literal-with-wildcards compare.
-/// Anything matching any of the tokens (including unknown ones) is
-/// treated as a wildcard so a pattern change after some backups already
-/// exist still recognises the older shape.
+/// Whether a file name came from `pattern`, so retention pruning only touches
+/// backups. Every `{token}` (known or not) is a wildcard, so files from before
+/// a pattern change still match.
 pub fn matches_pattern(pattern: &str, candidate: &str) -> bool {
-    // Build a regex-like split on `{...}` runs. Pieces of `pattern`
-    // outside any `{...}` are literal; every `{...}` is a wildcard
-    // that matches as little as possible to keep `*foo*bar*` from
-    // matching `foobarfoobar` as one giant chunk.
+    // Split at `{...}` runs: text outside is literal, each run a wildcard
+    // matching as little as possible.
     let mut literals: Vec<&str> = Vec::new();
     let mut rest = pattern;
     while let Some(open) = rest.find('{') {
@@ -157,9 +116,8 @@ pub fn matches_pattern(pattern: &str, candidate: &str) -> bool {
     }
     literals.push(rest);
 
-    // Walk the candidate consuming each literal in order. Between
-    // literals, the candidate may contain anything (the substituted
-    // token value). Anchored at both ends.
+    // Match each literal in order, with anything between them, anchored at both
+    // ends.
     let first = literals[0];
     if !candidate.starts_with(first) {
         return false;
@@ -250,10 +208,8 @@ mod tests {
 
     #[test]
     fn unknown_tokens_passthrough() {
-        // `{quarter}` is not a known token; the substitution leaves it
-        // in place. Matching against the resolved filename should still
-        // round-trip via `matches_pattern` because that treats every
-        // `{…}` segment as a wildcard.
+        // An unknown `{quarter}` stays in the name, and `matches_pattern` still
+        // matches it as a wildcard.
         let resolved = resolve("inkycap-{quarter}-{YYYY}.zip", "n", ts());
         assert_eq!(resolved, "inkycap-{quarter}-2026.zip");
         assert!(matches_pattern("inkycap-{quarter}-{YYYY}.zip", &resolved));

@@ -1,6 +1,5 @@
-/* Search panel results list, replace actions, reminder dropdown.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* Search results, replace actions, search tip. Part of layout.css, whose
+   import order (see ../layout.css) keeps the cascade. */
 
 .search-panel__replace-btn {
   background: var(--accent);
@@ -44,9 +43,8 @@
   display: flex;
   flex-direction: column;
   gap: 0;
-  /* The only scrollable region: takes the height left over after the fixed
-     header stack, and scrolls its own overflow. `min-height: 0` lets a flex
-     child shrink below its content height so the scrollbar engages. */
+  /* The only scrolling area: the height left below the header. `min-height:
+     0` lets it shrink below its content so it scrolls. */
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -152,10 +150,9 @@
   color: var(--accent-text);
 }
 
-/* Reminder dropdown shown when the search input has focus and is empty. */
-/* One-line reminder shown under the search box before a query is entered.
-   Reuses .inline-link for the "See the search tips for help." trigger, which
-   opens the same tips dropdown as the (i) button. */
+/* One-line tip under the search box before a query is entered. Uses
+   .inline-link for "See the search tips for help.", which opens the same tips
+   dropdown as the (i) button. */
 .search-panel__tip {
   font-size: var(--text-sm);
   color: var(--fg-muted);
@@ -225,9 +222,8 @@
   font-size: var(--text-sm);
 }
 
-/* Search-display options row: icon-button toggles for collapse/expand,
-   more-context, and regex. Lives below the search input when the user
-   has opened the Search Options pane. */
+/* Display options row (collapse/expand, more context, regex), below the
+   search box when Search Options is open. */
 .search-panel__options-row {
   display: flex;
   align-items: center;
@@ -302,12 +298,9 @@
   60%, 100% { opacity: 0; }
 }
 
-/* Reusable animated "…" — three staggered dots that pulse on the same
-   timing as the search panel's, so the in-progress affordance feels
-   consistent across the app. Drop-in for any string that would
-   otherwise end in a static `…`: render the literal text without the
-   ellipsis, then append `<LoadingDots />` (or three spans with these
-   classes inline). */
+/* Animated "…": three dots pulsing with the same timing as the search
+   panel's. For any text that would end in a static `…`: write the text
+   without it and add `<LoadingDots />` (or three spans with these classes). */
 .loading-dots {
   display: inline-flex;
   gap: 1px;
@@ -350,9 +343,8 @@
   border-color: var(--border-input);
 }
 
-/* Re-anchor the shared .context-menu when used inside the search panel.
-   The base style positions absolutely; we just need to lock it to the
-   status row's overflow/sort buttons. */
+/* Anchors the shared .context-menu to the status row's overflow and sort
+   buttons in the search panel. */
 .search-panel__menu-anchored {
   position: absolute;
   top: 100%;
@@ -374,10 +366,9 @@
 }
 
 
-/* Filter-value completions: the tags / property keys / property values a
-   half-typed `tag:` or `property:` filter could be finished with. Shares the
-   search-tips block's look; capped so a long list scrolls instead of pushing
-   the results out of view. */
+/* Filter completions: the tags, property keys or values a half-typed `tag:`
+   or `property:` filter could be finished with. Styled like the search tips;
+   height-limited so a long list scrolls instead of pushing results away. */
 .search-panel__hints--completions {
   max-height: 40vh;
   overflow-y: auto;

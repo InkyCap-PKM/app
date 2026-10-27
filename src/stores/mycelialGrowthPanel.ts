@@ -1,11 +1,7 @@
-// Persisted UI state for the Mycelial View's Growth pane.
-//
-// Whether the "Under-developed pages" and "Open questions" sections are
-// expanded or collapsed survives across sessions and across note switches —
-// it's a preference for *how* the pane is displayed, not data about any one
-// note. Mirrors the Links tab's `linksPanel` store (localStorage-backed,
-// module-level singleton so every pane shares the same choice) rather than a
-// Tauri settings round-trip, since it's purely a webview display preference.
+// Saved display state for the Mycelial View's Growth pane: whether
+// "Under-developed pages" and "Open questions" are expanded, kept across
+// sessions and notes. In localStorage like the Links tab's `linksPanel` store,
+// since it's only a display preference.
 
 import { createSignal } from "solid-js";
 

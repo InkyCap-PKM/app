@@ -1,6 +1,5 @@
-/* App shell grid, documentation notice, distraction-free mode, panel resize handles.
-   Split from layout.css; import order (see ../layout.css) preserves the
-   original cascade. */
+/* App shell grid, editor notice, distraction-free mode, panel resize handles.
+   Part of layout.css, whose import order (see ../layout.css) keeps the cascade. */
 
 .app-shell {
   /* Chrome tone behind everything, so the content column's rounded bottom
@@ -9,10 +8,10 @@
   --left-width: 240px;
   --right-width: 280px;
   --toolbar-width: 44px;
-  /* Gap between the window's left edge and the left edge of a centred
-     .vertical-toolbar__btn: its 18px icon (set in VerticalToolbar.tsx), side
-     padding and 1px borders. The status bar starts its first control here so
-     the notebox button lines up with the toolbar buttons' hover highlight. */
+  /* Distance from the window's left edge to the left edge of a centred
+     `.vertical-toolbar__btn` (18px icon from VerticalToolbar.tsx, padding,
+     1px borders). The status bar's first control starts here, so it lines up
+     with the toolbar buttons. */
   --toolbar-btn-inset: max(
     0px,
     calc((var(--toolbar-width) - 18px - 2 * var(--space-4) - 2px) / 2)
@@ -28,12 +27,8 @@
   position: relative;
 }
 
-/* Documentation window: a slim notice pinned to the top of the content area
-   (a non-growing flex child of `.main-content`, above the pane tree). It sits
-   inside the content column — not the window chrome — and stays put while the
-   manual scrolls, because scrolling happens inside the pane below it. */
-/* A one-line notice under the editor toolbar about the state the note is in
-   (the Help manual's "edits aren't saved", Compose mode). */
+/* A one-line notice under the editor toolbar about the note's state (the Help
+   manual's "edits aren't saved", Compose mode). */
 .editor-notice {
   flex: 0 0 auto;
   display: flex;
@@ -62,12 +57,10 @@
   --right-width: 0px;
 }
 
-/* Distraction-free mode: collapse all chrome down to just the editor toolbar
-   (.editor-header) + content. The vertical toolbar, both sidebars and the
-   per-pane tab strip are hidden; the status bar keeps only its exit button
-   (handled in StatusBar). The left/right column widths are zeroed inline in
-   App.tsx (inline style would otherwise win); the toolbar column is zeroed
-   here since it has no inline override. */
+/* Distraction-free mode: only the editor toolbar (.editor-header) and
+   content remain. The vertical toolbar, sidebars and tab strips are hidden,
+   and the status bar keeps only its exit button (see StatusBar). The side
+   columns are zeroed inline in App.tsx; the toolbar column is zeroed here. */
 .app-shell--distraction-free {
   --toolbar-width: 0px;
 }
@@ -81,13 +74,11 @@
   display: none;
 }
 
-/* The status bar itself disappears: lifting it to `position: fixed` removes it
-   from the grid's `auto` row (which then collapses to 0, so the editor fills
-   the full height). The bar keeps its normal height and padding along the
-   bottom edge, but turns transparent and lets clicks pass through, so the
-   exit button stays in exactly the spot it held before the mode was entered.
-   The bar's right padding keeps the button clear of the editor's vertical
-   scrollbar (see .status-bar). */
+/* The status bar becomes `position: fixed`, so its grid row collapses and
+   the editor fills the height. It keeps its size and padding but turns
+   transparent and lets clicks through, so the exit button stays where it
+   was. Its right padding keeps the button clear of the editor's scrollbar
+   (see .status-bar). */
 .app-shell--distraction-free .status-bar {
   position: fixed;
   left: 0;
@@ -99,10 +90,8 @@
   z-index: var(--z-menu);
 }
 
-/* The lone floating exit button: same size as in the normal status bar, with
-   a semi-transparent fill so it stays unobtrusive over the content and
-   solidifies on hover. The outline is an inset shadow rather than a border so
-   it adds no width and the icon does not move. */
+/* The floating exit button: normal size, translucent until hovered. The
+   outline is an inset shadow, so it adds no width. */
 .app-shell--distraction-free .status-bar__df {
   pointer-events: auto;
   background: var(--status-btn-bg);
@@ -116,11 +105,10 @@
   background: var(--status-btn-bg-hover);
 }
 
-/* Native checkboxes/radios follow the app accent (teal) instead of the
-   desktop palette (which paints them the OS highlight colour, e.g. orange).
-   themes.css sets `color-scheme` for the same intent; `accent-color` is the
-   piece that actually tints the control. App-wide so every checkbox matches
-   — individual components no longer need their own accent-color rule. */
+/* Checkboxes and radios use the app accent rather than the desktop's
+   highlight colour. `color-scheme` (themes.css) isn't enough on its own;
+   `accent-color` tints the control. App-wide, so components don't need their
+   own rule. */
 .app-shell input[type="checkbox"],
 .app-shell input[type="radio"] {
   accent-color: var(--accent);
@@ -155,19 +143,12 @@
   opacity: 0.4;
 }
 
-/* Each hit strip lies wholly inside its own side panel rather than straddling
-   its divider, and the visible bar hugs the divider from that same side: the
-   left handle from the sidebar side, the right handle from the panel side.
-   Mirror images, consistently "on the panel side", so neither bar reaches
-   across into the content column to clip the top tab's edge.
-
-   Staying out of the content column is what keeps the pointer target clear of
-   the editor: the writing surface runs to the column edge, so a strip
-   reaching in would sit on the editor's own scrollbar and switch the cursor
-   to col-resize halfway across it. Inside the left sidebar the strip does
-   cover that panel's scrollbar, so sidebar scroll regions stop the full hit
-   width short of that edge (see `.left-sidebar__pane-body`) and the two sit
-   side by side. The right panel has nothing at its left edge to displace. */
+/* Each hit strip sits inside its own side panel, with the visible bar
+   against the divider on that side, so neither reaches into the content
+   column. A strip there would cover the editor's scrollbar. In the left
+   sidebar the strip covers the panel's scrollbar, so sidebar scroll regions
+   stop short of it (see `.left-sidebar__pane-body`); the right panel has
+   nothing at its left edge. */
 .resize-handle--left {
   left: calc(var(--toolbar-width) + var(--left-width) - var(--resize-handle-hit));
 }
@@ -213,10 +194,9 @@
      .right-panel::after — keep the three tiers in step. */
   border-bottom: 1px solid var(--border-subtle);
   box-sizing: border-box;
-  /* flex-shrink: 0 keeps the bar at exactly 38px even when the scrollable
-     content below tries to claim space. The right panel's tab bar uses the
-     same lock; without it, sub-pixel shrinking pulls the section-header
-     below up by ~1px and breaks cross-panel header alignment. */
+  /* Keep the bar at exactly 38px; the right panel's tab bar does the same.
+     Shrinking by a fraction of a pixel would misalign the headers across
+     panels. */
   flex-shrink: 0;
 }
 
@@ -244,50 +224,40 @@
   background: var(--bg-highlight);
 }
 
-/* The fixed-size box a sidebar pane fills. It does not scroll itself: each
-   pane pins its own header and scrolls only the list beneath it, so a pane's
-   title and controls stay on screen and the scrollbar starts below them.
-   See `.left-sidebar__pane` in panel-header.css for the pattern; panes that
-   manage their own layout (Search, Help) fill this box the same way. */
+/* The box a sidebar pane fills. It doesn't scroll: each pane pins its header
+   and scrolls only the list below (see `.left-sidebar__pane` in
+   panel-header.css). Search and Help fill it the same way. */
 .left-sidebar__content {
   flex: 1;
   min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  /* No top inset: whatever leads a pane (a section header, the Search input
-     row, the Help view picker) is a band row of its own and supplies the
-     height, so it starts on the same line as the editor's toolbar. A pane
-     that leads with plain content asks for the inset back with
-     `--top-inset` on its body. */
+  /* No top padding: each pane starts with a band row of its own (a section
+     header, the Search row, the Help picker), level with the editor toolbar.
+     A pane starting with plain content sets `--top-inset` on its body. */
   padding: 0 var(--space-4) var(--space-4);
 }
 
 .main-content {
   grid-area: main;
-  /* Chrome, not page colour: the backdrop the tab strip and toolbar sit on,
-     and what would show at the column's corners if the writing surface were
-     ever inset. Tabs that fill the column with their own bright surface
-     (collections) set the page colour back on .main-content__body. */
+  /* The chrome colour behind the tab strip and toolbar. Tabs with their own
+     page-coloured surface (collections) set it on .main-content__body. */
   background: var(--bg-secondary);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   position: relative;
-  /* Follows the writing surface's outer radius, which is 0 while the surface
-     is flat. Combined with overflow:hidden this is also what clips ::after
-     below, so a rounded column would trim the lip shadow to its own outline
-     rather than letting it cross the corner. */
+  /* Follows the writing surface's outer radius (0 while flat). With
+     overflow: hidden this also clips ::after below to the column's shape. */
   border-bottom-left-radius: var(--editor-surface-radius-outer);
   border-bottom-right-radius: var(--editor-surface-radius-outer);
 }
 
-/* The hairline where the writing surface meets the status bar. It closes the
-   U begun by `.main-content__body`'s side borders, and it is what still marks
-   the boundary out at the column's edges once the lip above has tapered away.
-   Inset by 1px on each side so it abuts those side borders instead of crossing
-   them. It stops at the column because the status bar and the sidebars share a
-   background: past the column there are not two surfaces to separate. */
+/* The hairline where the writing surface meets the status bar, closing the U
+   of `.main-content__body`'s side borders and marking the edge where the lip
+   has faded. Inset 1px each side to meet those borders. It stops at the
+   column because the status bar and sidebars share a background. */
 .main-content::before {
   content: "";
   position: absolute;
@@ -299,11 +269,9 @@
   background: var(--lip-hairline);
 }
 
-/* Bottom lip shadow — confined to the content column (not the full-width
-   status bar), so content appears to slide under the status bar only where the
-   two actually meet. Mirror of `.pane-toolbar::after` at the top of the pane:
-   the pair is what separates chrome from page now that the writing surface has
-   no edge of its own. */
+/* Bottom lip shadow, only across the content column, so content seems to
+   pass under the status bar where they meet. Counterpart of
+   `.pane-toolbar::after`. */
 .main-content::after {
   content: "";
   position: absolute;
@@ -315,18 +283,13 @@
      .pane-toolbar::after uses at the other end. */
   bottom: 1px;
   height: var(--lip-height);
-  /* Above the split-pane handles (z-index 1), so a handle runs under the
-     shadow like the column's side hairlines instead of cutting through it.
-     Coming later in the document, it wins the tie. */
+  /* Above the split-pane handles (z-index 1), so a handle passes under the
+     shadow; it comes later, so it wins the tie. */
   z-index: 1;
   pointer-events: none;
   background: linear-gradient(to top, var(--lip-shadow-status), transparent);
-  /* Ends taper out across the gutters on either side of the text column, so
-     the seam reads as a line under the text that dissolves rather than a band
-     with two hard stops. See --lip-fade-mask. The bottom corner radius above
-     still clips whatever is left, which matters only if the column is ever
-     rounded again. The strip holds no text; the font is here only so the `ch`
-     inside --lip-fade measures the editor body font. */
+  /* The ends fade across the gutters (see --lip-fade-mask). The font only
+     makes `ch` in --lip-fade match the editor body font. */
   font: var(--lip-fade-font-basis);
   -webkit-mask-image: var(--lip-fade-mask);
   mask-image: var(--lip-fade-mask);
@@ -343,22 +306,18 @@
 .main-content__body {
   flex: 1;
   overflow: auto;
-  /* The seam between the writing surface and the panels either side. The
-     background change (page colour against chrome) already marks it; the
-     hairline stays at the quiet tier so the boundary is defined without being
-     drawn twice. Drop both if the writing surface is ever set back in a
-     gutter (--editor-surface-inset), since a card draws its own edge and
-     .main-content::after then wants its side inset back at 0. */
+  /* The edge between the writing surface and the side panels: the background
+     change marks it, with a quiet hairline. If the surface is ever inset
+     (--editor-surface-inset), drop both, since a card draws its own edge,
+     and set .main-content::after's side inset back to 0. */
   border-left: 1px solid var(--border-subtle);
   border-right: 1px solid var(--border-subtle);
   box-sizing: border-box;
 }
 
 .main-content__body--collection {
-  /* A collection paints its own full-column surface, so it supplies the page
-     colour that .main-content (chrome) does not. The page inset sits on
-     `.collection-table` inside, so the pane's nav bar above it stays flush and
-     full width the way the editor's does. */
+  /* A collection paints its own page-coloured surface. Its inset is on
+     `.collection-table`, so the nav bar above stays full width. */
   background: var(--bg-primary);
 }
 

@@ -10,10 +10,12 @@ import LucideIconPicker from "../LucideIconPicker";
 import ExperimentalNotice from "../ExperimentalNotice";
 import { SettingSelect, SettingToggle } from "./shared";
 
-/** Extensions tab — manage the external-tool bridge. InkyCap ships no tools;
- *  the user registers executables they trust (the same authorization model as
- *  the Pandoc / Zotero paths). Each registered tool becomes a `/`-palette
- *  command. See documentation/developer/extending/external-tools.md. */
+/**
+ * Extensions tab: manage external tools. InkyCap includes none; the user
+ * registers programs they trust (as with the Pandoc and Zotero paths), and each
+ * becomes a `/` palette command. See
+ * documentation/developer/extending/external-tools.md.
+ */
 export function ExtensionsSettingsSection() {
   const t = useI18n();
   const tools = (): ExternalTool[] => settings.external_tools?.tools ?? [];
