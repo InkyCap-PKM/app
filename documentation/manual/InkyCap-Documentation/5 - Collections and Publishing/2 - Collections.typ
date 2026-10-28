@@ -128,7 +128,7 @@ The view has the same *Task List* and *Date* filters as the sidebar Agenda, incl
 With a collection open, the right panel shows four tabs for the collection:
 
 - *Export* is where every export of the collection starts: pick a format, set its options, and click the export button near the top. It is the first tab.
-- *Appearance* holds the collection's Typst template and bibliography style, its layout choices (paper size, margins, fonts, spacing, page and heading numbering), and a *Custom Typst* row for anything the controls do not cover. PDF files, the book, and the website use these.
+- *Appearance* holds the collection's Typst template and bibliography style, its layout choices (paper size, margins, fonts, spacing, page and heading numbering), and a *Custom Typst* row for anything the controls do not cover. PDF files, the book, and the website use these, except that the website leaves out the template.
 - *Book* holds everything about the merged book: title page, contributors, table of contents, bibliography, and page numbering. Only the book uses these.
 - *Collection* holds the collection's name, with a button to rename it, its icon, a *Description* where you can keep a note to yourself about what the collection is for (it is never exported), and the collection's bibliography file. At the bottom, set apart from the rest, is *Delete this collection…*, which does the same as choosing *Delete* when you right-click the collection in the Collections list. Deleting a collection removes only the collection itself; the notes it lists stay where they are.
 

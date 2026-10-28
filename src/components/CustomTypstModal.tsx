@@ -27,8 +27,8 @@ interface CustomTypstModalProps {
   onClose: () => void;
   /**
    * The collection's Typst template, if any. Then "Insert template setup" reads
-   * the template's starter scaffold and adds its `#show: …` rule at the top for
-   * the user to fill in.
+   * the template's starter scaffold and adds its `#show: …` rule for the user to
+   * fill in, replacing the rule of a template chosen earlier.
    */
   templateSpec?: string;
   /** When true (the Appearance tab's "Set up template…" path), insert the
@@ -72,30 +72,28 @@ export default function CustomTypstModal(props: CustomTypstModalProps) {
     props.onClose();
   }
 
-  /** Prepend the assigned template's starter `#show:` rule so the user can fill
-   *  in its metadata. No-op if it's already present; toasts if none is found. */
+  /** Apply the assigned template's starter `#show:` rule so the user can fill
+   *  in its metadata: added at the top, or in place of the rule an earlier
+   *  template left. Kept as is if already there; toasts if none is found. */
   async function insertTemplateSetup() {
     const spec = props.templateSpec;
     if (!spec || !view) return;
-    let snippet: string | null;
+    const current = view.state.doc.toString();
+    let updated: string | null;
     try {
-      snippet = await ipc.getTemplateStarter(spec, props.collectionPath);
+      updated = await ipc.applyTemplateStarter(spec, current, props.collectionPath);
     } catch (e) {
       toastError(t("collection.style.templateStarterFailed"), e);
       return;
     }
-    if (!snippet) {
+    if (!view) return;
+    if (updated === null) {
       showToast("info", t("collection.style.templateStarterFailed"));
       return;
     }
-    const current = view.state.doc.toString();
-    // Look for the rule's leading `#show: <fn>` (everything before `.with`), so
-    // it isn't inserted again after the user edited the arguments (when the
-    // full snippet would no longer match).
-    const marker = snippet.split(".with")[0].trim();
-    if (!current.includes(marker)) {
-      const insert = current.trim().length > 0 ? `${snippet}\n\n` : `${snippet}\n`;
-      view.dispatch({ changes: { from: 0, insert } });
+    // Skip if the user typed while the starter was being read; their edit wins.
+    if (updated !== current && view.state.doc.toString() === current) {
+      view.dispatch({ changes: { from: 0, to: current.length, insert: updated } });
     }
     view.focus();
   }

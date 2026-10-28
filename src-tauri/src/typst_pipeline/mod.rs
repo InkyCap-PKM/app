@@ -23,6 +23,7 @@ pub mod style_injection;
 pub mod suggestion;
 pub mod syntax;
 pub mod tag_rewrite;
+pub mod template_setup;
 pub mod world;
 pub mod zotero;
 

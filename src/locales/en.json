@@ -87,7 +87,7 @@
   "refNotes.error": "Error: {error}",
   "customTypst.title": "Custom Typst — {name}",
   "customTypst.hintBefore": "Injected on every export, after this collection's Style Overrides (so it overrides them) and after the template import (so this is where a template is applied). Raw Typst — e.g.",
-  "customTypst.templateGuidance": "Applying a template: fill in your title, authors and other metadata in its #show rule below. Leave the bibliography(\"…\") path as-is. On export InkyCap fill-in that file automatically from the works your notes cite, so you don't maintain it. The template only affects book/merged PDF export. It does not affect the reading view, the editor, or exporting a single note. If the template draws its own title page, uncheck \"Include title page\" under Book Metadata.",
+  "customTypst.templateGuidance": "Applying a template: fill in your title, authors and other metadata in its #show rule below. Leave the bibliography(\"…\") path as-is. On export InkyCap fills in that file automatically from the works your notes cite, so you don't maintain it. The template applies to PDF exports from this collection: the book or merged PDF, one PDF per note, and a single note exported from the collection. It does not affect the reading view or the editor. If the template draws its own title page, uncheck \"Include title page\" under Book Metadata.",
   "scaffoldPicker.insertFailed": "Failed to insert scaffold",
   "scaffoldPicker.title": "Insert scaffold",
   "scaffoldPicker.hint": "Type to filter, ↑↓ to choose, Enter to insert, Esc to cancel",

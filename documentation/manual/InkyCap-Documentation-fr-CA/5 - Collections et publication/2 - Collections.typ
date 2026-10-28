@@ -147,7 +147,7 @@ La vue offre les mêmes filtres *Liste de tâches* et *Date* que l'Agenda de la 
 Lorsqu'une collection est ouverte, le panneau de droite affiche quatre onglets propres à la collection :
 
 - *Exportation* est le point de départ de toute exportation de la collection : choisissez un format, réglez ses options et cliquez sur le bouton d'exportation près du haut. C'est le premier onglet.
-- *Apparence* contient le template Typst et le style de bibliographie de la collection, ses choix de mise en page (taille du papier, marges, polices, espacement, numérotation des pages et des titres) et une rangée *Typst personnalisé* pour tout ce que les contrôles ne couvrent pas. Les fichiers PDF, le livre et le site Web s'en servent.
+- *Apparence* contient le template Typst et le style de bibliographie de la collection, ses choix de mise en page (taille du papier, marges, polices, espacement, numérotation des pages et des titres) et une rangée *Typst personnalisé* pour tout ce que les contrôles ne couvrent pas. Les fichiers PDF, le livre et le site Web s'en servent, sauf que le site Web laisse de côté le template.
 - *Livre* contient tout ce qui concerne le livre fusionné : page de titre, contributeurs, table des matières, bibliographie et numérotation des pages. Seul le livre s'en sert.
 - *Collection* contient le nom de la collection, avec un bouton pour la renommer, son icône, une *Description* où vous pouvez garder une note pour vous-même sur le but de la collection (elle n'est jamais exportée), et le fichier de bibliographie de la collection.
 

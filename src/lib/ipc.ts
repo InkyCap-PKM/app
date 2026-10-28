@@ -1596,16 +1596,23 @@ export async function listInstalledPackages(): Promise<InstalledPackageEntry[]> 
 }
 
 /**
- * The `#show: <fn>.with(…)` rule from an installed template package's starter
- * scaffold, for a collection's Custom Typst. With `collectionPath`, its
- * `bibliography("…")` points at the collection's generated bibliography. Null
- * when there is no such template or rule.
+ * `customTypst` with the `#show: <fn>.with(…)` rule from an installed template
+ * package's starter applied: added at the top, or in place of the rule an
+ * earlier template left, and kept as is if already there. With
+ * `collectionPath`, the starter's `bibliography("…")` points at the
+ * collection's generated bibliography. Null when there is no such template or
+ * rule.
  */
-export async function getTemplateStarter(
+export async function applyTemplateStarter(
   spec: string,
+  customTypst: string,
   collectionPath?: string,
 ): Promise<string | null> {
-  return invoke<string | null>("get_template_starter", { spec, collectionPath });
+  return invoke<string | null>("apply_template_starter", {
+    spec,
+    customTypst,
+    collectionPath,
+  });
 }
 
 export async function uninstallTypstPackage(spec: string): Promise<void> {

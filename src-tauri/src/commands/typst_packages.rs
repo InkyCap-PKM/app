@@ -268,13 +268,17 @@ pub async fn list_installed_packages(
     Ok(out)
 }
 
-/// The `#show: <fn>.with(…)` rule from an installed template's starter, for a
-/// collection's Custom Typst. `None` if the spec isn't an installed template
-/// package or has no such rule; the caller treats that as no starter.
+/// `custom_typst` with the `#show: <fn>.with(…)` rule from an installed
+/// template's starter applied: added at the top, or in place of the rule an
+/// earlier template left, and kept as is if already there (see
+/// [`apply_template_starter`](crate::typst_pipeline::template_setup::apply_template_starter)).
+/// `None` if the spec isn't an installed template package or has no such rule;
+/// the caller treats that as no starter.
 #[tauri::command]
-pub async fn get_template_starter(
+pub async fn apply_template_starter(
     state: State<'_, AppState>,
     spec: String,
+    custom_typst: String,
     collection_path: Option<String>,
     window: tauri::WebviewWindow,
 ) -> Result<Option<String>, InkyCapError> {
@@ -305,7 +309,9 @@ pub async fn get_template_starter(
         }
         (s, _) => s,
     };
-    Ok(snippet)
+    Ok(snippet.map(|starter| {
+        crate::typst_pipeline::template_setup::apply_template_starter(&custom_typst, &starter)
+    }))
 }
 
 /// Uninstall a package by spec: delete its version folder, then the name and
