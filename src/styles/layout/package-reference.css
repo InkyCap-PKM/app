@@ -1,0 +1,102 @@
+/* Right-sidebar package reference (PackageReferencePanel). */
+
+.package-reference__controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-5) var(--space-4);
+}
+
+.package-reference__notice {
+  margin: 0 var(--space-5) var(--space-4);
+}
+
+.package-reference__list {
+  padding-bottom: var(--space-5);
+}
+
+.package-reference__symbol .sidebar-item__label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Description lines sit under the name, indented to line up with it. The
+   space below is a margin: inside a clamped box, padding would show the top of
+   the next line. */
+.package-reference__summary,
+.package-reference__detail {
+  margin: 0 var(--space-4) var(--space-3) calc(var(--space-4) + var(--icon-sm) + var(--space-3));
+  padding: 0;
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  color: var(--fg-muted);
+}
+
+.package-reference__summary {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.package-reference__docs,
+.package-reference__param-docs {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.package-reference__params {
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.package-reference__params code {
+  color: var(--fg-primary);
+}
+
+.package-reference__type,
+.package-reference__default {
+  margin-left: var(--space-3);
+  color: var(--fg-dim);
+  overflow-wrap: anywhere;
+}
+
+/* Packages section of the Properties pane (NotePackagesSection). */
+.note-packages__header {
+  margin-top: var(--space-5);
+}
+
+.note-packages {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.note-packages__item {
+  padding-block: 0;
+}
+
+.note-packages__name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--space-2) 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.note-packages__name:hover {
+  color: var(--fg-primary);
+}

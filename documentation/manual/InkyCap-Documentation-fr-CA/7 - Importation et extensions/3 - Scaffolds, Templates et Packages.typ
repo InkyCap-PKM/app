@@ -111,9 +111,45 @@ Les deux se gèrent à partir de leurs onglets respectifs dans le panneau, et le
 + Cliquez sur *Installer* et entrez une spécification, comme `@preview/cetz:0.2.0`. La partie `@preview/` veut dire « du Typst Universe ».
 + InkyCap le récupère et indique combien de fichiers il a installés.
 
-Chaque élément installé apparaît sous forme de ligne avec son nom, sa version et un badge d'origine (les éléments du Typst Universe affichent « Typst Universe » ; ceux que vous avez faits vous-même affichent « Votre package » ou « Votre template »). L'action *Copier* met la ligne d'importation exacte dans votre presse-papiers afin que vous puissiez la coller dans une note, et l'icône de corbeille le désinstalle. Avant de désinstaller, InkyCap énumère les règles de création qui utilisent le package et les notes qui l'importent, puisque ces notes ne compileront plus tant qu'il n'est pas réinstallé.
+Chaque élément installé apparaît sous forme de ligne avec son nom, sa version et un badge d'origine (les éléments du Typst Universe affichent « Typst Universe » ; ceux que vous avez faits vous-même affichent « Votre package » ou « Votre template »). L'action *Copier* met la ligne d'importation exacte dans votre presse-papiers afin que vous puissiez la coller dans une note, l'icône de dossier ouvre le dossier de l'élément dans le gestionnaire de fichiers de votre système (pratique pour lire son README ou ses fichiers d'exemple), et l'icône de corbeille le désinstalle. Avant de désinstaller, InkyCap énumère les règles de création qui utilisent le package et les notes qui l'importent, puisque ces notes ne compileront plus tant qu'il n'est pas réinstallé.
 
 Vous pouvez aussi installer un template ou un package depuis une archive `.tar.gz` locale avec *Depuis un fichier*, ou créer votre propre point de départ avec *Nouveau*. C'est pratique si vous voulez bâtir un style maison pour vos propres écrits.
+
+=== Découvrir ce qu'un élément permet de faire
+
+La plupart des templates et des packages ont des options que vous pouvez ajuster, et la flèche au début de chaque ligne montre ce qu'InkyCap sait de leur utilisation : la description de l'élément, ses auteurs et sa licence, ainsi qu'une image d'aperçu pour les templates qui en fournissent une. En dessous se trouvent des liens et des boutons pour en savoir plus :
+
+- *Page Typst Universe* (pour les éléments du Universe) et *Dépôt* s'ouvrent dans votre navigateur web. La page Universe présente les instructions complètes de l'élément, avec leurs images et leurs exemples.
+- *README* ouvre les instructions fournies avec l'élément dans l'application par défaut de votre système pour les fichiers Markdown, sans passer par Internet.
+- *Fichier de départ* (templates seulement) ouvre dans InkyCap le document d'exemple de l'auteur du template. Il montre comment le template est appliqué et, généralement, toutes les options qu'il accepte, souvent avec des commentaires qui les expliquent.
+- *Ouvrir typst.toml* ouvre le manifeste de l'élément, comme un clic sur la ligne.
+- *Fonctions et options* ouvre la *Référence du package* dans le panneau de droite : chaque fonction que l'élément offre, ce qu'elle fait et les options qu'elle accepte avec leurs valeurs par défaut. Le bouton du volet, le dernier du panneau de droite, apparaît dès que la note ouverte importe un package, et énumère les packages de cette note, de sorte que la référence se trouve à côté de la note que vous rédigez.
+
+Si un élément a des fonctions portant les mêmes noms que celles d'InkyCap (un package de notes en marge pourrait avoir son propre `note`, par exemple), sa ligne affiche une icône d'avertissement ; cliquez dessus pour une explication. Voir _Noms en conflit_ plus bas.
+
+=== Où s'appliquent les templates
+
+Un template met en page un document entier pour l'impression : format de page, marges, pages de titre, titres courants. InkyCap applique les templates là où vous voyez une note telle que son PDF l'afficherait : à l'*exportation en PDF*, et dans le format *SVG* de la vue lecture, qui montre les pages. Le format *HTML* de la vue lecture, le Journal Scroll et l'indexation d'InkyCap laissent de côté la règle `#show:` du template et gardent le style propre à InkyCap, afin que les notes restent lisibles à l'écran et qu'un template lourd ne ralentisse pas tout.
+
+Les packages, eux, fonctionnent partout : leurs fonctions s'exécutent dans la vue lecture comme dans les exportations. Typst ne peut pas exprimer un dessin (un arbre de preuve, un diagramme, un graphique) en HTML et le laisserait de côté ; dans le format HTML et le Journal Scroll, InkyCap affiche donc ce que produit un package de dessin sous forme d'image. Il apprend quels packages dessinent la première fois qu'un de leurs dessins est laissé de côté ; une note peut donc prendre un instant de plus à afficher ses dessins la première fois.
+
+Lorsque le fichier ouvert appartient à un package ou est un scaffold (le fichier de départ d'un template ou son `typst.toml`, par exemple), le panneau de droite n'affiche que les onglets qui s'y appliquent : actions sur le fichier, la *Référence du package*, le plan et, pour les scaffolds, les propriétés.
+
+=== Utiliser un package dans une note
+
+Le plus simple est de le faire depuis la note : dans le volet *Propriétés*, *Ajouter un package…* ajoute n'importe quel package installé, et la section *Packages Typst* du menu `/` insère l'une de ses fonctions, en ajoutant le package au besoin. Dans les deux cas, InkyCap écrit l'importation en haut de la note, *au-dessus* de la ligne qui importe les fonctions propres à InkyCap. L'éditeur visuel masque ces lignes ; retirez un package depuis la même section *Packages*, ou supprimez sa ligne en mode source.
+
+=== Noms en conflit
+
+Importer un package avec `*` fait entrer chaque nom qu'il offre, et quand deux importations offrent le même nom, la dernière l'emporte. Un package ayant son propre `note` ou `task` importé avec `*` _sous_ la ligne d'importation d'InkyCap remplace donc celui d'InkyCap : la note perd ses propriétés ou ses tâches disparaissent de l'Agenda. C'est pourquoi InkyCap place les importations de packages au-dessus de la sienne.
+
+Si vous collez ou tapez une telle importation plus bas, la vue lecture le signale et propose *Corriger l'importation*, qui place l'importation au-dessus de la ligne d'InkyCap et garde la version du package sous un nouveau nom, afin que les deux restent utilisables :
+
+```typ
+#import "@preview/example-notes:1.0.0": note as example-notes-note
+```
+
+Les templates qu'InkyCap ajoute lui-même, depuis une règle de création ou une exportation PDF, sont aussi placés au-dessus de l'importation d'InkyCap. Lorsqu'une collection est exportée en livre, les packages qu'utilisent ses notes sont importés une seule fois, en haut du livre, dans le même ordre.
 
 === Comment fonctionnent les packages
 

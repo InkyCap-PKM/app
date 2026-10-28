@@ -133,6 +133,33 @@ pub fn ensure_import(source: &str) -> String {
     }
 }
 
+/// `source` with `#import "<spec>": *` added just above the notebox import
+/// (after a leading byte order mark), or at the top without one. Above it, so
+/// that a package exporting a name InkyCap also uses (its own `note`, say) can't
+/// replace InkyCap's: the later import wins.
+pub fn add_import_above_notebox_import(source: &str, spec: &str) -> String {
+    let import_line = format!("#import \"{spec}\": *\n");
+    let mut cursor = 0usize;
+    let mut insert_at = None;
+    for line in source.split_inclusive('\n') {
+        let body = line.strip_suffix('\n').unwrap_or(line);
+        if is_notebox_import_line(body) {
+            insert_at = Some(cursor);
+            break;
+        }
+        cursor += line.len();
+    }
+    let mut insert_at = insert_at.unwrap_or(0);
+    if insert_at == 0 && source.starts_with('\u{feff}') {
+        insert_at = '\u{feff}'.len_utf8();
+    }
+    let mut result = String::with_capacity(source.len() + import_line.len());
+    result.push_str(&source[..insert_at]);
+    result.push_str(&import_line);
+    result.push_str(&source[insert_at..]);
+    result
+}
+
 static LIB_TYP: &[u8] = include_bytes!("../../inkycap-notebox/lib.typ");
 
 /// Default scaffold for the built-in "New Note" rule, written to
@@ -317,6 +344,26 @@ fn write_if_changed(path: &Path, expected: &[u8]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn template_import_goes_above_the_notebox_import() {
+        let import = import_line();
+        let src = format!("// note\n{import}\n#note()\n");
+        assert_eq!(
+            add_import_above_notebox_import(&src, "@preview/t:1.0.0"),
+            format!("// note\n#import \"@preview/t:1.0.0\": *\n{import}\n#note()\n")
+        );
+        let bom = format!("\u{feff}{import}\nBody\n");
+        assert_eq!(
+            add_import_above_notebox_import(&bom, "@preview/t:1.0.0"),
+            format!("\u{feff}#import \"@preview/t:1.0.0\": *\n{import}\nBody\n")
+        );
+        assert_eq!(
+            add_import_above_notebox_import("Body\n", "@preview/t:1.0.0"),
+            "#import \"@preview/t:1.0.0\": *\nBody\n"
+        );
+    }
+
     use tempfile::tempdir;
 
     #[test]

@@ -103,7 +103,13 @@
   gap: var(--space-3);
 }
 
-.templates-pane__item .templates-panel__item-action,
+/* The label takes the spare width so the badge and buttons sit flush right,
+   whatever the name's length. */
+.templates-pane__item .sidebar-item__label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .templates-pane__item .templates-panel__item-icon {
   flex: 0 0 auto;
 }
@@ -247,22 +253,6 @@
   background: var(--bg-hover);
 }
 
-.templates-panel__item-action {
-  background: transparent;
-  border: 1px solid var(--border-primary);
-  color: var(--fg-muted);
-  font-size: var(--text-sm);
-  padding: 3px 8px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-family: inherit;
-}
-
-.templates-panel__item-action:hover {
-  background: var(--bg-hover);
-  color: var(--fg-primary);
-}
-
 .templates-panel__version {
   font-size: var(--text-sm);
   color: var(--fg-dim);
@@ -283,7 +273,68 @@
 
 .templates-panel__item-icon:hover {
   background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.templates-panel__item-icon--danger:hover {
   color: var(--accent-danger);
+}
+
+.templates-panel__item-icon--attention,
+.templates-panel__item-icon--attention:hover,
+.templates-panel__item-icon--attention.is-active {
+  color: var(--accent-warn);
+}
+
+.templates-panel__item-icon.is-active {
+  background: var(--bg-hover);
+}
+
+/* A row's name-clash explanation, indented like its details. */
+.templates-panel__clash {
+  margin: var(--space-1) var(--space-4) var(--space-3)
+    calc(var(--space-4) + 2 * var(--icon-sm) + 2 * var(--space-3));
+}
+
+/* Details under an expanded package row, indented to line up with its name. */
+.templates-panel__details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4) var(--space-4)
+    calc(var(--space-4) + 2 * var(--icon-sm) + 2 * var(--space-3));
+  font-size: var(--text-sm);
+  color: var(--fg-secondary);
+}
+
+.templates-panel__details p {
+  margin: 0;
+}
+
+.templates-panel__details-meta,
+.templates-panel__details-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+}
+
+.templates-panel__details-meta {
+  color: var(--fg-dim);
+}
+
+.templates-panel__details-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.templates-panel__thumbnail {
+  display: block;
+  max-width: 100%;
+  max-height: 16em;
+  align-self: flex-start;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
 }
 
 .templates-panel__badge {

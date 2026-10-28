@@ -78,6 +78,7 @@ const CATEGORY_KEYS: Record<string, string> = {
   InkyCap: "slash.cat.inkycap",
   Style: "slash.cat.style",
   Tools: "slash.cat.tools",
+  Packages: "slash.cat.packages",
 };
 
 /** Displayed label for a palette row: localized via `labelKey`, else the raw

@@ -323,6 +323,32 @@ pub fn normalize_heading_levels(body: &str, target_min: u8) -> String {
     out
 }
 
+// ── Chapter imports ─────────────────────────────────────────────────────────
+
+/// Every package import in the chapters, once each, as `(wildcard, named)`
+/// lines in the order first seen. A note's imports are cut from its chapter
+/// (with its header) or from its body, so the book imports them itself.
+fn chapter_package_imports(notes: &[BookNote]) -> (Vec<String>, Vec<String>) {
+    let mut wildcard: Vec<String> = Vec::new();
+    let mut named: Vec<String> = Vec::new();
+    for note in notes {
+        for import in crate::typst_pipeline::package_imports::package_imports(&note.content) {
+            let (list, line) = if import.wildcard {
+                let spec = crate::typst_packages::PackageSpec::parse(&import.spec)
+                    .map(|p| p.canonical())
+                    .unwrap_or(import.spec.clone());
+                (&mut wildcard, format!("#import \"{spec}\": *"))
+            } else {
+                (&mut named, note.content[import.range.clone()].to_string())
+            };
+            if !list.contains(&line) {
+                list.push(line);
+            }
+        }
+    }
+    (wildcard, named)
+}
+
 // ── Wrapper generation ──────────────────────────────────────────────────────
 
 /// Build the book's Typst source, to pass to
@@ -352,9 +378,28 @@ pub fn build_book_source(
 ) -> String {
     let mut s = String::with_capacity(8 * 1024);
 
-    // Notebox library import — same as every other compiled note.
+    // Imports. The collection's template and the chapters' `*` package imports
+    // go above the notebox import, so none of them can replace InkyCap's own
+    // functions (a later import wins); chapters' named imports go below it.
+    // Chapter bodies lose their imports (see the chapter loop), so each is
+    // imported once for the whole book.
+    if let Some(import_line) = template_import {
+        s.push_str(import_line);
+        if !import_line.ends_with('\n') {
+            s.push('\n');
+        }
+    }
+    let (wildcard_imports, named_imports) = chapter_package_imports(notes);
+    for line in &wildcard_imports {
+        s.push_str(line);
+        s.push('\n');
+    }
     s.push_str(&crate::notebox_package::import_line());
     s.push('\n');
+    for line in &named_imports {
+        s.push_str(line);
+        s.push('\n');
+    }
 
     // Document title and author, required for PDF/UA-1 (Typst refuses an export
     // without a title). The date is added by
@@ -427,14 +472,6 @@ pub fn build_book_source(
             "#set heading(numbering: \"{}\")\n",
             typst_escape(pattern)
         ));
-    }
-
-    // Optional template — applied via `#show: tmpl.with(...)`.
-    if let Some(import_line) = template_import {
-        s.push_str(import_line);
-        if !import_line.ends_with('\n') {
-            s.push('\n');
-        }
     }
 
     // The collection's custom Typst, after the template so its rules win. The
@@ -570,6 +607,8 @@ pub fn build_book_source(
             }
             BibliographyMode::InPlace => strip_note_preamble(&note.content).to_string(),
         };
+        let raw_body =
+            crate::typst_pipeline::note_package_edits::without_package_imports(&raw_body);
         let body = if normalize_headings {
             normalize_heading_levels(&raw_body, 2)
         } else {
@@ -1183,6 +1222,46 @@ After
     }
 
     #[test]
+    fn package_imports_are_gathered_at_the_top_of_the_book() {
+        let header = "#import \"/.inkycap/notebox.typ\": *";
+        let notes = vec![
+            note(
+                "alpha",
+                &format!(
+                    "#import \"@preview/example-drawing:1.0.0\": *\n{header}\n#note()\n= Alpha\nA #drawing(r)\n"
+                ),
+            ),
+            note(
+                "beta",
+                &format!(
+                    "{header}\n#note()\n= Beta\n#import \"@preview/example-drawing:1.0.0\": *\n\
+                     #import \"@preview/example-notes:1.0.0\": note as example-notes-note\nB\n"
+                ),
+            ),
+        ];
+        let src = build_book_source(
+            &notes,
+            &options(),
+            None,
+            None,
+            Some("#import \"@preview/example-book:1.0.0\": *"),
+            None,
+            None,
+            false,
+            None,
+            None,
+        );
+        let top = format!(
+            "#import \"@preview/example-book:1.0.0\": *\n#import \"@preview/example-drawing:1.0.0\": *\n{header}\n\
+             #import \"@preview/example-notes:1.0.0\": note as example-notes-note\n"
+        );
+        assert!(src.starts_with(&top), "{src}");
+        assert_eq!(src.matches("@preview/example-drawing").count(), 1, "{src}");
+        assert_eq!(src.matches("@preview/example-notes").count(), 1, "{src}");
+        assert!(src.contains("A #drawing(r)"));
+    }
+
+    #[test]
     fn build_book_emits_one_bibliography() {
         let notes = vec![
             note("alpha", "#import \"/.inkycap/notebox.typ\": *\n#note()\n= Alpha\nA"),
@@ -1452,6 +1531,7 @@ After
                 line: None,
                 column: None,
                 is_main: true,
+                package: None,
             })
         };
         let diag = |msg: &str, start: usize| TypstDiagnostic {
@@ -1460,6 +1540,8 @@ After
             primary: span(start),
             trace: vec![],
             hints: vec![],
+            code: None,
+            params: Default::default(),
         };
         let diags = vec![
             diag("expected expression", off_a),
@@ -1471,6 +1553,8 @@ After
                 primary: span(off_a),
                 trace: vec![],
                 hints: vec![],
+                code: None,
+                params: Default::default(),
             },
         ];
         let msg = describe_book_diagnostics(&src, &diags, None);
@@ -1513,6 +1597,8 @@ After
             primary: None,
             trace: vec![],
             hints: vec![],
+            code: None,
+            params: Default::default(),
         }];
         let msg = describe_book_diagnostics("front\n", &diags, Some("/refs.bib"));
         assert!(msg.contains("bibliography file (/refs.bib)"), "{msg}");
@@ -1545,9 +1631,12 @@ After
                 line: None,
                 column: None,
                 is_main,
+                package: None,
             }),
             trace: vec![],
             hints: vec![],
+            code: None,
+            params: Default::default(),
         };
         let diags = vec![
             diag(off_a, true),
@@ -1565,9 +1654,12 @@ After
                     line: None,
                     column: None,
                     is_main: true,
+                    package: None,
                 }),
                 trace: vec![],
                 hints: vec![],
+                code: None,
+                params: Default::default(),
             },
         ];
         let stems = book_diagnostic_note_stems(&src, &diags);

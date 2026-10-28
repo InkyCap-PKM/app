@@ -1,7 +1,7 @@
 // Right panel: tabbed view with Properties, Outline, and Links
 // for the active file.
 
-import { Component, createEffect, createMemo, createResource, createSignal, For, Show, onCleanup, onMount, untrack } from "solid-js";
+import { Component, createEffect, createMemo, createResource, createSignal, For, Show, on, onCleanup, onMount, untrack } from "solid-js";
 import { getActiveTab, openTab } from "../stores/tabs";
 import {
   mycelialStateFor,
@@ -58,6 +58,7 @@ import {
   TableOfContents,
   Link,
   Quote,
+  PackageSearch,
   Newspaper,
   Anchor,
   CalendarArrowDown,
@@ -82,6 +83,15 @@ import {
 import { NoteIcon, UnwrittenNoteIcon } from "./icons";
 import { Dynamic } from "solid-js/web";
 import ReferencesPanel from "./ReferencesPanel";
+import PackageReferencePanel from "./PackageReferencePanel";
+import NotePackagesSection from "./NotePackagesSection";
+import {
+  PACKAGE_REFERENCE_TAB,
+  chosenPackageFor,
+  clearChosenPackage,
+  isScaffoldFile,
+  packageSpecOfFile,
+} from "../stores/package-reference";
 import CollectionSettings from "./CollectionSettings";
 import AttachmentPanel from "./AttachmentPanel";
 import { showAttachmentFileMenu } from "../lib/attachment-nav";
@@ -257,6 +267,57 @@ const RightPanel: Component = () => {
     const tab = getActiveTab();
     return tab?.type === "file" ? tab : undefined;
   };
+
+  // A package's own files (its typst.toml, a template's starter) and scaffolds
+  // aren't notes: their right panel keeps only the tabs that apply to them.
+  const packageFileOpen = () => {
+    const path = activeFileTab()?.path;
+    return !!path && packageSpecOfFile(path) !== null;
+  };
+  const scaffoldOpen = () => {
+    const path = activeFileTab()?.path;
+    return !!path && isScaffoldFile(path);
+  };
+  const noteTabsShown = () => !packageFileOpen() && !scaffoldOpen();
+  // Properties apply to scaffolds too: their `#note(...)` is merged into notes.
+  const propertiesShown = () => !packageFileOpen();
+
+  // The packages the open note imports, re-read when it is saved (which is
+  // also how InkyCap's own import edits announce themselves).
+  const [importsRevision, setImportsRevision] = createSignal(0);
+  const onImportsMaybeChanged = () => setImportsRevision((n) => n + 1);
+  document.addEventListener("inkycap:note-saved", onImportsMaybeChanged);
+  onCleanup(() => document.removeEventListener("inkycap:note-saved", onImportsMaybeChanged));
+  const [noteImportsResource] = createResource(
+    () => {
+      const path = activeFileTab()?.path;
+      return path ? ([path, importsRevision()] as const) : undefined;
+    },
+    ([path]) => ipc.listNotePackageImports(path).catch(() => [] as string[]),
+  );
+  const noteImports = (): string[] => noteImportsResource.latest ?? [];
+  // A package chosen for one note isn't carried to the next.
+  createEffect(on(() => activeFileTab()?.path, () => clearChosenPackage(), { defer: true }));
+  // The package reference applies where there is a package to show: the note
+  // imports one, one was chosen for it, or the open file belongs to one.
+  const packageReferenceShown = () => {
+    const path = activeFileTab()?.path;
+    return noteImports().length > 0 || packageFileOpen() || !!chosenPackageFor(path);
+  };
+
+  // When the active tab is one this file doesn't show, fall back to one it
+  // does: the package reference for a package's file, else the outline.
+  createEffect(() => {
+    if (!activeFileTab()) return;
+    const active = activePanel();
+    const hidden =
+      (!noteTabsShown() &&
+        (active === "links" || active === "references" || active === "annotations")) ||
+      (active === "properties" && !propertiesShown()) ||
+      (active === PACKAGE_REFERENCE_TAB && !packageReferenceShown() && !noteImportsResource.loading);
+    if (!hidden) return;
+    setActivePanel(packageReferenceShown() ? PACKAGE_REFERENCE_TAB : "outline");
+  });
 
   // The focused tab's Mycelial state, by tab id, so split Mycelial views each
   // show their own context list.
@@ -1219,54 +1280,58 @@ const RightPanel: Component = () => {
             >
               <TableOfContents size={18} />
             </button>
-            <button
-              class={`right-panel__tab${activePanel() === "properties" ? " right-panel__tab--active" : ""}`}
-              onClick={() => setActivePanel("properties")}
-              title={t("rightPanel.tab.properties")}
-              aria-label={t("rightPanel.tab.properties")}
-            >
-              <NotebookTabs size={18} />
-            </button>
-            <button
-              class={`right-panel__tab${activePanel() === "links" ? " right-panel__tab--active" : ""}`}
-              onClick={() => setActivePanel("links")}
-              title={t("rightPanel.tab.links")}
-              aria-label={t("rightPanel.tab.links")}
-            >
-              <Link size={18} />
-            </button>
-            <button
-              class={`right-panel__tab${activePanel() === "references" ? " right-panel__tab--active" : ""}`}
-              onClick={() => setActivePanel("references")}
-              title={t("rightPanel.tab.references")}
-              aria-label={t("rightPanel.tab.references")}
-            >
-              <Quote size={18} />
-            </button>
-            {/* Changes & History — always available for a file note. A dot
-                badge flags when the note has tracked changes still awaiting an
-                accept/reject decision, so the user knows to open the pane. */}
-            <button
-              class={`right-panel__tab${activePanel() === "annotations" ? " right-panel__tab--active" : ""}`}
-              onClick={() => setActivePanel("annotations")}
-              title={
-                pendingDecisions() > 0
-                  ? t("annotations.pendingTitle", { n: pendingDecisions() })
-                  : t("annotations.paneTitle")
-              }
-              aria-label={
-                pendingDecisions() > 0
-                  ? t("annotations.pendingTitle", { n: pendingDecisions() })
-                  : t("annotations.paneTitle")
-              }
-            >
-              <span class="right-panel__tab-badge-wrap">
-                <MessagesSquare size={18} />
-                <Show when={pendingDecisions() > 0 || noteHasIncoming()}>
-                  <span class="right-panel__tab-badge" aria-hidden="true" />
-                </Show>
-              </span>
-            </button>
+            <Show when={propertiesShown()}>
+              <button
+                class={`right-panel__tab${activePanel() === "properties" ? " right-panel__tab--active" : ""}`}
+                onClick={() => setActivePanel("properties")}
+                title={t("rightPanel.tab.properties")}
+                aria-label={t("rightPanel.tab.properties")}
+              >
+                <NotebookTabs size={18} />
+              </button>
+            </Show>
+            <Show when={noteTabsShown()}>
+              <button
+                class={`right-panel__tab${activePanel() === "links" ? " right-panel__tab--active" : ""}`}
+                onClick={() => setActivePanel("links")}
+                title={t("rightPanel.tab.links")}
+                aria-label={t("rightPanel.tab.links")}
+              >
+                <Link size={18} />
+              </button>
+              <button
+                class={`right-panel__tab${activePanel() === "references" ? " right-panel__tab--active" : ""}`}
+                onClick={() => setActivePanel("references")}
+                title={t("rightPanel.tab.references")}
+                aria-label={t("rightPanel.tab.references")}
+              >
+                <Quote size={18} />
+              </button>
+              {/* Changes & History — available for any note. A dot
+                  badge flags when the note has tracked changes still awaiting an
+                  accept/reject decision, so the user knows to open the pane. */}
+              <button
+                class={`right-panel__tab${activePanel() === "annotations" ? " right-panel__tab--active" : ""}`}
+                onClick={() => setActivePanel("annotations")}
+                title={
+                  pendingDecisions() > 0
+                    ? t("annotations.pendingTitle", { n: pendingDecisions() })
+                    : t("annotations.paneTitle")
+                }
+                aria-label={
+                  pendingDecisions() > 0
+                    ? t("annotations.pendingTitle", { n: pendingDecisions() })
+                    : t("annotations.paneTitle")
+                }
+              >
+                <span class="right-panel__tab-badge-wrap">
+                  <MessagesSquare size={18} />
+                  <Show when={pendingDecisions() > 0 || noteHasIncoming()}>
+                    <span class="right-panel__tab-badge" aria-hidden="true" />
+                  </Show>
+                </span>
+              </button>
+            </Show>
             {/* Contributed tabs (plugins / manifest query-views). Renders
                 nothing when the registry is empty, so the built-in tab row is
                 unchanged by default. */}
@@ -1282,6 +1347,17 @@ const RightPanel: Component = () => {
                 </button>
               )}
             </For>
+            {/* Last: shown only when the note has a package to look up. */}
+            <Show when={packageReferenceShown()}>
+              <button
+                class={`right-panel__tab${activePanel() === PACKAGE_REFERENCE_TAB ? " right-panel__tab--active" : ""}`}
+                onClick={() => setActivePanel(PACKAGE_REFERENCE_TAB)}
+                title={t("packageReference.title")}
+                aria-label={t("packageReference.title")}
+              >
+                <PackageSearch size={18} />
+              </button>
+            </Show>
           </Show>
         </Show>
 
@@ -1772,6 +1848,14 @@ const RightPanel: Component = () => {
                     </Show>
                   </div>
                 </Show>
+
+                {/* The packages the note imports, below its properties. */}
+                <div class="right-panel__section-header note-packages__header">
+                  <span>{t("notePackages.title")}</span>
+                </div>
+                <Show when={activeFileTab()}>
+                  {(tab) => <NotePackagesSection path={tab().path} imports={noteImports()} />}
+                </Show>
               </div>
             </div>
           </Show>
@@ -2204,6 +2288,10 @@ const RightPanel: Component = () => {
             <div class="right-panel__pane-body">
               <ReferencesPanel />
             </div>
+          </Show>
+
+          <Show when={activePanel() === PACKAGE_REFERENCE_TAB}>
+            <PackageReferencePanel imports={noteImports()} />
           </Show>
 
           {/* Scroll Context tab — only meaningful when Journal Scroll is on

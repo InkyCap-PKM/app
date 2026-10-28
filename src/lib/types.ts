@@ -1354,6 +1354,10 @@ export interface TypstDiagnostic {
   primary: TypstSpan | null;
   trace: string[];
   hints: string[];
+  /** Set on warnings InkyCap adds itself: shown as `diagnostic.code.<code>`,
+   *  filled from `params`, with `message` as the English fallback. */
+  code?: string;
+  params?: Record<string, string>;
 }
 
 export interface TypstCompileResult {

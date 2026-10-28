@@ -62,6 +62,7 @@
 @import "./layout/export-dialog.css";
 @import "./layout/modals.css";
 @import "./layout/templates.css";
+@import "./layout/package-reference.css";
 @import "./layout/attachment-rename.css";
 @import "./layout/toasts-overlays.css";
 @import "./layout/audit-dialog.css";

@@ -14,17 +14,22 @@
 import { EditorState } from "@codemirror/state";
 import { isNoteboxImportLine, externalReload } from "./visual-protected";
 
+/** Lines searched for the notebox import when the note has no `#note(`. */
+const MAX_HEADER_LINES = 50;
+
 /**
  * Range of the inkycap-notebox import line with its newline, or `null` without
- * one. Only the first few lines are checked, since the import is written as
- * line 1.
+ * one. The import is in the note's header, below any package imports InkyCap
+ * placed above it (see `add_note_package` in the backend), so the search stops
+ * at the `#note(...)` call.
  */
-function importLineRange(
+export function importLineRange(
   state: EditorState,
 ): { from: number; to: number } | null {
-  const maxScan = Math.min(state.doc.lines, 5);
+  const maxScan = Math.min(state.doc.lines, MAX_HEADER_LINES);
   for (let i = 1; i <= maxScan; i++) {
     const line = state.doc.line(i);
+    if (line.text.trimStart().startsWith("#note(")) break;
     if (!isNoteboxImportLine(line.text)) continue;
     const to =
       line.to < state.doc.length ? line.to + 1 : line.to;

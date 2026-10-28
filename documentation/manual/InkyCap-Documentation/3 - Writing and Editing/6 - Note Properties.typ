@@ -87,6 +87,10 @@ Open a row's kebab menu (`⋮`) for two choices:
 
 #callout("note")[Removing the very last property from a note tidies things up completely. InkyCap removes the whole metadata block rather than leaving an empty one behind.]
 
+== The packages a note uses
+
+Below the properties, the *Packages* section lists the Typst packages and templates the note imports. Click one to see its functions and options in the *Package reference*, or click its × to remove it from the note (InkyCap asks first; anything in the note that uses it stops working). *Add package…* lists the packages installed in your notebox; choosing one adds it to the note. InkyCap writes the import at the top of the note, above its own, where it can't replace InkyCap's functions. See #wikilink("3 - Scaffolds, Templates, and Packages").
+
 == How properties are stored
 
 You do not need to edit the source by hand because the right sidebar in the visual editor provides an interface but it helps to know what's happening. All of a note's properties live as named arguments to a single `#note(...)` call at the top of the file, just after the notebox import line. A note's properties might look like this in source mode:

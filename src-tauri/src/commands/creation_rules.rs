@@ -271,17 +271,14 @@ pub async fn execute_creation_rule(
         }
     }
 
-    // Inject Typst template import if specified
+    // Import the rule's template, above the notebox import so InkyCap's names
+    // win where the two overlap.
     if !rule.typst_template.is_empty() {
         let resolved = crate::commands::export::resolve_template_path_with_root(
             &rule.typst_template,
             Some(root),
         );
-        let template_import = format!("#import \"{}\": *\n", resolved);
-        if let Some(pos) = content.find('\n') {
-            let insert_pos = pos + 1;
-            content.insert_str(insert_pos, &template_import);
-        }
+        content = crate::notebox_package::add_import_above_notebox_import(&content, &resolved);
     }
 
     // Ensure target directory exists

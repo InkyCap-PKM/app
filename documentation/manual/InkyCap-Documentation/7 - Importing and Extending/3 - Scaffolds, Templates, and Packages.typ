@@ -110,9 +110,45 @@ Both are managed from their respective tabs in the panel, and both are stored to
 + Click *Install* and enter a spec, such as `@preview/cetz:0.2.0`. The `@preview/` part means "from the Typst Universe".
 + InkyCap fetches it and reports how many files it installed.
 
-Each installed item appears as a row with its name, version, and an origin badge (Typst Universe items read "Typst Universe"; ones you made yourself read "Your package" or "Your template"). The *Copy* action puts the exact import line on your clipboard so you can paste it into a note, and the trash icon uninstalls it. Before uninstalling, InkyCap lists the creation rules that use the package and the notes that import it, since those notes will not compile until it is reinstalled.
+Each installed item appears as a row with its name, version, and an origin badge (Typst Universe items read "Typst Universe"; ones you made yourself read "Your package" or "Your template"). The *Copy* action puts the exact import line on your clipboard so you can paste it into a note, the folder icon opens the item's folder in your system file manager (useful for reading its README or example files), and the trash icon uninstalls it. Before uninstalling, InkyCap lists the creation rules that use the package and the notes that import it, since those notes will not compile until it is reinstalled.
 
 You can also install a template or package from a local `.tar.gz` archive with *From file*, or create your own starter with *New*. This is handy if you want to build a house style for your own writing.
+
+=== Learning what an item can do
+
+Most templates and packages have options you can adjust, and the arrow at the start of each row shows what InkyCap knows about how to use them: the item's description, authors and licence, and a preview image for templates that include one. Below that are links and buttons for reading further:
+
+- *Typst Universe page* (for Universe items) and *Repository* open in your web browser. The Universe page shows the item's full instructions, with their pictures and examples.
+- *README* opens the instructions that came with the item in your system's default app for Markdown files, without going online.
+- *Starter file* (templates only) opens the template author's own example document in InkyCap. It shows how the template is applied and, usually, every option it accepts, often with comments explaining them.
+- *Open typst.toml* opens the item's manifest, as clicking the row does.
+- *Functions & options* opens the *Package reference* in the right sidebar: every function the item offers, what it does, and the options it takes with their default values. The pane's button, the last in the right sidebar, appears whenever the open note imports a package, and lists that note's packages, so the reference sits beside the note you're writing.
+
+If an item has functions with the same names as InkyCap's own (a package for margin notes might have its own `note`, for example), its row shows a warning icon; click it for an explanation. See _Names that clash_ below.
+
+=== Where templates apply
+
+A template lays out a whole document for print: page size, margins, title pages, running heads. InkyCap applies templates where you see a note as its PDF would look: when you *export to PDF*, and in the reading view's *SVG* format, which shows the pages. The reading view's *HTML* format, the Journal Scroll and InkyCap's indexing leave a template's `#show:` rule out and keep InkyCap's own styling, so notes stay readable on screen and a heavy template doesn't slow everything down.
+
+Packages, by contrast, work everywhere: their functions run in the reading view as well as in exports. Typst can't express a drawing (a proof tree, a diagram, a chart) as HTML and would leave it out, so in the HTML format and the Journal Scroll InkyCap shows what a drawing package produces as an image instead. It learns which packages draw the first time one of their drawings is left out, so a note may need one extra moment to show its drawings the first time.
+
+When the open file belongs to a package or is a scaffold (a template's starter file or `typst.toml`, say), the right sidebar shows only the tabs that apply to it: file actions, the *Package reference*, the outline and, for scaffolds, properties.
+
+=== Using a package in a note
+
+The simplest way is from the note itself: in the *Properties* pane, *Add package…* adds any installed package, and the `/` menu's *Typst packages* section inserts one of its functions, adding the package if needed. Either way InkyCap writes the import at the top of the note, *above* the line that imports InkyCap's own functions. The visual editor hides those lines; remove a package from the same *Packages* section, or delete its line in Source mode.
+
+=== Names that clash
+
+Importing a package with `*` brings in every name it offers, and when two imports offer the same name, the later one wins. A package with its own `note` or `task` imported with `*` _below_ InkyCap's import line therefore replaces InkyCap's, and the note loses its properties or its tasks drop out of the Agenda. That's why InkyCap puts package imports above its own.
+
+If you paste or type such an import further down, the reading view warns about it and offers *Fix import*, which moves the import above InkyCap's line and keeps the package's own version under a new name, so both stay usable:
+
+```typ
+#import "@preview/example-notes:1.0.0": note as example-notes-note
+```
+
+Templates that InkyCap adds itself, from a creation rule or a PDF export, are placed above InkyCap's import too. When a collection is exported as a book, the packages its notes use are imported once, at the top of the book, in the same order.
 
 === How packages work
 

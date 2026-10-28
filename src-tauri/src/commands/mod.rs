@@ -22,6 +22,7 @@ pub mod mycelial;
 pub mod mycelial_exclusions;
 pub mod name_audit;
 pub mod new_tab_page;
+pub mod note_packages;
 pub mod notebox;
 pub mod pdf_view;
 pub mod plugins;

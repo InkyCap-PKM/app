@@ -64,13 +64,15 @@ The reading format is remembered per tab, falling back to your default (SVG unle
 
 == Inserting things with the slash command
 
-In Visual mode, type `/` at the start of a word to open the *slash command palette*, a quick menu for inserting almost anything without remembering its markup. It's grouped into categories: *Format, Structure, Insert, Symbol, InkyCap, Style*, and *Tools*.
+In Visual mode, type `/` at the start of a word to open the *slash command palette*, a quick menu for inserting almost anything without remembering its markup. It's grouped into categories: *Format, Structure, Insert, Symbol, InkyCap, Style*, *Tools* and *Typst packages*.
 
 - Move with the *up/down* arrows (*PageUp* and *PageDown* jump several rows at a time), *expand a group* with the right arrow, and *accept* with Enter or Tab (a click works too). Esc dismisses it.
 - Each row shows its typing shortcut at the right edge, so the palette doubles as a cheat sheet.
 - If you have text selected when you trigger an item, your selection is wrapped. Select a phrase, choose *Bold*, and it will change appearance accordingly.
 
 From here you can drop in headings, lists, links, images, video and audio (each opens a file picker), tables, footnotes, citations, page breaks, callouts, wikilinks, tasks and due dates, page-and-font style rules, and much more.
+
+*Typst packages* lists each Typst package installed in your notebox, with its functions inside. The packages the note already uses come first. Choosing a function inserts it with the cursor between its brackets; a function marked *adds* comes from a package the note doesn't use yet, and choosing it adds that package to the note too. Type a function's name after `/` to find it directly. See #wikilink("3 - Scaffolds, Templates, and Packages").
 
 #callout("tip")[ The slash palette is the friendliest way to discover what InkyCap can insert. Browse the categories for a tour of the editor. You can turn it off under #wikilink("2 - Settings") → *"Slash / command shortcut"*, but most people leave it on. ]
 

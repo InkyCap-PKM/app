@@ -59,11 +59,13 @@ import { installTabSessionRecorder } from "./stores/tab-session";
 import { collaborative, setManageOpen } from "./stores/git";
 import { registerBuiltinCommands, registerCreationRuleCommands } from "./lib/commands";
 import { registerExternalToolPalette, registerExternalToolCommands } from "./lib/external-tools";
+import { registerPackagePalette } from "./lib/package-palette";
 import { loadPlugins } from "./lib/plugins";
 import { activeEditorView } from "./stores/editor";
 import { applyUiScale } from "./lib/ui-scale";
 import { loadCreationRules, triggerCreationRule } from "./stores/creation-rules";
 import { useI18n } from "./lib/i18n";
+import { isPackageOrScaffoldFile } from "./stores/package-reference";
 import { followDelivery, followInOpenNotebox, listenForDeepLinks } from "./lib/deep-link";
 import * as ipc from "./lib/ipc";
 import type { DeepLink } from "./lib/types";
@@ -98,7 +100,8 @@ const App: Component = () => {
   });
 
   // The left sidebar follows the active tab: Collections for a collection tab,
-  // the browse panel for a file or Mycelial tab. The last browse mode is
+  // Templates for a package's file or a scaffold, the browse panel for a note
+  // or Mycelial tab. The last browse mode is
   // remembered, so moving between notes keeps Files, Tags, Bookmarks etc. as
   // the user left them.
   //
@@ -109,11 +112,13 @@ const App: Component = () => {
 
   // Mode changes the user makes (toolbar, mode bar, Ctrl+Shift+F) go through
   // here so the browse mode is recorded. The tab-driven effect below sets the
-  // signal directly, so a forced "collections" isn't remembered. "help" isn't
-  // recorded either: it is a reference overlay, and this gives `openHelp` the
-  // panel to return to.
+  // signal directly, so a forced "collections" isn't remembered. "templates" is
+  // the context of package files and scaffolds, as "collections" is of
+  // collections, so returning to a note brings back the browse panel. "help"
+  // isn't recorded either: it is a reference overlay, and this gives
+  // `openHelp` the panel to return to.
   const selectSidebarMode = (m: SidebarMode) => {
-    if (m !== "collections" && m !== "help") lastBrowseMode = m;
+    if (m !== "collections" && m !== "templates" && m !== "help") lastBrowseMode = m;
     setSidebarMode(m);
   };
 
@@ -153,9 +158,13 @@ const App: Component = () => {
     const id = activeTabId();
     // Read the type reactively (not just the id) so an in-place type change
     // is also honoured.
-    const type = tabs.find((t) => t.id === id)?.type;
+    const tab = tabs.find((t) => t.id === id);
+    const type = tab?.type;
     if (type === "collection") {
       setSidebarMode("collections");
+    } else if (type === "file" && tab && isPackageOrScaffoldFile(tab.path)) {
+      // A package's files and scaffolds are managed in the Templates pane.
+      setSidebarMode("templates");
     } else if (type && type !== "empty") {
       // A file / mycelial tab — match the content by restoring the browse panel.
       setSidebarMode(lastBrowseMode);
@@ -301,6 +310,9 @@ const App: Component = () => {
     // registry follows settings changes.
     registerExternalToolPalette();
     registerExternalToolCommands();
+
+    // Installed packages' functions in the `/` menu.
+    registerPackagePalette();
 
     // Load creation rules into the reactive store (toolbar reads from it)
     void loadCreationRules();

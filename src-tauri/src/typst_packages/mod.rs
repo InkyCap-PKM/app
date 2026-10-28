@@ -18,6 +18,9 @@
 //! own (every tool ships its own), so this is Rust glue that lays files out
 //! where world.rs already looks.
 
+pub mod details;
+pub mod docs;
+
 use std::fs;
 use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
@@ -260,7 +263,7 @@ pub fn extract_tar_gz<R: Read>(reader: R, target_dir: &Path) -> io::Result<usize
 
 /// A tar entry path without a leading "./", or None if absolute, climbing out
 /// with `..`, or a drive letter.
-fn sanitize_relative(p: &Path) -> Option<PathBuf> {
+pub(crate) fn sanitize_relative(p: &Path) -> Option<PathBuf> {
     if p.is_absolute() {
         return None;
     }

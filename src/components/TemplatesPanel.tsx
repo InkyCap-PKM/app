@@ -9,7 +9,7 @@
 // `@preview/name:version`. `@preview` is the Typst Universe registry; `@local/`
 // is the user's own.
 
-import { Component, For, Show, createResource, createSignal } from "solid-js";
+import { Component, For, Show, createEffect, createResource, createSignal } from "solid-js";
 import { attachListNav } from "../lib/list-nav";
 import {
   Pyramid,
@@ -19,15 +19,24 @@ import {
   RefreshCw,
   Download,
   FolderInput,
+  FolderOpen,
+  Copy,
+  CircleAlert,
   Trash2,
   Info,
 } from "lucide-solid";
 import * as ipc from "../lib/ipc";
-import { openTab } from "../stores/tabs";
+import { activeNotePath, openTab } from "../stores/tabs";
+import { isScaffoldFile, packageSpecOfFile } from "../stores/package-reference";
+import { pathEquals } from "../lib/paths";
+import { PACKAGES_CHANGED_EVENT } from "../lib/package-palette";
 import { promptText, promptConfirm } from "../stores/prompt";
 import { toastError, showToast } from "../stores/toasts";
 import { useI18n } from "../lib/i18n";
 import { linkifyTerm } from "./ExternalLink";
+import RowChevron from "./RowChevron";
+import PackageDetails from "./PackageDetails";
+import Notice from "./Notice";
 import { noteboxInfo } from "../stores/notebox";
 
 type SubTab = "scaffolds" | "templates" | "packages";
@@ -53,10 +62,17 @@ const TemplatesPanel: Component = () => {
     () => noteboxInfo(),
     async () => ipc.listInstalledPackages(),
   );
+  // Packages with functions named like InkyCap's own, flagged on their rows.
+  const [clashes] = createResource(
+    () => packages(),
+    (list) => ipc.listPackageNameClashes(list.map((p) => p.spec)).catch(() => ({})),
+  );
 
   function refresh() {
     void refetchScaffolds();
     void refetchPackages();
+    // Other views of the installed packages (the `/` menu) update too.
+    document.dispatchEvent(new CustomEvent(PACKAGES_CHANGED_EVENT));
   }
 
   function templatePackages(): ipc.InstalledPackageEntry[] {
@@ -66,6 +82,24 @@ const TemplatesPanel: Component = () => {
   function libraryPackages(): ipc.InstalledPackageEntry[] {
     return (packages() ?? []).filter((p) => p.kind === "library");
   }
+
+  // Show the sub-tab holding the open file: its scaffold, or the template or
+  // package it belongs to.
+  const openPackageSpec = () => {
+    const path = activeNotePath();
+    return path ? packageSpecOfFile(path) : null;
+  };
+  createEffect(() => {
+    const path = activeNotePath();
+    if (!path) return;
+    if (isScaffoldFile(path)) {
+      setTab("scaffolds");
+      return;
+    }
+    const spec = packageSpecOfFile(path);
+    const pkg = spec ? (packages() ?? []).find((p) => p.spec === spec) : undefined;
+    if (pkg) setTab(pkg.kind === "template" ? "templates" : "packages");
+  });
 
   function openScaffold(entry: ipc.TemplateEntry) {
     openTab(
@@ -302,6 +336,113 @@ const TemplatesPanel: Component = () => {
     return `#import "${pkg.spec}": *`;
   }
 
+  async function openPackageFolder(pkg: ipc.InstalledPackageEntry) {
+    try {
+      await ipc.showInExplorer(pkg.install_dir);
+    } catch (err) {
+      toastError(t("common.showInFileManagerFailed"), err);
+    }
+  }
+
+  // One installed template or package; the two tabs differ only in icon and
+  // wording, both taken from `pkg.kind`. The caret shows its details below.
+  function packageRow(pkg: ipc.InstalledPackageEntry) {
+    const [expanded, setExpanded] = createSignal(false);
+    const [clashShown, setClashShown] = createSignal(false);
+    const clashingNames = () => (clashes() as Record<string, string[]> | undefined)?.[pkg.spec] ?? [];
+    const folderTitle =
+      pkg.kind === "template"
+        ? t("templates.openTemplateFolder")
+        : t("templates.openPackageFolder");
+    return (
+      <div>
+        <div
+          data-list-item
+          class="sidebar-item templates-pane__item"
+          classList={{ "sidebar-item--active": openPackageSpec() === pkg.spec }}
+          onClick={() => openPackageManifest(pkg)}
+          title={t("templates.openManifest")}
+        >
+          <RowChevron
+            expanded={expanded()}
+            onToggle={() => {
+              setExpanded((v) => !v);
+              setClashShown(false);
+            }}
+          />
+          <span class="sidebar-item__icon">
+            {pkg.kind === "template" ? <Layers2 size={12} /> : <Box size={12} />}
+          </span>
+          <span class="sidebar-item__label">
+            {pkg.name}{" "}
+            <span class="templates-panel__version">{pkg.version}</span>
+          </span>
+          <Show when={clashingNames().length > 0}>
+            <button
+              class="templates-panel__item-icon templates-panel__item-icon--attention"
+              classList={{ "is-active": clashShown() }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setClashShown((v) => !v);
+              }}
+              title={t("templates.clashTitle", { names: clashingNames().join(", ") })}
+              aria-label={t("templates.clashTitle", { names: clashingNames().join(", ") })}
+              aria-expanded={clashShown()}
+            >
+              <CircleAlert size={13} />
+            </button>
+          </Show>
+          <button
+            class="templates-panel__item-icon"
+            onClick={(e) => {
+              e.stopPropagation();
+              copyImport(packageImportLine(pkg));
+            }}
+            title={t("templates.copyTitle", { line: packageImportLine(pkg) })}
+            aria-label={t("templates.copyTitle", { line: packageImportLine(pkg) })}
+          >
+            <Copy size={13} />
+          </button>
+          <button
+            class="templates-panel__item-icon"
+            onClick={(e) => {
+              e.stopPropagation();
+              void openPackageFolder(pkg);
+            }}
+            title={folderTitle}
+            aria-label={folderTitle}
+          >
+            <FolderOpen size={13} />
+          </button>
+          <button
+            class="templates-panel__item-icon templates-panel__item-icon--danger"
+            onClick={(e) => {
+              e.stopPropagation();
+              uninstall(pkg);
+            }}
+            title={t("templates.uninstallTitle", { spec: pkg.spec })}
+            aria-label={t("templates.uninstallTitle", { spec: pkg.spec })}
+          >
+            <Trash2 size={13} />
+          </button>
+        </div>
+        <Show when={clashShown()}>
+          <Notice tone="attention" class="templates-panel__clash">
+            {t("templates.clashExplained", {
+              name: pkg.name,
+              names: clashingNames().join(", "),
+              spec: pkg.spec,
+              example: clashingNames()[0],
+            })}
+          </Notice>
+        </Show>
+        <Show when={expanded()}>
+          <PackageDetails pkg={pkg} origin={namespaceLabel(pkg.namespace, pkg.kind)} />
+        </Show>
+      </div>
+    );
+  }
+
   function title(): string {
     switch (tab()) {
       case "scaffolds":
@@ -474,6 +615,7 @@ const TemplatesPanel: Component = () => {
                 <div
                   data-list-item
                   class="sidebar-item templates-pane__item"
+                  classList={{ "sidebar-item--active": pathEquals(activeNotePath(), entry.path) }}
                   onClick={() => openScaffold(entry)}
                   title={t("templates.openScaffold")}
                 >
@@ -483,7 +625,7 @@ const TemplatesPanel: Component = () => {
                   <span class="sidebar-item__label">{entry.name}</span>
                   <Show when={!entry.builtin}>
                     <button
-                      class="templates-panel__item-icon"
+                      class="templates-panel__item-icon templates-panel__item-icon--danger"
                       onClick={(e) => {
                         e.stopPropagation();
                         deleteScaffold(entry);
@@ -512,46 +654,7 @@ const TemplatesPanel: Component = () => {
             }
           >
             <For each={templatePackages()}>
-              {(pkg) => (
-                <div
-                  data-list-item
-                  class="sidebar-item templates-pane__item"
-                  onClick={() => openPackageManifest(pkg)}
-                  title={t("templates.openManifest")}
-                >
-                  <span class="sidebar-item__icon">
-                    <Layers2 size={12} />
-                  </span>
-                  <span class="sidebar-item__label">
-                    {pkg.name}{" "}
-                    <span class="templates-panel__version">{pkg.version}</span>
-                  </span>
-                  <span class="templates-panel__badge">
-                    {namespaceLabel(pkg.namespace, "template")}
-                  </span>
-                  <button
-                    class="templates-panel__item-action"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      copyImport(packageImportLine(pkg));
-                    }}
-                    title={t("templates.copyTitle", { line: packageImportLine(pkg) })}
-                  >
-                    {t("templates.copy")}
-                  </button>
-                  <button
-                    class="templates-panel__item-icon"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      uninstall(pkg);
-                    }}
-                    title={t("templates.uninstallTitle", { spec: pkg.spec })}
-                    aria-label={t("templates.uninstallTitle", { spec: pkg.spec })}
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              )}
+              {(pkg) => packageRow(pkg)}
             </For>
           </Show>
         </Show>
@@ -570,46 +673,7 @@ const TemplatesPanel: Component = () => {
             }
           >
             <For each={libraryPackages()}>
-              {(pkg) => (
-                <div
-                  data-list-item
-                  class="sidebar-item templates-pane__item"
-                  onClick={() => openPackageManifest(pkg)}
-                  title={t("templates.openManifest")}
-                >
-                  <span class="sidebar-item__icon">
-                    <Box size={12} />
-                  </span>
-                  <span class="sidebar-item__label">
-                    {pkg.name}{" "}
-                    <span class="templates-panel__version">{pkg.version}</span>
-                  </span>
-                  <span class="templates-panel__badge">
-                    {namespaceLabel(pkg.namespace, "library")}
-                  </span>
-                  <button
-                    class="templates-panel__item-action"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      copyImport(packageImportLine(pkg));
-                    }}
-                    title={t("templates.copyTitle", { line: packageImportLine(pkg) })}
-                  >
-                    {t("templates.copy")}
-                  </button>
-                  <button
-                    class="templates-panel__item-icon"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      uninstall(pkg);
-                    }}
-                    title={t("templates.uninstallTitle", { spec: pkg.spec })}
-                    aria-label={t("templates.uninstallTitle", { spec: pkg.spec })}
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              )}
+              {(pkg) => packageRow(pkg)}
             </For>
           </Show>
         </Show>

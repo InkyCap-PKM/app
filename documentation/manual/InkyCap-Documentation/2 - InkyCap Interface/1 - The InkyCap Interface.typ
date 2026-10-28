@@ -90,6 +90,7 @@ When a *note* is active, the right panel offers:
 - *Properties* is an editor for the note's own metadata like title, tags, date, and due. See #wikilink("6 - Note Properties").
 - *Links* shows your note's connections, grouped into Inbound (backlinks), Outbound, and Potential Links. See #wikilink("4 - Links and Backlinks").
 - *References* is the bibliography pane. See #wikilink("7 - Citations and Bibliography").
+- *Package reference*, the last tab, appears when the note imports Typst packages or templates, and lists their functions and options. See #wikilink("3 - Scaffolds, Templates, and Packages").
 - *Changes & History* lets you review suggestions, tracked changes, and annotations. A small dot appears on this tab when suggested changes are waiting for you to accept or reject them.
 
 When you open a *collection*, the right panel switches to *Export*, *Appearance*, *Book*, and *Collection*. When you open a #wikilink("5 - Mycelial View"), it shows three tabs instead: *Linked Context*, *Growth*, and *Filtering*.

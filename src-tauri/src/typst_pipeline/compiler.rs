@@ -14,6 +14,7 @@ use typst_layout::PagedDocument;
 use typst_pdf::{PdfOptions, PdfStandard, PdfStandards};
 
 use crate::typst_pipeline::diagnostic::TypstDiagnostic;
+use crate::typst_pipeline::package_imports::PackageFactsCache;
 use crate::typst_pipeline::recovery::{self, RecoveryStyle};
 use crate::typst_pipeline::world::NoteboxWorld;
 
@@ -164,6 +165,11 @@ pub struct TypstHtmlResult {
     pub recovered: bool,
     pub html: String,
     pub diagnostics: Vec<TypstDiagnostic>,
+    /// Packages (`@ns/name:version`) whose content HTML export left out, read
+    /// from the warnings kept out of `diagnostics`. For
+    /// [`crate::typst_pipeline::html_drawings`]; not sent to the frontend.
+    #[serde(skip)]
+    pub dropped_by_packages: Vec<String>,
 }
 
 /// A compiled PDF.
@@ -194,6 +200,7 @@ pub struct TypstCompiler {
     world: NoteboxWorld,
     /// Citation style (e.g. "apa", "ieee", "mla"). `None` uses Typst default.
     bibliography_style: Option<String>,
+    package_facts: PackageFactsCache,
 }
 
 impl TypstCompiler {
@@ -201,7 +208,14 @@ impl TypstCompiler {
         Self {
             world: NoteboxWorld::new(notebox_root),
             bibliography_style: None,
+            package_facts: PackageFactsCache::default(),
         }
+    }
+
+    /// What has been learned about installed packages (see
+    /// [`crate::typst_pipeline::package_imports`]).
+    pub fn package_facts_cache(&mut self) -> &mut PackageFactsCache {
+        &mut self.package_facts
     }
 
     pub fn notebox_root(&self) -> &Path {
@@ -435,6 +449,8 @@ impl TypstCompiler {
                     primary: None,
                     trace: Vec::new(),
                     hints: Vec::new(),
+                    code: None,
+                    params: Default::default(),
                 }],
                 PdfFailure::Compile(diags) | PdfFailure::PdfExport(diags) => diags,
             })
@@ -508,7 +524,8 @@ impl TypstCompiler {
         pdf_standard: PdfStandardPreset,
         bypass_errors: bool,
     ) -> Result<PdfOutput, CompileError> {
-        let with_template = inject_template_import(&source, template);
+        let with_template =
+            crate::notebox_package::add_import_above_notebox_import(&source, template);
         let old_style = self.bibliography_style.clone();
         if let Some(style) = bib_style {
             self.bibliography_style = Some(style.to_string());
@@ -549,10 +566,15 @@ impl TypstCompiler {
         let warned = typst::compile::<HtmlDocument>(&self.world);
         _t.done();
 
-        let mut diagnostics: Vec<TypstDiagnostic> = warned
+        let warnings: Vec<TypstDiagnostic> = warned
             .warnings
             .iter()
             .map(|d| crate::typst_pipeline::diagnostic::from_source(d, &self.world))
+            .collect();
+        let dropped_by_packages =
+            crate::typst_pipeline::html_drawings::packages_with_dropped_content(&warnings);
+        let mut diagnostics: Vec<TypstDiagnostic> = warnings
+            .into_iter()
             .filter(|d| !is_html_development_noise(&d.message))
             .collect();
 
@@ -567,6 +589,7 @@ impl TypstCompiler {
                         recovered: false,
                         html,
                         diagnostics,
+                        dropped_by_packages: dropped_by_packages.clone(),
                     }),
                     Err(errs) => {
                         // HTML generation itself failed; not a span error, so
@@ -583,6 +606,7 @@ impl TypstCompiler {
                             recovered: false,
                             html: String::new(),
                             diagnostics,
+                            dropped_by_packages: dropped_by_packages.clone(),
                         })
                     }
                 }
@@ -609,12 +633,14 @@ impl TypstCompiler {
                         recovered: true,
                         html,
                         diagnostics,
+                        dropped_by_packages: dropped_by_packages.clone(),
                     }),
                     None => Ok(TypstHtmlResult {
                         ok: false,
                         recovered: false,
                         html: String::new(),
                         diagnostics,
+                        dropped_by_packages: dropped_by_packages.clone(),
                     }),
                 }
             }
@@ -633,27 +659,6 @@ fn render_frames(document: &PagedDocument) -> Vec<TypstFrame> {
             height_pt: page.frame.height().to_pt(),
         })
         .collect()
-}
-
-/// Inject a `#import` + `#show: <template>` after the inkycap-notebox import.
-fn inject_template_import(source: &str, template: &str) -> String {
-    // Find the line containing the inkycap-notebox import (canonical or legacy).
-    let mut cursor = 0usize;
-    for line in source.split_inclusive('\n') {
-        let body = line.strip_suffix('\n').unwrap_or(line);
-        if crate::notebox_package::is_notebox_import_line(body) {
-            let insert_at = cursor + line.len();
-            let import_line = format!("#import \"{}\": *\n", template);
-            let mut result = String::with_capacity(source.len() + import_line.len());
-            result.push_str(&source[..insert_at]);
-            result.push_str(&import_line);
-            result.push_str(&source[insert_at..]);
-            return result;
-        }
-        cursor += line.len();
-    }
-    // Fallback: prepend
-    format!("#import \"{}\": *\n{}", template, source)
 }
 
 #[derive(Debug, thiserror::Error)]

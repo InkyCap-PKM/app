@@ -1,11 +1,12 @@
 //! Turn Typst's `SourceDiagnostic`s into a form the frontend can show:
 //! severity, message, hints, and the span's file and byte range when known.
 
+use std::collections::BTreeMap;
 use std::ops::Range;
 
 use serde::Serialize;
 use typst::diag::{Severity, SourceDiagnostic};
-use typst::syntax::{DiagSpan, DiagSpanKind, FileId, Source};
+use typst::syntax::{DiagSpan, DiagSpanKind, FileId, Source, VirtualRoot};
 use typst::World;
 
 #[derive(Debug, Clone, Serialize)]
@@ -21,6 +22,13 @@ pub struct TypstDiagnostic {
     /// originate in nested function calls).
     pub trace: Vec<String>,
     pub hints: Vec<String>,
+    /// Set on warnings InkyCap adds itself, so the frontend can show them in
+    /// the reader's language (`diagnostic.<code>`, filled from `params`).
+    /// `message` is the English text, for anywhere that isn't translated.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<&'static str>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub params: BTreeMap<&'static str, String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -46,6 +54,9 @@ pub struct TypstSpan {
     /// True when this span points into the note being compiled (as opposed to
     /// an imported file). Only main-file line numbers need injection remapping.
     pub is_main: bool,
+    /// The package the span's file belongs to (`@ns/name:version`), if any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub package: Option<String>,
 }
 
 pub fn from_source(diag: &SourceDiagnostic, world: &dyn World) -> TypstDiagnostic {
@@ -56,6 +67,8 @@ pub fn from_source(diag: &SourceDiagnostic, world: &dyn World) -> TypstDiagnosti
         trace: diag.trace.iter().map(|t| t.v.to_string()).collect(),
         // 0.15: hints are now `Spanned<EcoString, DiagSpan>`; take the value.
         hints: diag.hints.iter().map(|h| h.v.to_string()).collect(),
+        code: None,
+        params: BTreeMap::new(),
     }
 }
 
@@ -93,5 +106,9 @@ fn resolve_span(span: DiagSpan, world: &dyn World) -> Option<TypstSpan> {
         line,
         column,
         is_main: id == world.main(),
+        package: match id.root() {
+            VirtualRoot::Package(spec) => Some(spec.to_string()),
+            _ => None,
+        },
     })
 }

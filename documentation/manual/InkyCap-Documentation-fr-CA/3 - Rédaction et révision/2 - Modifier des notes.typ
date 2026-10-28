@@ -65,13 +65,15 @@ Le format de lecture est mémorisé par onglet, avec retour à votre valeur par 
 
 == Insérer des éléments avec la commande barre oblique
 
-En mode visuel, tapez `/` au début d'un mot pour ouvrir la *palette de commandes barre oblique*, un menu rapide pour insérer presque n'importe quoi sans avoir à mémoriser son balisage. Elle est répartie en catégories : *Format, Structure, Insérer, Symbole, InkyCap, Style* et *Outils*.
+En mode visuel, tapez `/` au début d'un mot pour ouvrir la *palette de commandes barre oblique*, un menu rapide pour insérer presque n'importe quoi sans avoir à mémoriser son balisage. Elle est répartie en catégories : *Format, Structure, Insérer, Symbole, InkyCap, Style*, *Outils* et *Packages Typst*.
 
 - Déplacez-vous avec les flèches *haut/bas* (*PageUp* et *PageDown* sautent plusieurs rangées à la fois), *déployez un groupe* avec la flèche droite et *acceptez* avec Entrée ou Tab (un clic fonctionne aussi). Échap la referme.
 - Chaque rangée affiche son raccourci de frappe à l'extrémité droite, de sorte que la palette sert aussi d'aide-mémoire.
 - Si du texte est sélectionné quand vous déclenchez un élément, votre sélection est enveloppée. Sélectionnez une phrase, choisissez *Gras*, et son apparence change en conséquence.
 
 De là, vous pouvez insérer des titres, des listes, des liens, des images, de la vidéo et de l'audio (chacun ouvre un sélecteur de fichiers), des tableaux, des notes de bas de page, des citations, des sauts de page, des callouts, des liens wiki, des tâches et des échéances, des règles de style de page et de police, et bien plus.
+
+*Packages Typst* énumère chaque package Typst installé dans votre boîte de notes, avec ses fonctions. Les packages que la note utilise déjà viennent en premier. Choisir une fonction l'insère avec le curseur entre ses parenthèses ; une fonction marquée *ajoute* vient d'un package que la note n'utilise pas encore, et la choisir ajoute aussi ce package à la note. Tapez le nom d'une fonction après `/` pour la trouver directement. Voyez #wikilink("3 - Scaffolds, Templates et Packages").
 
 #callout("tip")[ La palette barre oblique est la façon la plus conviviale de découvrir ce qu'InkyCap peut insérer. Parcourez les catégories pour une visite guidée de l'éditeur. Vous pouvez la désactiver sous #wikilink("2 - Paramètres") → *« Raccourci de commande barre oblique / »*, mais la plupart des gens la laissent activée. ]
 

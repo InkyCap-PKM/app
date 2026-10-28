@@ -146,6 +146,35 @@ pub fn vendor_notebox_packages(notebox_root: &Path) -> Result<VendorReport> {
     Ok(report)
 }
 
+/// The packages the package in `pkg_dir` imports, directly or through other
+/// packages, as canonical specs (`@ns/name:version`). A dependency that isn't
+/// available locally is listed, but its own imports can't be followed.
+pub fn package_dependencies(notebox_root: &Path, pkg_dir: &Path) -> HashSet<String> {
+    let mut seen: HashSet<PackageSpec> = HashSet::new();
+    let mut queue: Vec<PackageSpec> = Vec::new();
+    for typ in package_typ_files(pkg_dir) {
+        if let Ok(src) = std::fs::read_to_string(&typ) {
+            enqueue_new(collect_package_imports(&src), &mut seen, &mut queue);
+        }
+    }
+    while let Some(spec) = queue.pop() {
+        let Some(dir) = locate_package_dir(
+            notebox_root,
+            spec.namespace.as_str(),
+            spec.name.as_str(),
+            &spec.version.to_string(),
+        ) else {
+            continue;
+        };
+        for typ in package_typ_files(&dir) {
+            if let Ok(src) = std::fs::read_to_string(&typ) {
+                enqueue_new(collect_package_imports(&src), &mut seen, &mut queue);
+            }
+        }
+    }
+    seen.iter().map(|s| s.to_string()).collect()
+}
+
 fn enqueue_new(
     specs: HashSet<PackageSpec>,
     seen: &mut HashSet<PackageSpec>,

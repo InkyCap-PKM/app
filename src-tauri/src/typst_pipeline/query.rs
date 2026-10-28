@@ -149,6 +149,9 @@ pub fn compile_and_query(
     source: String,
 ) -> QueryResult {
     let _t = QueryTimer::start(abs_path);
+    // Templates apply only in PDF export, and laying out a template's title
+    // pages for every note would slow indexing for nothing.
+    let source = crate::typst_pipeline::package_imports::without_template_rules(compiler, &source);
     let styled_source = format!("{METADATA_COMPILE_STYLES}{source}");
     // Compile with recovery first: a localized error (a stray token, a broken
     // `#include`) is dropped and the rest recompiled, so inline `#task` /
@@ -570,6 +573,30 @@ mod tests {
         fs::write(&note_path, &full_source).expect("write note");
 
         (dir, root)
+    }
+
+    #[test]
+    fn properties_survive_a_missing_package_imported_above_the_notebox_import() {
+        // InkyCap writes package imports above its own. When that package isn't
+        // installed (uninstalled, or a local one never shared), the note still
+        // has its properties.
+        let dir = tempdir().unwrap();
+        let root = canonicalize_root(dir.path()).unwrap();
+        crate::notebox_package::scaffold(&root);
+        let note_path = root.join("test.typ");
+        let source = format!(
+            "#import \"@local/not-installed:0.1.0\": *\n{}\n#note(title: \"Kept\", tags: (\"a\",))\nBody #wikilink(\"Other\")\n",
+            crate::notebox_package::import_line()
+        );
+        fs::write(&note_path, &source).unwrap();
+        let mut compiler = TypstCompiler::new(root);
+        let result = compile_and_query(&mut compiler, &note_path, source);
+        assert_eq!(
+            result.properties.get("title"),
+            Some(&PropertyValue::String("Kept".to_string()))
+        );
+        assert!(result.tags.contains(&"a".to_string()));
+        assert!(result.links.contains(&"Other".to_string()));
     }
 
     #[test]

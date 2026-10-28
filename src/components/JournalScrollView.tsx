@@ -923,7 +923,7 @@ const JournalScrollEntryView: Component<JournalScrollEntryViewProps> = (
                   </div>
                 </Show>
                 <For each={r().diagnostics}>
-                  {(d) => <DiagnosticRow d={d} />}
+                  {(d) => <DiagnosticRow d={d} notePath={props.entry.path} />}
                 </For>
               </div>
             </Show>

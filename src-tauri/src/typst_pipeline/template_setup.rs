@@ -20,10 +20,10 @@ use std::sync::OnceLock;
 use crate::typst_pipeline::syntax::{ast, parse, SyntaxKind};
 
 /// A whole-document `#show:` rule that applies a bare name.
-struct AppliedRule {
+pub(crate) struct AppliedRule {
     /// From the `#` through the end of the rule.
-    range: Range<usize>,
-    name: String,
+    pub(crate) range: Range<usize>,
+    pub(crate) name: String,
 }
 
 /// What the Custom Typst defines for itself, at top level.
@@ -105,7 +105,7 @@ fn template_rules(source: &str) -> Vec<AppliedRule> {
 }
 
 /// Top-level `#show: f` and `#show: f.with(…)` rules, in source order.
-fn applied_rules(source: &str) -> Vec<AppliedRule> {
+pub(crate) fn applied_rules(source: &str) -> Vec<AppliedRule> {
     let root = parse(source);
     let mut rules = Vec::new();
     let mut offset = 0;
@@ -188,7 +188,7 @@ fn local_bindings(source: &str) -> LocalBindings {
 
 /// Top-level names of the bundled `inkycap-notebox` package, which every note
 /// imports.
-fn notebox_exports() -> &'static HashSet<String> {
+pub(crate) fn notebox_exports() -> &'static HashSet<String> {
     static NAMES: OnceLock<HashSet<String>> = OnceLock::new();
     NAMES.get_or_init(|| {
         let lib = std::str::from_utf8(crate::notebox_package::LIB_TYP_BYTES).unwrap_or("");

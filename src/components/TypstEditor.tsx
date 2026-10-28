@@ -1384,7 +1384,7 @@ const TypstReadingView: Component<TypstReadingViewProps> = (props) => {
                   </div>
                 </Show>
                 <For each={r().diagnostics}>
-                  {(d) => <DiagnosticRow d={d} />}
+                  {(d) => <DiagnosticRow d={d} notePath={props.path} />}
                 </For>
               </div>
             </Show>
@@ -1524,7 +1524,7 @@ const TypstHtmlReadingView: Component<TypstHtmlReadingViewProps> = (props) => {
                   </div>
                 </Show>
                 <For each={r().diagnostics}>
-                  {(d) => <DiagnosticRow d={d} />}
+                  {(d) => <DiagnosticRow d={d} notePath={props.path} />}
                 </For>
               </div>
             </Show>

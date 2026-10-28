@@ -13,7 +13,6 @@
 import { Component, For, Show, createSignal, onCleanup, createEffect, on } from "solid-js";
 import { CopyPlus, GripVertical, Link, NotebookPen, X } from "lucide-solid";
 import type { EditorView } from "@codemirror/view";
-import { Transaction } from "@codemirror/state";
 import * as ipc from "../lib/ipc";
 import { t, useI18n } from "../lib/i18n";
 import { createDragReorder } from "../lib/drag-reorder";
@@ -21,7 +20,7 @@ import { pathEquals } from "../lib/paths";
 import { typstStringEscape } from "../lib/typst";
 import { ComposeFilesCopyIcon, CopyQuoteIcon } from "./icons";
 import { registerRightPanel } from "./right-panel-registry";
-import { externalReload } from "../editor/typst-decorations/visual-plugin";
+import { editAsApp } from "../editor/app-edit";
 import { triggerCreationRule } from "../stores/creation-rules";
 import { openCreatedNote, openTab, tabs } from "../stores/tabs";
 import { focusedActiveTabId } from "../stores/panes";
@@ -411,30 +410,11 @@ function insertBlock(view: EditorView, text: string) {
  */
 async function recordSources(view: EditorView, names: string[]) {
   try {
-    // The writer may type while the new text is worked out; start again from
-    // the fresh text when that happens.
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const before = view.state.doc.toString();
-      let after = before;
+    await editAsApp(view, async (text) => {
+      let after = text;
       for (const name of names) after = (await ipc.noteWithDerivedFrom(after, name)) ?? after;
-      if (after === before) return;
-      if (view.state.doc.toString() !== before) continue;
-      let start = 0;
-      while (start < before.length && start < after.length && before[start] === after[start]) start++;
-      let endBefore = before.length;
-      let endAfter = after.length;
-      while (endBefore > start && endAfter > start && before[endBefore - 1] === after[endAfter - 1]) {
-        endBefore--;
-        endAfter--;
-      }
-      view.dispatch({
-        changes: { from: start, to: endBefore, insert: after.slice(start, endAfter) },
-        // The `#note(...)` call is locked against typing in the visual editor;
-        // this marks the change as the app's own, like a properties panel edit.
-        annotations: [externalReload.of(true), Transaction.addToHistory.of(true)],
-      });
-      return;
-    }
+      return after;
+    });
   } catch (e) {
     toastError(t("compose.recordSourceFailed"), e);
   }

@@ -88,6 +88,10 @@ Ouvrez le menu kebab d'une rangée (`⋮`) pour deux choix :
 
 #callout("note")[ Retirer la toute dernière propriété d'une note fait un ménage complet. InkyCap supprime le bloc de métadonnées entier plutôt que d'en laisser un vide derrière. ]
 
+== Les packages qu'utilise une note
+
+Sous les propriétés, la section *Packages* énumère les packages et templates Typst qu'importe la note. Cliquez sur l'un d'eux pour voir ses fonctions et ses options dans la *Référence du package*, ou sur son × pour le retirer de la note (InkyCap demande d'abord ; tout ce qui, dans la note, l'utilise cesse de fonctionner). *Ajouter un package…* énumère les packages installés dans votre boîte de notes ; en choisir un l'ajoute à la note. InkyCap écrit l'importation en haut de la note, au-dessus de la sienne, là où elle ne peut pas remplacer les fonctions d'InkyCap. Voyez #wikilink("3 - Scaffolds, Templates et Packages").
+
 == Comment les propriétés sont stockées
 
 Vous n'avez pas besoin de modifier la source à la main, car la barre latérale de droite de l'éditeur visuel fournit une interface, mais il est utile de savoir ce qui se passe. Toutes les propriétés d'une note vivent comme arguments nommés d'un unique appel `#note(...)` en haut du fichier, juste après la ligne d'importation de la boîte de notes. Les propriétés d'une note pourraient ressembler à ceci en mode source :

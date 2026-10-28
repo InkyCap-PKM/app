@@ -10,7 +10,8 @@ use crate::storage::traits::NoteboxStorage;
 use crate::typst_pipeline::bibliography::extract_citations;
 use crate::typst_pipeline::package_fetch::compile_with_auto_packages;
 use crate::typst_pipeline::style_injection;
-use crate::typst_pipeline::{TypstCompileResult, TypstDiagnostic, TypstHtmlResult};
+use crate::typst_pipeline::{html_drawings, package_imports};
+use crate::typst_pipeline::{TypstCompileResult, TypstCompiler, TypstDiagnostic, TypstHtmlResult};
 
 /// Shift diagnostic line numbers in the main note back to the file on disk.
 /// InkyCap inserts lines near the top before compiling, so everything below is
@@ -29,6 +30,20 @@ fn remap_diagnostic_lines(diagnostics: &mut [TypstDiagnostic], injected_line_off
             }
         }
     }
+}
+
+/// Warnings for imports in `source` that replace InkyCap's own functions (see
+/// [`package_imports::collision_warnings`]), for the note at `canonical`.
+fn import_warnings(
+    compiler: &mut TypstCompiler,
+    source: &str,
+    canonical: &std::path::Path,
+    storage: &crate::storage::local::LocalNoteboxStorage,
+) -> Vec<TypstDiagnostic> {
+    let rel = crate::storage::to_frontend_string(
+        &crate::commands::file_ops::notebox_relative_path(canonical, storage),
+    );
+    package_imports::collision_warnings(compiler, source, &rel)
 }
 
 /// Compile the note at `path` to per-page SVG with diagnostics. `path` may be
@@ -63,10 +78,13 @@ pub async fn compile_typst_svg(
     let mut guard = session.typst_compiler.lock().await;
     let compiler = guard.as_mut().ok_or(InkyCapError::NoteboxNotOpen)?;
     ensure_system_fonts_if_needed(compiler, &state).await;
+    // Paged reading shows the note as its PDF would look, template included.
+    let import_warnings = import_warnings(compiler, &source, &canonical, &storage);
     let mut result =
         compile_with_auto_packages(compiler, |c| c.compile_svg(&canonical, source.clone()))
             .await
             .map_err(|err| InkyCapError::Typst(err.to_string()))?;
+    result.diagnostics.extend(import_warnings);
     remap_diagnostic_lines(&mut result.diagnostics, injected_line_offset);
     Ok(result)
 }
@@ -303,10 +321,31 @@ async fn compile_html_source(
     let mut guard = session.typst_compiler.lock().await;
     let compiler = guard.as_mut().ok_or(InkyCapError::NoteboxNotOpen)?;
     ensure_system_fonts_if_needed(compiler, state).await;
-    let mut result =
-        compile_with_auto_packages(compiler, |c| c.compile_html(&canonical, source.clone()))
+    let import_warnings = import_warnings(compiler, &source, &canonical, &storage);
+    // Templates lay notes out for print and apply only to PDF; the line
+    // structure is kept, so diagnostics still map.
+    let source = package_imports::without_template_rules(compiler, &source);
+    let mut framed = html_drawings::frame_drawings(compiler, &source);
+    let mut result = compile_with_auto_packages(compiler, |c| {
+        c.compile_html(&canonical, framed.source.clone())
+    })
+    .await
+    .map_err(|err| InkyCapError::Typst(err.to_string()))?;
+    // Packages whose drawings HTML left out are learned from this compile; if
+    // that changes what gets wrapped, compile again with them as images.
+    if html_drawings::record_dropped(compiler, &result.dropped_by_packages) {
+        let reframed = html_drawings::frame_drawings(compiler, &source);
+        if reframed != framed {
+            framed = reframed;
+            result = compile_with_auto_packages(compiler, |c| {
+                c.compile_html(&canonical, framed.source.clone())
+            })
             .await
             .map_err(|err| InkyCapError::Typst(err.to_string()))?;
+        }
+    }
+    framed.remap(&mut result.diagnostics, &source);
+    result.diagnostics.extend(import_warnings);
     remap_diagnostic_lines(&mut result.diagnostics, injected_line_offset);
     Ok(result)
 }

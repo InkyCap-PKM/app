@@ -268,6 +268,193 @@ pub async fn list_installed_packages(
     Ok(out)
 }
 
+/// Details of an installed package for the Templates panel: its manifest
+/// facts and the README, starter file and thumbnail found in its folder (see
+/// [`typst_packages::details::read_details`]).
+#[tauri::command]
+pub async fn get_package_details(
+    state: State<'_, AppState>,
+    spec: String,
+    window: tauri::WebviewWindow,
+) -> Result<typst_packages::details::PackageDetails, InkyCapError> {
+    let parsed = PackageSpec::parse(&spec)
+        .ok_or_else(|| InkyCapError::BadRequest(format!("Invalid package spec '{}'.", spec)))?;
+    let session = state.session(window.label()).await;
+    let notebox_root = session.notebox_root.read().await;
+    let root = notebox_root
+        .as_ref()
+        .ok_or(InkyCapError::NoteboxNotOpen)?
+        .clone();
+    drop(notebox_root);
+
+    let dir = parsed.install_dir(&root);
+    typst_packages::details::read_details(&dir, &parsed)
+        .ok_or_else(|| InkyCapError::BadRequest(format!("No valid typst.toml for '{}'.", spec)))
+}
+
+/// For each of `specs` that has functions named like InkyCap's own, those
+/// names: what `#import "<spec>": *` below the notebox import would replace
+/// (see [`crate::typst_pipeline::package_imports::replaced_notebox_names`]).
+/// Specs without clashes, or not installed, are left out.
+#[tauri::command]
+pub async fn list_package_name_clashes(
+    state: State<'_, AppState>,
+    specs: Vec<String>,
+    window: tauri::WebviewWindow,
+) -> Result<std::collections::HashMap<String, Vec<String>>, InkyCapError> {
+    use crate::typst_pipeline::package_imports::{package_facts, replaced_notebox_names};
+
+    let session = state.session(window.label()).await;
+    let mut guard = session.typst_compiler.lock().await;
+    let compiler = guard.as_mut().ok_or(InkyCapError::NoteboxNotOpen)?;
+    let mut clashes = std::collections::HashMap::new();
+    for spec in specs {
+        let Some(facts) = package_facts(compiler, &spec) else {
+            continue;
+        };
+        let names = replaced_notebox_names(&facts);
+        if !names.is_empty() {
+            clashes.insert(spec, names);
+        }
+    }
+    Ok(clashes)
+}
+
+/// Longest Tinymist may take to document a package.
+const DOCS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Largest documentation file read back from Tinymist.
+const MAX_DOCS_BYTES: u64 = 64 * 1024 * 1024;
+
+/// Documentation of `@preview` packages, which never change once published, so
+/// each is generated once per run.
+fn published_docs_cache(
+) -> &'static std::sync::Mutex<std::collections::HashMap<String, typst_packages::docs::PackageDocs>>
+{
+    static CACHE: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<String, typst_packages::docs::PackageDocs>>,
+    > = std::sync::OnceLock::new();
+    CACHE.get_or_init(Default::default)
+}
+
+/// Reference documentation for a package available locally (in the notebox,
+/// the Typst data folder or the shared cache): its top-level functions and
+/// their parameters, as Tinymist reads them (see
+/// [`typst_packages::docs::parse_package_docs`]).
+///
+/// Runs the bundled Tinymist from Rust, so the webview's own permission to
+/// start it stays limited to the language server. The spec is validated, and
+/// every argument is passed directly, never through a shell.
+#[tauri::command]
+pub async fn get_package_docs(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    spec: String,
+    window: tauri::WebviewWindow,
+) -> Result<typst_packages::docs::PackageDocs, InkyCapError> {
+    use tauri_plugin_shell::process::CommandEvent;
+    use tauri_plugin_shell::ShellExt;
+
+    let parsed = PackageSpec::parse(&spec)
+        .ok_or_else(|| InkyCapError::BadRequest(format!("Invalid package spec '{}'.", spec)))?;
+    let canonical = parsed.canonical();
+    let published = parsed.namespace == "preview";
+    if published {
+        if let Ok(cache) = published_docs_cache().lock() {
+            if let Some(docs) = cache.get(&canonical) {
+                return Ok(docs.clone());
+            }
+        }
+    }
+
+    let session = state.session(window.label()).await;
+    let root = session
+        .notebox_root
+        .read()
+        .await
+        .clone()
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
+    let dir =
+        typst_packages::locate_package_dir(&root, &parsed.namespace, &parsed.name, &parsed.version)
+            .ok_or_else(|| InkyCapError::FileNotFound(canonical.clone()))?;
+    // `<packages>/<namespace>/<name>/<version>`: Tinymist looks packages up
+    // under `<packages>`.
+    let packages_dir = dir
+        .ancestors()
+        .nth(3)
+        .ok_or_else(|| InkyCapError::InvalidPath(canonical.clone()))?
+        .to_path_buf();
+
+    let out_dir = tempfile::tempdir()?;
+    let out_file = out_dir.path().join("docs.md");
+    let (mut events, child) = app
+        .shell()
+        .sidecar("inkycap-tinymist")
+        .map_err(|e| InkyCapError::Typst(e.to_string()))?
+        .arg("query")
+        .arg("packageDocs")
+        .arg("--id")
+        .arg(&canonical)
+        .arg("--output")
+        .arg(&out_file)
+        .arg("--root")
+        .arg(&root)
+        .arg("--package-path")
+        .arg(&packages_dir)
+        .arg("--ignore-system-fonts")
+        // Without an input file, Tinymist takes `main.typ` in the working
+        // folder as its entry and refuses one outside `--root`.
+        .current_dir(&root)
+        .spawn()
+        .map_err(|e| InkyCapError::Typst(e.to_string()))?;
+
+    let mut stderr = Vec::new();
+    let finished = tokio::time::timeout(DOCS_TIMEOUT, async {
+        while let Some(event) = events.recv().await {
+            match event {
+                CommandEvent::Stderr(bytes) => stderr.extend(bytes),
+                CommandEvent::Terminated(_) => return true,
+                _ => {}
+            }
+        }
+        false
+    })
+    .await;
+    if finished.is_err() {
+        let _ = child.kill();
+        return Err(InkyCapError::Typst(format!(
+            "Tinymist took too long to document {canonical}"
+        )));
+    }
+
+    let size = tokio::fs::metadata(&out_file).await.map(|m| m.len()).ok();
+    match size {
+        Some(n) if n <= MAX_DOCS_BYTES => {}
+        Some(_) => {
+            return Err(InkyCapError::Typst(format!(
+                "The documentation for {canonical} is too large to show"
+            )))
+        }
+        None => {
+            let detail = String::from_utf8_lossy(&stderr);
+            log::warn!("tinymist packageDocs failed for {canonical}: {detail}");
+            return Err(InkyCapError::Typst(format!(
+                "Tinymist could not document {canonical}"
+            )));
+        }
+    }
+    let markdown = tokio::fs::read_to_string(&out_file).await?;
+    let mut docs = typst_packages::docs::parse_package_docs(&markdown);
+    docs.is_template = std::fs::read_to_string(dir.join("typst.toml"))
+        .is_ok_and(|m| typst_packages::manifest_declares_template(&m));
+    if published {
+        if let Ok(mut cache) = published_docs_cache().lock() {
+            cache.insert(canonical, docs.clone());
+        }
+    }
+    Ok(docs)
+}
+
 /// `custom_typst` with the `#show: <fn>.with(…)` rule from an installed
 /// template's starter applied: added at the top, or in place of the rule an
 /// earlier template left, and kept as is if already there (see

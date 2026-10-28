@@ -125,6 +125,9 @@ comemo = "0.5"
 # so unused faces never pin their bytes (see typst_pipeline::fonts). Already in
 # the lock graph transitively; pinned here as a direct dependency.
 memmap2 = "0.9"
+# Reads `typst.toml` into Typst's own `PackageManifest`. Already in the lock
+# graph via typst-syntax; pinned to the same version so no second copy is built.
+toml = "0.8"
 typst = "0.15"
 typst-library = "0.15"
 # The PDF reader Typst uses for PDF images. Already in the lock graph via
