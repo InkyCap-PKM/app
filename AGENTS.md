@@ -107,7 +107,7 @@ AST-based rewriter that all such call sites share.
 
 ### No stopgaps; plan for long-term correctness
 
-There is no urgency to deliver partial work nor fill functional voids with stopgaps, nor land usability features at the expense of cleaner long-term design. When sequencing a piece of work, the question is *"when is the right time to make this decision?"*, not *"how do we patch the gap until then?"*
+There is no urgency to deliver partial work nor fill functional voids with stopgaps, nor land usability features at the expense of cleaner long-term design.
 
 Don't introduce code, scaffolding, or feature shims purely to make the in-progress build *feel* finished. Prefer the choice that minimizes total rework even if that means a current task looks less complete on its own.
 
@@ -120,7 +120,7 @@ InkyCap is built to be picked up and extended by future human contributors who h
 ### Maintainability & clarity
 - Optimize for the next reader. Names, module boundaries, and control flow should be legible without tribal knowledge or chat-log archaeology.
 - Prefer obvious code over clever code. Reach for an abstraction only when a second concrete caller exists — speculative generality is a tax.
-- One file, one responsibility. If a module's purpose can't be summarized in a sentence, split it.
+- One file, one responsibility.
 - Public APIs (Tauri commands, trait methods, exported TS) carry doc comments stating intent and invariants. Internal code stays self-evident through naming.
 - Ensure that code comments are worded in plain language without jargon. Keep comments concise and appropriately descriptive or explanatory without recounting the history or decision-making process. Focus on the information someone would need to know to use, modify, or otherwise meaningfully work with that code.
 - Tests cover load-bearing invariants — source↔visual round-trip, `#note(...)` property preservation, `typst query` label stability — at the unit level. They double as executable documentation.
