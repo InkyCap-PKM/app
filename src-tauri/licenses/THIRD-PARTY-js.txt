@@ -9,12 +9,12 @@ Scope: every npm production dependency shipped in the front-end bundle
 (npm ls --omit=dev). Build-time tooling (Vite, TypeScript, Vitest, …) is
 excluded — it is not distributed.
 
-Components: 72    Unique licence texts: 30
+Components: 75    Unique licence texts: 32
 Identical licence texts are listed once in PART 2 and referenced by #id.
 
 
 ==============================================================================
-PART 1 — COMPONENTS (72)
+PART 1 — COMPONENTS (75)
 ==============================================================================
 
 ==============================================================================
@@ -387,6 +387,13 @@ Repository: https://github.com/tauri-apps/plugins-workspace
 License text: #14
 
 ==============================================================================
+@types/katex 0.16.8
+License: MIT
+Authors: Kevin Nguyen, bLue, Sebastian Weigand, sapphi-red, Stefaans
+Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
+License text: #15
+
+==============================================================================
 @types/trusted-types 2.0.7
 License: MIT
 Authors: Jakub Vrana, Damien Engels, Emanuel Tesar, Bjarki, Sebastian Silbermann
@@ -401,25 +408,32 @@ Repository: git+https://github.com/kxxt/codemirror-lang-typst.git
 License text: #16
 
 ==============================================================================
+commander 8.3.0
+License: MIT
+Authors: TJ Holowaychuk <tj@vision-media.ca>
+Repository: https://github.com/tj/commander.js.git
+License text: #17
+
+==============================================================================
 crelt 1.0.6
 License: MIT
 Authors: Marijn Haverbeke <marijn@haverbeke.berlin>
 Repository: git+https://github.com/marijnh/crelt.git
-License text: #17
+License text: #18
 
 ==============================================================================
 csstype 3.2.3
 License: MIT
 Authors: Fredrik Nicol <fredrik.nicol@gmail.com>
 Repository: https://github.com/frenic/csstype
-License text: #18
+License text: #19
 
 ==============================================================================
 dompurify 3.4.16
 License: (MPL-2.0 OR Apache-2.0)
 Authors: Dr.-Ing. Mario Heiderich, Cure53 <mario@cure53.de> (https://cure53.de/)
 Repository: git://github.com/cure53/DOMPurify.git
-License texts: #16, #19
+License texts: #16, #20
 
 ==============================================================================
 emscripten-wasm-loader 3.0.3
@@ -433,95 +447,101 @@ getroot 1.0.0
 License: MIT
 Authors: OJ Kwon <kwon.ohjoong@gmail.com>
 Repository: git+https://github.com/kwonoj/getroot.git
-License text: #20
+License text: #21
 
 ==============================================================================
 hunspell-asm 4.0.2
 License: MIT
 Authors: OJ Kwon <kwon.ohjoong@gmail.com>
 Repository: git+https://github.com/kwonoj/hunspell-asm.git
-License text: #20
+License text: #21
+
+==============================================================================
+katex 0.16.45
+License: MIT
+Repository: https://github.com/KaTeX/KaTeX.git
+License text: #22
 
 ==============================================================================
 lucide-solid 1.8.0
 License: ISC
 Authors: Eric Fennis
 Repository: https://github.com/lucide-icons/lucide.git
-License text: #21
+License text: #23
 
 ==============================================================================
 nanoid 3.3.18
 License: MIT
 Authors: Andrey Sitnik <andrey@sitnik.ru>
 Repository: ai/nanoid
-License text: #22
+License text: #24
 
 ==============================================================================
 normalize-path 2.1.1
 License: MIT
 Authors: Jon Schlinkert (https://github.com/jonschlinkert), Blaine Bublitz <blaine.bublitz@gmail.com> (https://twitter.com/BlaineBublitz), Jon Schlinkert <jon.schlinkert@sellside.com> (http://twitter.com/jonschlinkert)
 Repository: jonschlinkert/normalize-path
-License text: #23
+License text: #25
 
 ==============================================================================
 remove-trailing-separator 1.1.0
 License: ISC
 Authors: darsain
 Repository: git+https://github.com/darsain/remove-trailing-separator.git
-License text: #24
+License text: #26
 
 ==============================================================================
-seroval 1.6.9
+seroval 1.5.6
 License: MIT
 Authors: Alexis Munsayac
 Repository: https://github.com/lxsmnsyc/seroval.git
-License text: #25
+License text: #27
 
 ==============================================================================
-seroval-plugins 1.6.9
+seroval-plugins 1.5.2
 License: MIT
 Authors: Alexis Munsayac
 Repository: https://github.com/lxsmnsyc/seroval.git
-License text: #25
+License text: #27
 
 ==============================================================================
-solid-js 1.9.17
+solid-js 1.9.12
 License: MIT
 Authors: Ryan Carniato
 Repository: https://github.com/solidjs/solid
-License text: #26
+License text: #28
 
 ==============================================================================
 style-mod 4.1.3
 License: MIT
 Authors: Marijn Haverbeke <marijn@haverbeke.berlin>
 Repository: git+https://github.com/marijnh/style-mod.git
-License text: #27
+License text: #29
 
 ==============================================================================
 tslib 1.14.1
 License: 0BSD
 Authors: Microsoft Corp.
 Repository: https://github.com/Microsoft/tslib.git
-License text: #28
+License text: #30
 
 ==============================================================================
 unixify 1.0.0
 License: MIT
 Authors: Jon Schlinkert (https://github.com/jonschlinkert)
 Repository: jonschlinkert/unixify
-License text: #29
+License text: #31
 
 ==============================================================================
 w3c-keyname 2.2.8
 License: MIT
 Authors: Marijn Haverbeke <marijn@haverbeke.berlin>
 Repository: git+https://github.com/marijnh/w3c-keyname.git
-License text: #30
+License text: #32
 
 
 ==============================================================================
-PART 2 — LICENCE TEXTS (30 unique)
+PART 2 — LICENCE TEXTS (32 unique)
 ==============================================================================
 
 ==============================================================================
@@ -1045,7 +1065,7 @@ Creator: Person: Daniel Thompson-Yvetot
 
 ==============================================================================
 [#15]  LICENSE
-Used by 1 component: @types/trusted-types 2.0.7
+Used by 2 components: @types/katex 0.16.8, @types/trusted-types 2.0.7
 ------------------------------------------------------------------------------
     MIT License
 
@@ -1278,6 +1298,33 @@ Used by 2 components: codemirror-lang-typst 0.4.0, dompurify 3.4.16
 
 ==============================================================================
 [#17]  LICENSE
+Used by 1 component: commander 8.3.0
+------------------------------------------------------------------------------
+(The MIT License)
+
+Copyright (c) 2011 TJ Holowaychuk <tj@vision-media.ca>
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+'Software'), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+==============================================================================
+[#18]  LICENSE
 Used by 1 component: crelt 1.0.6
 ------------------------------------------------------------------------------
 Copyright (C) 2020 by Marijn Haverbeke <marijn@haverbeke.berlin>
@@ -1301,7 +1348,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 ==============================================================================
-[#18]  LICENSE
+[#19]  LICENSE
 Used by 1 component: csstype 3.2.3
 ------------------------------------------------------------------------------
 Copyright (c) 2017-2018 Fredrik Nicol
@@ -1325,7 +1372,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================================
-[#19]  LICENSE-MPL
+[#20]  LICENSE-MPL
 Used by 1 component: dompurify 3.4.16
 ------------------------------------------------------------------------------
 Mozilla Public License Version 2.0
@@ -1703,7 +1750,7 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
   defined by the Mozilla Public License, v. 2.0.
 
 ==============================================================================
-[#20]  LICENSE
+[#21]  LICENSE
 Used by 2 components: getroot 1.0.0, hunspell-asm 4.0.2
 ------------------------------------------------------------------------------
 MIT License
@@ -1729,7 +1776,33 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================================
-[#21]  LICENSE
+[#22]  LICENSE
+Used by 1 component: katex 0.16.45
+------------------------------------------------------------------------------
+The MIT License (MIT)
+
+Copyright (c) 2013-2020 Khan Academy and other contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+[#23]  LICENSE
 Used by 1 component: lucide-solid 1.8.0
 ------------------------------------------------------------------------------
 ISC License
@@ -1777,7 +1850,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================================
-[#22]  LICENSE
+[#24]  LICENSE
 Used by 1 component: nanoid 3.3.18
 ------------------------------------------------------------------------------
 The MIT License (MIT)
@@ -1802,7 +1875,7 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
-[#23]  LICENSE
+[#25]  LICENSE
 Used by 1 component: normalize-path 2.1.1
 ------------------------------------------------------------------------------
 The MIT License (MIT)
@@ -1828,7 +1901,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 ==============================================================================
-[#24]  license
+[#26]  license
 Used by 1 component: remove-trailing-separator 1.1.0
 ------------------------------------------------------------------------------
 Permission to use, copy, modify, and/or distribute this software for any purpose with or without fee is hereby granted, provided that the above copyright notice and this permission notice appear in all copies.
@@ -1836,8 +1909,8 @@ Permission to use, copy, modify, and/or distribute this software for any purpose
 THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 ==============================================================================
-[#25]  LICENSE
-Used by 2 components: seroval 1.6.9, seroval-plugins 1.6.9
+[#27]  LICENSE
+Used by 2 components: seroval 1.5.6, seroval-plugins 1.5.2
 ------------------------------------------------------------------------------
 MIT License Copyright (c) 2025 Alexis Munsayac <alexis.munsayac@gmail.com>
 
@@ -1848,8 +1921,8 @@ The above copyright notice and this permission notice (including the next paragr
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
-[#26]  LICENSE
-Used by 1 component: solid-js 1.9.17
+[#28]  LICENSE
+Used by 1 component: solid-js 1.9.12
 ------------------------------------------------------------------------------
 MIT License
 
@@ -1874,7 +1947,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================================
-[#27]  LICENSE
+[#29]  LICENSE
 Used by 1 component: style-mod 4.1.3
 ------------------------------------------------------------------------------
 Copyright (C) 2018 by Marijn Haverbeke <marijn@haverbeke.berlin> and others
@@ -1898,7 +1971,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 ==============================================================================
-[#28]  LICENSE.txt
+[#30]  LICENSE.txt
 Used by 1 component: tslib 1.14.1
 ------------------------------------------------------------------------------
 Copyright (c) Microsoft Corporation.
@@ -1915,7 +1988,7 @@ OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 PERFORMANCE OF THIS SOFTWARE.
 
 ==============================================================================
-[#29]  LICENSE
+[#31]  LICENSE
 Used by 1 component: unixify 1.0.0
 ------------------------------------------------------------------------------
 The MIT License (MIT)
@@ -1941,7 +2014,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 ==============================================================================
-[#30]  LICENSE
+[#32]  LICENSE
 Used by 1 component: w3c-keyname 2.2.8
 ------------------------------------------------------------------------------
 Copyright (C) 2016 by Marijn Haverbeke <marijn@haverbeke.berlin> and others
