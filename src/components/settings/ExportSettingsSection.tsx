@@ -9,6 +9,7 @@ import { useI18n } from "../../lib/i18n";
 import { homeDirDefault } from "../../lib/dialog-defaults";
 import { PropertyMappingDialog, type TargetOption as MappingTargetOption } from "../PropertyMappingDialog";
 import { loadMappingTargets, SettingLabel, SettingToggle } from "./shared";
+import Notice from "../Notice";
 
 export function ExportSettingsSection() {
   const t = useI18n();
@@ -242,7 +243,7 @@ export function ExportSettingsSection() {
         </div>
       </Show>
       <Show when={importStatus()}>
-        <div class="settings__notice" role="status">{importStatus()}</div>
+        <Notice class="settings__notice" role="status">{importStatus()}</Notice>
       </Show>
 
       <Show when={showMapping()}>

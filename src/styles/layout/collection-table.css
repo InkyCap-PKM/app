@@ -51,6 +51,9 @@
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
+  /* Room at the ends for the drop line before the first and after the last
+     tab, which this container would otherwise clip. */
+  padding-inline: var(--space-1);
 }
 
 /* Chevron scroll buttons, shown only when the tabs overflow that side. */
@@ -102,17 +105,14 @@
 }
 
 /* Drag-to-reorder feedback (mirrors the table column reorder): the dragged tab
-   dims, and a coloured edge marks where it will drop. */
+   dims, and the shared .reorder--drop-before/after line (utilities.css) marks
+   where it will drop, centred in the gap set on .collection-table__view-tabs-scroll. */
+.collection-table__view-tab {
+  --reorder-gap: var(--space-1);
+}
+
 .collection-table__view-tab--dragging {
   opacity: 0.4;
-}
-
-.collection-table__view-tab--drop-before {
-  box-shadow: -2px 0 0 var(--accent);
-}
-
-.collection-table__view-tab--drop-after {
-  box-shadow: 2px 0 0 var(--accent);
 }
 
 .collection-table__view-tab--add {
@@ -298,17 +298,10 @@
 }
 
 /* Column reorder drag-and-drop feedback. The dragged header dims; the hovered
-   drop target shows an accent bar on the side the column will land. */
+   header shows the shared .reorder--drop-before/after line (utilities.css) on
+   the side the column will land. */
 .collection-table__th--dragging {
   opacity: 0.4;
-}
-
-.collection-table__th--drop-before {
-  box-shadow: inset 2px 0 0 0 var(--accent, var(--fg-primary));
-}
-
-.collection-table__th--drop-after {
-  box-shadow: inset -2px 0 0 0 var(--accent, var(--fg-primary));
 }
 
 .collection-table__sort-indicator {

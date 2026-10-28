@@ -35,7 +35,7 @@ warm palettes automatically.
 | **Button geometry** | `--btn-pad-y/-x`, `--btn-radius` | consumed by `.btn` |
 | **Focus** | `--focus-ring` | the one keyboard-focus affordance |
 | **Motion** | `--ease-out`, `--dur-fast` (120ms), `--dur-base` (200ms) | transitions |
-| **Elevation** | `--surface-0/1/2` | layered chrome (base → raised → active) |
+| **Elevation** | `--surface-0/1/2`, `--card-shadow` | layered chrome (base → raised → active); a card resting just above a panel |
 | **Surfaces** | `--popup-*`, `--modal-*` | floating vs. backdropped surfaces (see §4a) |
 | **Stacking** | `--z-menu` < `--z-modal` < `--z-toast` (+ `--z-menu-over-modal`) | the only z-index values |
 | **Status** | `--accent-danger`, `--accent-warn`, `--accent-success`, `--accent-info` | any UI communicating a state — one hue per meaning, app-wide |
@@ -112,6 +112,21 @@ and bare dot indicators are *different roles*. `.badge` covers the label/chip
 case; intentionally-distinct roles (a tab's unread dot, a git status line)
 stay separate by design. When a chip's radius is hand-written, use
 `var(--radius-sm)`.
+
+### Notices
+
+A boxed message (an import result, an offer, changes waiting to be shared)
+uses the `Notice` component (`src/components/Notice.tsx`): a soft tint, a thin
+full border and a leading icon, in the colour of its `tone` (`info` or
+`attention`). Pass `class` for spacing only.
+
+### Drop lines when reordering
+
+Lists reordered by dragging use the shared classes in `utilities.css`:
+`.reorder--drop-above/below` for rows, `.reorder--drop-before/after` for
+side-by-side items (tabs, table columns). The side-by-side line is straight
+and sits in the gap between items; set `--reorder-gap` on the item to the
+container's `gap`.
 
 ---
 
@@ -190,6 +205,14 @@ Practical notes:
   the toggle without also making compact meaningfully tighter. The CSS
   mechanism is kept — it costs three lines and makes any future revisit
   trivial.
+- **No coloured left-edge bars (2026-10).** A thick coloured border down one
+  side of a box is not the desired aesthetic. Notices use `Notice`, selected
+  rows use a filled background, groups use a full border or a faint wash, and
+  drop lines sit between items rather than along an item's edge. Quotations
+  in the reading view keep a neutral grey rule, the convention readers expect.
+  The Journal Scroll's entry strip (`.journal-scroll__entry-accent`) is kept on
+  purpose: its colour says how the entry relates to the anchor note, paired
+  with a matching icon.
 - **No frosted / glass surfaces.** `backdrop-filter` blur on menus/palettes was
   considered and **rejected** — it is not the desired aesthetic. Do not
   re-propose it.

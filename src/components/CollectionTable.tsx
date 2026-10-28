@@ -854,9 +854,9 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
                                 (activeView() === "" && d().views[0]?.name === view.name),
                               "collection-table__view-tab--dragging":
                                 draggingView() === view.name,
-                              "collection-table__view-tab--drop-before":
+                              "reorder--drop-before":
                                 dragOverView() === view.name && viewDropSide() === "before",
-                              "collection-table__view-tab--drop-after":
+                              "reorder--drop-after":
                                 dragOverView() === view.name && viewDropSide() === "after",
                             }}
                             draggable={true}
@@ -1074,9 +1074,9 @@ const CollectionTable: Component<{ path: string; tabId: string }> = (props) => {
                             class="collection-table__th--sortable"
                             classList={{
                               "collection-table__th--dragging": draggingCol() === col,
-                              "collection-table__th--drop-before":
+                              "reorder--drop-before":
                                 dragOverCol() === col && colDropSide() === "before",
-                              "collection-table__th--drop-after":
+                              "reorder--drop-after":
                                 dragOverCol() === col && colDropSide() === "after",
                             }}
                             style={

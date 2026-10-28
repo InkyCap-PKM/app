@@ -1,18 +1,13 @@
 /* Tab drag-to-reorder feedback. Part of layout.css, whose import order (see
-   ../layout.css) keeps the cascade. */
+   ../layout.css) keeps the cascade. The drop line is the shared
+   .reorder--drop-before/after (utilities.css). */
 
-/* Tab drag-to-reorder */
 .tab--dragging {
   opacity: 0.5;
 }
 
-/* Insertion line on the side of the hovered tab nearest the pointer, an
-   inset box-shadow rather than a border so the tab's content doesn't move. */
-.tab--drop-before {
-  box-shadow: inset 2px 0 0 0 var(--accent);
+/* Matches the gap on .tab-bar__scroll-area, so the drop line sits midway
+   between two tabs. */
+.tab {
+  --reorder-gap: var(--space-2);
 }
-
-.tab--drop-after {
-  box-shadow: inset -2px 0 0 0 var(--accent);
-}
-

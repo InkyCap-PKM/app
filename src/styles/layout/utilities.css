@@ -236,6 +236,32 @@
   box-shadow: inset 0 -2px 0 0 var(--accent-purple, var(--accent));
 }
 
+/* Side-by-side items (tabs, table columns): a straight, slightly shorter line
+   in the space between the hovered item and its neighbour, so it doesn't
+   follow the item's rounded corners. Set --reorder-gap on the item to the
+   container's gap so the line is centred in it. */
+.reorder--drop-before,
+.reorder--drop-after {
+  position: relative;
+}
+.reorder--drop-before::before,
+.reorder--drop-after::after {
+  content: "";
+  position: absolute;
+  top: 15%;
+  bottom: 15%;
+  width: 2px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  pointer-events: none;
+}
+.reorder--drop-before::before {
+  left: calc(var(--reorder-gap, 0px) / -2 - 1px);
+}
+.reorder--drop-after::after {
+  right: calc(var(--reorder-gap, 0px) / -2 - 1px);
+}
+
 /* ── Highlighted text ────────────────────────────────────────────────
    Highlighted text (HighlightedText.tsx): search matches, and links to the
    open note in link previews and Compose cards. The editor's match fill plus
@@ -247,4 +273,39 @@
   font-weight: 600;
   border-radius: var(--radius-xs);
   padding: 0 1px;
+}
+
+/* ── Notice ──────────────────────────────────────────────────────────
+   Boxed messages (Notice.tsx): a soft tint and a thin full border in the
+   tone's colour, with the icon in a column beside the content. */
+.notice {
+  --notice-color: var(--accent);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--notice-color) 30%, transparent);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--notice-color) 7%, var(--bg-secondary));
+  color: var(--fg-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+}
+
+.notice--attention {
+  --notice-color: var(--accent-warn);
+}
+
+.notice__icon {
+  display: flex;
+  /* Lines the icon up with the first line of text. */
+  padding-top: var(--space-1);
+  color: var(--notice-color);
+}
+
+.notice__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
 }

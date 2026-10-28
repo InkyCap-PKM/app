@@ -23,6 +23,7 @@ import {
 } from "lucide-solid";
 import HelpButton from "./HelpButton";
 import LoadingDots from "./LoadingDots";
+import Notice from "./Notice";
 import { noteboxSettings } from "../stores/settings";
 import {
   collaborative,
@@ -198,14 +199,14 @@ const SetupForm: Component = () => {
           config — offer to adopt it in one click before the manual form. */}
       <Show when={!repoMissing() && reconnectable()}>
         {(info) => (
-          <div class="git-panel__reconnect">
+          <Notice class="git-panel__reconnect">
             <p class="sidebar-hint">
               {t("git.reconnect.intro", { remote: info().remote, branch: info().branch })}
             </p>
             <button class="git-panel__primary-btn" onClick={reconnect} disabled={reconnecting()}>
               {reconnecting() ? t("git.reconnect.working") : t("git.reconnect.action")}
             </button>
-          </div>
+          </Notice>
         )}
       </Show>
 
@@ -424,12 +425,12 @@ const SyncView: Component = () => {
 
                 {/* A read-only check found incoming changes it did not pull — nudge a Sync. */}
                 <Show when={incomingCount() > 0}>
-                  <div class="git-panel__banner">
+                  <Notice>
                     <span class="git-panel__banner-author">
                       {tPlural("git.check", incomingCount())}
                     </span>
                     <span class="git-panel__banner-msg">{t("git.check.hint")}</span>
-                  </div>
+                  </Notice>
                 </Show>
               </>
             }>
@@ -578,7 +579,7 @@ const ChangesSinceSyncView: Component = () => {
 
   return (
     <Show when={changesSinceSync().length > 0}>
-      <div class="git-panel__digest git-panel__unresolved">
+      <Notice tone="attention">
         <p class="git-panel__share-heading">
           <Show
             when={incomingAuthor()}
@@ -639,7 +640,7 @@ const ChangesSinceSyncView: Component = () => {
             }}
           </For>
         </div>
-      </div>
+      </Notice>
     </Show>
   );
 };
@@ -666,7 +667,7 @@ const UnresolvedView: Component = () => {
 
   return (
     <Show when={pending().length > 0}>
-      <div class="git-panel__digest git-panel__unresolved">
+      <Notice tone="attention">
         <p class="git-panel__share-heading">{t("git.unresolved.heading")}</p>
         <p class="sidebar-hint">
           {tPlural("git.unresolved.count", pending().length, {
@@ -699,7 +700,7 @@ const UnresolvedView: Component = () => {
             }}
           </For>
         </div>
-      </div>
+      </Notice>
     </Show>
   );
 };
@@ -722,7 +723,7 @@ const ChangesToShareView: Component = () => {
 
   return (
     <Show when={gitStatus()?.unshared && (files()?.length ?? 0) > 0}>
-      <div class="git-panel__digest git-panel__share">
+      <Notice tone="attention">
         <p class="git-panel__share-heading">{t("git.share.heading")}</p>
         <p class="sidebar-hint">
           {files()!.length === 1
@@ -752,7 +753,7 @@ const ChangesToShareView: Component = () => {
             }}
           </For>
         </div>
-      </div>
+      </Notice>
     </Show>
   );
 };

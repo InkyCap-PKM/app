@@ -285,6 +285,9 @@
   --border-input-focus: var(--accent-color, #1D7874);
   /* A faint, diffuse shadow for the active tab. */
   --tab-active-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  /* Lifts a card (e.g. a Compose passage) just off the panel: a close contact
+     shadow under a wider, fainter one. */
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.07), 0 2px 6px rgba(0, 0, 0, 0.05);
   /* Off-state background for toggle switches — a clearly neutral grey so
      "off" reads as distinct from the accent-coloured "on" state. */
   --toggle-off-bg: #b6b6b6;
@@ -519,6 +522,7 @@ html[data-input-modality="pointer"] {
      faint ones. */
   --tab-active-bg: color-mix(in srgb, var(--bg-secondary) 90%, var(--fg-primary));
   --tab-active-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 3px 8px rgba(0, 0, 0, 0.25);
   /* Off-state background for toggle switches — a desaturated grey, kept
      well clear of the teal accent so "off" is obvious at a glance. */
   --toggle-off-bg: #5e6463;
@@ -682,6 +686,7 @@ html[data-input-modality="pointer"] {
      shows and the edge does the work, at the weight of an input border. */
   --tab-active-border: color-mix(in srgb, var(--border-input) 85%, var(--bg-secondary));
   --tab-active-shadow: 0 1px 3px rgba(0, 0, 0, 0.09);
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.09), 0 2px 6px rgba(0, 0, 0, 0.06);
 
   --fg-primary: #1d1915;
   --fg-secondary: #3b3630;

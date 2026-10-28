@@ -13,6 +13,7 @@ import { openVersionDiff, openVersionDiffSplit } from "../stores/tabs";
 import { showToast, toastError } from "../stores/toasts";
 import { promptConfirm } from "../stores/prompt";
 import { t } from "../lib/i18n";
+import Notice from "./Notice";
 
 /** Compact local date+time for a version row. */
 function when(unixSeconds: number): string {
@@ -130,7 +131,7 @@ const NoteHistory: Component<{ path: string }> = (props) => {
                 incoming change), say so — otherwise the top "latest shared" row
                 reads as if it were the note you currently have. */}
             <Show when={!workingMatchesHead()}>
-              <p class="note-history__local">{t("history.localUnsynced")}</p>
+              <Notice class="note-history__local">{t("history.localUnsynced")}</Notice>
             </Show>
             <div class="note-history__list">
               <For each={versions()}>

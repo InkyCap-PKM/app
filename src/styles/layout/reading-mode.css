@@ -248,7 +248,7 @@
 }
 
 .typst-reading__html-content blockquote {
-  border-left: 3px solid var(--accent);
+  border-left: 3px solid var(--border-input);
   margin: 1em 0;
   padding: 0.5em 1em;
   color: var(--fg-secondary);

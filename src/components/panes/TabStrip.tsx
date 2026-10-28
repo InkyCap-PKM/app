@@ -291,7 +291,7 @@ const TabStrip: Component<{ leaf: LeafPane }> = (props) => {
                 dropTargetIndex() === index() && dragFromIndex() !== index();
               return (
                 <div
-                  class={`tab${tab.id === props.leaf.activeTabId ? " tab--active" : ""}${dragFromIndex() === index() ? " tab--dragging" : ""}${isDropTarget() ? (dropAfter() ? " tab--drop-after" : " tab--drop-before") : ""}`}
+                  class={`tab${tab.id === props.leaf.activeTabId ? " tab--active" : ""}${dragFromIndex() === index() ? " tab--dragging" : ""}${isDropTarget() ? (dropAfter() ? " reorder--drop-after" : " reorder--drop-before") : ""}`}
                   onClick={() => setActiveTabId(tab.id)}
                   draggable={true}
                   onDragStart={(e) => handleDragStart(index(), tab.id, e)}

@@ -30,8 +30,7 @@
 
 /* A group: its type header, its rows and subgroups, and the add buttons. The
    root group has no frame of its own (.filter-builder is its frame); nested
-   groups are indented with an accent line on the left so the structure is
-   easy to see. */
+   groups get a framed box of their own so the structure is easy to see. */
 .filter-builder__group {
   display: flex;
   flex-direction: column;
@@ -41,7 +40,6 @@
 .filter-builder__group--nested {
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border-primary);
-  border-left: 3px solid var(--accent);
   border-radius: var(--radius-sm);
   background: var(--bg-primary);
 }
