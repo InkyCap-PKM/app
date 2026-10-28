@@ -118,11 +118,14 @@ describe("download links", () => {
     expect(assetUrl("26.9.15", "InkyCap_26.9.15_amd64.deb", 94 * 1024 * 1024)).toBe(
       "https://codefloe.com/InkyCap/app/releases/download/v26.9.15/InkyCap_26.9.15_amd64.deb",
     );
+    expect(assetUrl("26.9.15", "InkyCap_26.9.15_amd64.AppImage", 251 * 1024 * 1024)).toBe(
+      "https://codefloe.com/InkyCap/app/releases/download/v26.9.15/InkyCap_26.9.15_amd64.AppImage",
+    );
     expect(assetUrl("26.9.15", "a.deb", CODEFLOE_MAX_FILE_BYTES)).toMatch(/^https:\/\/codefloe\.com\//);
   });
 
   it("puts installers over CodeFloe's limit on the GitHub release", () => {
-    expect(assetUrl("26.9.15", "InkyCap_26.9.15_amd64.AppImage", 251 * 1024 * 1024)).toBe(
+    expect(assetUrl("26.9.15", "InkyCap_26.9.15_amd64.AppImage", 600 * 1024 * 1024)).toBe(
       "https://github.com/InkyCap-PKM/app/releases/download/v26.9.15/InkyCap_26.9.15_amd64.AppImage",
     );
     expect(assetUrl("26.9.15", "a.deb", CODEFLOE_MAX_FILE_BYTES + 1)).toMatch(/^https:\/\/github\.com\//);

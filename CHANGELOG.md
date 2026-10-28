@@ -12,6 +12,96 @@ each tagged release, newest first, grouping entries under **Added**, **Changed**
 **Fixed**, **Removed**, **Security**, or **Deprecated** as needed.
 
 
+## [26.10.10] - 2026-10-28
+
+Notes can now add, remove and look up Typst packages without leaving the
+editor: a Packages section in Properties, a Package reference in the right
+sidebar, and the package functions in the `/` menu. Templates now apply only
+where a note is shown as printed pages, and changing a collection's template no
+longer leaves the old one's setup behind to break its exports. Markdown export
+writes a cleaner YAML header, and callouts have a lighter frame.
+
+### Added
+
+- **Packages in a note.** Below a note's properties, a *Packages* section
+  lists the Typst packages and templates the note imports. *Add package…*
+  adds any package installed in the notebox, and × removes one (InkyCap asks
+  first). InkyCap writes package imports above its own import line, so a
+  package can't replace InkyCap's functions.
+- **Package reference.** A new right-sidebar tab, shown when the open note
+  imports a package or template, lists each one's functions and their options
+  with default values.
+- **Typst packages in the `/` menu.** A new *Typst packages* category lists
+  the installed packages' functions, with the note's own packages first.
+  Choosing a function from a package the note doesn't use yet also adds that
+  package to the note.
+- **Package and template details.** In the list of installed templates and
+  packages, a row now expands to show the item's description, authors,
+  licence and preview image, with links to its Typst Universe page,
+  repository, README and (for templates) starter file. A folder button opens
+  the item's folder in the system file manager.
+- **Name clash warnings.** A package with functions named like InkyCap's own
+  (such as `note` or `task`) gets a warning icon in the list. If a note imports
+  one below InkyCap's import line, the reading view warns about it and offers
+  *Fix import*, which moves the import up and renames the package's version
+  of the function so both stay usable.
+- Drawings made by packages (diagrams, proof trees, charts) now appear as
+  images in the reading view's HTML format and in the Journal Scroll, where
+  Typst would otherwise leave them out.
+- When a collection is exported as a book, the packages its notes use are
+  imported once at the top of the book.
+- When the open file belongs to a package or is a scaffold, the right sidebar
+  shows only the tabs that apply to it.
+- A collection's Appearance tab points out any template setup left in its
+  Custom Typst that its current template can't supply, with buttons to remove
+  it or to edit the Custom Typst.
+
+### Changed
+
+- **Templates apply only to PDF output.** A template now applies when
+  exporting to PDF and in the reading view's SVG format. The HTML format, the
+  Journal Scroll and indexing use InkyCap's own styling, so notes stay
+  readable on screen and a heavy template doesn't slow them down. A
+  collection's website export also leaves out its template, while the rest of
+  its Custom Typst still applies.
+- Choosing a different template for a collection, or *None*, now removes the
+  previous template's setup from the Custom Typst right away. *Set up
+  template…* replaces the setup in place instead of adding a second one, and
+  keeps what you filled in when the current template's setup is already there.
+- **Markdown export** writes the YAML header with a YAML library, so values
+  that YAML would misread (such as `Dogs: a study`) are quoted. Dates come out
+  in ISO 8601 form (`2026-04-29`, with the time when there is one),
+  `link-ref(...)` properties become `[[Target]]`, and empty properties are
+  left out.
+- **Callouts** have a thin, soft corner bracket at the top-left and
+  bottom-right in place of the thick bar down the left side, in the editor,
+  the reading view and exports.
+- Thick coloured bars down one side of a box are gone throughout the app.
+  Notices have a tinted box with a thin border and an icon, selected rows in
+  Settings have a filled background, the drop line when dragging tabs or
+  table columns is a straight line between them, and Compose cards have a
+  soft shadow.
+- Clearer help text in the Collections interface.
+- Copies of InkyCap updated by a software centre (a package that sets
+  `INKYCAP_UPDATES_MANAGED=1`, as a Flathub build will) no longer show
+  InkyCap's own update check, Download or Upgrade buttons.
+
+### Fixed
+
+- Exports of a collection failed when its Custom Typst still held setup for a
+  template it no longer used. Exports now leave out setup the collection's
+  template can't supply.
+- Markdown export broke links and images whose addresses contain spaces or
+  parentheses. They are now written in angle brackets
+  (`[My Note](<My Note.md>)`).
+- Markdown import now reads percent-encoded addresses, such as Obsidian's
+  `My%20Note.md`, as the files they name.
+- Markdown export now finds a note's properties however its `#note(...)` call
+  is laid out, and no longer takes an example `#note(...)` inside a code block
+  for them.
+- Long file names in the file tree, cut off in a narrow sidebar, now show in
+  full on hover.
+
 ## [26.10.8] - 2026-10-16
 
 Removing a notebox from the list now asks first, and adding an existing

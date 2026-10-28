@@ -31,9 +31,9 @@ export const RELEASES_URL = "https://codefloe.com/InkyCap/app/releases";
 export const LARGE_FILE_RELEASES_URL = "https://github.com/InkyCap-PKM/app/releases";
 export const releaseTagUrl = (version) => `${RELEASES_URL}/tag/v${version}`;
 
-/** The largest attachment CodeFloe accepts: 100 MB, read as decimal megabytes
+/** The largest attachment CodeFloe accepts: 500 MB, read as decimal megabytes
  *  (the smaller reading), so a file near the limit is never refused. */
-export const CODEFLOE_MAX_FILE_BYTES = 100_000_000;
+export const CODEFLOE_MAX_FILE_BYTES = 500_000_000;
 
 /** Whether an installer of `sizeBytes` is too large for CodeFloe. */
 export const isLargeFile = (sizeBytes) => sizeBytes > CODEFLOE_MAX_FILE_BYTES;
