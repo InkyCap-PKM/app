@@ -455,6 +455,92 @@ pub async fn get_package_docs(
     Ok(docs)
 }
 
+/// What a collection's template supplies to its Custom Typst.
+enum TemplateNames {
+    /// No template is set.
+    None,
+    /// A package template: the names it exports.
+    Exports(std::collections::HashSet<String>),
+    /// A notebox-path template, or a package that isn't installed: its names
+    /// can't be known, so nothing is judged stale.
+    Unknown,
+}
+
+async fn template_names(
+    session: &crate::state::NoteboxSession,
+    template: Option<&str>,
+) -> TemplateNames {
+    let Some(template) = template.map(str::trim).filter(|t| !t.is_empty()) else {
+        return TemplateNames::None;
+    };
+    let resolved = crate::commands::export::resolve_template_path(template);
+    if !resolved.starts_with('@') {
+        return TemplateNames::Unknown;
+    }
+    let mut guard = session.typst_compiler.lock().await;
+    let Some(compiler) = guard.as_mut() else {
+        return TemplateNames::Unknown;
+    };
+    match crate::typst_pipeline::package_imports::package_facts(compiler, &resolved) {
+        Some(facts) => TemplateNames::Exports(facts.exports.clone()),
+        None => TemplateNames::Unknown,
+    }
+}
+
+/// `custom_typst` without the template rules the collection's `template`
+/// can't supply (see
+/// [`crate::typst_pipeline::template_setup::stale_template_rule_names`]): a
+/// rule left from an earlier template, or one with no template set, would
+/// stop every export with an unknown name. `None` when nothing is left.
+pub(crate) async fn usable_custom_typst(
+    session: &crate::state::NoteboxSession,
+    custom_typst: Option<&str>,
+    template: Option<&str>,
+) -> Option<String> {
+    use crate::typst_pipeline::template_setup::without_stale_template_rules;
+    let custom = custom_typst.filter(|c| !c.trim().is_empty())?;
+    let usable = match template_names(session, template).await {
+        TemplateNames::None => without_stale_template_rules(custom, None),
+        TemplateNames::Exports(names) => without_stale_template_rules(custom, Some(&names)),
+        TemplateNames::Unknown => custom.to_string(),
+    };
+    Some(usable).filter(|c| !c.trim().is_empty())
+}
+
+/// The functions that `custom_typst`'s template rules apply but the
+/// collection's `template` doesn't supply, for the Appearance tab to point out.
+#[tauri::command]
+pub async fn stale_template_rules(
+    state: State<'_, AppState>,
+    custom_typst: String,
+    template: Option<String>,
+    window: tauri::WebviewWindow,
+) -> Result<Vec<String>, InkyCapError> {
+    use crate::typst_pipeline::template_setup::stale_template_rule_names;
+    let session = state.session(window.label()).await;
+    Ok(match template_names(&session, template.as_deref()).await {
+        TemplateNames::None => stale_template_rule_names(&custom_typst, None),
+        TemplateNames::Exports(names) => stale_template_rule_names(&custom_typst, Some(&names)),
+        TemplateNames::Unknown => Vec::new(),
+    })
+}
+
+/// `custom_typst` without the rules [`stale_template_rules`] finds.
+#[tauri::command]
+pub async fn remove_stale_template_rules(
+    state: State<'_, AppState>,
+    custom_typst: String,
+    template: Option<String>,
+    window: tauri::WebviewWindow,
+) -> Result<String, InkyCapError> {
+    let session = state.session(window.label()).await;
+    Ok(
+        usable_custom_typst(&session, Some(&custom_typst), template.as_deref())
+            .await
+            .unwrap_or_default(),
+    )
+}
+
 /// `custom_typst` with the `#show: <fn>.with(…)` rule from an installed
 /// template's starter applied: added at the top, or in place of the rule an
 /// earlier template left, and kept as is if already there (see

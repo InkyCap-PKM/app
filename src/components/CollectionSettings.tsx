@@ -25,7 +25,7 @@ import type {
 } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { propertyVersion, bumpPropertyVersion } from "../stores/notebox";
-import { toastError } from "../stores/toasts";
+import { showToast, toastError } from "../stores/toasts";
 import { renameCollection } from "../lib/rename-collection";
 import { deleteCollectionInteractive } from "../lib/delete-collection";
 import type { CollectionPanelTab } from "../stores/layout";
@@ -38,6 +38,7 @@ import { LengthInput } from "./LengthInput";
 import { PresetSelect, type PresetOption } from "./PresetSelect";
 import HelpButton from "./HelpButton";
 import CustomTypstModal from "./CustomTypstModal";
+import Notice from "./Notice";
 import { useI18n } from "../lib/i18n";
 import { patchCollectionFile } from "../lib/collection-file";
 import { collectionViewFor } from "../stores/collection-views";
@@ -894,6 +895,8 @@ const CollectionTemplateFields: Component<{
   /// Open the shared Custom Typst editor and auto-insert the assigned
   /// template's starter `#show:` rule — the guided way to apply a template.
   onSetupTemplate?: () => void;
+  /// Open the shared Custom Typst editor as it is.
+  onEditCustomTypst?: () => void;
 }> = (props) => {
   const t = useI18n();
   const saveField = (field: keyof CollectionFile, value: string | null) =>
@@ -922,7 +925,55 @@ const CollectionTemplateFields: Component<{
       setCustomTemplateMode(true);
     } else {
       setCustomTemplateMode(false);
-      saveField("typst_template", v || null);
+      void changeTemplate(v || null);
+    }
+  }
+
+  // Template rules in the Custom Typst that the chosen template can't supply,
+  // e.g. a `#show:` left from the template chosen before.
+  const [staleRules, { refetch: refetchStaleRules }] = createResource(
+    () => [props.collectionFile.custom_typst ?? "", props.collectionFile.typst_template ?? null] as const,
+    ([custom, template]) =>
+      custom.trim() ? ipc.staleTemplateRules(custom, template).catch(() => []) : Promise.resolve([]),
+  );
+
+  /** Save the template choice, taking the previous template's setup out of
+   *  the Custom Typst in the same save. */
+  async function changeTemplate(template: string | null) {
+    const custom = props.collectionFile.custom_typst ?? "";
+    let cleaned = custom;
+    if (custom.trim()) {
+      try {
+        cleaned = await ipc.removeStaleTemplateRules(custom, template);
+      } catch {
+        cleaned = custom;
+      }
+    }
+    const patch: Partial<CollectionFile> = { typst_template: template };
+    if (cleaned !== custom) patch.custom_typst = cleaned.trim() ? cleaned : null;
+    try {
+      await saveCollectionField(props.collectionPath, patch, props.onSaved);
+      if (cleaned !== custom) showToast("info", t("collection.char.previousTemplateRemoved"));
+    } catch (e) {
+      toastError(t("collection.toast.saveTemplateFailed"), e);
+    }
+  }
+
+  async function removeStaleRules() {
+    const custom = props.collectionFile.custom_typst ?? "";
+    try {
+      const cleaned = await ipc.removeStaleTemplateRules(
+        custom,
+        props.collectionFile.typst_template ?? null,
+      );
+      await saveCollectionField(
+        props.collectionPath,
+        { custom_typst: cleaned.trim() ? cleaned : null },
+        props.onSaved,
+      );
+      void refetchStaleRules();
+    } catch (e) {
+      toastError(t("collection.toast.saveCustomTypstFailed"), e);
     }
   }
 
@@ -993,6 +1044,29 @@ const CollectionTemplateFields: Component<{
           />
         </div>
       </div>
+
+      <Show when={(staleRules() ?? []).length > 0}>
+        <Notice tone="attention" class="collection-meta__stale-template">
+          <span>
+            {t("collection.char.staleTemplateRules", {
+              names: (staleRules() ?? []).join(", "),
+            })}
+          </span>
+          <span class="collection-meta__stale-template-actions">
+            <button class="btn btn--secondary btn--sm" onClick={() => void removeStaleRules()}>
+              {t("collection.char.removeStaleTemplateRules")}
+            </button>
+            <Show when={props.onEditCustomTypst}>
+              <button
+                class="btn btn--ghost btn--sm"
+                onClick={() => props.onEditCustomTypst?.()}
+              >
+                {t("collection.char.editCustomTypst")}
+              </button>
+            </Show>
+          </span>
+        </Notice>
+      </Show>
 
       <Show when={(props.collectionFile.typst_template ?? "").trim() !== ""}>
         <div class="collection-meta__row collection-meta__row--top">
@@ -1331,6 +1405,7 @@ const CollectionSettings: Component<{
                   collectionPath={props.collectionPath}
                   onSaved={onSaved}
                   onSetupTemplate={() => setCustomTypstModal({ autoInsert: true })}
+                  onEditCustomTypst={() => setCustomTypstModal({ autoInsert: false })}
                 />
                 <CollectionStyleEditor
                   alwaysExpanded

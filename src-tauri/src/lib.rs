@@ -407,6 +407,8 @@ pub fn run() {
             commands::note_packages::remove_note_package,
             commands::note_packages::fix_note_package_import,
             commands::typst_packages::apply_template_starter,
+            commands::typst_packages::stale_template_rules,
+            commands::typst_packages::remove_stale_template_rules,
             commands::typst_packages::uninstall_typst_package,
             commands::typst_packages::find_package_dependents,
             commands::typst_packages::create_local_package,

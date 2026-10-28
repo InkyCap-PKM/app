@@ -715,3 +715,16 @@
   background: var(--bg-hover);
 }
 
+
+/* Template rules in the Custom Typst that the chosen template can't supply,
+   with ways to remove or edit them. */
+.collection-meta__stale-template {
+  margin-block: var(--space-2) var(--space-4);
+}
+
+.collection-meta__stale-template-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}

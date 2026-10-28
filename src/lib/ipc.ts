@@ -1702,6 +1702,24 @@ export async function applyTemplateStarter(
   });
 }
 
+/** Functions that `customTypst`'s template rules apply but the collection's
+ *  `template` doesn't supply (left from an earlier template, or with none
+ *  set). Exports leave those rules out. */
+export async function staleTemplateRules(
+  customTypst: string,
+  template: string | null,
+): Promise<string[]> {
+  return invoke<string[]>("stale_template_rules", { customTypst, template });
+}
+
+/** `customTypst` without the rules {@link staleTemplateRules} finds. */
+export async function removeStaleTemplateRules(
+  customTypst: string,
+  template: string | null,
+): Promise<string> {
+  return invoke<string>("remove_stale_template_rules", { customTypst, template });
+}
+
 export async function uninstallTypstPackage(spec: string): Promise<void> {
   return invoke<void>("uninstall_typst_package", { spec });
 }

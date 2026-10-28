@@ -157,7 +157,15 @@ pub async fn export_collection_note_pdf(
     let content = companion.prepare_note(&storage, &note_path_buf, &content);
     let content = crate::notebox_package::ensure_import(&content);
     let collection_content = storage.read_file(&collection_path_buf).await?;
-    let base = crate::collection_parser::model::parse_collection_file(&collection_content)?;
+    let mut base = crate::collection_parser::model::parse_collection_file(&collection_content)?;
+    // A template rule the collection's template can't supply (left from an
+    // earlier template, or with none set) would stop the export.
+    base.custom_typst = crate::commands::typst_packages::usable_custom_typst(
+        &session,
+        base.custom_typst.as_deref(),
+        base.typst_template.as_deref(),
+    )
+    .await;
 
     let source = if metadata_mode.as_deref() == Some("properties") {
         inject_document_metadata(&content)
@@ -274,7 +282,15 @@ pub async fn export_collection_batch_pdf(
     let storage = session.get_storage().await?;
     let collection_path_buf = PathBuf::from(&collection_path);
     let collection_content = storage.read_file(&collection_path_buf).await?;
-    let base = crate::collection_parser::model::parse_collection_file(&collection_content)?;
+    let mut base = crate::collection_parser::model::parse_collection_file(&collection_content)?;
+    // A template rule the collection's template can't supply (left from an
+    // earlier template, or with none set) would stop the export.
+    base.custom_typst = crate::commands::typst_packages::usable_custom_typst(
+        &session,
+        base.custom_typst.as_deref(),
+        base.typst_template.as_deref(),
+    )
+    .await;
 
     let output_dir = PathBuf::from(&output_dir);
     tokio::fs::create_dir_all(&output_dir)
@@ -488,7 +504,15 @@ pub async fn export_collection_book_pdf(
     let storage = session.get_storage().await?;
     let collection_path_buf = PathBuf::from(&collection_path);
     let collection_content = storage.read_file(&collection_path_buf).await?;
-    let base = crate::collection_parser::model::parse_collection_file(&collection_content)?;
+    let mut base = crate::collection_parser::model::parse_collection_file(&collection_content)?;
+    // A template rule the collection's template can't supply (left from an
+    // earlier template, or with none set) would stop the export.
+    base.custom_typst = crate::commands::typst_packages::usable_custom_typst(
+        &session,
+        base.custom_typst.as_deref(),
+        base.typst_template.as_deref(),
+    )
+    .await;
 
     if data.rows.is_empty() {
         return Err(InkyCapError::ExportFailed(

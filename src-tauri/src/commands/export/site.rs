@@ -55,23 +55,14 @@ pub async fn export_collection_static_site(
     let defaults_rules = style_injection::build_defaults_show_call_resolved(&app_settings);
     drop(app_settings);
     let collection_rules = base.style.as_ref().map(|s| s.to_typst_show_call());
-    // The site doesn't import the collection's template (its rules lay out
-    // pages, which HTML doesn't have), so the Custom Typst rules applying it
-    // would fail as unknown names in every note.
-    let has_template = base
-        .typst_template
-        .as_deref()
-        .is_some_and(|t| !t.trim().is_empty());
+    // The site doesn't import a template (its rules lay out pages, which HTML
+    // doesn't have), so Custom Typst rules applying one, whether the
+    // collection's or one left from before, would fail as unknown names in
+    // every note.
     let custom_typst = base
         .custom_typst
         .as_deref()
-        .map(|c| {
-            if has_template {
-                crate::typst_pipeline::template_setup::without_template_rules(c)
-            } else {
-                c.to_string()
-            }
-        })
+        .map(crate::typst_pipeline::template_setup::without_template_rules)
         .filter(|c| !c.trim().is_empty());
 
     let name_to_file: std::collections::HashMap<String, String> = data

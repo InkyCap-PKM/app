@@ -81,14 +81,38 @@ pub fn apply_template_starter(custom: &str, starter: &str) -> String {
 /// `custom` without the rules that apply a template, for an export that
 /// doesn't import the collection's template.
 pub fn without_template_rules(custom: &str) -> String {
+    without_stale_template_rules(custom, None)
+}
+
+/// The template rules in `custom` that the collection's template can't supply,
+/// so they would fail as unknown names: every one when there is no template
+/// (`provided` is `None`), else those applying a name not in `provided` (the
+/// template's exports), left from a template chosen before. Names in source
+/// order.
+pub fn stale_template_rule_names(custom: &str, provided: Option<&HashSet<String>>) -> Vec<String> {
+    stale_template_rules(custom, provided)
+        .into_iter()
+        .map(|r| r.name)
+        .collect()
+}
+
+/// `custom` without the rules [`stale_template_rule_names`] finds.
+pub fn without_stale_template_rules(custom: &str, provided: Option<&HashSet<String>>) -> String {
     let mut out = String::with_capacity(custom.len());
     let mut cursor = 0;
-    for rule in template_rules(custom) {
+    for rule in stale_template_rules(custom, provided) {
         out.push_str(&custom[cursor..rule.range.start]);
         cursor = removal_end(custom, rule.range.end);
     }
     out.push_str(&custom[cursor..]);
     out
+}
+
+fn stale_template_rules(custom: &str, provided: Option<&HashSet<String>>) -> Vec<AppliedRule> {
+    template_rules(custom)
+        .into_iter()
+        .filter(|r| provided.is_none_or(|names| !names.contains(&r.name)))
+        .collect()
 }
 
 /// The rules in `source` that only a template import can resolve, in source
@@ -222,6 +246,28 @@ mod tests {
 
     const IEEE: &str = "#show: ieee.with(\n  title: [A Paper],\n)";
     const ACM: &str = "#show: acmart.with(\n  title: [Title],\n)";
+
+    #[test]
+    fn finds_and_removes_rules_the_template_cannot_supply() {
+        let custom = "#show: old-template.with(title: [T])\n\n#set text(red)\n";
+        assert_eq!(
+            stale_template_rule_names(custom, None),
+            vec!["old-template"]
+        );
+        assert_eq!(
+            without_stale_template_rules(custom, None),
+            "#set text(red)\n"
+        );
+
+        let current: HashSet<String> = ["new-template".to_string()].into();
+        assert_eq!(
+            stale_template_rule_names(custom, Some(&current)),
+            vec!["old-template"]
+        );
+        let own = "#show: new-template.with(title: [T])\n";
+        assert!(stale_template_rule_names(own, Some(&current)).is_empty());
+        assert_eq!(without_stale_template_rules(own, Some(&current)), own);
+    }
 
     #[test]
     fn inserts_at_top_when_absent() {
