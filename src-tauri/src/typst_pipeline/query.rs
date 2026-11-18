@@ -228,7 +228,9 @@ fn walk_for_body_calls(
                         }
                     }
                     "task" => {
-                        if let Some(s) = first_string_positional_arg(node) {
+                        let body = first_string_positional_arg(node)
+                            .or_else(|| content_body_plain_text(node));
+                        if let Some(s) = body {
                             agenda.push(AgendaMarker {
                                 kind: "task".to_string(),
                                 body: Some(s),
@@ -281,6 +283,21 @@ pub(crate) fn first_string_positional_arg(call_node: &LinkedNode<'_>) -> Option<
         }
     }
     None
+}
+
+/// The plain text of a call's content-block body (`#task[Read #link(…)[it]]`),
+/// or `None` when it has none or the text is empty.
+fn content_body_plain_text(call_node: &LinkedNode<'_>) -> Option<String> {
+    let args_node = call_node
+        .children()
+        .find(|c| c.kind() == SyntaxKind::Args)?;
+    let block = args_node
+        .children()
+        .find(|c| c.kind() == SyntaxKind::ContentBlock)?;
+    let markup = block.children().find(|c| c.kind() == SyntaxKind::Markup)?;
+    let text = crate::typst_pipeline::plaintext::extract_plain_text(&markup.get().full_text());
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_string())
 }
 
 /// Just the import and `#note(...)` call, as a source of its own. The
@@ -937,6 +954,45 @@ Keynote confirmed #due(datetime(year: 2026, month: 7, day: 1), label: "Conferenc
             .expect("date marker");
         assert_eq!(date_marker.due.as_deref(), Some("2026-07-01"));
         assert_eq!(date_marker.body.as_deref(), Some("Conference"));
+    }
+
+    #[test]
+    fn markup_task_body_reaches_agenda_as_plain_text_and_indexes_its_links() {
+        let (_dir, root) = setup_notebox_with_package(
+            r#"#task(done: true)[Look into the books on #link("https://example.test/558982")[_Sonic Studies_], some for #wikilink("Communication Studies") #tag("rwlgd")]
+"#,
+        );
+        let note_path = root.join("test.typ");
+        let source = fs::read_to_string(&note_path).unwrap();
+
+        let mut compiler = TypstCompiler::new(root);
+        let result = compile_and_query(&mut compiler, &note_path, source);
+
+        let task = result
+            .agenda
+            .iter()
+            .find(|m| m.kind == "task")
+            .expect("task marker");
+        let body = task.body.as_deref().unwrap_or_default();
+        assert_eq!(
+            body,
+            "Look into the books on Sonic Studies, some for Communication Studies #rwlgd"
+        );
+        assert!(task.done);
+        assert!(result.links.contains(&"Communication Studies".to_string()));
+        assert!(result.tags.contains(&"rwlgd".to_string()));
+    }
+
+    #[test]
+    fn markup_task_body_is_read_from_the_tree_when_the_note_cannot_compile() {
+        let (_links, _tags, agenda) = extract_body_metadata_via_syntax(
+            "#task[Call #wikilink(\"Athena Otlet\") about *the draft*]\n#broken(",
+        );
+        assert_eq!(agenda.len(), 1);
+        assert_eq!(
+            agenda[0].body.as_deref(),
+            Some("Call Athena Otlet about the draft")
+        );
     }
 
     #[test]

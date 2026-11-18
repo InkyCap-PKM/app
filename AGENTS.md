@@ -69,7 +69,7 @@ The visual mode is a CodeMirror 6 decoration layer over Typst source. The source
 
 ### Visual editor pill system
 
-In the visual editor, all Typst function markup that is **not** in the simple direct-formatting set (bold `*...*`, italic `_..._`, headings `= ...`, lists `- ...`/`+ ...`) is hidden behind a **circled `#` pill** (`FuncPillWidget`). Except for complex cases, clicking the pill dispatches the `expandFunc` effect, which reveals the raw Typst source for editing. When the cursor moves away, the pill collapses back.
+In the visual editor, all Typst function markup that is **not** in the simple direct-formatting set (bold `*...*`, italic `_..._`, headings `= ...`, lists `- ...`/`+ ...`) is hidden behind a **circled `#` pill** (`FuncPillWidget`). Clicking a pill (or right-clicking it) opens its menu, for every pill. The menu's *Edit source* dispatches the `expandFunc` effect, which reveals the raw Typst source for editing; when the cursor moves away, the pill collapses back.
 
 - All pill instances must reuse `FuncPillWidget` and the single `expandFunc` effect / `expandedFuncField` StateField. No duplicating pill logic per function.
 - Content-bracket functions (`strike`, `highlight`, `emph`, `strong`, `callout`, `quote`, `verse`) show pill + visible content when the cursor is on the line, and hide the markup entirely when the cursor is away.
@@ -272,6 +272,13 @@ InkyCap is built to be picked up and extended by future human contributors who h
   backticks) may change colour but never layout (display, padding, margins,
   height, font size); underlines that must not shift text are drawn as a
   CodeMirror layer, not a mark. `math-equation.test.ts` guards the math rules.
+- **Paste handlers read pasted text through `pastedText`** in
+  [clipboard-source.ts](src/editor/typst-decorations/clipboard-source.ts), not
+  `clipboardData.getData("text/plain")`. A copy from the visual editor puts
+  the text as it reads (escape backslashes dropped) on `text/plain` and the
+  Typst source under a private type; `pastedText` returns the source, so a
+  paste within InkyCap keeps the escapes. The verse editor, which edits
+  display text rather than markup, is the one exception.
 - **File dialogs take their starting folder from
   [src/lib/dialog-defaults.ts](src/lib/dialog-defaults.ts)**
   (`exportDefault`, `noteboxRootDefault`, `homeDirDefault`, `backupDefault`);

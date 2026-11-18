@@ -40,8 +40,8 @@ Visual mode recognizes Typst's *own* writing #link("https://typst.app/docs/refer
 
 So that you're not staring at code, anything more involved than plain formatting (a callout, an image, a quote with an attribution) collapses into a small *circled-`#` pill* showing the feature's name. The pill is your handle on that element:
 
-- *Click* a simple pill to reveal its underlying Typst markup right where it sits, so you can edit it. When your cursor moves away, it tidies back into a pill.
-- *Right-click* a pill (or press Enter or Space while it's focused) to open its *super-menu*. There you'll find element-specific options (an image's alt text and width, a callout's kind, a quote's attribution, a highlight's colour), quick ways to *Edit source* or jump the whole note into Source or Visual mode, and universal actions like *Copy*, *Duplicate*, *Remove style*, and *Delete*.
+- *Click* a pill (or right-click it, or press Enter or Space while it's focused) to open its *super-menu*. There you'll find element-specific options (an image's alt text and width, a callout's kind, a quote's attribution, a highlight's colour), quick ways to *Edit source* or jump the whole note into Source or Visual mode, and universal actions like *Copy*, *Duplicate*, *Remove style*, and *Delete*.
+- Choose *Edit source* to reveal the element's underlying Typst markup right where it sits, so you can edit it. When your cursor moves away, it tidies back into a pill. For a long or multi-line element, the menu offers *Open in source editor* instead.
 
 A few elements are always shown as their finished selves rather than as pills, because that's friendlier: wikilinks, tags, links, and tasks render inline and stay interactive (you can even tick a `#task` checkbox right inside a callout). Callout and quote bodies are real, editable text; you type into them as you would anywhere else.
 
@@ -87,7 +87,7 @@ mailto:    →  a link to an e-mail address
 name@domain.org␣ →  a link to that e-mail address (when you type the space)
 ```
 
-The task shortcuts keep the list marker, so `- [ ]` becomes a list item holding a task (`- #task("")`) and you can nest it or move it like any other item.
+The task shortcuts keep the list marker, so `- [ ]` becomes a list item holding a task (`- #task[]`) and you can nest it or move it like any other item.
 
 == Other conveniences while you write
 

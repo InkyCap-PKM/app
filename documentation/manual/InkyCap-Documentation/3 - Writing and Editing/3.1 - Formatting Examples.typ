@@ -433,18 +433,18 @@ These are InkyCap's own elements. They are queryable pieces that power the Agend
 
 #demo(
   [```typ
-#task("Read the proofs")
+#task[Read the proofs]
 ```],
   [#box[☐ Read the proofs]],
   [```typ
-#task("Email the editor", due: datetime(year: 2026, month: 6, day: 30))
+#task(due: datetime(year: 2026, month: 6, day: 30))[Email the editor]
 ```],
   [#box[☐ Email the editor] #box(fill: rgb("#eef2ff"), inset: (x: 4pt, y: 1pt), radius: 2pt, text(0.85em)[2026-06-30])],
 )
 
 *Dates* attach a reminder to your prose and surface in the Agenda — `#due(datetime(year: 2026, month: 6, day: 30), label: "Grant deadline")`. See #wikilink("3 - Agenda, Tasks, and Dates").
 
-*Annotations* are comments on your writing that never become body text. The visual editor shows an annotation as a pill (hover to read it, click to edit it and see it in *Changes & History*), and the reading view leaves it out. Exported documents show it as a tinted box, unless you accept or reject review markup when exporting:
+*Annotations* are comments on your writing that never become body text. The visual editor shows an annotation as a pill (hover to read it, click it and choose *Edit source* to edit it and see it in *Changes & History*), and the reading view leaves it out. Exported documents show it as a tinted box, unless you accept or reject review markup when exporting:
 
 ```typ
 #annotation([Double-check this figure before submitting.], by: "JC", on: datetime(year: 2026, month: 6, day: 7))
@@ -459,7 +459,7 @@ This draft is #suggestion([clear and], kind: "insert") well argued.
 == For Typst users
 
 #callout("tip", title: "For Typst users")[
-  verything is plain Typst markup, so you can always drop into raw Typst for anything the menus don't surface: set rules, show rules, custom functions, packages. A function call you write appears behind a small circled `#` pill in the visual editor — click it to edit the source inline, or switch to source mode to see the full Typst directly. The two-column boxes on *this* page are built with an ordinary Typst `#table` and a tiny local helper, nothing more.
+  verything is plain Typst markup, so you can always drop into raw Typst for anything the menus don't surface: set rules, show rules, custom functions, packages. A function call you write appears behind a small circled `#` pill in the visual editor — click it and choose *Edit source* to edit the source inline, or switch to source mode to see the full Typst directly. The two-column boxes on *this* page are built with an ordinary Typst `#table` and a tiny local helper, nothing more.
 ]
 
 == Related pages

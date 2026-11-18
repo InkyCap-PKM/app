@@ -3,6 +3,8 @@
 // can draw a task as a checkbox, a tag as a pill, and so on. No DOM or Tauri, so
 // it can be tested alone; widgets.ts builds the DOM.
 
+import { typstStringUnescape } from "../../lib/typst";
+
 // `start` is the segment's offset within the body text. Block widgets add the
 // body's document position to find a call's source position (so a task checkbox
 // toggles the right `#task(...)`).
@@ -11,7 +13,9 @@ export type BodySegment =
   | { kind: "wikilink"; start: number; target: string; display: string }
   | { kind: "tag"; start: number; name: string }
   | { kind: "link"; start: number; url: string; display: string }
-  | { kind: "task"; start: number; body: string; done: boolean; due: string | null }
+  // A task's body is a string (`#task("…")`) or, for `#task[…]`, its markup
+  // parsed into `children`, with `body` empty.
+  | { kind: "task"; start: number; body: string; children?: BodySegment[]; done: boolean; due: string | null }
   // Inline formatting (`*bold*`, `_italic_`, `#highlight[…]`, …). `children` are
   // parsed recursively; `className` is the mark class the widget applies, matching
   // the editor's inline marks. `args` is the call's raw argument text (`fill:
@@ -67,14 +71,19 @@ function matchDelim(text: string, open: number, openCh: string, closeCh: string)
 /** First positional string argument in an arg list like `"x", done: true`. */
 function firstStringArg(args: string): string | null {
   const m = args.match(/^\s*"((?:[^"\\]|\\.)*)"/);
-  return m ? m[1].replace(/\\"/g, '"') : null;
+  return m ? typstStringUnescape(m[1]) : null;
 }
 
 /** Named string argument (`name: "value"`). */
 function namedStringArg(args: string, name: string): string | null {
   const re = new RegExp(`\\b${name}\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`);
   const m = args.match(re);
-  return m ? m[1].replace(/\\"/g, '"') : null;
+  return m ? typstStringUnescape(m[1]) : null;
+}
+
+/** A task's `done:` and `due:` arguments. */
+function taskState(args: string): { done: boolean; due: string | null } {
+  return { done: /\bdone\s*:\s*true\b/.test(args), due: namedStringArg(args, "due") };
 }
 
 /** Turn one recognized inline func call into a segment, or null if its
@@ -99,13 +108,7 @@ function segmentForFunc(name: string, start: number, args: string, content: stri
     case "task": {
       const body = firstStringArg(args);
       if (body === null) return null;
-      return {
-        kind: "task",
-        start,
-        body,
-        done: /\bdone\s*:\s*true\b/.test(args),
-        due: namedStringArg(args, "due"),
-      };
+      return { kind: "task", start, body, ...taskState(args) };
     }
     default:
       return null;
@@ -158,6 +161,19 @@ function tryParseFunc(
     contentFrom = cursor + 1;
     contentTo = close;
     cursor = close + 1;
+  }
+
+  // `#task(…)[…]`: a checkbox before its markup body, parsed like the rest.
+  if (name === "task" && contentFrom >= 0) {
+    flushPlain(hashAt);
+    segments.push({
+      kind: "task",
+      start: hashAt,
+      body: "",
+      children: parseSegments(text, contentFrom, contentTo),
+      ...taskState(args),
+    });
+    return cursor;
   }
 
   // Interactive notebox primitives render as their own semantic element.

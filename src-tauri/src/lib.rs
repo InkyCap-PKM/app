@@ -373,6 +373,8 @@ pub fn run() {
             commands::file_ops::copy_path_into_notebox,
             commands::attachment_migration::preview_attachment_folder_migration,
             commands::attachment_migration::migrate_attachment_folder,
+            commands::task_bodies::preview_task_body_conversion,
+            commands::task_bodies::convert_task_bodies,
             commands::file_ops::pick_and_upload_to_attachments,
             commands::file_ops::import_csl_style,
             commands::file_ops::pick_files_for_import,

@@ -4,7 +4,7 @@
 //   "> "           at line start  →  #quote(block: true)[<cursor>]
 //   "+++"          alone on a line →  #line(length: 100%)
 //   "++<text>++"   inline          →  #footnote[<text>]
-//   "- [ ] " / "- [x] " at line start → - #task("<cursor>") (done: true when x)
+//   "- [ ] " / "- [x] " at line start → - #task[<cursor>] (done: true when x)
 //
 // Like `[[wikilink]]`, these map to calls that have no Typst markup. Typst's
 // own markup (*, _, =, -, +, $) isn't aliased. Each fires only on the keystroke
@@ -23,27 +23,27 @@ function handleSpace(view: EditorView, from: number): boolean {
 
   // A Markdown task box becomes a task in a list item: the typed space starts
   // the body, so the line is the bare `- [ ]` / `- [x]` (indent and marker
-  // kept), `x` means `done: true`, and the caret goes inside the string. Keeping
-  // the marker (`- #task("")`) lets tasks nest and fold with the list (issue
+  // kept), `x` means `done: true`, and the caret goes inside the body. Keeping
+  // the marker (`- #task[]`) lets tasks nest and fold with the list (issue
   // #24).
   const task = beforeCursor.match(/^(\s*)([-+]) \[([ xX]?)\]$/);
   if (task) {
     const indent = task[1];
     const marker = task[2];
     const done = /[xX]/.test(task[3]);
-    const call = done ? '#task("", done: true)' : '#task("")';
+    const call = done ? "#task(done: true)[]" : "#task[]";
     // `- ` (marker + separator space) stays; the `[ ]` becomes the task call.
     const markerPrefix = `${marker} `;
     const insert = indent + markerPrefix + call;
     // The `#` of the inserted call sits just after the indentation and marker.
     const funcFrom = line.from + indent.length + markerPrefix.length;
     // Keep the new call expanded on the cursor line, as for `>`. Otherwise the
-    // visual plugin turns `#task(…)` into its checkbox immediately and the text
-    // typed next lands after the widget (`#task("")Task text`). Moving away
-    // collapses it; the pill menu still offers done, due and label (issue #23).
+    // visual plugin hides the empty body's brackets at once and the text typed
+    // next can land after the call (`#task[]Task text`). Moving away collapses
+    // it; the pill menu still offers done and due (issue #23).
     dispatchVisible(view, {
       changes: { from: line.from, to: from, insert } as ChangeSpec,
-      selection: { anchor: funcFrom + '#task("'.length },
+      selection: { anchor: funcFrom + call.length - 1 },
       effects: expandFunc.of(funcFrom),
     });
     return true;

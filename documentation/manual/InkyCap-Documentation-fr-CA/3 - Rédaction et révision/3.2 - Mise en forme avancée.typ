@@ -71,8 +71,8 @@ Ces règles vivent dans *une seule note*. Elles ne s'étendent pas à votre boî
 
 Dans l'éditeur visuel, une règle set apparaît sous la forme d'une pastille étiquetée qui nomme ce qu'elle configure : `set text: font`, `set par: leading`, `set page: margin`, et ainsi de suite. Vous distinguez d'un coup d'œil deux règles `#set text(...)`. Pour la modifier :
 
-- *Cliquez sur la pastille* (ou amenez votre curseur sur sa ligne). La pastille se déploie pour révéler la ligne `#set …` brute, entièrement modifiable sur place. Ajustez la valeur, puis cliquez ou déplacez-vous ailleurs et elle se replie en pastille.
-- *Faites un clic droit sur la pastille* pour un menu : *Modifier la source*, *Ouvrir dans l'éditeur de source* et *Copier / Dupliquer / Retirer le style / Supprimer*. *Supprimer* retire complètement le réglage.
+- *Cliquez sur la pastille* pour son menu : *Modifier la source*, *Ouvrir dans l'éditeur de source* et *Copier / Dupliquer / Retirer le style / Supprimer*. *Supprimer* retire complètement le réglage.
+- Choisissez *Modifier la source* (ou amenez votre curseur sur la ligne de la pastille) et la pastille se déploie pour révéler la ligne `#set …` brute, entièrement modifiable sur place. Ajustez la valeur, puis cliquez ou déplacez-vous ailleurs et elle se replie en pastille.
 
 #callout("tip")[
 Une série de règles set au tout début d'une note est traitée comme la configuration de la note et rangée ensemble au-dessus de votre texte, à l'écart, dans une pastille intitulée *Configuration du document*. La pastille regroupe aussi toute règle `#show` et toute définition `#let` de cette série de tête. Une règle set que vous ajoutez plus tard, dans le corps, obtient sa propre pastille là où elle se trouve. Dans les deux cas, le balisage n'est jamais perdu. Il est seulement replié par souci de propreté.

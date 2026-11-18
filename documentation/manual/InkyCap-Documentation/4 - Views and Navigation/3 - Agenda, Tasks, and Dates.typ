@@ -34,16 +34,17 @@ _This is a Markdown-style shortcut that InkyCap recognizes for tasks but transla
 
 Type `/` anywhere you're writing to open the menu, look under the *InkyCap* category (or type the word `task` or `due`, and choose:
 
-- *Task* inserts an empty task with your cursor inside the quotes.
+- *Task* inserts an empty task with your cursor ready for its text. With text selected, the selection becomes the task.
 - *Due date* inserts an empty dated reminder.
 
 This works in both the everyday writing view and the source view. If you're not sure of the exact markup, the slash menu is an easy path.
 
 === Once you have a task
 
-A task shows up as a checkbox and the text beside it. You can give it a due date and tags too. To edit any of these in the writing view, right-click the small circled `#` pill that appears beside the task when your cursor is on its line. A menu appears with:
+A task shows up as a checkbox and the text beside it. You write and edit the text right there, like any other line, and it can hold the same things: links, wikilinks, tags, *bold* and _italic_. Links and wikilinks in a task work as they do anywhere else, and the note a wikilink points to lists this one among its backlinks. In the Agenda, the task reads as plain text.
 
-- a *Task* field (placeholder: "What needs doing?") for the task text,
+You can give a task a due date and tags too. To edit these in the writing view, click the small circled `#` pill that appears beside the task when your cursor is on its line. A menu appears with:
+
 - a *Due* field (placeholder: "YYYY-MM-DD") for the deadline,
 - and a *Mark as done* / *Mark as not done* toggle.
 
@@ -165,15 +166,19 @@ A task placed inside a callout, a block quote, or an annotation still shows up a
 #callout("tip", title: "For Typst users")[Tasks and dated reminders are Typst function calls from the bundled `inkycap-notebox` package, auto-imported into every note. Everything above is a convenient front-end over these:
 
   ```typ
-  #task("Draft abstract")                              // open task
-  #task("Draft abstract", done: true)                  // completed
-  #task("Submit", due: "2026-06-23", tags: ("work",))  // dated + tagged
-  #task("Submit", due: datetime(year: 2026, month: 6, day: 23))
+  #task[Draft abstract]                                // open task
+  #task(done: true)[Draft abstract]                    // completed
+  #task(due: "2026-06-23", tags: ("work",))[Submit]    // dated + tagged
+  #task(due: datetime(year: 2026, month: 6, day: 23))[Submit]
+  #task[Read #link("https://example.org")[the paper]]  // markup in the text
+  #task("Draft abstract")                              // a plain string also works
   #due("2026-07-01")                                   // bare dated reminder
   #due("2026-07-01", label: "Keynote")                 // labelled
   ```
 
-  The `body` of a `#task` is a required string; `done:` defaults to `false`; `tags:` accepts a string or an array. A `#due` requires a valid date and takes an optional `label:`.
+  The body of a `#task` is required. It is markup in brackets, or a plain string, whose text shows exactly as written. The Agenda gets the body as plain text. `done:` defaults to `false`; `tags:` accepts a string or an array. A `#due` requires a valid date and takes an optional `label:`.
+
+  Tasks written as strings with markup inside them, such as `#task("Read #link(\"…\")")` from an earlier Markdown import, show that markup as literal text. The *Convert task text to markup* command in the command palette (under *Tools*) turns them into the bracket form across your notebox. It first says how many tasks in how many notes will change, and leaves alone any task whose text has an `@` or a label that wouldn't work as markup.
 
   Dates accept either a quoted ISO string (`"2026-06-23"`) or a `datetime(...)`; both render correctly, and the date axis is canonically ISO `YYYY-MM-DD` throughout. The pill editors always write the quoted-string form. At the document level, your `#note(...)` can carry `task: true|false` and `due: "YYYY-MM-DD"` to make the whole note one agenda item.
 

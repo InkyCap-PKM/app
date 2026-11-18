@@ -4,6 +4,7 @@ import { fileToBase64 } from "../../lib/file-bytes";
 import { ensureNoteboxImports } from "../../lib/notebox-import-check";
 import { activeNotePath } from "../../stores/tabs";
 import { pasteUrlHandler } from "./paste-url";
+import { pastedText } from "./clipboard-source";
 import { fileExtension, insertAttachmentAt } from "../../lib/attachment-insert";
 
 /** Copy a dropped file into the notebox and insert markup for it. Resolves
@@ -207,7 +208,7 @@ export const dragDropHandler = ViewPlugin.fromClass(
         // webview. If the webview sees no text either, the clipboard probably
         // holds a file or image, so read it from Rust. Plain text pastes go on
         // to CodeMirror's default handling.
-        const text = cd.getData("text/plain");
+        const text = pastedText(event);
         if (!text || text.trim() === "") {
           event.preventDefault();
           void handleClipboardPasteFallback(view);

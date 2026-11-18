@@ -49,10 +49,19 @@ a `metadata(...)` dict (`kind`, `body`, `due`, `done`, `tags`), which the query
 layer reads after compilation. The package's `_fmt-date()` helper normalizes any
 `datetime(...)` to ISO `YYYY-MM-DD` so dates sort lexicographically.
 
+A task's body is markup (`#task[Read #link("…")[it]]`) or a string. For markup,
+`lib.typ`'s `_plain-text` puts the plain text in `body`; a wikilink or tag
+inside contributes the text its `<inkycap-link>` / `<inkycap-tag>` metadata
+carries, since the text it draws sits in a `context` block. Wikilinks and tags
+in a markup body are indexed like any others. `typst_pipeline::task_body`
+converts string bodies that hold markup (from older Markdown imports) to the
+markup form, behind the *Convert task text to markup* command.
+
 Two robustness details worth knowing when you touch this code:
 
 - **AST fallback on broken files.** If a note fails to compile, the extractor
-  walks the parsed AST for `#task(...)` calls and recovers their bodies (due
+  walks the parsed AST for `#task(...)` calls and recovers their bodies, a markup
+  body through `plaintext::extract_plain_text` (due
   dates, often `datetime()` expressions, are not recoverable this way). So a note
   with a syntax error still shows its tasks, just without dates, rather than
   vanishing from the Agenda.

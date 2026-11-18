@@ -9,6 +9,7 @@
 import { type EditorView } from "@codemirror/view";
 import {
   applyCallTransform,
+  findArgList,
   findCallEnd,
   readNamedArg,
   readFirstPositionalString,
@@ -782,20 +783,24 @@ function taskOptions(view: EditorView, from: number, to: number): PillMenuSectio
   const dueRaw = readNamedArg(src, "due");
   const dueIso = readDateLiteral(dueRaw);
   const isDone = /\bdone\s*:\s*true\b/.test(src);
+  // A markup body (`#task(…)[…]`) is edited in the note itself, so only a
+  // string body gets a field here.
+  const args = findArgList(src);
+  const hasMarkupBody = src[args ? args.close + 1 : "#task".length] === "[";
 
   return [
-    {
+    ...(hasMarkupBody ? [] : [{
       heading: t("pill.task.heading"),
       items: [{
         label: t("pill.task.label"),
         input: {
           value: body,
           placeholder: t("pill.task.placeholder"),
-          onCommit: (v) =>
+          onCommit: (v: string) =>
             applyCallTransform(view, from, (s) => replaceFirstPositionalString(s, v)),
         },
       }],
-    },
+    }]),
     {
       heading: t("pill.due.heading"),
       items: [{

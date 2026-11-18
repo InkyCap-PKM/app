@@ -439,18 +439,18 @@ Les *tâches* sont des cases à cocher en ligne qui se rassemblent aussi dans l'
 
 #demo(
   [```typ
-#task("Lire les épreuves")
+#task[Lire les épreuves]
 ```],
   [#box[☐ Lire les épreuves]],
   [```typ
-#task("Écrire à la rédactrice", due: datetime(year: 2026, month: 6, day: 30))
+#task(due: datetime(year: 2026, month: 6, day: 30))[Écrire à la rédactrice]
 ```],
   [#box[☐ Écrire à la rédactrice] #box(fill: rgb("#eef2ff"), inset: (x: 4pt, y: 1pt), radius: 2pt, text(0.85em)[2026-06-30])],
 )
 
 Les *dates* attachent un rappel à votre prose et apparaissent dans l'Agenda : `#due(datetime(year: 2026, month: 6, day: 30), label: "Échéance de la subvention")`. Voir #wikilink("3 - Agenda, tâches et dates").
 
-Les *annotations* sont des commentaires sur votre texte qui ne deviennent jamais du texte de corps. L'éditeur visuel affiche une annotation sous forme de pastille (survolez-la pour la lire, cliquez pour la modifier et la voir dans *Modifications et historique*), et le mode lecture l'omet. Les documents exportés l'affichent dans un encadré teinté, sauf si vous acceptez ou rejetez le balisage de révision à l'exportation :
+Les *annotations* sont des commentaires sur votre texte qui ne deviennent jamais du texte de corps. L'éditeur visuel affiche une annotation sous forme de pastille (survolez-la pour la lire, cliquez dessus et choisissez *Modifier la source* pour la modifier et la voir dans *Modifications et historique*), et le mode lecture l'omet. Les documents exportés l'affichent dans un encadré teinté, sauf si vous acceptez ou rejetez le balisage de révision à l'exportation :
 
 ```typ
 #annotation([Revérifier ce chiffre avant la soumission.], by: "JC", on: datetime(year: 2026, month: 6, day: 7))
@@ -465,7 +465,7 @@ Cette ébauche est #suggestion([claire et], kind: "insert") bien argumentée.
 == Pour les utilisateurs de Typst
 
 #callout("tip", title: "Pour les utilisateurs de Typst")[
-  Tout est du balisage Typst pur, vous pouvez donc toujours basculer en Typst brut pour tout ce que les menus ne font pas surgir : règles set, règles show, fonctions personnalisées, packages. Un appel de fonction que vous écrivez apparaît derrière une petite pastille `#` cerclée dans l'éditeur visuel ; cliquez dessus pour modifier la source en ligne, ou basculez en mode source pour voir directement le Typst complet. Les encadrés à deux colonnes de *cette* page sont construits avec un `#table` Typst ordinaire et une petite aide locale, rien de plus.
+  Tout est du balisage Typst pur, vous pouvez donc toujours basculer en Typst brut pour tout ce que les menus ne font pas surgir : règles set, règles show, fonctions personnalisées, packages. Un appel de fonction que vous écrivez apparaît derrière une petite pastille `#` cerclée dans l'éditeur visuel ; cliquez dessus et choisissez *Modifier la source* pour modifier la source en ligne, ou basculez en mode source pour voir directement le Typst complet. Les encadrés à deux colonnes de *cette* page sont construits avec un `#table` Typst ordinaire et une petite aide locale, rien de plus.
 ]
 
 == Pages connexes

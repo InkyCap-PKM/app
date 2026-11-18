@@ -41,8 +41,8 @@ Le mode visuel reconnaît directement la #link("https://typst.app/docs/reference
 
 Pour vous éviter de fixer du code, tout ce qui est plus élaboré qu'une simple mise en forme (un callout, une image, une citation avec attribution) se replie dans une petite *pastille `#` cerclée* affichant le nom de la fonctionnalité. La pastille est votre prise sur cet élément :
 
-- *Cliquez* sur une pastille simple pour révéler son balisage Typst sous-jacent là où il se trouve, afin de le modifier. Quand votre curseur s'éloigne, il se range de nouveau en pastille.
-- *Faites un clic droit* sur une pastille (ou appuyez sur Entrée ou Espace quand elle a le focus) pour ouvrir son *super-menu*. Vous y trouverez des options propres à l'élément (le texte alternatif et la largeur d'une image, le type d'un callout, l'attribution d'une citation, la couleur d'un surlignage), des moyens rapides de *Modifier la source* ou de basculer toute la note en mode Source ou Visuel, ainsi que des actions universelles comme *Copier*, *Dupliquer*, *Retirer le style* et *Supprimer*.
+- *Cliquez* sur une pastille (ou faites un clic droit dessus, ou appuyez sur Entrée ou Espace quand elle a le focus) pour ouvrir son *super-menu*. Vous y trouverez des options propres à l'élément (le texte alternatif et la largeur d'une image, le type d'un callout, l'attribution d'une citation, la couleur d'un surlignage), des moyens rapides de *Modifier la source* ou de basculer toute la note en mode Source ou Visuel, ainsi que des actions universelles comme *Copier*, *Dupliquer*, *Retirer le style* et *Supprimer*.
+- Choisissez *Modifier la source* pour révéler le balisage Typst sous-jacent de l'élément là où il se trouve, afin de le modifier. Quand votre curseur s'éloigne, il se range de nouveau en pastille. Pour un élément long ou sur plusieurs lignes, le menu propose plutôt *Ouvrir dans l'éditeur de source*.
 
 Quelques éléments s'affichent toujours sous leur forme finie plutôt qu'en pastilles, parce que c'est plus convivial : les liens wiki, les étiquettes, les liens et les tâches se rendent en ligne et restent interactifs (vous pouvez même cocher une case `#task` directement à l'intérieur d'un callout). Le corps des callouts et des citations est du vrai texte modifiable ; vous y tapez comme partout ailleurs.
 
@@ -88,7 +88,7 @@ mailto:    →  un lien vers une adresse de courriel
 nom@domaine.org␣ →  un lien vers cette adresse de courriel (à la frappe de l'espace)
 ```
 
-Les raccourcis de tâche conservent le marqueur de liste : `- [ ]` devient donc un élément de liste contenant une tâche (`- #task("")`), que vous pouvez imbriquer ou déplacer comme n'importe quel autre élément.
+Les raccourcis de tâche conservent le marqueur de liste : `- [ ]` devient donc un élément de liste contenant une tâche (`- #task[]`), que vous pouvez imbriquer ou déplacer comme n'importe quel autre élément.
 
 == Autres commodités pendant l'écriture
 

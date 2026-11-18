@@ -3,6 +3,7 @@ import { EditorState, type Range } from "@codemirror/state";
 import type { Decoration } from "@codemirror/view";
 import { handleFuncCall } from "./visual-plugin";
 import { AnnotationPillWidget, FuncChipWidget, FuncPillWidget } from "./visual-widgets";
+import { TaskBoxWidget, TaskDueWidget } from "./widgets";
 
 // Collapse rules for a generic `#func(...)` call in the visual editor.
 //
@@ -204,6 +205,40 @@ describe("#task reveals raw source when the caret enters it (issue #23)", () => 
     expect(widgets[0]).toBeInstanceOf(FuncPillWidget);
     // No checkbox widget replaces the (empty) call.
     expect(decos.find((d) => d.from === 0 && d.to === EMPTY.length)).toBeUndefined();
+  });
+});
+
+// `#task(…)[…]`: the checkbox replaces `#task(…)[` and the body stays live text,
+// so its links and wikilinks get their own decorations and it can be edited in
+// place; the due date replaces the closing `]`.
+describe("#task with a markup body", () => {
+  const CALL = '#task(done: true, due: "2026-06-23")[Read #link("https://example.test")[it]]';
+  const bodyFrom = CALL.indexOf(")[") + 2;
+
+  it("puts the checkbox and due date around a live body", () => {
+    const { decos, traverse } = decorate(CALL, [CALL.length + 1]);
+    expect(traverse).toBe(true);
+    const box = decos.find((d) => d.value.spec.widget instanceof TaskBoxWidget)!;
+    expect([box.from, box.to]).toEqual([0, bodyFrom]);
+    expect((box.value.spec.widget as TaskBoxWidget).done).toBe(true);
+    const due = decos.find((d) => d.value.spec.widget instanceof TaskDueWidget)!;
+    expect([due.from, due.to]).toEqual([CALL.length - 1, CALL.length]);
+    expect((due.value.spec.widget as TaskDueWidget).due).toBe("2026-06-23");
+    // Nothing covers the body except the done mark.
+    const overBody = decos.filter((d) => d.from < CALL.length - 1 && d.to > bodyFrom);
+    expect(overBody.every((d) => d.value.spec.class === "cm-typst-task__body--done")).toBe(true);
+  });
+
+  it("finds the body of a call with no arguments despite parentheses inside it", () => {
+    const BARE = '#task[Read #link("https://example.test")[it]]';
+    const { decos } = decorate(BARE, [BARE.length + 1]);
+    const box = decos.find((d) => d.value.spec.widget instanceof TaskBoxWidget)!;
+    expect([box.from, box.to]).toEqual([0, "#task[".length]);
+  });
+
+  it("shows the arguments as written while the caret is in them", () => {
+    const { decos } = decorate(CALL, [CALL.indexOf("done")]);
+    expect(decos.some((d) => d.value.spec.widget instanceof TaskBoxWidget)).toBe(false);
   });
 });
 

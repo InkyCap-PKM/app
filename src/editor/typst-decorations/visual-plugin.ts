@@ -24,6 +24,8 @@ import {
   BibliographyBlockWidget,
   TagWidget,
   TaskWidget,
+  TaskBoxWidget,
+  TaskDueWidget,
   DueWidget,
   WikilinkWidget,
   LinkWidget,
@@ -64,6 +66,7 @@ import {
 } from "./visual-tables";
 import { pillBoundaryNav, createBlockBodyCaretEntry } from "./pill-boundary-nav";
 import { leadingWhitespace } from "./list-scan";
+import { extractFirstStringArg, typstStringUnescape } from "../../lib/typst";
 
 /**
  * Inline formatting around the node being decorated. Replace widgets (wikilink,
@@ -82,6 +85,7 @@ const escapedChar = Decoration.mark({ class: "cm-typst-escaped" });
 const bold = Decoration.mark({ class: "cm-typst-bold" });
 const italic = Decoration.mark({ class: "cm-typst-italic" });
 const strikethrough = Decoration.mark({ class: "cm-typst-strike" });
+const taskBodyDone = Decoration.mark({ class: "cm-typst-task__body--done" });
 // highlight imported from ./visual-colors
 const underlineMark = Decoration.mark({ class: "cm-typst-underline-mark" });
 const overlineMark = Decoration.mark({ class: "cm-typst-overline-mark" });
@@ -819,9 +823,10 @@ export function buildDecorations(
             pushMark(decos, italic, node.from + 1, node.to - 1);
             break;
           }
+          // `\@`, `\#`: the backslash is hidden, and shown again on the
+          // caret's line, like the other markup on it.
           case "Escape": {
-            if (isCursorAdjacentOrInside(state, node.from, node.to, cursors)) return false;
-            if (autoExpand && onCursor) return false;
+            if (onCursor) return false;
             if (node.to - node.from >= 2) {
               escapeRanges.add(`${node.from}:${node.to}`);
               decos.push(hide.range(node.from, node.from + 1));
@@ -1146,7 +1151,8 @@ export function buildDecorations(
   const escTree = syntaxTree(state);
   for (const i of escScanLines) {
     const line = state.doc.line(i);
-    if (autoExpand && isOnCursorLine(state, line.from, line.to, focused)) continue;
+    // The caret's line shows its escapes, as the Escape case above does.
+    if (isOnCursorLine(state, line.from, line.to, focused)) continue;
     // Skip lines hidden behind the collapsed style-preamble chip.
     if (stylePreamble && stylePreambleCollapsed && posWithinPreamble(line.from, stylePreamble)) continue;
     const text = line.text;
@@ -1535,6 +1541,32 @@ export function handleFuncCall(
       return false;
     }
     case "task": {
+      // `#task(…)[…]`: a checkbox in place of `#task(…)[`, then the body as
+      // live text (its links, wikilinks and tags decorated as anywhere else),
+      // then the due date in place of `]`.
+      const markup = bracketRangeAfterArgs(text, from);
+      if (markup) {
+        const prefix = text.slice(0, markup.from - from);
+        // The pill's Edit source, or a caret inside the arguments, shows the
+        // call as written.
+        const caretInArgs = [...cursors].some((c) => c > from && c < markup.from);
+        if (expandedPos === from || (autoExpand && onCursor) || caretInArgs) return true;
+        const done = /\bdone\s*:\s*true\b/.test(prefix);
+        const dueIdx = prefix.search(/\bdue\s*:/);
+        const due = dueIdx >= 0 ? extractDateLiteral(prefix.slice(dueIdx)) : null;
+        if (showPill) {
+          decos.push(
+            Decoration.widget({ widget: new FuncPillWidget(from, "task"), side: -1 }).range(from),
+          );
+        }
+        decos.push(Decoration.replace({ widget: new TaskBoxWidget(done) }).range(from, markup.from));
+        decos.push((due
+          ? Decoration.replace({ widget: new TaskDueWidget(due) })
+          : hide
+        ).range(markup.to, to));
+        if (done) addSplitMarks(state, markup.from, markup.to, taskBodyDone, decos);
+        return true;
+      }
       const body = extractFirstStringArg(text);
       // Show the pill even without a body, so an unfinished `#task()` is still
       // recognized (issue #24).
@@ -2028,8 +2060,11 @@ function bracketRangeAfterArgs(
   nodeFrom: number,
 ): { from: number; to: number } | null {
   let scanFrom = 0;
+  // An argument list comes before the body; a `(` after the first `[` belongs
+  // to the body (`#task[Read #link("…")]`).
   const lp = text.indexOf("(");
-  if (lp >= 0) {
+  const firstBracket = text.indexOf("[");
+  if (lp >= 0 && (firstBracket < 0 || lp < firstBracket)) {
     let depth = 0;
     let inStr = false;
     for (let i = lp; i < text.length; i++) {
@@ -2047,11 +2082,6 @@ function bracketRangeAfterArgs(
   const close = matchContentBracket(text, open, text.length);
   if (close < 0) return null;
   return { from: nodeFrom + open + 1, to: nodeFrom + close };
-}
-
-function extractFirstStringArg(text: string): string | null {
-  const m = text.match(/\(\s*"([^"]*)"/) ?? text.match(/\(\s*'([^']*)'/);
-  return m ? m[1] : null;
 }
 
 /** A label as the first argument: `#link(<my-label>)…`. */
@@ -2095,9 +2125,9 @@ function extractFirstEscapedStringArgRange(
 }
 
 export function extractNamedStringArg(text: string, name: string): string | null {
-  const re = new RegExp(`${name}\\s*:\\s*"([^"]*)"`);
+  const re = new RegExp(`${name}\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`);
   const m = text.match(re);
-  return m ? m[1] : null;
+  return m ? typstStringUnescape(m[1]) : null;
 }
 
 /** Extract a named arg with a bare (non-string) value like `width: 40%`. */

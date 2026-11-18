@@ -44,11 +44,10 @@ export class FuncChipWidget extends WidgetType {
 /**
  * Chip for the leading run of `#set` / `#show` rules (the style preamble),
  * replacing the whole block so configuration doesn't clutter the visual editor.
- * Uses {@link buildPillButton}: left-click reveals the source
- * (`alwaysExpandOnClick`, since a multi-line block would otherwise open the
- * menu), and right-click or Enter opens the standard menu for the whole block. It
- * collapses again when the cursor leaves (see visual-plugin). `from` / `to` bound
- * its lines.
+ * Uses {@link buildPillButton}: a click opens the standard menu for the whole
+ * block, whose "Edit source" (`alwaysOfferEditSource`, since the block is
+ * multi-line) reveals it. It collapses again when the cursor leaves (see
+ * visual-plugin). `from` / `to` bound its lines.
  */
 export class StylePreambleWidget extends WidgetType {
   constructor(readonly from: number, readonly to: number, readonly count: number) { super(); }
@@ -70,7 +69,7 @@ export class StylePreambleWidget extends WidgetType {
         funcName: t("editor.stylePreamble.label"),
         callFrom: this.from,
         callTo: this.to,
-        alwaysExpandOnClick: true,
+        alwaysOfferEditSource: true,
       }),
       {
         label: t("editor.stylePreamble.label"),
@@ -95,9 +94,9 @@ function tooltipText(text: string): string {
 
 /**
  * An annotation (`#annotation[…]`). A reviewer's remark isn't part of the
- * writing, so only a pill marks it; hovering shows the comment, and clicking
- * reveals the source and opens Changes & History on it. `summary` is the
- * comment with attribution, for the tooltip.
+ * writing, so only a pill marks it; hovering shows the comment, and its
+ * menu's "Edit source" reveals the source and opens Changes & History on it.
+ * `summary` is the comment with attribution, for the tooltip.
  */
 export class AnnotationPillWidget extends WidgetType {
   constructor(readonly pos: number, readonly summary: string) { super(); }
@@ -115,7 +114,7 @@ export class AnnotationPillWidget extends WidgetType {
           callFrom: this.pos,
           callTo,
           optionSections: getPillOptions("annotation", view, this.pos, callTo),
-          alwaysExpandOnClick: true,
+          alwaysOfferEditSource: true,
           onEditSource: (v) => {
             v.dispatch({ effects: expandFunc.of(this.pos), selection: { anchor: this.pos + 1 } });
             v.focus();
@@ -135,8 +134,8 @@ export class AnnotationPillWidget extends WidgetType {
 /**
  * A run of Typst comments. They don't appear in the output but the caret still
  * moves around them, so a pill marks each run. Hovering shows the comment;
- * clicking reveals it with the caret at its end. A multi-line run shows its line
- * count.
+ * its menu's "Edit source" reveals it with the caret at its end. A multi-line
+ * run shows its line count.
  */
 export class CommentPillWidget extends WidgetType {
   constructor(readonly run: CommentRun, readonly raw: string) { super(); }
@@ -159,7 +158,7 @@ export class CommentPillWidget extends WidgetType {
         funcName: label,
         callFrom: this.run.from,
         callTo: this.run.to,
-        alwaysExpandOnClick: true,
+        alwaysOfferEditSource: true,
         onEditSource: (v) => {
           v.dispatch({ effects: expandFunc.of(this.run.from), selection: { anchor: this.run.to } });
           v.focus();

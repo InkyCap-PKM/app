@@ -10,7 +10,7 @@
 use regex::Regex;
 use std::sync::LazyLock;
 
-use typst::syntax::{ast, ast::AstNode, parse_code};
+use typst::syntax::{ast, ast::AstNode, parse, parse_code};
 
 use crate::typst_pipeline::{note_rewriter, source_structure};
 
@@ -241,6 +241,10 @@ fn convert_line(line: &str, options: &TypstToMarkdownOptions) -> String {
         return "---".to_string();
     }
 
+    if let Some(item) = task_item(line, options) {
+        return item;
+    }
+
     // List items: preserve structure, convert inline content.
     let trimmed = line.trim_start();
     if trimmed.starts_with("- ") || trimmed.starts_with("+ ") {
@@ -281,6 +285,51 @@ fn convert_line(line: &str, options: &TypstToMarkdownOptions) -> String {
 
     // General line: convert inline constructs.
     convert_inline(line, options)
+}
+
+/// A line that starts with a `#task[…]` or `#task("…")` call as a Markdown task
+/// item (`- [ ] …`, `- [x] …` when `done: true`), or `None` for any other line.
+/// The call is read with Typst's parser; a markup body and any text after the
+/// call are converted like other inline text.
+fn task_item(line: &str, options: &TypstToMarkdownOptions) -> Option<String> {
+    let trimmed = line.trim_start();
+    if !trimmed.starts_with("#task(") && !trimmed.starts_with("#task[") {
+        return None;
+    }
+    let root = parse(trimmed);
+    let markup = root.cast::<ast::Markup>()?;
+    let ast::Expr::FuncCall(call) = markup.exprs().next()? else {
+        return None;
+    };
+    if !matches!(call.callee(), ast::Expr::Ident(id) if id.as_str() == "task") {
+        return None;
+    }
+    let mut body = None;
+    let mut done = false;
+    for arg in call.args().items() {
+        match arg {
+            ast::Arg::Pos(ast::Expr::Str(s)) if body.is_none() => body = Some(s.get().to_string()),
+            ast::Arg::Pos(ast::Expr::ContentBlock(block)) if body.is_none() => {
+                body = Some(convert_inline(
+                    &block.body().to_untyped().full_text(),
+                    options,
+                ));
+            }
+            ast::Arg::Named(named) if named.name().as_str() == "done" => {
+                done = matches!(named.expr(), ast::Expr::Bool(b) if b.get());
+            }
+            _ => {}
+        }
+    }
+    // The call starts after the `#`; whatever follows it stays on the line.
+    let rest = &trimmed[1 + call.to_untyped().len()..];
+    let indent = &line[..line.len() - trimmed.len()];
+    let mark = if done { "x" } else { " " };
+    Some(format!(
+        "{indent}- [{mark}] {}{}",
+        body?.trim(),
+        convert_inline(rest, options)
+    ))
 }
 
 fn convert_inline(text: &str, options: &TypstToMarkdownOptions) -> String {
@@ -793,6 +842,39 @@ mod tests {
 
     fn convert(typst: &str) -> String {
         typst_to_markdown(typst, &TypstToMarkdownOptions::default())
+    }
+
+    #[test]
+    fn tasks_become_markdown_task_items() {
+        let out = convert(
+            "#task[Read #link(\"https://example.test/p\")[the paper] for #wikilink(\"Athena Otlet\")]\n\
+             #task(\"Email \\\"co-author\\\"\", done: true)\n\
+             \x20 #task(due: \"2026-06-23\", done: false)[Nested]",
+        );
+        assert_eq!(
+            out,
+            "- [ ] Read [the paper](https://example.test/p) for [Athena Otlet](<Athena Otlet.md>)\n\
+             - [x] Email \"co-author\"\n\
+             \x20 - [ ] Nested\n"
+        );
+    }
+
+    #[test]
+    fn markdown_tasks_round_trip_through_typst() {
+        let md = "- [ ] wake up\n- [x] have *breakfast*\n";
+        use crate::markdown::md_to_typst::{
+            markdown_to_typst, MarkdownDialect, MarkdownToTypstOptions,
+        };
+        let options = MarkdownToTypstOptions {
+            dialect: MarkdownDialect::Obsidian,
+            ..Default::default()
+        };
+        let typst = markdown_to_typst(md, &options);
+        assert!(
+            convert(&typst).ends_with(md),
+            "typst:\n{typst}\nmarkdown:\n{}",
+            convert(&typst)
+        );
     }
 
     fn convert_clean(typst: &str) -> String {

@@ -70,8 +70,8 @@ These rules live in *one note*. They do not reach across your notebox. To style 
 
 In the visual editor a set rule appears as a labelled pill that names what it configures: `set text: font`, `set par: leading`, `set page: margin`, and so on. You can tell two `#set text(...)` rules apart at a glance. To change it:
 
-- *Click the pill* (or move your cursor onto its line). The pill expands to reveal the raw `#set …` line, fully editable in place. Adjust the value, then click or move away and it collapses back to a pill.
-- *Right-click the pill* for a menu: *Edit source*, *Open in source editor*, and *Copy / Duplicate / Remove style / Delete*. *Delete* removes the setting entirely.
+- *Click the pill* for its menu: *Edit source*, *Open in source editor*, and *Copy / Duplicate / Remove style / Delete*. *Delete* removes the setting entirely.
+- Choose *Edit source* (or move your cursor onto the pill's line) and the pill expands to reveal the raw `#set …` line, fully editable in place. Adjust the value, then click or move away and it collapses back to a pill.
 
 #callout("tip")[
 A leading run of set rules at the very top of a note is treated as the note's setup and tucked together above your text, out of the way, in a pill labelled *Document setup*. The pill also gathers any `#show` rules and `#let` definitions in that leading run. A set rule you add later, in the body, gets its own pill where it sits. Either way the markup is never lost, it is only folded for tidiness.

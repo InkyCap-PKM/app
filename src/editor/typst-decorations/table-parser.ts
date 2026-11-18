@@ -2,6 +2,8 @@
 // TableData, or null for tables using features it can't (spans, spreads,
 // computed cells, …).
 
+import { pastedText } from "./clipboard-source";
+
 export interface TableCell {
   content: string;
   /** Offset relative to the start of the #table(...) call text */
@@ -546,7 +548,7 @@ export function parseClipboardAsGrid(e: ClipboardEvent): string[][] | null {
     if (grid) return grid;
   }
 
-  const text = e.clipboardData?.getData("text/plain");
+  const text = pastedText(e);
   if (text) return parseTsvToGrid(text);
 
   return null;

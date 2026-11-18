@@ -21,6 +21,7 @@ import {
 import { cellSync } from "./table-cell-editor";
 import { type TableData, type TableCell, parseClipboardAsGrid, textToGrid, serializeTable } from "./table-parser";
 import { inVerbatimLineContext } from "./keymaps";
+import { pastedText } from "./clipboard-source";
 
 // ---------------------------------------------------------------------------
 // Clipboard
@@ -71,7 +72,7 @@ const tableFocusClipboard = ViewPlugin.fromClass(class {
     event.preventDefault();
     event.stopPropagation();
     const widget = tableWidgetAt(this.view, wrap);
-    const grid = parseClipboardAsGrid(event) ?? textToGrid(event.clipboardData?.getData("text/plain") ?? "");
+    const grid = parseClipboardAsGrid(event) ?? textToGrid(pastedText(event));
     if (widget && grid) widget.pasteAtSelection(this.view, wrap, grid);
   };
 });

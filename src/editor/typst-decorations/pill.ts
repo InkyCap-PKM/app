@@ -73,11 +73,11 @@ export interface PillModel {
    *  (e.g. embedded pills where the widget's canvas IS the editor). */
   allowEditSource?: boolean;
   /**
-   * When true, left-click always reveals the source, whatever the call's
-   * complexity. For callout and quote, whose body is the content. Right-click
-   * still opens the menu.
+   * When true, the menu offers "Edit source" whatever the call's complexity.
+   * For callouts, quotes, annotations, comments and the style preamble, which
+   * are often long or multi-line but are still edited in place.
    */
-  alwaysExpandOnClick?: boolean;
+  alwaysOfferEditSource?: boolean;
 }
 
 /** A stretch of the note's source, as document offsets (`to` exclusive). */
@@ -146,35 +146,16 @@ export function buildPillButton(
     e.preventDefault();
     e.stopPropagation();
   });
-  // Open our menu on contextmenu instead of the native one.
-  btn.addEventListener("contextmenu", (e) => {
+  // Click and right-click both open the menu (in place of the native one), so
+  // every pill responds the same way; editing the source is one of its items.
+  // Enter / Space click a <button>, so the keyboard opens it too.
+  const open = (e: MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     openPillMenu(btn, view, modelFor());
-  });
-  // Click:
-  //   - simple pill: edit its source inline
-  //   - complex pill: open the menu
-  //   - embedded pill (allowEditSource false, e.g. verse, bibliography): open
-  //     the menu
-  // Right-click always opens the menu.
-  btn.addEventListener("click", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const model = modelFor();
-    const allowEdit = model.allowEditSource !== false;
-    const expand = allowEdit && (
-      model.alwaysExpandOnClick === true
-      || isSimpleCall(view, model.callFrom, model.callTo)
-    );
-    if (expand) {
-      runEditSource(view, model);
-    } else {
-      openPillMenu(btn, view, model);
-    }
-  });
-  // Enter / Space already click a <button>, so keyboard access comes from
-  // using the right element.
+  };
+  btn.addEventListener("click", open);
+  btn.addEventListener("contextmenu", open);
 
   return btn;
 }
@@ -444,9 +425,7 @@ function buildInputItem(item: PillMenuItem, close: () => void): HTMLElement {
 
 // ── Source section (R8: simple vs complex) ──────────────────────────
 
-/**
- * The "Edit source" action, shared by the menu item and the simple-pill click.
- */
+/** The pill menu's "Edit source" action. */
 export function runEditSource(view: EditorView, model: PillModel): void {
   // Keep a selection inside the hidden source (Find's current match) where it
   // is, so the match stays highlighted.
@@ -470,9 +449,9 @@ function buildSourceSection(view: EditorView, model: PillModel): PillMenuSection
   const items: PillMenuItem[] = [];
   const allowEdit = model.allowEditSource !== false;
   if (allowEdit) {
-    // Offer "Edit source" for simple calls, or when the pill always expands
-    // (callout, quote).
-    const expandable = model.alwaysExpandOnClick === true
+    // Offer "Edit source" for simple calls, and always for the pills that
+    // ask for it (callout, quote, …).
+    const expandable = model.alwaysOfferEditSource === true
       || isSimpleCall(view, model.callFrom, model.callTo);
     if (expandable) {
       items.push({
@@ -620,9 +599,9 @@ function buildUnwrapItem(
 // ── Simple/complex classifier (R8) ──────────────────────────────────
 
 /**
- * A call is simple (and can be edited inline) when it fits on one line, is at
- * most 120 characters, and nests at most one call. Otherwise "Open in source
- * editor" is offered.
+ * A call is simple (and its menu offers "Edit source" in place) when it fits on
+ * one line, is at most 120 characters, and nests at most one call. Otherwise
+ * only "Open in source editor" is offered.
  */
 export function isSimpleCall(view: EditorView, from: number, to: number): boolean {
   if (to <= from) return true;
@@ -799,6 +778,10 @@ export function upsertNamedArg(
       : `${trimmed}, ${name}: ${valueLiteral}`;
   }
 
+  // An emptied `()` before a body (`#task()[…]`) goes too: `#task[…]`.
+  if (newArgs === "" && callSource[argList.close + 1] === "[") {
+    return callSource.substring(0, argList.open) + callSource.substring(argList.close + 1);
+  }
   return callSource.substring(0, argList.open + 1) + newArgs + callSource.substring(argList.close);
 }
 

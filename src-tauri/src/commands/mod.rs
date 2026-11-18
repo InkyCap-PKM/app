@@ -32,6 +32,7 @@ pub mod settings;
 pub mod spellcheck;
 pub mod system_color;
 pub mod tab_session;
+pub mod task_bodies;
 pub mod typ_audit;
 pub mod typst;
 pub mod typst_packages;

@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 /// Library version. Used for diagnostics and as a hint for future migrations
 /// of notebox content. Not part of the import path.
-pub const VERSION: &str = "0.5.0";
+pub const VERSION: &str = "0.6.0";
 
 /// Version of the on-disk notebox format, for tools that work on a notebox
 /// without InkyCap. Separate from [`VERSION`] (the library's build version).

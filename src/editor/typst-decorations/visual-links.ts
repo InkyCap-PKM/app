@@ -4,12 +4,7 @@ import { syntaxTree } from "@codemirror/language";
 import { openLink } from "../../lib/open-link";
 import { modifierKey } from "../../lib/platform";
 import { t } from "../../lib/i18n";
-
-/** Extract the first quoted string argument from a Typst function call text. */
-function extractFirstStringArg(text: string): string | null {
-  const m = text.match(/\(\s*"([^"]*)"/) ?? text.match(/\(\s*'([^']*)'/);
-  return m ? m[1] : null;
-}
+import { extractFirstStringArg } from "../../lib/typst";
 
 /**
  * Resolve a link at the given cursor position by walking the syntax tree.

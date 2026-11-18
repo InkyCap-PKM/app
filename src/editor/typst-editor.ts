@@ -39,6 +39,8 @@ import { domCaretResync } from "./typst-decorations/dom-caret-resync";
 import { wikilinkSuggest } from "./typst-decorations/wikilink-suggest";
 import { referenceSuggest } from "./typst-decorations/reference-suggest";
 import { dragDropHandler } from "./typst-decorations/drag-drop";
+import { plainPasteShortcut } from "./typst-decorations/paste-url";
+import { typstSourcePaste, visualCopy } from "./typst-decorations/clipboard-source";
 import { listPasteHandler } from "./typst-decorations/list-paste";
 import { autoPairTypstInput } from "./typst-decorations/auto-pair-typst";
 import { markdownShortcuts } from "./typst-decorations/markdown-shortcuts";
@@ -547,6 +549,8 @@ function tableCellEditorConfig(options: TypstEditorOptions): Extension {
         tooltips({ position: "fixed" }),
         autoPairTypstInput,
         markdownShortcuts,
+        visualCopy,
+        typstSourcePaste,
         keymap.of([...typstKeymap, ...autoPairBracketsKeymap, ...defaultKeymap, ...completionKeymap]),
         typstVisualMode({ inlineOnly: true }),
         wikilinkSuggest,
@@ -597,7 +601,9 @@ function baseExtensions(options: TypstEditorOptions): Extension[] {
     sourceRawHighlight(),
     importLineGuard(),
     inkycapTheme,
+    typstSourcePaste,
     listPasteHandler,
+    plainPasteShortcut,
     dragDropHandler,
     headingTracker,
     annotationTracker,
@@ -693,7 +699,7 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
   // base config (see typstFolding).
   const visualModeExtensions = () => [
     typstVisualMode(), verseFocusRouter, verseSearchHighlighter,
-    wikilinkSuggest, referenceSuggest, visualModeFacet.of(true),
+    wikilinkSuggest, referenceSuggest, visualModeFacet.of(true), visualCopy,
     tableCellEditorConfig(options),
   ];
   const visualExts = options.visualMode ? visualModeExtensions() : [];

@@ -14,6 +14,9 @@ function stripStart(seg: BodySegment): Omit<BodySegment, "start"> {
   if (rest.kind === "format") {
     return { ...rest, children: rest.children.map(stripStart) } as Omit<BodySegment, "start">;
   }
+  if (rest.kind === "task" && rest.children) {
+    return { ...rest, children: rest.children.map(stripStart) } as Omit<BodySegment, "start">;
+  }
   if (rest.kind === "list") {
     return { ...rest, items: rest.items.map((item) => item.map(stripStart)) } as Omit<BodySegment, "start">;
   }
@@ -57,6 +60,29 @@ describe("parseInlineBody", () => {
   it("renders a link with a trailing content label", () => {
     expect(shapes('#link("https://x.test")[click]')).toEqual([
       { kind: "link", url: "https://x.test", display: "click" },
+    ]);
+  });
+
+  it("parses a markup task body into its own segments", () => {
+    expect(shapes('#task(done: true)[call #wikilink("Athena Otlet") *soon*]')).toEqual([
+      {
+        kind: "task",
+        body: "",
+        done: true,
+        due: null,
+        children: [
+          { kind: "text", text: "call " },
+          { kind: "wikilink", target: "Athena Otlet", display: "Athena Otlet" },
+          { kind: "text", text: " " },
+          { kind: "format", className: "cm-typst-bold", children: [{ kind: "text", text: "soon" }] },
+        ],
+      },
+    ]);
+  });
+
+  it("unescapes quotes in a string task body", () => {
+    expect(shapes('#task("Read \\"Dune\\" \\\\ twice")')).toEqual([
+      { kind: "task", body: 'Read "Dune" \\ twice', done: false, due: null },
     ]);
   });
 

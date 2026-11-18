@@ -4,12 +4,12 @@ import { EditorView } from "@codemirror/view";
 import { markdownShortcuts } from "./markdown-shortcuts";
 import { expandFunc } from "./effects";
 
-// The task shortcut (`- [ ] ` / `- [x] `) becomes a bulleted `#task(...)` call,
-// keeping the list marker: `- #task("")`, a task that is also a list item (issue
+// The task shortcut (`- [ ] ` / `- [x] `) becomes a bulleted `#task[…]` call,
+// keeping the list marker: `- #task[]`, a task that is also a list item (issue
 // #24). The new call must stay expanded (issue #23), so the text typed next goes
-// into the string (`#task("Task text")`) rather than after a collapsed widget
-// (`#task("")Task text`). That needs an `expandFunc` effect on the call's start
-// (after the marker) and the caret between the quotes.
+// into the body (`#task[Task text]`) rather than after the call
+// (`#task[]Task text`). That needs an `expandFunc` effect on the call's start
+// (after the marker) and the caret between the brackets.
 
 function mk(doc = "", anchor?: number) {
   return new EditorView({
@@ -58,34 +58,34 @@ function recordingView(doc = "", anchor?: number) {
 }
 
 describe("markdown-shortcuts: task checkbox", () => {
-  it("expands `- [ ] ` into a bulleted `- #task(\"\")` with the caret between the quotes", () => {
+  it("expands `- [ ] ` into a bulleted `- #task[]` with the caret between the brackets", () => {
     const v = mk("- [ ]", 5);
     typeChar(v, " ");
-    expect(v.state.doc.toString()).toBe('- #task("")');
-    // Caret sits just after the opening quote, ready for the description.
-    expect(v.state.selection.main.head).toBe('- #task("'.length);
+    expect(v.state.doc.toString()).toBe("- #task[]");
+    // Caret sits just after the opening bracket, ready for the description.
+    expect(v.state.selection.main.head).toBe("- #task[".length);
     v.destroy();
   });
 
-  it("typing the description flows into the string, not after the call", () => {
+  it("typing the description flows into the body, not after the call", () => {
     const v = mk("- [ ]", 5);
     typeChar(v, " ");
     for (const ch of "Buy milk") typeChar(v, ch);
-    expect(v.state.doc.toString()).toBe('- #task("Buy milk")');
+    expect(v.state.doc.toString()).toBe("- #task[Buy milk]");
     v.destroy();
   });
 
   it("`- [x] ` marks the task done", () => {
     const v = mk("- [x]", 5);
     typeChar(v, " ");
-    expect(v.state.doc.toString()).toBe('- #task("", done: true)');
+    expect(v.state.doc.toString()).toBe("- #task(done: true)[]");
     v.destroy();
   });
 
   it("preserves a `+` marker for ordered-list tasks", () => {
     const v = mk("+ [ ]", 5);
     typeChar(v, " ");
-    expect(v.state.doc.toString()).toBe('+ #task("")');
+    expect(v.state.doc.toString()).toBe("+ #task[]");
     v.destroy();
   });
 
@@ -102,7 +102,7 @@ describe("markdown-shortcuts: task checkbox", () => {
   it("indented sub-task expands at the `#`, past the indentation and marker", () => {
     const { view, effects } = recordingView("  - [ ]", 7);
     typeChar(view, " ");
-    expect(view.state.doc.toString()).toBe('  - #task("")');
+    expect(view.state.doc.toString()).toBe("  - #task[]");
     const expand = effects.filter((e) => (e as { is: (t: unknown) => boolean }).is(expandFunc));
     // Two spaces of indent + `- ` marker → the `#` (and expand target) at offset 4.
     expect((expand[0] as { value: number }).value).toBe(4);

@@ -1232,6 +1232,30 @@ export async function previewAttachmentFolderMigration(
   );
 }
 
+/** What converting the notebox's task text to markup does, or did. */
+export interface TaskBodyConversionSummary {
+  /** Notes with at least one task converted. */
+  notes: number;
+  /** Tasks converted to a markup body. */
+  tasks: number;
+  /** Tasks whose text holds markup that is left as text. */
+  skipped: number;
+  /** Notes that couldn't be read or written. Empty for a preview. */
+  errors: string[];
+}
+
+/** Count the `#task("…")` strings holding markup that converting would turn
+ *  into `#task[…]`, and the notes they're in. Read-only. */
+export async function previewTaskBodyConversion(): Promise<TaskBodyConversionSummary> {
+  return invoke<TaskBodyConversionSummary>("preview_task_body_conversion");
+}
+
+/** Convert every `#task("…")` string holding markup in the notebox to
+ *  `#task[…]`. Rewrites notes; confirm first. */
+export async function convertTaskBodies(): Promise<TaskBodyConversionSummary> {
+  return invoke<TaskBodyConversionSummary>("convert_task_bodies");
+}
+
 /**
  * Rename the attachment folder: move it, rewrite every path argument starting
  * with `/<old>/`, and save the setting. Destructive; confirm first.

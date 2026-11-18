@@ -1,22 +1,21 @@
-// Paste-as-URL extension — when the user pastes a URL *over a selection*,
-// shows a small popup offering to wrap the selection as a Typst #link() or
-// replace it with the URL as plain text. With a collapsed cursor (pasting
-// into blank space) there is no ambiguity, so the URL goes in as a bare link
-// without a prompt.
+// Pasting a URL or an email address. Over a selection, a small popup offers to
+// wrap the selection as a Typst `#link()` or replace it with the address as
+// plain text. Pasted at the caret, or with Ctrl+Shift+V (the plain-text paste),
+// the address goes in as plain text without a prompt.
 //
-// Typst's markup only reads bare `http://` and `https://` text as a link. Any
-// other scheme (`inkycap://`, `zotero://`, `obsidian://`, `ftp://`, …) would
-// have its `//` read as the start of a comment, so those URLs are pasted as a
-// `#link("…")` call instead, which Typst accepts for every scheme. A `mailto:`
-// address is too: it has no `//`, but its `@` would be read as a reference.
-// A bare email address becomes a `mailto:` link for the same reason; its
-// plain-text form is the escaped `athena\@inkycap.org`.
+// Plain text is the address as Typst markup shows it as written. Bare `http://`
+// and `https://` URLs stay bare, and Typst itself shows them as links. Anything
+// else is escaped where markup would read it as syntax: the `//` after another
+// scheme (`zotero://`, `inkycap://`, …) would start a comment, and the `@` of
+// an email address would start a reference, so `athena@inkycap.org` goes in
+// as `athena\@inkycap.org`.
 
 import { EditorView } from "@codemirror/view";
 import { positionPopupAtAnchor } from "./popup-position";
 import { t } from "../../lib/i18n";
-import { typstStringEscape } from "../../lib/typst";
+import { typstMarkupEscape, typstStringEscape } from "../../lib/typst";
 import { startsWithSchemeAndSlashes } from "../../lib/open-link";
+import { pastedText } from "./clipboard-source";
 
 /** A `mailto:` address, which has no `//` after its scheme. */
 const MAILTO_RE = /^mailto:\S+$/i;
@@ -25,11 +24,33 @@ const EMAIL_RE = /^[A-Za-z0-9._+-]+@[^\s@]+\.[^\s@]+$/;
 /** URLs that Typst markup turns into a link on its own. */
 const MARKUP_URL_RE = /^https?:\/\//i;
 
-/** The markup for a URL shown as itself: bare when Typst reads it as a link
- *  unaided, otherwise a `#link("…")` call. */
-export function bareUrlMarkup(url: string): string {
-  return MARKUP_URL_RE.test(url) ? url : `#link("${typstStringEscape(url)}")`;
+/** The markup for a pasted address as plain text: bare for an http(s) URL,
+ *  otherwise escaped so no part of it reads as Typst syntax. */
+export function plainAddressMarkup(text: string): string {
+  return MARKUP_URL_RE.test(text) ? text : typstMarkupEscape(text);
 }
+
+// Whether the next paste was started by Ctrl+Shift+V. The paste event doesn't
+// say which shortcut triggered it, so the key press is noted here and the next
+// paste reads and clears it. Any other key press or a click clears it too.
+let plainPasteRequested = false;
+
+/** Notes Ctrl+Shift+V (Cmd+Shift+V on macOS), so the paste it starts goes in
+ *  as plain text even over a selection. */
+export const plainPasteShortcut = EditorView.domEventHandlers({
+  keydown(event) {
+    plainPasteRequested =
+      (event.ctrlKey || event.metaKey) &&
+      event.shiftKey &&
+      !event.altKey &&
+      event.key.toLowerCase() === "v";
+    return false;
+  },
+  mousedown() {
+    plainPasteRequested = false;
+    return false;
+  },
+});
 
 let popup: HTMLElement | null = null;
 let activeView: EditorView | null = null;
@@ -167,7 +188,9 @@ function isInsideLinkUrlSlot(view: EditorView): boolean {
 }
 
 export function pasteUrlHandler(event: ClipboardEvent, view: EditorView): boolean {
-  const text = event.clipboardData?.getData("text/plain")?.trim();
+  const plainOnly = plainPasteRequested;
+  plainPasteRequested = false;
+  const text = pastedText(event).trim();
   // A pasted URL: any scheme followed by `://`, `mailto:`, or a bare email
   // address, with no whitespace.
   if (!text || /\s/.test(text)) return false;
@@ -193,14 +216,13 @@ export function pasteUrlHandler(event: ClipboardEvent, view: EditorView): boolea
     return true;
   }
 
-  // Pasting into blank space (collapsed cursor): no selection to turn into a
-  // link label and nothing to replace, so the "Link or plain text?" question
-  // has no meaningful answer. Insert the URL as a bare link, no popup.
-  if (from === to) {
-    const insert = bareUrlMarkup(url);
+  // Pasting at the caret, or a plain-text paste: insert the address as text.
+  // A link is made by pasting over the text to show, or with Ctrl+K.
+  const plainText = plainAddressMarkup(text);
+  if (from === to || plainOnly) {
     view.dispatch({
-      changes: { from, to, insert },
-      selection: { anchor: from + insert.length },
+      changes: { from, to, insert: plainText },
+      selection: { anchor: from + plainText.length },
     });
     view.focus();
     return true;
@@ -210,7 +232,6 @@ export function pasteUrlHandler(event: ClipboardEvent, view: EditorView): boolea
   // text as the link label, "Plain text" replaces it with the URL. Offer the
   // choice.
   const selectedText = view.state.doc.sliceString(from, to);
-  const plainText = isEmail ? text.replace("@", "\\@") : bareUrlMarkup(url);
   showMenu(view, url, plainText, selectedText);
   return true;
 }

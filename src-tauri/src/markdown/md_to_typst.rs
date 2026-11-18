@@ -797,9 +797,10 @@ struct Converter<'a> {
     in_code_block: bool,
     in_footnote: bool,
     footnote_label: String,
-    // Task lists: a `- [ ]` item becomes `#task(...)`. `task_line_reset` is the
-    // output offset just after the item's bullet, so the TaskListMarker that
-    // follows can rewrite it; `in_task` sends the item text to `task_buf`.
+    // Task lists: a `- [ ]` item becomes `#task[...]`, its text converted like
+    // any other. `task_line_reset` is the output offset just after the item's
+    // bullet, so the TaskListMarker that follows can rewrite it; `in_task` sends
+    // the item's markup to `task_buf`.
     task_line_reset: Option<usize>,
     task_indent: String,
     in_task: bool,
@@ -867,7 +868,8 @@ impl<'a> Converter<'a> {
 
     fn emit(&mut self, s: &str) {
         if self.in_task {
-            // The task body is a string argument; collect all of it here.
+            // The task's markup body; collected here and wrapped in
+            // `#task[...]` when the item ends.
             self.task_buf.push_str(s);
         } else if self.in_table_cell {
             self.cell_buf.push_str(s);
@@ -929,7 +931,7 @@ impl<'a> Converter<'a> {
             }
             Event::TaskListMarker(checked) => {
                 // The marker follows its item start: turn the bullet just
-                // written into `#task(...)` and collect the item text.
+                // written into `#task[...]` and collect the item's markup.
                 if let Some(reset) = self.task_line_reset.take() {
                     self.out.truncate(reset);
                     self.in_task = true;
@@ -1149,15 +1151,11 @@ impl<'a> Converter<'a> {
                     let body = std::mem::take(&mut self.task_buf);
                     let body = body.trim();
                     let indent = std::mem::take(&mut self.task_indent);
-                    let done_arg = if self.task_done { ", done: true" } else { "" };
+                    let done_arg = if self.task_done { "(done: true)" } else { "" };
                     // Each task on its own line; the next item's `ensure_newline`
                     // keeps them on separate lines without an explicit break.
-                    self.out.push_str(&format!(
-                        "{}#task(\"{}\"{})",
-                        indent,
-                        escape_str(body),
-                        done_arg
-                    ));
+                    self.out
+                        .push_str(&format!("{indent}#task{done_arg}[{body}]"));
                     self.in_task = false;
                 }
                 self.task_line_reset = None;
@@ -1245,12 +1243,6 @@ impl<'a> Converter<'a> {
     }
 
     fn text(&mut self, text: &str) {
-        if self.in_task {
-            // Raw text; `escape_str` escapes it when emitted.
-            self.task_buf.push_str(text);
-            return;
-        }
-
         if self.in_link {
             self.link_text.push_str(text);
             return;
@@ -1544,12 +1536,12 @@ mod tests {
     fn obsidian_task_list_becomes_tasks() {
         let md = "- [ ] wake up\n- [x] have breakfast\n- [ ] go to work";
         let out = convert(md);
-        assert!(out.contains("#task(\"wake up\")"), "got:\n{out}");
+        assert!(out.contains("#task[wake up]"), "got:\n{out}");
         assert!(
-            out.contains("#task(\"have breakfast\", done: true)"),
+            out.contains("#task(done: true)[have breakfast]"),
             "got:\n{out}"
         );
-        assert!(out.contains("#task(\"go to work\")"), "got:\n{out}");
+        assert!(out.contains("#task[go to work]"), "got:\n{out}");
         // No literal checkbox markers or bullets should survive.
         assert!(
             !out.contains("[ ]") && !out.contains("[x]"),
@@ -1558,12 +1550,25 @@ mod tests {
         assert!(!out.contains("- #task"), "task kept a list bullet:\n{out}");
         // Each task on its own line, with no stray Typst line-break (`\`).
         assert!(
-            out.contains("#task(\"wake up\")\n"),
+            out.contains("#task[wake up]\n"),
             "tasks not on separate lines:\n{out}"
         );
         assert!(
             !out.contains(" \\"),
             "unnecessary line-break inserted:\n{out}"
+        );
+    }
+
+    #[test]
+    fn task_keeps_its_links_and_formatting_as_markup() {
+        let out = convert(
+            "- [ ] Look into [Sonic Studies](https://example.test/558982), see [[Communication Studies]] and *this*",
+        );
+        assert!(
+            out.contains(
+                "#task[Look into #link(\"https://example.test/558982\")[Sonic Studies], see #wikilink(\"Communication Studies\") and _this_]"
+            ),
+            "got:\n{out}"
         );
     }
 

@@ -1,19 +1,39 @@
 import { describe, it, expect } from "vitest";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { pasteUrlHandler } from "./paste-url";
+import { syntaxTree } from "@codemirror/language";
+import { pasteUrlHandler, plainPasteShortcut } from "./paste-url";
+import { typstLanguage } from "../typst-language";
 
 // The "Link or plain text?" prompt only matters when pasting over a selection
-// (use as label, or replace). With no selection the visual editor shows the URL
-// as a link either way, so it is pasted as plain text without asking.
+// (use as label, or replace). Pasted at the caret, or with Ctrl+Shift+V, an
+// address goes in as plain text without asking.
 
 const URL = "https://example.test/page";
 
 function mk(doc: string, anchor: number, head = anchor) {
   return new EditorView({
-    state: EditorState.create({ doc, selection: { anchor, head } }),
+    state: EditorState.create({
+      doc,
+      selection: { anchor, head },
+      extensions: [plainPasteShortcut],
+    }),
     parent: document.body,
   });
+}
+
+function pressPlainPasteKey(v: EditorView) {
+  v.contentDOM.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "V", ctrlKey: true, shiftKey: true, bubbles: true }),
+  );
+}
+
+/** The names of the syntax nodes Typst's parser makes of `doc`. */
+function nodeNames(doc: string): Set<string> {
+  const state = EditorState.create({ doc, extensions: [typstLanguage()] });
+  const names = new Set<string>();
+  syntaxTree(state).iterate({ enter: (n) => void names.add(n.name) });
+  return names;
 }
 
 function pasteEvent(text: string): ClipboardEvent {
@@ -61,29 +81,71 @@ describe("pasteUrlHandler", () => {
     v.destroy();
   });
 
-  // Typst reads `//` after any scheme but http(s) as a comment, so those URLs
-  // must go in as a `#link("…")` call or everything after the colon vanishes.
+  // Typst reads `//` after any scheme but http(s) as a comment and `@` as a
+  // reference, so those are escaped in the plain-text form.
   it.each([
-    "inkycap://open?notebox=Notes&file=a.typ",
-    "zotero://select/library/items/ABC123",
-    "obsidian://open?vault=V&file=N",
-    "ftp://files.example.test/x.txt",
-    "some-future-app+v2://thing",
-    "mailto:athena@inkycap.org",
-  ])("pastes %s as a #link call into blank space", (url) => {
+    ["inkycap://open?notebox=Notes&file=a.typ", "inkycap:\\//open?notebox=Notes&file=a.typ"],
+    ["zotero://select/library/items/ABC123", "zotero:\\//select/library/items/ABC123"],
+    ["ftp://files.example.test/x.txt", "ftp:\\//files.example.test/x.txt"],
+    ["some-future-app+v2://thing", "some-future-app+v2:\\//thing"],
+    ["mailto:athena@inkycap.org", "mailto:athena\\@inkycap.org"],
+    ["athena@inkycap.org", "athena\\@inkycap.org"],
+  ])("pastes %s as plain text into blank space", (url, expected) => {
     const v = mk("foo ", 4);
     expect(pasteUrlHandler(pasteEvent(url), v)).toBe(true);
-    const expected = `foo #link("${url}")`;
-    expect(v.state.doc.toString()).toBe(expected);
-    expect(v.state.selection.main.head).toBe(expected.length);
+    expect(v.state.doc.toString()).toBe(`foo ${expected}`);
+    expect(v.state.selection.main.head).toBe(4 + expected.length);
     expect(visibleMenu()).toBeNull();
     v.destroy();
   });
 
-  it("pastes a bare email address as a mailto: link", () => {
-    const v = mk("foo ", 4);
+  // The escaped form must read as text only: no comment hiding the rest, and no
+  // link, reference, label, code or emphasis made of its characters.
+  it.each([
+    "zotero://select/library/items/ABC123#frag",
+    "obsidian://open?vault=V&file=[N]",
+    "app://a//b/*c*/d_e_f",
+    "x-app://v-1--2...$m$~'q'\"r\"<l>",
+    "mailto:athena_otlet@inkycap.org",
+    "app://ends-with/",
+  ])("escapes %s so Typst reads it as plain text", (url) => {
+    const v = mk("", 0);
+    pasteUrlHandler(pasteEvent(url), v);
+    const names = nodeNames(v.state.doc.toString());
+    for (const syntax of [
+      "LineComment", "BlockComment", "Link", "Ref", "Label", "Hash", "Equation", "Error",
+      "Strong", "Emph", "Shorthand", "SmartQuote", "ContentBlock", "TermItem",
+    ]) {
+      expect(names.has(syntax), syntax).toBe(false);
+    }
+    v.destroy();
+  });
+
+  it("pastes over a selection as plain text, with no prompt, after Ctrl+Shift+V", () => {
+    const v = mk("foo bar baz", 4, 7);
+    pressPlainPasteKey(v);
     pasteUrlHandler(pasteEvent("athena@inkycap.org"), v);
-    expect(v.state.doc.toString()).toBe('foo #link("mailto:athena@inkycap.org")');
+    expect(v.state.doc.toString()).toBe("foo athena\\@inkycap.org baz");
+    expect(visibleMenu()).toBeNull();
+    v.destroy();
+  });
+
+  it("forgets Ctrl+Shift+V once another key is pressed", () => {
+    const v = mk("foo bar baz", 4, 7);
+    pressPlainPasteKey(v);
+    v.contentDOM.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+    pasteUrlHandler(pasteEvent(URL), v);
+    expect(visibleMenu()).not.toBeNull();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    v.destroy();
+  });
+
+  it("wraps the selection as the label when Link is chosen", () => {
+    const v = mk("foo bar baz", 4, 7);
+    pasteUrlHandler(pasteEvent("athena@inkycap.org"), v);
+    const rows = visibleMenu()!.querySelectorAll<HTMLElement>(".paste-url-menu__item");
+    rows[0].dispatchEvent(new MouseEvent("mousedown")); // "Link"
+    expect(v.state.doc.toString()).toBe('foo #link("mailto:athena@inkycap.org")[bar] baz');
     v.destroy();
   });
 
@@ -97,18 +159,20 @@ describe("pasteUrlHandler", () => {
   });
 
   it("escapes quotes and backslashes when wrapping a URL in #link", () => {
-    const v = mk("", 0);
+    const v = mk("foo bar baz", 4, 7);
     pasteUrlHandler(pasteEvent('zotero://a"b\\c'), v);
-    expect(v.state.doc.toString()).toBe('#link("zotero://a\\"b\\\\c")');
+    const rows = visibleMenu()!.querySelectorAll<HTMLElement>(".paste-url-menu__item");
+    rows[0].dispatchEvent(new MouseEvent("mousedown")); // "Link"
+    expect(v.state.doc.toString()).toBe('foo #link("zotero://a\\"b\\\\c")[bar] baz');
     v.destroy();
   });
 
-  it("offers the same #link form for a custom scheme pasted over a selection", () => {
+  it("offers the escaped form for a custom scheme pasted over a selection", () => {
     const v = mk("foo bar baz", 4, 7);
     pasteUrlHandler(pasteEvent("inkycap://open?notebox=N&zid=1"), v);
     const rows = visibleMenu()!.querySelectorAll<HTMLElement>(".paste-url-menu__item");
     rows[1].dispatchEvent(new MouseEvent("mousedown")); // "Plain text"
-    expect(v.state.doc.toString()).toBe('foo #link("inkycap://open?notebox=N&zid=1") baz');
+    expect(v.state.doc.toString()).toBe("foo inkycap:\\//open?notebox=N&zid=1 baz");
     v.destroy();
   });
 

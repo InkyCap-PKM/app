@@ -26,6 +26,7 @@ import {
 import { focusedLeaf, focusAdjacentPane, hasMultiplePanes } from "../stores/panes";
 import { moveActiveFileInteractive } from "./move-file";
 import { deleteActiveFileInteractive } from "./delete-file";
+import { convertTaskBodiesInteractive } from "./convert-task-bodies";
 import { attachmentZooms } from "./media-src";
 import { toggleTheme } from "../stores/theme";
 import { toggleDistractionFree, toggleLeftCollapsed, toggleRightCollapsed } from "../stores/layout";
@@ -576,6 +577,13 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
   });
 
   registerCommand({
+    id: "tools:convert-task-bodies",
+    title: t("command.tools.convert-task-bodies"),
+    category: "Tools",
+    execute: () => void convertTaskBodiesInteractive(),
+  });
+
+  registerCommand({
     id: "tools:backup-now",
     title: t("backup.runNow.paletteTitle"),
     category: "Tools",
@@ -939,7 +947,7 @@ function registerMarkupCommands() {
     // ── InkyCap ──
     { id: "wikilink", title: "Wikilink", category: "InkyCap", insert: '#wikilink("")', cursorOffset: 11, shortcut: "[[…]]" },
     { id: "verse", title: "Verse", category: "InkyCap", insert: '#verse("")', cursorOffset: 8 },
-    { id: "task", title: "Task", category: "InkyCap", insert: '#task("")', cursorOffset: 7, shortcut: "- [ ]", expand: true },
+    { id: "task", title: "Task", category: "InkyCap", insert: "#task[]", cursorOffset: 6, shortcut: "- [ ]", expand: true },
     { id: "due", title: "Due date", category: "InkyCap", insert: "#due()", cursorOffset: 5 },
   ];
 

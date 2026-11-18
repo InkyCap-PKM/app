@@ -154,7 +154,7 @@ describe("revealing a pill's source", () => {
     expect(v.state.selection.main.head).toBe(RULE_FROM + 1);
   });
 
-  it("keeps Find's current match highlighted when an annotation pill is clicked", async () => {
+  it("keeps Find's current match highlighted when an annotation pill's source is revealed", async () => {
     const doc = 'Some prose #annotation(on: "2026-09-30")[a secret word] more prose.';
     const parent = document.createElement("div");
     document.body.appendChild(parent);
@@ -172,7 +172,11 @@ describe("revealing a pill's source", () => {
     v.dispatch({ effects: setSearchQuery.of(new SearchQuery({ search: "secret" })) });
     findNext(v);
     await settle();
+    // A click opens the pill's menu; its Edit source reveals the annotation.
     pill(v).click();
+    const edit = [...document.querySelectorAll<HTMLElement>(".cm-typst-pill-menu-item")]
+      .find((el) => el.textContent?.includes("Edit source"));
+    edit!.click();
     await settle();
     const from = doc.indexOf("secret");
     expect([v.state.selection.main.from, v.state.selection.main.to]).toEqual([from, from + 6]);

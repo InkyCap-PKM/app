@@ -645,7 +645,15 @@ export const visualTheme = EditorView.theme({
     fontSize: "1.05em",
     lineHeight: "1",
   },
-  ".cm-typst-task--done .cm-typst-task__body": {
+  // `#task(…)[…]`: the checkbox and due badge sit in the text line, so they
+  // carry the spacing the `.cm-typst-task` wrapper's gap gives the others.
+  ".cm-typst-task__box--inline": {
+    marginInlineEnd: "var(--space-2)",
+  },
+  ".cm-typst-task__due--inline": {
+    marginInlineStart: "var(--space-2)",
+  },
+  ".cm-typst-task--done .cm-typst-task__body, .cm-typst-task__body--done": {
     textDecoration: "line-through",
     color: "var(--fg-dim)",
   },

@@ -27,29 +27,29 @@ Two inline pills stay visible with the cursor away, because the pill is the only
 
 This table is the audit reference. Use it to verify any change preserves the intended behavior of every pill.
 
-| Pill / function | Layout | When pill **shown** | When pill **hidden** | Collapse on cursor-leave | Click action | Curated options (R7) | Content visible w/ pill |
+| Pill / function | Layout | When pill **shown** | When pill **hidden** | Collapse on cursor-leave | Menu's *Edit source* (R5) | Curated options (R7) | Content visible w/ pill |
 |---|---|---|---|---|---|---|---|
-| `strike`, `highlight`, `emph`, `strong`, `underline`, `overline`, `sub`, `super` | inline | cursor on line | cursor away | yes | simple → edit source; else menu | only `highlight` (color) | yes (formatted, R12) |
-| inline `quote` | inline | cursor on line | cursor away | yes | simple → edit source; else menu | style, attribution | yes (R12) |
-| `cite` | inline (badge + pill) | cursor on line | cursor away | yes | simple → edit source; else menu | citation form | citation badge |
-| `task`, `due` | inline (widget + pill) | cursor on line | cursor away | yes | simple → edit source; else menu | `task`: body/due/done · `due`: date/label | widget |
-| `sym` | inline | cursor on line | cursor away | yes | simple → edit source; else menu | symbol name | rendered glyph |
-| Generic fallback `#fn[…]` / `#fn(…)` | inline | cursor on line | cursor away | yes | simple → edit source; else menu | generic named-args (R10) | yes |
-| `image` | pill overlaid on the block's top-left corner | cursor on line | cursor away | yes | simple → edit source; else menu | file, alt, width, align | yes (rendered block) |
-| `video`, `audio` | pill overlaid on the block's top-left corner | cursor on line | cursor away | yes | simple → edit source; else menu | generic named-args | yes (player) |
-| `callout` | pill inside the heading row of the in-place edit frame | cursor on line | cursor away | yes | click pill → expand source | kind | body editable in place |
-| block `quote` | pill inline at the start of the first body line | cursor on line | cursor away | yes | click pill → expand source | style, attribution | body editable in place |
-| `annotation` | inline, replacing the whole call | always | expanded | yes | expand source + open Changes & History | generic named-args | no (tooltip; pane) |
-| Typst comment run (`//`, `/* */`) | inline, replacing the run's lines | always | expanded | yes | expand source, caret at the end | none | no (tooltip) |
-| `line` (HR) | pill overlaid on the rule's left end | cursor on line | cursor away | n/a | simple → edit source; else menu | length, stroke | yes (the rule stays) |
-| `figure` | inline wrapper | cursor on line | cursor away | yes | simple → edit source; else menu | caption | wrapped content |
-| `align` | inline wrapper | cursor on line | cursor away | yes | simple → edit source; else menu | left/center/right | wrapped content |
-| `csv` | inline | cursor on line | cursor away | yes | simple → edit source; else menu | file, delimiter, row-type | call label |
-| `verse` | embedded | always | never | no | open menu (no edit-source) | options live on widget | yes (contentEditable canvas) |
-| `bibliography` | embedded | always | never | no | open menu (no edit-source) | none | path label only |
-| `tag`, `wikilink`, `link`, `suggestion` | interactive widget | n/a (not a pill) | n/a | n/a | semantic widget interaction | n/a | n/a |
-| `footnote` | widget (not a pill) | n/a | n/a | n/a | tooltip-only | n/a | hidden in title attr |
-| `table` | block widget (not a pill) | n/a | n/a | n/a | full editor | n/a | full |
+| `strike`, `highlight`, `emph`, `strong`, `underline`, `overline`, `sub`, `super` | inline | cursor on line | cursor away | yes | simple calls | only `highlight` (color) | yes (formatted, R12) |
+| inline `quote` | inline | cursor on line | cursor away | yes | simple calls | style, attribution | yes (R12) |
+| `cite` | inline (badge + pill) | cursor on line | cursor away | yes | simple calls | citation form | citation badge |
+| `task`, `due` | inline (widget + pill) | cursor on line | cursor away | yes | simple calls | `task`: body/due/done · `due`: date/label | widget (`#task[…]`: checkbox widget, live body) |
+| `sym` | inline | cursor on line | cursor away | yes | simple calls | symbol name | rendered glyph |
+| Generic fallback `#fn[…]` / `#fn(…)` | inline | cursor on line | cursor away | yes | simple calls | generic named-args (R10) | yes |
+| `image` | pill overlaid on the block's top-left corner | cursor on line | cursor away | yes | simple calls | file, alt, width, align | yes (rendered block) |
+| `video`, `audio` | pill overlaid on the block's top-left corner | cursor on line | cursor away | yes | simple calls | generic named-args | yes (player) |
+| `callout` | pill inside the heading row of the in-place edit frame | cursor on line | cursor away | yes | always | kind | body editable in place |
+| block `quote` | pill inline at the start of the first body line | cursor on line | cursor away | yes | always | style, attribution | body editable in place |
+| `annotation` | inline, replacing the whole call | always | expanded | yes | always (also opens Changes & History) | generic named-args | no (tooltip; pane) |
+| Typst comment run (`//`, `/* */`) | inline, replacing the run's lines | always | expanded | yes | always (caret at the end) | none | no (tooltip) |
+| `line` (HR) | pill overlaid on the rule's left end | cursor on line | cursor away | n/a | simple calls | length, stroke | yes (the rule stays) |
+| `figure` | inline wrapper | cursor on line | cursor away | yes | simple calls | caption | wrapped content |
+| `align` | inline wrapper | cursor on line | cursor away | yes | simple calls | left/center/right | wrapped content |
+| `csv` | inline | cursor on line | cursor away | yes | simple calls | file, delimiter, row-type | call label |
+| `verse` | embedded | always | never | no | never | options live on widget | yes (contentEditable canvas) |
+| `bibliography` | embedded | always | never | no | never | none | path label only |
+| `tag`, `wikilink`, `link`, `suggestion` | interactive widget | n/a (not a pill) | n/a | n/a | n/a | n/a | n/a |
+| `footnote` | widget (not a pill) | n/a | n/a | n/a | n/a | n/a | hidden in title attr |
+| `table` | block widget (not a pill) | n/a | n/a | n/a | n/a | n/a | full |
 
 `#align(left|center|right)[#image(…)]` is a special case: it renders as the **image** block widget with the alignment applied, not a generic align pill.
 
@@ -76,17 +76,15 @@ The pill is a real `<button type="button">`, in tab order. Enter/Space triggers 
 
 This is the only allowed split. A new pill's handling in `handleFuncCall()` (R10) determines its collapse behavior.
 
-### R5 — Click model: low-friction primary action, menu always reachable
+### R5 — Click model: every pill opens its menu
 
-- **Left-click on a simple pill** = enter inline source-edit mode directly (`runEditSource`). "Simple" is the R8 classifier. Most everyday pills qualify.
-- **Left-click on a complex pill** = open the menu (R6) instead, since inline editing isn't safe / readable for multi-line or deeply nested calls.
-- **Right-click (anywhere)** = always opens the menu. The universal escape hatch for options, copy, delete, etc.
-- **Enter / Space** = same as left-click.
+- **Left-click, right-click, Enter or Space** = open the menu (R6). Every pill answers the same way, so the user never has to guess what a click will do.
+- **Edit source** is a menu item, not a click action. It is offered when `allowEditSource !== false` **and** (`alwaysOfferEditSource === true` **or** `isSimpleCall(...)`, the R8 classifier). Otherwise the menu offers *Open in source editor*, since inline editing isn't readable for multi-line or deeply nested calls.
 - **Escape** = closes any open menu and returns focus to the pill.
 
-The routing lives in `buildPillButton()`'s click handler in [pill.ts](../../../src/editor/typst-decorations/pill.ts): it expands when `allowEditSource !== false` **and** (`alwaysExpandOnClick === true` **or** `isSimpleCall(...)`), else opens the menu.
+Both handlers live in `buildPillButton()` in [pill.ts](../../../src/editor/typst-decorations/pill.ts); the *Edit source* rule is in `buildSourceSection()`.
 
-Verse and bibliography (embedded pills) set `allowEditSource: false` on their `PillModel`: their canvas IS the editor, so left-click opens the menu directly — there's no inline-source mode for them. (Verse's alignment lives in the menu, not a bespoke popover.)
+`alwaysOfferEditSource` is set for callouts, block quotes, annotations, comment runs and the style preamble, which are long or multi-line but still edited in place. Verse and bibliography (embedded pills) set `allowEditSource: false` on their `PillModel`: their canvas IS the editor, so there's no inline-source mode for them. (Verse's alignment lives in the menu, not a bespoke popover.)
 
 ### R6 — Pill menu: option sections + source + universal
 
@@ -125,7 +123,7 @@ The curated option builders live in [pill-options.ts](../../../src/editor/typst-
 | `align` | `alignOptions` | left / center / right |
 | `figure` | `figureOptions` | Caption |
 | `cite` | `citeOptions` | Citation form (and convert `@key` shorthand → call) |
-| `task` | `taskOptions` | Body, due date, done toggle |
+| `task` | `taskOptions` | Body (string bodies only; a markup body is edited in place), due date, done toggle |
 | `due` | `dueOptions` | Date, description label |
 | `sym` | `symOptions` | Symbol name |
 
@@ -153,11 +151,11 @@ interface PillModel {
   optionSections?: PillMenuSection[];
   onEditSource?: (view: EditorView) => void;  // overrides the default expand
   allowEditSource?: boolean;                  // false ⇒ no inline edit (verse, bib)
-  alwaysExpandOnClick?: boolean;              // force expand regardless of R8
+  alwaysOfferEditSource?: boolean;            // offer Edit source regardless of R8
 }
 ```
 
-Simplicity is **computed at click time** via `isSimpleCall(callFrom, callTo)` — it is not stored on the model. One implementation; every pill consumes it.
+Simplicity is **computed when the menu opens** via `isSimpleCall(callFrom, callTo)` — it is not stored on the model. One implementation; every pill consumes it.
 
 ### R10 — Where a pill's kind and options are decided
 
@@ -186,7 +184,7 @@ Applies to: `strike`, `highlight`, `emph`, `strong`, `underline`, `overline`, `s
 
 - **Cursor away:** one rendered widget (kind colour, heading, attribution, …). The widget is the visual.
 - **Cursor on line:** the opener `#fn(...)[` and closer `]` are hidden and the body lines are real editable source carrying the block's bar, inset and tint. A callout's opener becomes a heading row (pill + label) at the top of the first body line; a quote's opener becomes an inline pill, and a quote with an attribution shows the attribution row under the body just as the widget does.
-- **Click the pill (or "Edit source"):** reveals the raw call so the arguments the body can't reach (kind, title, attribution) can be edited. Re-collapses once the cursor leaves.
+- **The pill menu's "Edit source":** reveals the raw call so the arguments the body can't reach (kind, title, attribution) can be edited. Re-collapses once the cursor leaves.
 
 The kind (callout), style/attribution (quote), and other arguments live in the pill menu (R7) so most edits don't require source expansion.
 

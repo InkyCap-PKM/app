@@ -4,7 +4,8 @@
 // Public API:
 //   #note(...)            document-level metadata
 //   #tag("name")          inline tag
-//   #task("body", ...)    inline checkbox task (emits <inkycap-agenda>)
+//   #task[body] / #task("body", ...)  inline checkbox task
+//                         (emits <inkycap-agenda>)
 //   #due(date, label: ..., recurrence: ...) inline dated reminder
 //                         (emits <inkycap-agenda>; see _fmt-recurrence)
 //   #wikilink("Name", display: ...)
@@ -380,23 +381,48 @@
 
 // ---------------------------------------------------------------------------
 // task: an inline checkbox. Always emits <inkycap-agenda> (kind "task") and
-// always renders. `due` takes a datetime or string; `done` checks the box and
-// strikes through the text.
+// always renders. The body is markup (`#task[Read #link("…")[the paper]]`) or
+// a plain string; the Agenda gets it as plain text. `due` takes a datetime or
+// string; `done` checks the box and strikes through the text.
 // ---------------------------------------------------------------------------
 
+// The text of a piece of content, without its markup: the words of text, raw
+// and smart quotes, the bodies of wrappers such as links and emphasis, and
+// spaces. A wikilink or tag draws its text in a `context` block, which can't be
+// read before layout, so its text comes from the metadata it emits. Other
+// metadata, images and elements without text add nothing.
+#let _plain-text(it) = {
+  if type(it) == str { it }
+  else if type(it) != content { "" }
+  else if it.func() == metadata {
+    let lbl = if it.has("label") { it.label } else { none }
+    if lbl == <inkycap-link> { it.value.at("display", default: it.value.target) }
+    else if lbl == <inkycap-tag> { "#" + it.value.name }
+    else { "" }
+  }
+  else if it == [ ] { " " }
+  else if it.func() == smartquote { if it.double { "\"" } else { "'" } }
+  else if it.has("text") { if type(it.text) == str { it.text } else { _plain-text(it.text) } }
+  else if it.has("children") { it.children.map(_plain-text).sum(default: "") }
+  else if it.has("body") { _plain-text(it.body) }
+  else if it.has("child") { _plain-text(it.child) }
+  else { "" }
+}
+
 #let task(body, due: none, done: false, tags: ()) = {
-  assert(type(body) == str, message: "task: body must be a string")
+  assert(type(body) in (str, content), message: "task: body must be markup or a string")
   assert(type(done) == bool, message: "task: done must be a boolean")
   let tag-list = if type(tags) == array { tags } else if type(tags) == str and tags != "" { (tags,) } else { () }
   [#metadata((
     kind: "task",
-    body: body,
+    body: if type(body) == str { body } else { _plain-text(body).replace(regex("\\s+"), " ").trim() },
     due: _fmt-date(due),
     done: done,
     tags: tag-list,
   )) <inkycap-agenda>]
   let mark = if done { "\u{2611}" } else { "\u{2610}" }
-  box[#mark #(if done { strike(body) } else { body })]
+  // A non-breaking space keeps the box with the first word; the rest wraps.
+  [#mark~#(if done { strike(body) } else { body })]
 }
 
 // ---------------------------------------------------------------------------
@@ -440,6 +466,7 @@
   }
   let meta = (target: name, from: "body")
   if label != none { meta.insert("label", label) }
+  if display != none { meta.insert("display", display) }
   [#metadata(meta) <inkycap-link>]
   context {
     let shown = if display == none { name } else { display }

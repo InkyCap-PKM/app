@@ -176,7 +176,7 @@ Les vers acceptent des options d'alignement, de numérotation des lignes et d'es
 == Pour les utilisateurs de Typst
 
 #callout("tip", title: "Pour les utilisateurs de Typst")[
-  Tout dans l'éditeur est du balisage Typst pur, et vous pouvez toujours basculer en Typst brut pour faire tout ce que les menus ne font pas surgir : règles set, règles show, fonctions personnalisées, packages. Les appels de fonction que vous écrivez apparaissent derrière une petite pastille `#` cerclée dans l'éditeur visuel ; cliquez dessus pour révéler et modifier la source en ligne, ou faites un clic droit pour un menu avec *Modifier la source*, *Ouvrir dans l'éditeur de source* et *Copier / Dupliquer / Retirer le style / Supprimer*. Basculez en mode source à tout moment pour voir et modifier directement le Typst complet.
+  Tout dans l'éditeur est du balisage Typst pur, et vous pouvez toujours basculer en Typst brut pour faire tout ce que les menus ne font pas surgir : règles set, règles show, fonctions personnalisées, packages. Les appels de fonction que vous écrivez apparaissent derrière une petite pastille `#` cerclée dans l'éditeur visuel ; cliquez dessus pour un menu avec *Modifier la source*, *Ouvrir dans l'éditeur de source* et *Copier / Dupliquer / Retirer le style / Supprimer*. Basculez en mode source à tout moment pour voir et modifier directement le Typst complet.
 ]
 
 == Pages connexes

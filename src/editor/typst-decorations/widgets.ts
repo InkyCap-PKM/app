@@ -145,11 +145,11 @@ function attachImageResize(
   holder.appendChild(badge);
 }
 
-// Block pills (callout, quote) that always reveal the source when clicked,
-// since the body is the content and is often multi-line. Other block pills
-// (image, figure) use the default rule: simple calls expand, complex ones open
-// the menu.
-const ALWAYS_EXPAND_PILLS = new Set(["callout", "quote"]);
+// Block pills (callout, quote) whose menu always offers "Edit source", since
+// the body is the content and is often multi-line. Other block pills (image,
+// figure) offer it only for simple calls; complex ones offer "Open in source
+// editor".
+const ALWAYS_EDIT_SOURCE_PILLS = new Set(["callout", "quote"]);
 
 /** The pill for a block-level call, wired to that call's option menu. */
 function makeBlockPill(funcName: string, pos: number, view: EditorView): HTMLElement {
@@ -160,7 +160,7 @@ function makeBlockPill(funcName: string, pos: number, view: EditorView): HTMLEle
       callFrom: pos,
       callTo,
       optionSections: getPillOptions(funcName, view, pos, callTo),
-      alwaysExpandOnClick: ALWAYS_EXPAND_PILLS.has(funcName),
+      alwaysOfferEditSource: ALWAYS_EDIT_SOURCE_PILLS.has(funcName),
     };
   });
 }
@@ -306,39 +306,25 @@ function buildTaskSpan(
   wrap.className = "cm-typst-task";
   if (seg.done) wrap.classList.add("cm-typst-task--done");
 
-  const box = document.createElement("span");
-  box.className = "cm-typst-task__box";
-  box.textContent = seg.done ? "☑" : "☐";
-  if (ctx) {
-    // The task's offset from the block widget's start stays valid as the document
-    // shifts. At click time the widget's current start is read from the DOM and
-    // the offset added, since incremental updates move a widget's range without
-    // rebuilding the widget.
-    const offsetInBlock = ctx.bodyFrom + seg.start - ctx.blockFrom;
-    const view = ctx.view;
-    box.title = seg.done ? t("task.markNotDone") : t("task.markDone");
-    box.addEventListener("mousedown", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const callFrom = view.posAtDOM(box) + offsetInBlock;
-      applyCallTransform(view, callFrom, (s) =>
-        upsertNamedArg(s, "done", seg.done ? "false" : "true", { defaultValue: "false" }),
-      );
-    });
-  }
-  wrap.appendChild(box);
+  // The task's offset from the block widget's start stays valid as the document
+  // shifts. At click time the widget's current start is read from the DOM and
+  // the offset added, since incremental updates move a widget's range without
+  // rebuilding the widget.
+  const toggle = ctx
+    ? (box: HTMLElement) => {
+        const offsetInBlock = ctx.bodyFrom + seg.start - ctx.blockFrom;
+        toggleTaskDone(ctx.view, ctx.view.posAtDOM(box) + offsetInBlock, seg.done);
+      }
+    : undefined;
+  wrap.appendChild(buildTaskBox(seg.done, toggle));
 
   const label = document.createElement("span");
   label.className = "cm-typst-task__body";
-  label.textContent = seg.body;
+  if (seg.children) appendBodySegments(seg.children, label, ctx);
+  else label.textContent = seg.body;
   wrap.appendChild(label);
 
-  if (seg.due) {
-    const badge = document.createElement("span");
-    badge.className = "cm-typst-task__due";
-    badge.textContent = seg.due;
-    wrap.appendChild(badge);
-  }
+  if (seg.due) wrap.appendChild(buildTaskDue(seg.due));
   return wrap;
 }
 
@@ -911,8 +897,83 @@ export class TagWidget extends WidgetType {
   ignoreEvent() { return false; }
 }
 
+/** Set or clear `done:` on the task call starting at `callFrom`. Unchecking
+ *  drops the argument, since `false` is the default. */
+function toggleTaskDone(view: EditorView, callFrom: number, done: boolean) {
+  applyCallTransform(view, callFrom, (s) =>
+    upsertNamedArg(s, "done", done ? "false" : "true", { defaultValue: "false" }),
+  );
+}
+
+/** A task's checkbox. With `onToggle`, a press on it calls `onToggle` with the
+ *  box, to toggle the task's `done:`; the owning widget's `ignoreEvent` must
+ *  let the press through. */
+function buildTaskBox(done: boolean, onToggle?: (box: HTMLElement) => void): HTMLElement {
+  const box = document.createElement("span");
+  box.className = "cm-typst-task__box";
+  box.textContent = done ? "☑" : "☐";
+  if (onToggle) {
+    box.title = done ? t("task.markNotDone") : t("task.markDone");
+    box.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      onToggle(box);
+    });
+  }
+  return box;
+}
+
+/** A task's due-date badge. */
+function buildTaskDue(due: string): HTMLElement {
+  const badge = document.createElement("span");
+  badge.className = "cm-typst-task__due";
+  badge.textContent = due;
+  return badge;
+}
+
 /**
- * Inline `#task(...)`: a checkbox and body. The checkbox toggles `done:`;
+ * The checkbox of a `#task(…)[…]` call, in place of `#task(…)[`. The body
+ * after it stays editable text with its own decorations.
+ */
+export class TaskBoxWidget extends WidgetType {
+  constructor(readonly done: boolean) {
+    super();
+  }
+
+  eq(other: TaskBoxWidget) {
+    return this.done === other.done;
+  }
+
+  toDOM(view: EditorView) {
+    // The widget starts where the call does; read that from the DOM at press
+    // time, since incremental updates move a widget without rebuilding it.
+    const box = buildTaskBox(this.done, (el) => toggleTaskDone(view, view.posAtDOM(el), this.done));
+    box.classList.add("cm-typst-task__box--inline");
+    return box;
+  }
+
+  ignoreEvent() { return true; }
+}
+
+/** The due date of a `#task(due: …)[…]` call, in place of its closing `]`. */
+export class TaskDueWidget extends WidgetType {
+  constructor(readonly due: string) {
+    super();
+  }
+
+  eq(other: TaskDueWidget) {
+    return this.due === other.due;
+  }
+
+  toDOM() {
+    const badge = buildTaskDue(this.due);
+    badge.classList.add("cm-typst-task__due--inline");
+    return badge;
+  }
+}
+
+/**
+ * Inline `#task("…")`: a checkbox and body. The checkbox toggles `done:`;
  * clicking the body reveals the source.
  */
 export class TaskWidget extends WidgetType {
@@ -935,38 +996,17 @@ export class TaskWidget extends WidgetType {
     wrap.className = "cm-typst-task";
     if (this.done) wrap.classList.add("cm-typst-task--done");
 
-    const box = document.createElement("span");
-    box.className = "cm-typst-task__box";
-    box.textContent = this.done ? "☑" : "☐";
-    box.title = this.done ? t("task.markNotDone") : t("task.markDone");
-    box.addEventListener("mousedown", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      // Read the call's current start from the DOM. Incremental updates move a
-      // widget's range without rebuilding it, so `this.from` can be stale and
-      // would edit the wrong span.
-      const pos = view.posAtDOM(wrap);
-      // Set `done: true` when checking; drop the arg (→ default false)
-      // when unchecking, so a freshly-unchecked task reads cleanly.
-      applyCallTransform(view, pos, (s) =>
-        upsertNamedArg(s, "done", this.done ? "false" : "true", {
-          defaultValue: "false",
-        }),
-      );
-    });
-    wrap.appendChild(box);
+    // Read the call's current start from the DOM. Incremental updates move a
+    // widget's range without rebuilding it, so `this.from` can be stale and
+    // would edit the wrong span.
+    wrap.appendChild(buildTaskBox(this.done, () => toggleTaskDone(view, view.posAtDOM(wrap), this.done)));
 
     const text = document.createElement("span");
     text.className = "cm-typst-task__body";
     text.textContent = this.body;
     wrap.appendChild(text);
 
-    if (this.due) {
-      const badge = document.createElement("span");
-      badge.className = "cm-typst-task__due";
-      badge.textContent = this.due;
-      wrap.appendChild(badge);
-    }
+    if (this.due) wrap.appendChild(buildTaskDue(this.due));
     return wrap;
   }
 

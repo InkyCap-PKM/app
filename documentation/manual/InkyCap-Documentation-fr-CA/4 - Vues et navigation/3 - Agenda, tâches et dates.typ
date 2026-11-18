@@ -35,16 +35,17 @@ _C'est un raccourci de style Markdown qu'InkyCap reconnaît pour les tâches, ma
 
 Tapez `/` n'importe où pendant que vous écrivez pour ouvrir le menu, regardez sous la catégorie *InkyCap* (ou tapez le mot `task` ou `due`), et choisissez :
 
-- *Tâche* insère une tâche vide avec votre curseur à l'intérieur des guillemets.
+- *Tâche* insère une tâche vide avec votre curseur prêt pour son texte. Si du texte est sélectionné, la sélection devient la tâche.
 - *Date d'échéance* insère un rappel daté vide.
 
 Cela fonctionne aussi bien dans la vue d'écriture courante que dans le mode source. Si vous n'êtes pas certain du balisage exact, le menu slash est un chemin facile.
 
 === Une fois que vous avez une tâche
 
-Une tâche apparaît comme une case à cocher avec le texte à côté. Vous pouvez aussi lui donner une date d'échéance et des étiquettes. Pour modifier l'un de ces éléments dans la vue d'écriture, faites un clic droit sur la petite pastille `#` cerclée qui apparaît à côté de la tâche lorsque votre curseur est sur sa ligne. Un menu apparaît avec :
+Une tâche apparaît comme une case à cocher avec le texte à côté. Vous écrivez et modifiez ce texte directement, comme n'importe quelle autre ligne, et il peut contenir les mêmes choses : liens, liens wiki, étiquettes, *gras* et _italique_. Les liens et les liens wiki d'une tâche fonctionnent comme partout ailleurs, et la note visée par un lien wiki compte celle-ci parmi ses rétroliens. Dans l'Agenda, la tâche se lit en texte brut.
 
-- un champ *Tâche* (texte indicatif : « Qu'y a-t-il à faire ? ») pour le texte de la tâche,
+Vous pouvez aussi donner à une tâche une date d'échéance et des étiquettes. Pour les modifier dans la vue d'écriture, cliquez sur la petite pastille `#` cerclée qui apparaît à côté de la tâche lorsque votre curseur est sur sa ligne. Un menu apparaît avec :
+
 - un champ *Échéance* (texte indicatif : « AAAA-MM-JJ ») pour la date limite,
 - et un bouton à bascule *Marquer comme terminée* / *Marquer comme non terminée*.
 
@@ -179,15 +180,19 @@ Une tâche placée à l'intérieur d'un callout, d'une citation en bloc ou d'une
   Les tâches et les rappels datés sont des appels de fonctions Typst du package `inkycap-notebox` intégré, importé automatiquement dans chaque note. Tout ce qui précède est une interface conviviale par-dessus celles-ci :
 
   ```typ
-  #task("Draft abstract")                              // open task
-  #task("Draft abstract", done: true)                  // completed
-  #task("Submit", due: "2026-06-23", tags: ("work",))  // dated + tagged
-  #task("Submit", due: datetime(year: 2026, month: 6, day: 23))
+  #task[Draft abstract]                                // open task
+  #task(done: true)[Draft abstract]                    // completed
+  #task(due: "2026-06-23", tags: ("work",))[Submit]    // dated + tagged
+  #task(due: datetime(year: 2026, month: 6, day: 23))[Submit]
+  #task[Read #link("https://example.org")[the paper]]  // markup in the text
+  #task("Draft abstract")                              // a plain string also works
   #due("2026-07-01")                                   // bare dated reminder
   #due("2026-07-01", label: "Keynote")                 // labelled
   ```
 
-  Le `body` d'un `#task` est une chaîne obligatoire ; `done:` vaut `false` par défaut ; `tags:` accepte une chaîne ou un tableau. Un `#due` exige une date valide et prend un `label:` facultatif.
+  Le corps d'un `#task` est obligatoire. C'est du balisage entre crochets, ou une simple chaîne, dont le texte s'affiche tel qu'écrit. L'Agenda reçoit le corps en texte brut. `done:` vaut `false` par défaut ; `tags:` accepte une chaîne ou un tableau. Un `#due` exige une date valide et prend un `label:` facultatif.
+
+  Les tâches écrites comme des chaînes contenant du balisage, comme `#task("Read #link(\"…\")")` issu d'une importation Markdown antérieure, affichent ce balisage comme du texte littéral. La commande *Convertir le texte des tâches en balisage* de la palette de commandes (sous *Outils*) les met sous la forme entre crochets dans toute votre boîte de notes. Elle indique d'abord combien de tâches dans combien de notes vont changer, et laisse de côté toute tâche dont le texte contient un `@` ou une étiquette qui ne fonctionnerait pas comme balisage.
 
   Les dates acceptent soit une chaîne ISO entre guillemets (`"2026-06-23"`), soit un `datetime(...)` ; les deux s'affichent correctement, et l'axe des dates est canoniquement ISO `YYYY-MM-DD` partout. Les éditeurs de pastille écrivent toujours la forme entre guillemets. Au niveau du document, votre `#note(...)` peut porter `task: true|false` et `due: "YYYY-MM-DD"` pour faire de la note entière un seul élément d'agenda.
 

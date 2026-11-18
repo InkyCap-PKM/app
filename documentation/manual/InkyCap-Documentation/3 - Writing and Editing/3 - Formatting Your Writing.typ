@@ -175,7 +175,7 @@ Verse accepts options for alignment, line numbering, and letter spacing, and you
 == For Typst users
 
 #callout("tip", title: "For Typst users")[
-  Everything in the editor is plain Typst markup, and you can always drop into raw Typst to do anything the menus don't surface: set rules, show rules, custom functions, packages. Function calls you write appear behind a small circled `#` pill in the visual editor; click it to reveal and edit the source inline, or right-click for a menu with *Edit source*, *Open in source editor*, and *Copy / Duplicate / Remove style / Delete*. Switch to source mode anytime to see and edit the full Typst directly.
+  Everything in the editor is plain Typst markup, and you can always drop into raw Typst to do anything the menus don't surface: set rules, show rules, custom functions, packages. Function calls you write appear behind a small circled `#` pill in the visual editor; click it for a menu with *Edit source*, *Open in source editor*, and *Copy / Duplicate / Remove style / Delete*. Switch to source mode anytime to see and edit the full Typst directly.
 ]
 
 == Related pages
