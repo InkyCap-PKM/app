@@ -170,9 +170,12 @@ class InkycapSearchPanel implements Panel {
   }
 
   /**
-   * Publish a query from the fields if it changed, then go to the first match,
+   * Publish a query from the fields if it changed. When the search itself
+   * changed, go to the first match at or after the current match's start,
    * since only the current match is highlighted (see `.cm-searchMatch` in the
-   * editor theme).
+   * editor theme). Searching from the start means each keystroke refines the
+   * match in place instead of skipping to the next one. A change to the
+   * replacement alone leaves the current match where it is.
    */
   private commit() {
     const query = new SearchQuery({
@@ -183,6 +186,7 @@ class InkycapSearchPanel implements Panel {
       replace: this.replaceField.value,
     });
     if (query.eq(this.query)) return;
+    const searchChanged = !sameSearch(query, this.query);
     this.query = query;
     // Keep the caret where it is in the search field, since publishing the
     // query can select the whole field. Only when the search field is the one
@@ -190,9 +194,16 @@ class InkycapSearchPanel implements Panel {
     // focus on WebKit (macOS), so the caret would jump to Find.
     const editingSearch = document.activeElement === this.searchField;
     const caret = editingSearch ? this.searchField.selectionStart : null;
-    this.view.dispatch({ effects: setSearchQuery.of(query) });
-    if (query.search) {
+    if (searchChanged && query.search) {
+      // `findNext` searches from the end of the selection, so collapse it to
+      // its start first.
+      this.view.dispatch({
+        effects: setSearchQuery.of(query),
+        selection: { anchor: this.view.state.selection.main.from },
+      });
       findNext(this.view);
+    } else {
+      this.view.dispatch({ effects: setSearchQuery.of(query) });
     }
     if (editingSearch && caret != null) {
       this.searchField.setSelectionRange(caret, caret);
@@ -365,6 +376,16 @@ class InkycapSearchPanel implements Panel {
 const MATCH_COUNT_CAP = 1000;
 /** Horizontal space the in-field clear button occupies at the right edge. */
 const CLEAR_ZONE_PX = 28;
+
+/** Whether two queries find the same matches (the replacement aside). */
+function sameSearch(a: SearchQuery, b: SearchQuery): boolean {
+  return (
+    a.search === b.search &&
+    a.caseSensitive === b.caseSensitive &&
+    a.regexp === b.regexp &&
+    a.wholeWord === b.wholeWord
+  );
+}
 
 // --- small DOM helpers -----------------------------------------------------
 
