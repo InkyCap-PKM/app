@@ -48,6 +48,8 @@ import { compareName, compareZid } from "../lib/sort";
 import { settings, updateSetting, noteboxSettings } from "../stores/settings";
 import type { FileSortMode } from "../lib/types";
 import { noteboxInfo, noteboxUiKey, fileTreeVersion, propertyVersion, bumpPropertyVersion } from "../stores/notebox";
+import { treeFolderPath } from "../stores/filelist";
+import { quoteFilterValue } from "../lib/search-completion";
 import { openTab, openCreatedNote, closeTab, tabs, getActiveTab, activeNotePath } from "../stores/tabs";
 import { flushEditorsAt } from "../stores/editor-writes";
 import {
@@ -1928,7 +1930,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                           <div
                             data-list-item
                             class="sidebar-item"
-                            onClick={() => openSearchFor(`tag:${tag}`)}
+                            onClick={() => openSearchFor(`tag:${quoteFilterValue(tag)}`)}
                             onContextMenu={(e) => handleTagContext(e, tag)}
                           >
                             <span class="sidebar-item__icon">
@@ -2345,14 +2347,11 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                   class="context-menu__item"
                   onClick={() => {
                     setFileContextMenu(null);
-                    // `path:` matches a substring of each note's path; the
-                    // trailing slash limits it to this folder, not a sibling
-                    // with the same prefix.
-                    const root = noteboxInfo()?.path ?? "";
-                    const rel = node.path.startsWith(root + "/")
-                      ? node.path.slice(root.length + 1)
-                      : node.path;
-                    openSearchFor(`path:"${rel}/" `);
+                    // `path:` matches whole folder names; the leading `/`
+                    // anchors them at the notebox root, so only this folder
+                    // matches, not one of the same name elsewhere.
+                    const rel = treeFolderPath(fileTree() ?? [], node.path);
+                    if (rel !== null) openSearchFor(`path:"/${rel}/" `);
                   }}
                 >
                   {t("leftSidebar.searchInFolder")}

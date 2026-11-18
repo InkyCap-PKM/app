@@ -5,10 +5,10 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use crate::models::note::PropertyValue;
+use crate::search::field_match::{compile_bounded_regex, FolderMatcher, NameMatcher, WordsMatcher};
 use crate::search::query::{FilterKind, QueryNode};
 use crate::search::results::{compute_score, SearchResult};
 use crate::storage::to_frontend_string;
@@ -89,6 +89,16 @@ fn collect_value_strings(value: &PropertyValue, out: &mut Vec<String>) {
 /// query names no collections.
 pub type CollectionMembership = HashMap<String, HashSet<PathBuf>>;
 
+/// What filters need from outside the index.
+#[derive(Default)]
+pub struct FilterContext {
+    /// The notebox root (`storage.canonical_root()`), so `path:` reads a note's
+    /// folders from there. Without it, folders are read from the whole path.
+    pub root: Option<PathBuf>,
+    /// Members of each collection the query names.
+    pub collections: CollectionMembership,
+}
+
 /// Position of a word within a document: (line_number, word_offset_in_line, char_start, char_end).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct WordPosition {
@@ -151,17 +161,71 @@ struct DocEntry {
 /// The inverted index: word → list of (doc_id, positions).
 type PostingList = Vec<(usize, Vec<WordPosition>)>;
 
-/// Compile a search pattern with a size limit, since patterns can come from
-/// shared queries. The `regex` crate doesn't backtrack, so size is the only
-/// risk. `None` for invalid or oversized patterns, which match nothing.
-fn compile_bounded_regex(pattern: &str) -> Option<Regex> {
-    const SIZE_LIMIT: usize = 1 << 20; // 1 MiB compiled program
-    const DFA_SIZE_LIMIT: usize = 1 << 20; // 1 MiB lazy-DFA cache
-    regex::RegexBuilder::new(pattern)
-        .size_limit(SIZE_LIMIT)
-        .dfa_size_limit(DFA_SIZE_LIMIT)
-        .build()
-        .ok()
+/// A filter's value, compiled once per query.
+enum FilterMatcher {
+    Folders(FolderMatcher),
+    File(WordsMatcher),
+    Tag(NameMatcher),
+    Section(WordsMatcher),
+    /// `property:key`: notes that have the key.
+    PropertyKey(NameMatcher),
+    /// `property:key=value`; with nothing after the `=`, any value.
+    PropertyValue {
+        key: NameMatcher,
+        value: Option<WordsMatcher>,
+    },
+    /// A bare `annotation:`: notes with any annotation.
+    AnyAnnotation,
+    Annotation(WordsMatcher),
+    Collection,
+    /// A value that can't match, such as `property:=x`.
+    Nothing,
+}
+
+impl FilterMatcher {
+    /// `value` must already be lowercased.
+    fn new(kind: &FilterKind, value: &str) -> Self {
+        match kind {
+            FilterKind::Path => Self::Folders(FolderMatcher::new(value)),
+            FilterKind::File => Self::File(WordsMatcher::new(value)),
+            FilterKind::Tag => Self::Tag(NameMatcher::new(value)),
+            FilterKind::Section => Self::Section(WordsMatcher::new(value)),
+            FilterKind::Property => match value.split_once('=') {
+                None => Self::PropertyKey(NameMatcher::new(value.trim())),
+                Some((key, _)) if key.trim().is_empty() => Self::Nothing,
+                Some((key, needle)) => Self::PropertyValue {
+                    key: NameMatcher::new(key.trim()),
+                    value: (!needle.trim().is_empty()).then(|| WordsMatcher::new(needle)),
+                },
+            },
+            FilterKind::Annotation if value.is_empty() => Self::AnyAnnotation,
+            FilterKind::Annotation => Self::Annotation(WordsMatcher::new(value)),
+            FilterKind::Collection => Self::Collection,
+        }
+    }
+}
+
+/// A note's lowercased folder names from the notebox root down (from the
+/// filesystem root when the context has no notebox root).
+fn note_folders(path: &Path, filters: &FilterContext) -> Vec<String> {
+    let relative = filters
+        .root
+        .as_deref()
+        .and_then(|root| path.strip_prefix(root).ok())
+        .unwrap_or(path);
+    relative
+        .parent()
+        .map(|dir| {
+            dir.components()
+                .filter_map(|c| match c {
+                    std::path::Component::Normal(name) => {
+                        Some(name.to_string_lossy().to_lowercase())
+                    }
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Full-text search engine with an in-memory inverted index.
@@ -358,8 +422,8 @@ impl SearchEngine {
     /// frontend groups by file). Notebox import lines are excluded.
     pub fn search(&self, query: &QueryNode, max_results: usize) -> Vec<SearchResult> {
         // Without collection data here, a `collection:` filter matches nothing.
-        let empty = CollectionMembership::new();
-        let mut results = self.collect_ranked_results(query, AnnotationScope::All, None, &empty);
+        let none = FilterContext::default();
+        let mut results = self.collect_ranked_results(query, AnnotationScope::All, None, &none);
         results.truncate(max_results);
         results
     }
@@ -378,10 +442,9 @@ impl SearchEngine {
         limit: usize,
         annotation_scope: AnnotationScope,
         verify_span: Option<&dyn Fn(&str) -> bool>,
-        collections: &CollectionMembership,
+        filters: &FilterContext,
     ) -> (Vec<SearchResult>, usize) {
-        let results =
-            self.collect_ranked_results(query, annotation_scope, verify_span, collections);
+        let results = self.collect_ranked_results(query, annotation_scope, verify_span, filters);
         let total_count = results.len();
         let page = results.into_iter().skip(offset).take(limit).collect();
         (page, total_count)
@@ -395,9 +458,9 @@ impl SearchEngine {
         query: &QueryNode,
         annotation_scope: AnnotationScope,
         verify_span: Option<&dyn Fn(&str) -> bool>,
-        collections: &CollectionMembership,
+        filters: &FilterContext,
     ) -> Vec<SearchResult> {
-        let matches = self.evaluate(query, collections);
+        let matches = self.evaluate(query, filters);
         let mut results: Vec<SearchResult> = Vec::new();
 
         for (doc_id, line_matches) in &matches {
@@ -505,26 +568,26 @@ impl SearchEngine {
     fn evaluate(
         &self,
         node: &QueryNode,
-        collections: &CollectionMembership,
+        filters: &FilterContext,
     ) -> HashMap<usize, HashMap<usize, Vec<WordPosition>>> {
         match node {
             QueryNode::Term(term) => self.find_term(term),
             QueryNode::Phrase(words) => self.find_phrase(words),
             QueryNode::Wildcard(pattern) => self.find_wildcard(pattern),
             QueryNode::Regex(pattern) => self.find_regex(pattern),
-            QueryNode::Filter { kind, value } => self.find_filter(kind, value, collections),
+            QueryNode::Filter { kind, value } => self.find_filter(kind, value, filters),
             QueryNode::And(left, right) => {
                 // `foo -bar`: evaluate the positive side and subtract the
                 // excluded documents, rather than building a notebox-wide
                 // complement for `Not`.
                 if let QueryNode::Not(inner) = right.as_ref() {
-                    return self.evaluate_and_not(left, inner, collections);
+                    return self.evaluate_and_not(left, inner, filters);
                 }
                 if let QueryNode::Not(inner) = left.as_ref() {
-                    return self.evaluate_and_not(right, inner, collections);
+                    return self.evaluate_and_not(right, inner, filters);
                 }
-                let left_matches = self.evaluate(left, collections);
-                let right_matches = self.evaluate(right, collections);
+                let left_matches = self.evaluate(left, filters);
+                let right_matches = self.evaluate(right, filters);
                 // Intersect doc IDs
                 let mut result = HashMap::new();
                 for (doc_id, left_lines) in &left_matches {
@@ -539,8 +602,8 @@ impl SearchEngine {
                 result
             }
             QueryNode::Or(left, right) => {
-                let mut result = self.evaluate(left, collections);
-                let right_matches = self.evaluate(right, collections);
+                let mut result = self.evaluate(left, filters);
+                let right_matches = self.evaluate(right, filters);
                 for (doc_id, lines) in right_matches {
                     let entry = result.entry(doc_id).or_default();
                     for (line, positions) in lines {
@@ -550,7 +613,7 @@ impl SearchEngine {
                 result
             }
             QueryNode::Not(inner) => {
-                let exclude = self.evaluate(inner, collections);
+                let exclude = self.evaluate(inner, filters);
                 // Return all docs NOT in the exclude set
                 let mut result = HashMap::new();
                 for (doc_id, doc) in self.docs.iter().enumerate() {
@@ -590,10 +653,10 @@ impl SearchEngine {
         &self,
         positive: &QueryNode,
         excluded: &QueryNode,
-        collections: &CollectionMembership,
+        filters: &FilterContext,
     ) -> HashMap<usize, HashMap<usize, Vec<WordPosition>>> {
-        let mut matches = self.evaluate(positive, collections);
-        let exclude = self.evaluate(excluded, collections);
+        let mut matches = self.evaluate(positive, filters);
+        let exclude = self.evaluate(excluded, filters);
         matches.retain(|doc_id, _| !exclude.contains_key(doc_id));
         matches
     }
@@ -809,17 +872,16 @@ impl SearchEngine {
         result
     }
 
-    /// Find documents matching a filter (path:, tag:, file:).
+    /// Find documents matching a filter. Each filter is a field search with the
+    /// rules of a plain term (see field_match.rs).
     fn find_filter(
         &self,
         kind: &FilterKind,
         value: &str,
-        collections: &CollectionMembership,
+        filters: &FilterContext,
     ) -> HashMap<usize, HashMap<usize, Vec<WordPosition>>> {
         let value_lower = value.to_lowercase();
-        // Compare paths with forward slashes on both sides, so a folder from
-        // the file tree matches on Windows too.
-        let path_value = value_lower.replace('\\', "/");
+        let matcher = FilterMatcher::new(kind, &value_lower);
         let mut result = HashMap::new();
 
         for (doc_id, doc) in self.docs.iter().enumerate() {
@@ -827,67 +889,38 @@ impl SearchEngine {
                 continue;
             }
 
-            let matches = match kind {
-                FilterKind::Path => to_frontend_string(&doc.path)
-                    .to_lowercase()
-                    .contains(&path_value),
-                FilterKind::File => doc.file_name.to_lowercase().contains(&value_lower),
-                FilterKind::Tag => doc
-                    .tags
-                    .iter()
-                    .any(|t| t.to_lowercase().contains(&value_lower)),
-                FilterKind::Section => {
-                    // Notes with a heading containing the value. Headings are
-                    // collected when indexing.
-                    doc.headings.iter().any(|h| h.contains(&value_lower))
+            let matches = match &matcher {
+                FilterMatcher::Folders(m) => m.matches(&note_folders(&doc.path, filters)),
+                FilterMatcher::File(m) => m.matches(&doc.file_name),
+                FilterMatcher::Tag(m) => doc.tags.iter().any(|t| m.matches(&t.to_lowercase())),
+                // Headings are collected, lowercased, when indexing.
+                FilterMatcher::Section(m) => doc.headings.iter().any(|h| m.matches(h)),
+                FilterMatcher::PropertyKey(key) => doc.property_keys.iter().any(|k| key.matches(k)),
+                FilterMatcher::PropertyValue { key, value } => {
+                    doc.property_values.iter().any(|(k, values)| {
+                        key.matches(k)
+                            && value
+                                .as_ref()
+                                .is_none_or(|m| values.iter().any(|v| m.matches(v)))
+                    })
                 }
-                FilterKind::Property => {
-                    // `property:name` matches notes with the key;
-                    // `property:name=value` also needs one of its values to
-                    // contain `value` (case-insensitive), so `draft` matches
-                    // `drafts` too.
-                    if let Some(eq_idx) = value_lower.find('=') {
-                        let key = value_lower[..eq_idx].trim();
-                        let needle = value_lower[eq_idx + 1..].trim();
-                        if key.is_empty() {
-                            false
-                        } else if let Some(values) = doc.property_values.get(key) {
-                            if needle.is_empty() {
-                                true
-                            } else {
-                                values.iter().any(|v| v.contains(needle))
-                            }
-                        } else {
-                            false
-                        }
-                    } else {
-                        doc.property_keys.iter().any(|k| k.contains(&value_lower))
-                    }
-                }
-                FilterKind::Annotation => {
-                    // `annotation:` matches any note with an annotation;
-                    // `annotation:foo` one whose annotation contains `foo`.
-                    if value_lower.is_empty() {
-                        !doc.annotation_lines.is_empty()
-                    } else {
-                        doc.annotation_text.contains(&value_lower)
-                    }
-                }
-                FilterKind::Collection => {
-                    // Membership comes from the command layer.
-                    collections
-                        .get(&value_lower)
-                        .is_some_and(|members| members.contains(&doc.path))
-                }
+                FilterMatcher::AnyAnnotation => !doc.annotation_lines.is_empty(),
+                FilterMatcher::Annotation(m) => m.matches(&doc.annotation_text),
+                // Membership comes from the command layer.
+                FilterMatcher::Collection => filters
+                    .collections
+                    .get(&value_lower)
+                    .is_some_and(|members| members.contains(&doc.path)),
+                FilterMatcher::Nothing => false,
             };
 
             if matches {
                 // `tag:` results open on the `#tag("…")` call rather than the
                 // first line, which is usually in `#note(...)`.
                 let mut lines: HashMap<usize, Vec<WordPosition>> = HashMap::new();
-                if let FilterKind::Tag = kind {
+                if let FilterMatcher::Tag(m) = &matcher {
                     for (tag_name, tag_lines) in &doc.tag_locations {
-                        if tag_name.contains(&value_lower) {
+                        if m.matches(tag_name) {
                             for &line_idx in tag_lines {
                                 if doc.import_line_indices.contains(&line_idx) {
                                     continue;
@@ -904,16 +937,17 @@ impl SearchEngine {
                 }
                 // `annotation:` results open on the matching annotation lines
                 // (all of them for a bare `annotation:`).
-                if let FilterKind::Annotation = kind {
+                if let FilterMatcher::AnyAnnotation | FilterMatcher::Annotation(_) = &matcher {
                     for &line_idx in &doc.annotation_lines {
                         if doc.import_line_indices.contains(&line_idx) {
                             continue;
                         }
-                        let hit = value_lower.is_empty()
-                            || doc
-                                .lines
-                                .get(line_idx)
-                                .is_some_and(|l| l.to_lowercase().contains(&value_lower));
+                        let hit = match &matcher {
+                            FilterMatcher::Annotation(m) => {
+                                doc.lines.get(line_idx).is_some_and(|l| m.matches(l))
+                            }
+                            _ => true,
+                        };
                         if hit {
                             lines.entry(line_idx).or_default().push(WordPosition {
                                 line: line_idx,
@@ -1435,21 +1469,20 @@ mod tests {
 
         // Plain "citation" matches both the body and the annotation line.
         let q = parse_query("citation").unwrap();
-        let no_collections = CollectionMembership::new();
-        let (all, _) =
-            engine.search_paginated(&q, 0, 50, AnnotationScope::All, None, &no_collections);
+        let no_filters = FilterContext::default();
+        let (all, _) = engine.search_paginated(&q, 0, 50, AnnotationScope::All, None, &no_filters);
         assert_eq!(all.len(), 2);
 
         // With the annotations-only scope, only the annotation line survives.
         let (scoped, _) =
-            engine.search_paginated(&q, 0, 50, AnnotationScope::Only, None, &no_collections);
+            engine.search_paginated(&q, 0, 50, AnnotationScope::Only, None, &no_filters);
         assert_eq!(scoped.len(), 1);
         assert!(scoped[0].line_text.contains("#annotation["));
 
         // The exclude scope is the complement: the annotation line drops out,
         // leaving only the plain-prose hit.
         let (excluded, _) =
-            engine.search_paginated(&q, 0, 50, AnnotationScope::Exclude, None, &no_collections);
+            engine.search_paginated(&q, 0, 50, AnnotationScope::Exclude, None, &no_filters);
         assert_eq!(excluded.len(), 1);
         assert!(!excluded[0].line_text.contains("#annotation["));
     }
@@ -1607,7 +1640,7 @@ mod tests {
         assert!(r[0].path.ends_with("b.md"));
 
         // A quoted value doesn't swallow the rest of the query.
-        let q = parse_query("property:status=\"draft\" path:a").unwrap();
+        let q = parse_query("property:status=\"draft\" file:a").unwrap();
         let r = engine.search(&q, 10);
         assert_eq!(r.len(), 1);
         assert!(r[0].path.ends_with("a.md"));
@@ -1619,12 +1652,83 @@ mod tests {
     }
 
     #[test]
+    fn section_and_property_filters_match_whole_words() {
+        let mut values: HashMap<String, Vec<String>> = HashMap::new();
+        values.insert("author".to_string(), vec!["athena otlet".to_string()]);
+        values.insert("status".to_string(), vec!["drafts".to_string()]);
+        let engine = SearchEngine::build(vec![(
+            PathBuf::from("/notebox/a.typ"),
+            "= Research Methods\nBody.".to_string(),
+            Vec::new(),
+            None,
+            vec!["author".to_string(), "status".to_string()],
+            values,
+        )]);
+        let hits = |q: &str| engine.search(&parse_query(q).unwrap(), 10).len();
+
+        assert_eq!(hits("section:methods"), 1);
+        assert_eq!(hits("section:\"research methods\""), 1);
+        assert_eq!(hits("section:method"), 0);
+        assert_eq!(hits("section:method*"), 1);
+
+        assert_eq!(hits("property:author=otlet"), 1);
+        assert_eq!(hits("property:author=otl"), 0);
+        assert_eq!(hits("property:status=draft"), 0);
+        assert_eq!(hits("property:status=draft*"), 1);
+        assert_eq!(hits("property:auth"), 0);
+        assert_eq!(hits("property:auth*"), 1);
+        assert_eq!(hits("property:auth*=athena"), 1);
+        assert_eq!(hits("property:author="), 1);
+    }
+
+    #[test]
     fn test_tag_filter() {
         let engine = make_engine();
         let query = parse_query("tag:python").unwrap();
         let results = engine.search(&query, 10);
         assert_eq!(results.len(), 1);
         assert!(results[0].path.contains("note2"));
+    }
+
+    #[test]
+    fn tag_filter_matches_the_whole_name_unless_given_a_wildcard() {
+        let note = |name: &str, tags: &[&str]| {
+            (
+                PathBuf::from(format!("/notebox/{name}.typ")),
+                format!("Body of {name}."),
+                tags.iter().map(|t| t.to_string()).collect(),
+                None,
+                Vec::new(),
+                HashMap::new(),
+            )
+        };
+        let engine = SearchEngine::build(vec![
+            note("plain", &["rwlgd"]),
+            note("source", &["rwlgd_source"]),
+            note("dotted", &["v1.2"]),
+            note("other", &["v1x2"]),
+        ]);
+        let paths = |q: &str| {
+            let mut p: Vec<String> = engine
+                .search(&parse_query(q).unwrap(), 10)
+                .into_iter()
+                .map(|r| r.path)
+                .collect();
+            p.sort();
+            p.dedup();
+            p
+        };
+
+        assert_eq!(paths("tag:rwlgd"), vec!["/notebox/plain.typ"]);
+        assert_eq!(paths("tag:RWLGD"), vec!["/notebox/plain.typ"]);
+        assert_eq!(
+            paths("tag:rwlgd*"),
+            vec!["/notebox/plain.typ", "/notebox/source.typ"]
+        );
+        assert_eq!(paths("tag:*source"), vec!["/notebox/source.typ"]);
+        assert!(paths("tag:rwl").is_empty());
+        // Only `*` is special: the `.` in a tag is matched literally.
+        assert_eq!(paths("tag:v1.*"), vec!["/notebox/dotted.typ"]);
     }
 
     #[test]
@@ -1639,9 +1743,10 @@ mod tests {
     #[test]
     fn path_filter_matches_across_separators() {
         // Indexed paths carry the OS-native separator; the filter value comes
-        // from the file tree (or the user) with forward slashes.
+        // from the file tree (or the user) with either one.
+        let path: PathBuf = ["notebox", "Archive", "2024", "note.md"].iter().collect();
         let engine = SearchEngine::build(vec![(
-            PathBuf::from(r"C:\notebox\Archive\2024\note.md"),
+            path,
             "body".to_string(),
             Vec::new(),
             None,
@@ -1900,10 +2005,75 @@ mod tests {
     }
 
     #[test]
-    fn the_file_filter_keeps_its_substring_rule() {
-        // `file:` is explicit and scoped, and documented as substring — the
-        // whole-word default applies to bare terms, not to this.
+    fn the_file_filter_matches_whole_words_like_a_bare_term() {
         let engine = name_engine();
-        assert_eq!(matched_names(&engine, "file:ink").len(), 5);
+        assert_eq!(matched_names(&engine, "file:ink"), vec!["Ink and Switch"]);
+        assert_eq!(
+            matched_names(&engine, "file:ink*"),
+            vec![
+                "Ink and Switch",
+                "InkyCap",
+                "InkyCap - Build Binaries",
+                "inkycapping notes"
+            ]
+        );
+        assert_eq!(
+            matched_names(&engine, "file:\"build binaries\""),
+            vec!["InkyCap - Build Binaries"]
+        );
+    }
+
+    #[test]
+    fn path_filter_matches_folder_names_from_the_notebox_root() {
+        let note = |rel: &str| {
+            (
+                PathBuf::from(format!("/home/athena/notebox/{rel}")),
+                "body".to_string(),
+                Vec::new(),
+                None,
+                Vec::new(),
+                HashMap::new(),
+            )
+        };
+        let engine = SearchEngine::build(vec![
+            note("Journal/2026-01-01.typ"),
+            note("Projects/Journal/plan.typ"),
+            note("Journals/old.typ"),
+            note("top.typ"),
+        ]);
+        let filters = FilterContext {
+            root: Some(PathBuf::from("/home/athena/notebox")),
+            ..Default::default()
+        };
+        let paths = |q: &str| {
+            let (results, _) = engine.search_paginated(
+                &parse_query(q).unwrap(),
+                0,
+                50,
+                AnnotationScope::All,
+                None,
+                &filters,
+            );
+            let mut p: Vec<String> = results.into_iter().map(|r| r.path).collect();
+            p.sort();
+            p.dedup();
+            p
+        };
+
+        assert_eq!(
+            paths("path:journal"),
+            vec![
+                "/home/athena/notebox/Journal/2026-01-01.typ",
+                "/home/athena/notebox/Projects/Journal/plan.typ"
+            ]
+        );
+        assert_eq!(
+            paths("path:/journal"),
+            vec!["/home/athena/notebox/Journal/2026-01-01.typ"]
+        );
+        assert_eq!(paths("path:journal*").len(), 3);
+        // Folders above the notebox root don't count.
+        assert!(paths("path:athena").is_empty());
+        assert_eq!(paths("path:/").len(), 4);
     }
 }

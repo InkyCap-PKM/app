@@ -67,7 +67,7 @@ Vous pouvez façonner la liste à votre goût :
 Vous pouvez aussi chercher par étiquette directement depuis le panneau de recherche de #wikilink("1 - Vues et navigation") avec le préfixe `tag:`, par exemple `tag:research`. Vous pouvez combiner cela avec le reste du langage de recherche d'InkyCap. Par exemple, pour trouver toutes vos notes de recherche sur les hiboux, vous pourriez écrire une expression de recherche qui comprend le mot `hibou` et inclut `tag:research`, ce qui limitera la portée de vos résultats aux seuls fichiers étiquetés `research` et contenant le mot `hibou` quelque part dans leur contenu.
 
 #callout("note")[
-  La correspondance d'étiquette dans la recherche est _insensible à la casse_ et correspond à une _partie_ du nom, pas à l'ensemble. Ainsi, `tag:rust` fera ressortir des notes étiquetées avec n'importe lequel des noms suivants : `Rustacean`, `rust-lang` ou `rust`.
+  La correspondance d'étiquette dans la recherche est _insensible à la casse_ et porte sur le nom _entier_ : `tag:rust` trouve les notes étiquetées `rust` ou `Rust`, mais pas `rust-lang`. Ajoutez `*` pour correspondre à une partie du nom : `tag:rust*` trouve aussi `rust-lang` et `Rustacean`, et `tag:*lang` trouve `rust-lang`.
 ]
 
 == Renommer et supprimer des étiquettes

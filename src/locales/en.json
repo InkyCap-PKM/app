@@ -624,7 +624,7 @@
   "search.filterHint.collection": "scope results to a collection, as in collection:Reading",
   "search.syntaxTip.phrase": "phrase search: find an exact phrase by enclosing it in double quotes",
   "search.syntaxTip.boolean": "boolean operators (uppercase). Use ( ) to group. Multiple words with no operator are treated as AND. Use - symbol (-term) as shortcut for NOT",
-  "search.syntaxTip.truncation": "truncation: match any suffix after the stem: ink* finds ink or inkycap but ink finds only ink",
+  "search.syntaxTip.truncation": "truncation: match any suffix after the stem: ink* finds ink or inkycap but ink finds only ink. Filters work the same way, as in tag:draft*",
   "search.syntaxTip.proximity": "proximity: a within 5 words of b (W=ordered, N=any order)",
   "search.scope.all": "All text",
   "search.scope.allDesc": "Search everything",

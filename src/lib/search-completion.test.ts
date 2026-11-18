@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { completionContext, applyCompletion, canComplete } from "./search-completion";
+import { completionContext, applyCompletion, canComplete, quoteFilterValue } from "./search-completion";
 
 /** Context for a query written with `|` marking the caret. */
 function at(marked: string) {
@@ -131,5 +131,13 @@ describe("accepting a completion", () => {
     expect(accept("rust tag:| AND draft", "project")).toBe(
       "rust tag:project| AND draft",
     );
+  });
+});
+
+describe("quoteFilterValue", () => {
+  it("quotes only a value that would otherwise end the filter", () => {
+    expect(quoteFilterValue("rwlgd_source")).toBe("rwlgd_source");
+    expect(quoteFilterValue("in progress")).toBe('"in progress"');
+    expect(quoteFilterValue("draft(old)")).toBe('"draft(old)"');
   });
 });

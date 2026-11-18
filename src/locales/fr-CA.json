@@ -624,7 +624,7 @@
   "search.filterHint.collection": "restreindre les résultats à une collection, comme collection:Lectures",
   "search.syntaxTip.phrase": "recherche d'expression : trouvez une expression exacte en l'entourant de guillemets droits",
   "search.syntaxTip.boolean": "opérateurs booléens (en majuscules). Utilisez ( ) pour regrouper. Plusieurs mots sans opérateur sont traités comme un AND. Utilisez le symbole - (-terme) comme raccourci de NOT",
-  "search.syntaxTip.truncation": "troncature : correspond à tout suffixe après la racine : ink* trouve ink ou inkycap, mais ink ne trouve que ink",
+  "search.syntaxTip.truncation": "troncature : correspond à tout suffixe après la racine : ink* trouve ink ou inkycap, mais ink ne trouve que ink. Les filtres fonctionnent de la même façon, comme tag:brouillon*",
   "search.syntaxTip.proximity": "proximité : a à moins de 5 mots de b (W=ordonné, N=tout ordre)",
   "search.scope.all": "Tout le texte",
   "search.scope.allDesc": "Tout rechercher",

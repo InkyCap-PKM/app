@@ -31,7 +31,7 @@ Comme la correspondance par mot entier est l'option par défaut, vous utilisez l
 
 Voyez `*` comme « n'importe quelle suite de caractères ici ». Sans lui, vous obtenez le mot exact et rien de plus.
 
-Les noms de fichiers suivent la même règle que le corps du texte. Un terme seul correspond à un mot entier dans le nom d'une note, donc `ink` trouve une note nommée « Ink and Switch », mais pas une note nommée « Linked thinking », et `ink*` élargit la correspondance de la même façon. La seule exception est le filtre explicite `file:` décrit ci-dessous, qui correspond toujours à n'importe quelle partie d'un nom.
+Les noms de fichiers suivent la même règle que le corps du texte. Un terme seul correspond à un mot entier dans le nom d'une note, donc `ink` trouve une note nommée « Ink and Switch », mais pas une note nommée « Linked thinking », et `ink*` élargit la correspondance de la même façon. Les filtres décrits ci-dessous suivent aussi cette règle.
 
 === Opérateurs
 
@@ -58,25 +58,25 @@ Les opérateurs booléens (`AND`, `OR`, `NOT`) doivent être écrits en *majuscu
 
 === Filtres
 
-Préfixez un terme par l'un de ces filtres pour restreindre la recherche à un type de correspondance précis plutôt qu'au corps de la note :
+Préfixez un terme par l'un de ces filtres pour chercher dans une partie précise de la note plutôt que dans son corps, comme les recherches par champ (titre, sujet, auteur) d'une base de données de bibliothèque :
 
 #table(
   columns: (163.5pt, auto),
   stroke: 0.5pt + luma(200),
   inset: 7pt,
   table.header([Filtre], [Ce à quoi il correspond]),
-  [`tag:recherche`], [Les notes portant une #wikilink("5 - Étiquettes", display: "étiquette") donnée.],
-  [`property:statut=brouillon`], [Les notes dont la #wikilink("6 - Propriétés des notes", display: "propriété") a une valeur. `property:statut` seul correspond à toute note qui possède cette propriété, peu importe sa valeur. Dans cet exemple, la propriété s'appelle « `statut` » et elle a la valeur « `brouillon` ».],
-  [`section:méthodes`], [Les notes qui contiennent un titre correspondant au mot-clé.],
-  [`file:2026`], [Correspondance par nom de fichier. Contrairement à un terme de recherche seul, ce filtre correspond à n'importe quelle partie d'un nom, donc `file:2026` trouve « 2026-03-01 Réunion ».],
-  [`path:journal`], [Correspondance par le chemin du fichier dans la boîte de notes. Un nom de dossier contenant des espaces doit être entre guillemets, et une barre oblique finale limite la correspondance à ce dossier : `path:"Notes de lecture/"`.],
-  [`annotation:fixme`], [Correspondance au texte à l'intérieur d'une `#annotation[…]` ou d'une `#suggestion[…]`. `annotation:` seul trouve toute note qui comporte des annotations.],
-  [`collection:Lectures`], [Limite les résultats aux notes appartenant à une #wikilink("2 - Collections", display: "collection") précise.],
+  [`tag:recherche`], [Les notes portant une #wikilink("5 - Étiquettes", display: "étiquette") donnée. Le nom entier de l'étiquette doit correspondre ; ajoutez `*` pour correspondre à une partie du nom, comme dans `tag:recherche*`.],
+  [`property:statut=brouillon`], [Les notes dont la #wikilink("6 - Propriétés des notes", display: "propriété") a une valeur. `property:statut` seul correspond à toute note qui possède cette propriété, peu importe sa valeur. Dans cet exemple, la propriété s'appelle « `statut` » et elle a la valeur « `brouillon` ». Le nom de la propriété doit correspondre en entier, et la valeur correspond à des mots entiers : `property:author=otlet` trouve « Athena Otlet ».],
+  [`section:méthodes`], [Les notes dont un titre contient le mot.],
+  [`file:réunion`], [Les notes dont le nom de fichier contient le mot, donc `file:réunion` trouve « 2026-03-01 Réunion ». Des mots reliés par des traits d'union comptent pour un seul mot, comme dans le corps du texte : `file:2026*` le trouve aussi, mais pas `file:2026`.],
+  [`path:journal`], [Les notes dans un dossier de ce nom, à n'importe quelle profondeur. Un nom contenant des espaces doit être entre guillemets, et une suite de dossiers correspond à des dossiers emboîtés : `path:"Notes de lecture/2026"`. Commencez par `/` pour compter à partir du haut de la boîte de notes : `path:/journal` ne trouve que le dossier « Journal » de premier niveau.],
+  [`annotation:fixme`], [Les notes dont une `#annotation[…]` ou une `#suggestion[…]` contient le mot. `annotation:` seul trouve toute note qui comporte des annotations.],
+  [`collection:Lectures`], [Limite les résultats aux notes appartenant à une #wikilink("2 - Collections", display: "collection") précise. Le nom entier de la collection doit correspondre.],
 )
 
 Les filtres se combinent librement avec les opérateurs ci-dessus, donc une expression de recherche comme `tag:recherche méthodes -brouillon` est une requête tout à fait valable.
 
-Une valeur de filtre contenant des espaces doit être entre guillemets, comme dans `property:author="Jeanne Tremblay"`; autrement, seul son premier mot est utilisé.
+Les valeurs de filtre suivent les règles des termes de recherche ordinaires : la casse n'a pas d'importance, une valeur correspond à des mots entiers (ou à un nom entier pour les étiquettes, les noms de propriétés, les dossiers et les collections), et `*` correspond à une partie d'un mot, comme dans `section:méthode*` ou `collection:lect*`. Une valeur de filtre contenant des espaces doit être entre guillemets, comme dans `property:author="Athena Otlet"`, et ses mots correspondent alors comme une expression exacte; autrement, seul son premier mot est utilisé.
 
 === Choisir les valeurs de filtre dans une liste
 
@@ -86,7 +86,7 @@ Vous n'avez pas à vous rappeler les noms exacts qui se trouvent dans votre boî
 - Accepter un dossier écrit la barre oblique finale pour vous, et ajoute les guillemets lorsque le nom contient des espaces.
 - Accepter une collection ajoute les guillemets lorsque son nom contient des espaces.
 
-Vous pouvez aussi lancer une recherche dans un dossier à partir de l'arborescence des fichiers : faites un clic droit sur un dossier et choisissez *Rechercher dans le dossier*. Le panneau Recherche s'ouvre avec `path:"<dossier>/"` déjà rempli, prêt à recevoir les mots que vous cherchez.
+Vous pouvez aussi lancer une recherche dans un dossier à partir de l'arborescence des fichiers : faites un clic droit sur un dossier et choisissez *Rechercher dans le dossier*. Le panneau Recherche s'ouvre avec `path:"/<dossier>/"` déjà rempli, prêt à recevoir les mots que vous cherchez.
 
 === Options de recherche
 

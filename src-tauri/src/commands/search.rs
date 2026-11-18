@@ -70,15 +70,22 @@ pub async fn notebox_search(
 
     // Resolve `collection:` membership before taking the search lock (it reads
     // collection files and the property index); the engine only intersects the
-    // paths.
-    let mut collections = crate::search::engine::CollectionMembership::new();
+    // paths. `path:` reads folders from the notebox root.
+    let mut filters = crate::search::engine::FilterContext {
+        root: session
+            .get_storage()
+            .await
+            .ok()
+            .map(|storage| storage.canonical_root().to_path_buf()),
+        ..Default::default()
+    };
     for name in crate::search::query::collection_filter_values(&parsed) {
         let key = name.to_lowercase();
-        if collections.contains_key(&key) {
+        if filters.collections.contains_key(&key) {
             continue;
         }
         let members = crate::commands::collections::collection_member_paths(&session, &name).await;
-        collections.insert(key, members);
+        filters.collections.insert(key, members);
     }
 
     let engine = session.search_engine.read().await;
@@ -88,7 +95,7 @@ pub async fn notebox_search(
         limit,
         annotation_scope,
         verify.as_ref().map(|v| v as &dyn Fn(&str) -> bool),
-        &collections,
+        &filters,
     );
 
     // Match ranges are byte offsets, but the webview and CodeMirror use UTF-16,

@@ -331,8 +331,8 @@ const SearchPanel: Component = () => {
 
   function handleKeyDown(e: KeyboardEvent) {
     // The completion list owns the arrows, Tab and Escape while open. Enter
-    // only once the arrows have picked a row: filter values match substrings,
-    // so `tag:dr` can be a complete query and Enter must run it.
+    // only once the arrows have picked a row: a half-typed value can be a
+    // complete query (`tag:dr*`, `tag:draft`), so Enter must run it.
     const items = completionItems();
     if (showCompletions()) {
       if (e.key === "Escape") {
@@ -431,8 +431,7 @@ const SearchPanel: Component = () => {
     const all = (): string[] => {
       switch (c.kind) {
         case "path":
-          // The trailing `/` limits the filter to the folder, and shows the
-          // user the form.
+          // The trailing `/` shows the user that the value is a folder.
           return folders().map((folder) => `${folder}/`);
         case "tag":
           return allTags().map(([name]) => name);

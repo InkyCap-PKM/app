@@ -116,8 +116,9 @@ pub(crate) fn resolve_collection_members<'a>(
 }
 
 /// Paths of the notes in the collection named `name` (its `.collection` stem,
-/// ignoring case), for the `collection:` search filter: every note in any of
-/// its views, or its base filter group if it has no views. Empty if no
+/// ignoring case; a `*` in `name` stands for any run of characters, so it can
+/// name several collections), for the `collection:` search filter: every note
+/// in any of its views, or its base filter group if it has no views. Empty if no
 /// collection matches, the file can't be read, or no notebox is open
 /// (unreadable files are logged, not errors). The paths are the same `PathBuf`s
 /// the search engine uses, so they can be intersected with hits directly.
@@ -130,6 +131,8 @@ pub(crate) async fn collection_member_paths(
     if target.is_empty() {
         return members;
     }
+    // The whole name, or a `*` pattern that can name several collections.
+    let target = crate::search::field_match::NameMatcher::new(&target);
     let storage = match session.get_storage().await {
         Ok(s) => s,
         Err(_) => return members,
@@ -143,7 +146,7 @@ pub(crate) async fn collection_member_paths(
             .file_stem()
             .map(|s| s.to_string_lossy().to_lowercase())
             .unwrap_or_default();
-        if stem != target {
+        if !target.matches(&stem) {
             continue;
         }
         let base = match storage.read_file(path).await {

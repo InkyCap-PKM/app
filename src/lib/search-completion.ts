@@ -72,6 +72,15 @@ export function canComplete(value: string): boolean {
 }
 
 /**
+ * `value` written as a filter value: quoted if it contains anything that would
+ * end the token (a space or a parenthesis), as is otherwise. `value` must pass
+ * `canComplete`.
+ */
+export function quoteFilterValue(value: string): string {
+  return /[\s()]/.test(value) ? `"${value}"` : value;
+}
+
+/**
  * Replace the filter value with `value`, quoted if it contains anything that
  * would end the token. `suffix` goes after the quotes (a property key gets its
  * `=` so the value can be typed next). Returns the new query and the caret
@@ -83,8 +92,7 @@ export function applyCompletion(
   value: string,
   suffix = "",
 ): { text: string; caret: number } {
-  const quoted = /[\s()]/.test(value) ? `"${value}"` : value;
-  const inserted = quoted + suffix;
+  const inserted = quoteFilterValue(value) + suffix;
   return {
     text: query.slice(0, context.from) + inserted + query.slice(context.to),
     caret: context.from + inserted.length,

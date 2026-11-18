@@ -28,7 +28,7 @@ Because the default is whole-word matching, use the asterisk `*` when you want a
 
 Think of `*` as "any run of characters here". Without it, you get the exact word and nothing more.
 
-File names follow the same rule as body text. A bare term matches a whole word in a note's name, so `ink` finds a note called "Ink and Switch" but not one called "Linked thinking", and `ink*` widens the match in the same way. The one exception is the explicit `file:` filter described below, which still matches any part of a name.
+File names follow the same rule as body text. A bare term matches a whole word in a note's name, so `ink` finds a note called "Ink and Switch" but not one called "Linked thinking", and `ink*` widens the match in the same way. The filters described below follow this rule too.
 
 === Operators
 
@@ -53,25 +53,25 @@ You can combine terms with a small query language. The Search panel has a *Searc
 
 === Filters
 
-Prefix a term with one of these filters to narrow the search to a specific kind of match rather than the note body:
+Prefix a term with one of these filters to search one part of a note rather than its body, like the field searches (title, subject, author) of a library database:
 
 #table(
   columns: (163.5pt, auto),
   stroke: 0.5pt + luma(200),
   inset: 7pt,
   table.header([Filter], [What it matches]),
-  [`tag:research`], [Notes carrying a given #wikilink("5 - Tags", display: "tag").],
-  [`property:status=draft`], [Notes whose #wikilink("6 - Note Properties", display: "property") has a value. Bare `property:status` matches any note that has that property at all. In this example, the property is called "`status`" and it has the value "`draft`"],
-  [`section:methods`], [Notes that contain a heading matching the keyword.],
-  [`file:2026`], [Match by file name. Unlike a bare search term, this filter matches any part of a name, so `file:2026` finds "2026-03-01 Meeting".],
-  [`path:journal`], [Match by the file's path within the notebox. A folder name with spaces needs quotes, and a closing slash keeps the match to that folder: `path:"Reading Notes/"`.],
-  [`annotation:fixme`], [Match text inside an `#annotation[…]` or `#suggestion[…]`. Bare `annotation:` finds any note that has annotations.],
-  [`collection:Reading`], [Limit results to notes belonging to a particular #wikilink("2 - Collections", display: "collection").],
+  [`tag:research`], [Notes carrying a given #wikilink("5 - Tags", display: "tag"). The whole tag name must match; add `*` to match part of it, as in `tag:research*`.],
+  [`property:status=draft`], [Notes whose #wikilink("6 - Note Properties", display: "property") has a value. Bare `property:status` matches any note that has that property at all. In this example, the property is called "`status`" and it has the value "`draft`". The property name must match whole, and the value matches whole words in it: `property:author=otlet` finds "Athena Otlet".],
+  [`section:methods`], [Notes with a heading that contains the word.],
+  [`file:meeting`], [Notes with the word in their file name, so `file:meeting` finds "2026-03-01 Meeting". Words joined by hyphens count as one word, as in body text, so `file:2026*` finds it too but `file:2026` does not.],
+  [`path:journal`], [Notes in a folder of that name, at any depth. A name with spaces needs quotes, and a chain of folders matches one inside the other: `path:"Reading Notes/2026"`. Start with `/` to count from the top of the notebox: `path:/journal` finds only the top-level "Journal" folder.],
+  [`annotation:fixme`], [Notes with the word inside an `#annotation[…]` or `#suggestion[…]`. Bare `annotation:` finds any note that has annotations.],
+  [`collection:Reading`], [Limit results to notes belonging to a particular #wikilink("2 - Collections", display: "collection"). The whole collection name must match.],
 )
 
 Filters combine freely with the operators above, so a search expression like `tag:research methods -draft` is a perfectly good query.
 
-A filter value with spaces must be in quotes, as in `property:author="Jane Doe"`; otherwise only its first word is used.
+Filter values follow the rules of ordinary search terms: case doesn't matter, a value matches whole words (or a whole name, for tags, property names, folders, and collections), and `*` matches part of a word, as in `section:method*` or `collection:read*`. A filter value with spaces must be in quotes, as in `property:author="Athena Otlet"`, and its words then match as a phrase; without quotes, only the first word is used.
 
 === Picking filter values from a list
 
@@ -81,7 +81,7 @@ You don't have to remember the exact names in your notebox. As soon as you type 
 - Accepting a folder writes the closing slash for you, and adds the quotes when the name has spaces.
 - Accepting a collection adds the quotes when its name has spaces.
 
-You can also start a folder search from the file tree: right-click a folder and choose *Search in folder*. The Search panel opens with `path:"<folder>/"` already filled in, ready for you to add the words you're looking for.
+You can also start a folder search from the file tree: right-click a folder and choose *Search in folder*. The Search panel opens with `path:"/<folder>/"` already filled in, ready for you to add the words you're looking for.
 
 === Search options
 

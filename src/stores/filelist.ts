@@ -2,6 +2,7 @@
 // Used by quick-open for fuzzy searching.
 
 import { createSignal } from "solid-js";
+import { pathEquals, pathStartsWith } from "../lib/paths";
 import { compareName } from "../lib/sort";
 import type { FileTreeNode } from "../lib/types";
 
@@ -63,6 +64,24 @@ export function folderPaths(entries: FileEntry[]): string[] {
     }
   }
   return [...seen].sort(compareName);
+}
+
+/**
+ * The folder at `dirPath`, as its chain of names from the notebox root (`2
+ * Box/Drafts`), found by walking the tree. Doesn't depend on how the notebox
+ * root is spelled, which can differ from the tree's paths (a notebox opened
+ * through a symlink). `null` if the folder isn't in the tree.
+ */
+export function treeFolderPath(tree: FileTreeNode[], dirPath: string): string | null {
+  for (const node of tree) {
+    if (!node.is_dir) continue;
+    if (pathEquals(node.path, dirPath)) return node.name;
+    if (node.children && pathStartsWith(dirPath, node.path)) {
+      const rest = treeFolderPath(node.children, dirPath);
+      if (rest !== null) return `${node.name}/${rest}`;
+    }
+  }
+  return null;
 }
 
 export { fileList };

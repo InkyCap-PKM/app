@@ -540,7 +540,7 @@ pub(crate) fn word_boundaries(text: &str) -> Vec<(usize, &str)> {
     words
 }
 
-fn is_word_char(ch: char) -> bool {
+pub(crate) fn is_word_char(ch: char) -> bool {
     ch.is_alphanumeric() || ch == '_' || ch == '-'
 }
 

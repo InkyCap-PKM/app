@@ -61,7 +61,7 @@ You can shape the list to suit you:
 
 You can also search by tag directly from the #wikilink("1 - Views and Navigation") search panel using the `tag:` prefix, for example `tag:research`. You may combine this with the rest of InkyCap's search language. For example to find all of your research notes on owls, you might write a search expression that includes the word `owl` and includes `tag:research`, which will limit the scope of your results to only files tagged with `research` and that contain the word `owl` somewhere in their content.
 
-#callout("note")[Tag matching in search is _case-insensitive_ and matches on _part_ of the name, not the whole thing. So `tag:rust` will turn up notes tagged with any of the following:  `Rustacean`, `rust-lang`, or `rust`.]
+#callout("note")[Tag matching in search is _case-insensitive_ and matches the _whole_ name, so `tag:rust` finds notes tagged `rust` or `Rust` but not `rust-lang`. Add `*` to match part of a name: `tag:rust*` also finds `rust-lang` and `Rustacean`, and `tag:*lang` finds `rust-lang`.]
 
 == Renaming and deleting tags
 
