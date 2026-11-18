@@ -78,6 +78,13 @@
   gap: var(--space-2);
 }
 
+/* Sized to its label rather than stretched across the column, so it stays
+   compact in a wide panel; capped to the column in a narrow one. */
+.note-packages__add {
+  align-self: flex-start;
+  max-width: 100%;
+}
+
 .note-packages__item {
   padding-block: 0;
 }

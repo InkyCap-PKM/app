@@ -89,7 +89,7 @@ const NotePackagesSection: Component<{
       </Show>
       <Show when={addable().length > 0}>
         <Dropdown<string>
-          class="dropdown--block"
+          class="note-packages__add"
           value=""
           placeholder={t("notePackages.add")}
           options={addable().map((p) => ({

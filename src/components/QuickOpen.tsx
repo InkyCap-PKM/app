@@ -1,5 +1,6 @@
 // Quick open (Ctrl+O): fuzzy search of notes by file name, `title` and `zid`,
-// opening the chosen one.
+// opening the chosen one, or creating a note named after the query when no
+// note has that name.
 
 import {
   Component,
@@ -10,6 +11,7 @@ import {
   Show,
   on,
 } from "solid-js";
+import { FilePlus2 } from "lucide-solid";
 import { fileList, isNoteFile, type FileEntry } from "../stores/filelist";
 import {
   fuzzyMatch,
@@ -20,7 +22,9 @@ import {
 import { getNoteIdentifiers, type NoteIdentifiers } from "../lib/ipc";
 import { normalizePath } from "../lib/paths";
 import { compareName } from "../lib/sort";
-import { openTab } from "../stores/tabs";
+import { openCreatedNote, openTab } from "../stores/tabs";
+import { triggerCreationRule } from "../stores/creation-rules";
+import { toastError } from "../stores/toasts";
 import { useI18n } from "../lib/i18n";
 import { createHoverGuard } from "../lib/picker-hover";
 
@@ -183,6 +187,19 @@ const QuickOpen: Component<QuickOpenProps> = (props) => {
     return scored;
   });
 
+  // The typed name to offer as a new note, or null when the box is empty or a
+  // note already has that name. Names are unique across the notebox regardless
+  // of case, so the check ignores case.
+  const newNoteName = createMemo((): string | null => {
+    const q = query().trim();
+    if (q.length === 0) return null;
+    const lower = q.toLowerCase();
+    const taken = fileList().some(
+      (f) => isNoteFile(f) && displayName(f.name).toLowerCase() === lower,
+    );
+    return taken ? null : q;
+  });
+
   // Only the first `visibleCount` rows are rendered; the rest load on demand.
   const visible = createMemo(() => results().slice(0, visibleCount()));
 
@@ -215,6 +232,22 @@ const QuickOpen: Component<QuickOpenProps> = (props) => {
       path: entry.path,
     });
     close();
+  }
+
+  /** Create a note named `name` with the "New Note" rule and open it. */
+  async function createNote(name: string) {
+    close();
+    try {
+      const result = await triggerCreationRule("new-note", { name });
+      if (!result) return;
+      const file = result.path.split(/[/\\]/).pop() ?? name;
+      openCreatedNote(
+        { type: "file", title: displayName(file), path: result.path },
+        { cursorOffset: result.cursor_offset ?? undefined },
+      );
+    } catch (err) {
+      toastError(t("rightPanel.toast.createNoteFailed"), err);
+    }
   }
 
   function close() {
@@ -269,10 +302,14 @@ const QuickOpen: Component<QuickOpenProps> = (props) => {
       return;
     }
 
+    // Shift+Enter creates the typed note, as does Enter when nothing matches.
     if (e.key === "Enter") {
       e.preventDefault();
       const idx = selectedIndex();
-      if (list[idx]) {
+      const name = newNoteName();
+      if (name !== null && (e.shiftKey || !list[idx])) {
+        void createNote(name);
+      } else if (list[idx] && !e.shiftKey) {
         selectFile(list[idx].entry);
       }
       return;
@@ -375,6 +412,21 @@ const QuickOpen: Component<QuickOpenProps> = (props) => {
               <div class="quick-open__empty">{t("quickOpen.noMatching")}</div>
             </Show>
           </div>
+          <Show when={newNoteName()}>
+            {(name) => (
+              <button
+                type="button"
+                class="quick-open__create"
+                onClick={() => void createNote(name())}
+              >
+                <FilePlus2 size={16} class="quick-open__create-icon" />
+                <span class="quick-open__create-label">
+                  {t("quickOpen.createNote", { name: name() })}
+                </span>
+                <span class="badge">{t("quickOpen.createHint")}</span>
+              </button>
+            )}
+          </Show>
         </div>
       </div>
     </Show>

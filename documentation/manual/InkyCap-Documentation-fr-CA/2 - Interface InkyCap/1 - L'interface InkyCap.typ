@@ -140,7 +140,7 @@ La barre tout au bas vous donne un état rapide et des actions rapides. De gauch
 
 La *Palette de commandes* (*Ctrl+P*) énumère chaque commande d'InkyCap. Commencez à taper pour faire une recherche approximative ; les lettres correspondantes sont mises en surbrillance, et chaque résultat affiche son raccourci clavier. Quand le champ est vide, les commandes sont regroupées en catégories repliables (Fichier, Édition, Affichage, Naviguer, et plus) que vous pouvez parcourir avec les touches fléchées.
 
-L'*Ouverture rapide* (*Ctrl+O*) sert à sauter à une note par son nom. Quand le champ est vide, elle _énumère vos notes, les plus récemment modifiées en premier_ ; commencez à taper pour faire une correspondance approximative sur le nom du fichier. Appuyez sur Entrée pour ouvrir la note mise en surbrillance.
+L'*Ouverture rapide* (*Ctrl+O*) sert à sauter à une note par son nom. Quand le champ est vide, elle _énumère vos notes, les plus récemment modifiées en premier_ ; commencez à taper pour faire une correspondance approximative sur le nom du fichier. Appuyez sur Entrée pour ouvrir la note mise en surbrillance. Si aucune note ne porte le nom tapé, une ligne *Créer la note* en bas en crée une sous ce nom ; appuyez sur `Maj+Entrée` pour l'utiliser sans la souris (Entrée seule fait de même quand rien ne correspond).
 
 #callout("tip", title: "Astuces de la palette de commandes")[ Les rangées de la Palette de commandes affichent aussi un indice de balisage à côté des commandes de mise en forme (par exemple `*…*` pour le gras), pour que vous appreniez la syntaxe Typst sous-jacente au fil de l'eau. La palette est le seul endroit pour lancer une recherche-remplacement dans toute la boîte de notes. ]
 

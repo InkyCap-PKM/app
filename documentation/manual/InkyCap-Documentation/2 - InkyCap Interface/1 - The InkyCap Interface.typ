@@ -139,7 +139,7 @@ The bar along the bottom gives you quick status and quick actions. From left to 
 
 The *Command Palette* (*Ctrl+P*) lists every command in InkyCap. Start typing to fuzzy-search; the matching letters are highlighted, and each result shows its keyboard shortcut. With the box empty, commands are grouped into collapsible categories (File, Edit, View, Navigate, and more) that you can browse with the arrow keys.
 
-*Quick Open* (*Ctrl+O*) is for jumping to a note by name. With the box empty it _lists your notes with the most recently edited first_; start typing to fuzzy-match on the file name. Press Enter to open the highlighted note.
+*Quick Open* (*Ctrl+O*) is for jumping to a note by name. With the box empty it _lists your notes with the most recently edited first_; start typing to fuzzy-match on the file name. Press Enter to open the highlighted note. If no note has the name you typed, a *Create note* row at the bottom makes one with that name; press `Shift+Enter` to use it without the mouse (plain Enter does the same when nothing matches).
 
 #callout("tip", title: "Command palette tips")[Command Palette rows also show a markup hint next to formatting commands (for example `*…*` for bold), so you can learn the underlying Typst syntax as you go. The palette is the only place to launch a notebox-wide search-and-replace. ]
 

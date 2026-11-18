@@ -445,6 +445,8 @@
   "quickOpen.noMatching": "Aucun fichier correspondant",
   "quickOpen.matchedTitle": "Titre",
   "quickOpen.matchedZid": "ZID",
+  "quickOpen.createNote": "Créer la note « {name} »",
+  "quickOpen.createHint": "Maj+Entrée",
   "editor.nav.label": "Navigation",
   "editor.nav.back": "Reculer",
   "editor.nav.forward": "Avancer",

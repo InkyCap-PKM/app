@@ -109,6 +109,39 @@
   font-size: var(--text-base);
 }
 
+/* "Create note" row under the results, shown when no note has the typed
+   name. Outside the scrolling list so it stays in view however many fuzzy
+   matches there are. */
+.quick-open__create {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+  border: none;
+  border-top: 1px solid var(--border-primary);
+  background: none;
+  color: var(--fg-primary);
+  font: inherit;
+  font-size: var(--text-lg);
+  text-align: left;
+  cursor: pointer;
+}
+
+.quick-open__create:hover {
+  background: var(--bg-hover);
+}
+
+.quick-open__create-icon {
+  flex-shrink: 0;
+  color: var(--fg-muted);
+}
+
+.quick-open__create-label {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 /* Folder picker (Move file/folder to…) — reuses .quick-open__* and adds
    a keyboard-hint footer. */
 .folder-picker__footer {

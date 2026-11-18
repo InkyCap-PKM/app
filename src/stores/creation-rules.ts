@@ -67,12 +67,15 @@ async function promptFilename(rule: CreationRule | undefined): Promise<string | 
  * `{{title}}`/`{{slug}}` are content variables, not filename variables, so a
  * pattern of only those expands to nothing and asks for a name.
  *
+ * `name`, when given, is used as the file name in place of the rule's pattern
+ * (Quick Open's "Create note"), so no name is asked for unless it clashes.
+ *
  * Returns the result, or `null` if the name prompt was cancelled. Other errors
  * are thrown.
  */
 export async function triggerCreationRule(
   ruleId: string,
-  options?: { targetFolder?: string; scaffoldOverride?: string },
+  options?: { targetFolder?: string; scaffoldOverride?: string; name?: string },
 ): Promise<CreationResult | null> {
   const folderOverride = options?.targetFolder;
   const scaffoldOverride = options?.scaffoldOverride;
@@ -88,11 +91,11 @@ export async function triggerCreationRule(
   // rule from disk and returns a clear error if it truly doesn't exist.
   const pattern = rule?.filename_pattern.trim() ?? "?";
 
-  // Initial filename. A blank pattern can't give one, so use a ZID (if enabled)
-  // or ask; otherwise the backend expands the pattern (and may still return
+  // Initial filename: the given name if any. A blank pattern can't give one,
+  // so use a ZID (if enabled) or ask; otherwise the backend expands the pattern (and may still return
   // `filename-required`).
-  let nameOverride: string | undefined;
-  if (pattern === "") {
+  let nameOverride: string | undefined = options?.name;
+  if (nameOverride === undefined && pattern === "") {
     if (settings.files.zettelkasten_enabled && settings.files.auto_title_as_zid) {
       nameOverride = await ipc.generateZid();
     } else {
