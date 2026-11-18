@@ -30,9 +30,11 @@ Deux contrôles d'en-tête existent :
 
 == Scaffolds
 
-Un scaffold n'est qu'un contenu de note que vous réutilisez. InkyCap en vient avec deux, et vous pouvez ajouter les vôtres.
+Un scaffold n'est qu'un contenu de note que vous réutilisez. InkyCap en vient avec trois, et vous pouvez ajouter les vôtres.
 
 Les deux scaffolds intégrés sont *new-note* (le point de départ standard derrière chaque nouvelle note) et *daily-note* (un point de départ daté idéal pour la tenue d'un journal ; voir #wikilink("4 - Rouleau de journal")). Ceux-ci sont semés dans votre boîte de notes la première fois que vous l'ouvrez, puis laissés tranquilles, mais vous pouvez les personnaliser. Ils ne peuvent pas être supprimés, puisque les règles de création intégrées en dépendent.
+
+Le troisième, *literature-note-sample*, est un point de départ pour les #wikilink("7 - Citations et bibliographie", label: "literature-notes", display: "notes de lecture"), des notes qui portent sur une œuvre de votre bibliographie. Modifiez-le, copiez-le ou supprimez-le; une fois supprimé, il ne revient pas.
 
 === Insérer un scaffold dans une note
 
@@ -61,6 +63,13 @@ Les scaffolds (et plusieurs champs des règles de création) comprennent les esp
 - `{{date:FORMAT}}` est la date d'aujourd'hui dans un format que vous choisissez (voir ci-dessous).
 - `{{time}}` et `{{time:FORMAT}}` donnent l'heure actuelle.
 - `{{zid}}` est un identifiant Zettelkasten, si vous avez configuré ce motif.
+
+Un scaffold de #wikilink("7 - Citations et bibliographie", label: "literature-notes", display: "notes de lecture") peut aussi utiliser une référence de votre bibliographie. Utiliser un tel scaffold demande de quelle référence traite la note.
+
+- `{{ref}}` est la référence elle-même. Comme valeur entière d'une propriété, `source: "{{ref}}"`, elle devient la source de la note. Dans le texte de la note, elle devient une citation.
+- `{{ref.FIELD}}` est l'un des détails de la référence. Les champs sont `key` (la clé de citation), `type` (article, livre, …), `title`, `author`, `editor`, `date`, `year`, `parent` (la revue, le livre ou l'autre œuvre où elle paraît), `publisher`, `location`, `organization`, `volume`, `issue`, `edition`, `page-range`, `url`, `doi`, `isbn`, `issn`, `language`, `genre`, `abstract` et `note`.
+
+Écrivez la valeur d'une propriété comme l'espace à remplir entre guillemets, par exemple `author: "{{ref.author}}"`. Les guillemets gardent le scaffold valide en Typst pendant que vous le modifiez. Quand l'espace à remplir est la valeur entière, la propriété reçoit le détail sous sa forme naturelle : une liste de noms pour `author` et `editor`, et du texte pour les autres. Un espace à remplir à l'intérieur d'un texte plus long, comme dans `"Lu pour {{ref.title}}"`, est rempli comme texte. Une propriété dont la valeur est un détail que la référence n'a pas est omise de la note.
 
 Le format à l'intérieur de `{{date:...}}` utilise des jetons familiers : `YYYY` (année), `MM` (numéro du mois), `MMMM` (nom complet du mois), `DD` (jour), `dddd` (nom du jour de la semaine), `HH` et `mm` (heures et minutes), et ainsi de suite. Tout ce qui n'est pas un jeton passe tel quel, donc `{{date:D MMMM YYYY}}` vous donne quelque chose comme « 5 juin 2026 ». Les _noms_ des mois et des jours de la semaine suivent la langue de votre interface, donc une interface française afficherait « vendredi ».
 

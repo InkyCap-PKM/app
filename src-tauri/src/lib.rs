@@ -481,6 +481,7 @@ pub fn run() {
             commands::bibliography::get_bibliography_entries,
             commands::bibliography::get_file_citations,
             commands::bibliography::copy_file_bibliography,
+            commands::bibliography::get_note_source_reference,
             commands::bibliography::aggregate_citations,
             commands::bibliography::refresh_bibliography,
             commands::bibliography::detect_zotero_path,

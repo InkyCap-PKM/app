@@ -2,6 +2,7 @@ import { errorText } from "../lib/errors";
 import { Component, createResource, createSignal, createMemo, For, Show, onMount, onCleanup } from "solid-js";
 import { attachListNav } from "../lib/list-nav";
 import CitationRow from "./CitationRow";
+import SourceReferenceSection from "./SourceReferenceSection";
 import { getActiveTab } from "../stores/tabs";
 import { pathEquals } from "../lib/paths";
 import { noteboxSettings } from "../stores/settings";
@@ -13,6 +14,8 @@ import { useI18n, tPlural } from "../lib/i18n";
 import { anchorPanelMenu } from "../lib/uiMenu";
 import { clickOutside } from "../lib/clickOutside";
 import { showToast } from "../stores/toasts";
+import { showContextMenu } from "../lib/context-menu";
+import { referenceMenuEntries, type Reference } from "../lib/literature-notes";
 import { RefreshCw, ClipboardCopy, ChevronRight, ChevronDown } from "lucide-solid";
 
 const PAGE_SIZE = 50;
@@ -243,6 +246,23 @@ const ReferencesPanel: Component = () => {
     });
   });
 
+  /** A reference's literature-note actions, as a menu at `(x, y)`. */
+  async function openReferenceMenu(x: number, y: number, reference: Reference) {
+    showContextMenu(x, y, await referenceMenuEntries(reference));
+  }
+
+  /** Right-click on a reference row. */
+  function onReferenceContextMenu(e: MouseEvent, reference: Reference) {
+    e.preventDefault();
+    void openReferenceMenu(e.clientX, e.clientY, reference);
+  }
+
+  /** The actions button on a reference row: the same menu, below the button. */
+  function onReferenceActions(button: HTMLElement, reference: Reference) {
+    const rect = button.getBoundingClientRect();
+    void openReferenceMenu(rect.left, rect.bottom, reference);
+  }
+
   function insertCitation(key: string) {
     document.dispatchEvent(
       new CustomEvent("inkycap:insert-citation", { detail: { key } }),
@@ -293,6 +313,9 @@ const ReferencesPanel: Component = () => {
 
   return (
     <div class="references-panel">
+      {/* A literature note's own reference */}
+      <SourceReferenceSection path={activeFileTab()?.path} />
+
       {/* Browse all references */}
       <div class="right-panel__section">
         <div class="right-panel__section-header">
@@ -444,6 +467,8 @@ const ReferencesPanel: Component = () => {
                       zoteroItemKey: entry.zotero_item_key,
                     }}
                     onActivate={() => insertCitation(entry.key)}
+                    onContextMenu={(e) => onReferenceContextMenu(e, entry)}
+                    onActions={(button) => onReferenceActions(button, entry)}
                     title={t("references.insertCite", { key: entry.key })}
                   />
                 )}
@@ -510,6 +535,8 @@ const ReferencesPanel: Component = () => {
                     year: cite.year,
                     zoteroItemKey: cite.zotero_item_key,
                   }}
+                  onContextMenu={(e) => onReferenceContextMenu(e, cite)}
+                  onActions={(button) => onReferenceActions(button, cite)}
                 />
               )}
             </For>

@@ -15,6 +15,7 @@ import { fuzzyMatch, compareMatches, type FuzzyMatch } from "../lib/fuzzy";
 import { activeEditorView } from "../stores/editor";
 import { getActiveTab, openCreatedNote } from "../stores/tabs";
 import { triggerCreationRule } from "../stores/creation-rules";
+import { pickReference } from "../stores/referencePicker";
 import { toastError } from "../stores/toasts";
 import { externalReload } from "../editor/typst-decorations/visual-plugin";
 import { useI18n } from "../lib/i18n";
@@ -84,6 +85,15 @@ const ScaffoldPicker: Component<ScaffoldPickerProps> = (props) => {
       await createNoteFromScaffold(entry);
       return;
     }
+    // A literature-note scaffold asks which reference to fill in from.
+    // Cancelling leaves the note as it was.
+    let referenceKey: string | undefined;
+    if (entry.uses_reference) {
+      close();
+      const reference = await pickReference();
+      if (!reference) return;
+      referenceKey = reference.key;
+    }
     const view = handle.view;
     const currentSource = view.state.doc.toString();
 
@@ -98,6 +108,7 @@ const ScaffoldPicker: Component<ScaffoldPickerProps> = (props) => {
         scaffoldName: entry.name,
         currentSource,
         title,
+        referenceKey,
       });
 
       view.dispatch({
@@ -116,20 +127,18 @@ const ScaffoldPicker: Component<ScaffoldPickerProps> = (props) => {
 
   // Create a note from the scaffold and open it in the empty active tab, when
   // the picker is used with no note open. `triggerCreationRule` returns null if
-  // the name prompt is cancelled.
+  // the name or reference prompt is cancelled.
   async function createNoteFromScaffold(entry: ipc.TemplateEntry) {
+    // Closed first, so a reference or name prompt isn't shown behind it.
+    close();
     try {
       const result = await triggerCreationRule("new-note", { scaffoldOverride: entry.name });
-      if (!result) {
-        close();
-        return;
-      }
+      if (!result) return;
       const name = result.path.split("/").pop() ?? t("bookmarks.untitled");
       openCreatedNote(
         { type: "file", title: name, path: result.path },
         { cursorOffset: result.cursor_offset ?? undefined },
       );
-      close();
     } catch (e) {
       toastError(t("scaffoldPicker.insertFailed"), e);
     }

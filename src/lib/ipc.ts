@@ -45,6 +45,7 @@ import type {
   TypstHtmlResult,
   BibEntry,
   FileCitation,
+  SourceReference,
   AggregatedCitation,
   GitStatusSummary,
   GitDigestEntry,
@@ -1520,6 +1521,9 @@ export async function reorderCreationRules(
  *   optional) to use instead of the rule's own.
  * - `currentNote`: the note being worked in, for the "Current folder" location
  *   option.
+ * - `referenceKey`: the citation key whose details fill the scaffold's
+ *   `{{ref…}}` variables. Without one, such a scaffold fails with
+ *   `reference-required` before anything is written.
  */
 export async function executeCreationRule(
   ruleId: string,
@@ -1527,6 +1531,7 @@ export async function executeCreationRule(
   targetFolderOverride?: string,
   scaffoldOverride?: string,
   currentNote?: string,
+  referenceKey?: string,
 ): Promise<CreationResult> {
   return invoke<CreationResult>("execute_creation_rule", {
     ruleId,
@@ -1534,6 +1539,7 @@ export async function executeCreationRule(
     targetFolderOverride: targetFolderOverride ?? null,
     scaffoldOverride: scaffoldOverride ?? null,
     currentNote: currentNote ?? null,
+    referenceKey: referenceKey ?? null,
   });
 }
 
@@ -1548,6 +1554,9 @@ export interface TemplateEntry {
   /** True for the system scaffolds (new-note, daily-note), which must not
    *  offer a delete affordance. Always false for non-scaffold entries. */
   builtin: boolean;
+  /** True when the scaffold uses `{{ref…}}` variables: it makes literature
+   *  notes and asks for a reference when used. */
+  uses_reference: boolean;
 }
 
 export async function listScaffoldEntries(): Promise<TemplateEntry[]> {
@@ -1784,11 +1793,14 @@ export async function prepareScaffoldInsert(args: {
   scaffoldName: string;
   currentSource: string;
   title: string;
+  /** Fills the scaffold's `{{ref…}}` variables; see `executeCreationRule`. */
+  referenceKey?: string;
 }): Promise<ScaffoldInsertResult> {
   return invoke<ScaffoldInsertResult>("prepare_scaffold_insert", {
     scaffoldName: args.scaffoldName,
     currentSource: args.currentSource,
     title: args.title,
+    referenceKey: args.referenceKey ?? null,
   });
 }
 
@@ -2403,6 +2415,15 @@ export async function getFileCitations(path: string): Promise<FileCitation[]> {
  * The references cited in `path`, as pre-formatted Typst markup in the
  * notebox's citation style, for the clipboard. Empty when it cites nothing.
  */
+/**
+ * The source reference of the note at `path`, formatted in the notebox's
+ * citation style, or `null` when its `source` isn't a reference (none, or a
+ * URI).
+ */
+export async function getNoteSourceReference(path: string): Promise<SourceReference | null> {
+  return invoke<SourceReference | null>("get_note_source_reference", { path });
+}
+
 export async function copyFileBibliography(path: string): Promise<string> {
   return invoke<string>("copy_file_bibliography", { path });
 }

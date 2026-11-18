@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+use serde::Serialize;
 use tauri::State;
 
 use crate::errors::InkyCapError;
@@ -121,19 +122,115 @@ pub async fn copy_file_bibliography(
         return Ok(String::new());
     }
 
-    let (source_kind, bib_path, zotero_path, custom_csl, style_name) = {
+    let library = load_notebox_library(&state, &session).await?;
+    let style = notebox_citation_style(&state, &session, &notebox_root).await?;
+    bibliography::render_cited_bibliography(&library, &keys, &style).map_err(InkyCapError::Typst)
+}
+
+/// A literature note's source reference (its `source: <key>`), for the
+/// References panel: the entry formatted in the notebox's citation style, as
+/// styled runs to show and as Typst markup to copy.
+#[derive(Debug, Serialize)]
+pub struct SourceReference {
+    pub key: String,
+    /// False when the bibliography has no entry with the key; the other
+    /// fields are then empty.
+    pub found: bool,
+    pub title: Option<String>,
+    pub formatted: Vec<bibliography::FormattedSpan>,
+    /// The formatted entry as Typst markup, as [`copy_file_bibliography`]
+    /// gives it.
+    pub markup: String,
+}
+
+/// The source reference of the note at `path`, or `None` when its `source`
+/// isn't a reference (no source, or a URI).
+#[tauri::command]
+pub async fn get_note_source_reference(
+    path: String,
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<Option<SourceReference>, InkyCapError> {
+    let session = state.session(window.label()).await;
+    let notebox_root = session
+        .notebox_root
+        .read()
+        .await
+        .clone()
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
+    let storage = session.get_storage().await?;
+    let content = storage.read_file(&sanitize_notebox_arg(&path)?).await?;
+    let Some(key) = crate::typst_pipeline::note_rewriter::source_reference_key(&content) else {
+        return Ok(None);
+    };
+
+    let library = load_notebox_library(&state, &session).await?;
+    let Some(entry) = library.get(&key) else {
+        return Ok(Some(SourceReference {
+            key,
+            found: false,
+            title: None,
+            formatted: Vec::new(),
+            markup: String::new(),
+        }));
+    };
+    let title = entry.title().map(|t| t.to_string());
+    let style = notebox_citation_style(&state, &session, &notebox_root).await?;
+    let keys = [key.clone()];
+    Ok(Some(SourceReference {
+        formatted: bibliography::render_reference_spans(&library, &key, &style)
+            .map_err(InkyCapError::Typst)?,
+        markup: bibliography::render_cited_bibliography(&library, &keys, &style)
+            .map_err(InkyCapError::Typst)?,
+        key,
+        found: true,
+        title,
+    }))
+}
+
+/// The CSL style references are formatted in, as when compiling: the
+/// notebox's custom `.csl`, else the global named style.
+async fn notebox_citation_style(
+    state: &AppState,
+    session: &NoteboxSession,
+    notebox_root: &std::path::Path,
+) -> Result<hayagriva::citationberg::IndependentStyle, InkyCapError> {
+    let (custom_csl, style_name) = {
+        let notebox = session.notebox_settings.read().await;
+        let global = state.settings.read().await;
+        (
+            notebox.citations.custom_csl_path.clone(),
+            global.citations.citation_style.clone(),
+        )
+    };
+    bibliography::resolve_style(notebox_root, custom_csl.as_deref(), style_name.as_deref())
+        .map_err(InkyCapError::Typst)
+}
+
+/// The notebox's bibliography as a hayagriva library: the configured file,
+/// or the Zotero library exported as BibTeX first, the same shape the compile
+/// pipeline gives Typst.
+pub(crate) async fn load_notebox_library(
+    state: &AppState,
+    session: &NoteboxSession,
+) -> Result<hayagriva::Library, InkyCapError> {
+    let notebox_root = session
+        .notebox_root
+        .read()
+        .await
+        .clone()
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
+    let (source_kind, bib_path, zotero_path) = {
         let notebox = session.notebox_settings.read().await;
         let global = state.settings.read().await;
         (
             notebox.citations.source.clone(),
             notebox.citations.bibliography_path.clone(),
             global.citations.zotero_database_path.clone(),
-            notebox.citations.custom_csl_path.clone(),
-            global.citations.citation_style.clone(),
         )
     };
 
-    let library = match source_kind.as_str() {
+    match source_kind.as_str() {
         "zotero" => {
             let db = zotero_path
                 .map(PathBuf::from)
@@ -144,24 +241,31 @@ pub async fn copy_file_bibliography(
                 }
                 None => Vec::new(),
             };
-            // Materialize Zotero as BibTeX first — the same shape the live
-            // compile pipeline feeds Typst — then parse it into a library.
             let bibtex = bibliography::export_entries_to_bibtex(&entries);
-            bibliography::parse_library_bibtex(&bibtex).map_err(InkyCapError::Typst)?
+            bibliography::parse_library_bibtex(&bibtex).map_err(InkyCapError::Typst)
         }
         _ => {
             let bib = bibliography::detect_default(&notebox_root, bib_path.as_deref()).ok_or_else(
                 || InkyCapError::Typst("No bibliography file is configured".to_string()),
             )?;
-            bibliography::load_library(&bib).map_err(InkyCapError::Typst)?
+            bibliography::load_library(&bib).map_err(InkyCapError::Typst)
         }
-    };
+    }
+}
 
-    let style =
-        bibliography::resolve_style(&notebox_root, custom_csl.as_deref(), style_name.as_deref())
-            .map_err(InkyCapError::Typst)?;
-
-    bibliography::render_cited_bibliography(&library, &keys, &style).map_err(InkyCapError::Typst)
+/// The details of the reference with citation key `key`, for a scaffold's
+/// `{{ref…}}` variables. [`InkyCapError::ReferenceNotFound`] if the
+/// bibliography has no such key.
+pub(crate) async fn reference_fields(
+    state: &AppState,
+    session: &NoteboxSession,
+    key: &str,
+) -> Result<crate::scaffolds::reference::ReferenceFields, InkyCapError> {
+    let library = load_notebox_library(state, session).await?;
+    library
+        .get(key)
+        .map(crate::scaffolds::reference::ReferenceFields::from_entry)
+        .ok_or_else(|| InkyCapError::ReferenceNotFound(key.to_string()))
 }
 
 /// Shared entry loading logic.

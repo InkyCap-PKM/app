@@ -30,6 +30,7 @@ import ExportDialog from "./components/ExportDialog";
 import ToastHost from "./components/ToastHost";
 import PromptHost from "./components/PromptHost";
 import FolderPickerHost from "./components/FolderPickerHost";
+import ReferencePickerHost from "./components/ReferencePickerHost";
 import NoteboxSeedHost from "./components/NoteboxSeedHost";
 import TypAuditDialog from "./components/TypAuditDialog";
 import NameAuditDialog from "./components/NameAuditDialog";
@@ -498,6 +499,7 @@ const App: Component = () => {
         <ToastHost />
         <PromptHost />
         <FolderPickerHost />
+        <ReferencePickerHost />
         <NoteboxSeedHost />
         <NoteboxRequiredOverlay />
       </div>

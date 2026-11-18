@@ -833,14 +833,13 @@ pub fn resolve_style(
     }
 }
 
-/// The references for `keys` as static Typst markup in CSL `style`, one
-/// paragraph each in the style's order. Keys not in `library` are skipped.
-/// Empty when none resolve.
-pub fn render_cited_bibliography(
+/// The references for `keys` rendered by hayagriva in CSL `style`, in the
+/// style's order. Keys not in `library` are skipped; empty when none resolve.
+fn render_items(
     library: &hayagriva::Library,
     keys: &[String],
     style: &hayagriva::citationberg::IndependentStyle,
-) -> Result<String, String> {
+) -> Result<Vec<hayagriva::BibliographyItem>, String> {
     use hayagriva::{BibliographyDriver, BibliographyRequest, CitationItem, CitationRequest};
 
     let locales = hayagriva::archive::locales();
@@ -858,7 +857,7 @@ pub fn render_cited_bibliography(
         }
     }
     if !any {
-        return Ok(String::new());
+        return Ok(Vec::new());
     }
 
     let rendered = driver.finish(BibliographyRequest {
@@ -870,9 +869,20 @@ pub fn render_cited_bibliography(
     let Some(bib) = rendered.bibliography else {
         return Err("The selected citation style does not define a bibliography".to_string());
     };
+    Ok(bib.items)
+}
 
-    let mut paragraphs = Vec::with_capacity(bib.items.len());
-    for item in &bib.items {
+/// The references for `keys` as static Typst markup in CSL `style`, one
+/// paragraph each in the style's order. Keys not in `library` are skipped.
+/// Empty when none resolve.
+pub fn render_cited_bibliography(
+    library: &hayagriva::Library,
+    keys: &[String],
+    style: &hayagriva::citationberg::IndependentStyle,
+) -> Result<String, String> {
+    let items = render_items(library, keys, style)?;
+    let mut paragraphs = Vec::with_capacity(items.len());
+    for item in &items {
         let mut para = String::new();
         // Numeric styles (IEEE, Vancouver) split the leading label into
         // `first_field`; author-date styles leave it `None`.
@@ -887,6 +897,89 @@ pub fn render_cited_bibliography(
         }
     }
     Ok(paragraphs.join("\n\n"))
+}
+
+/// A run of a formatted reference with one style, for showing it in the
+/// interface (the References panel) rather than in a Typst document.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct FormattedSpan {
+    pub text: String,
+    pub italic: bool,
+    pub bold: bool,
+    pub small_caps: bool,
+    /// The link's address, for a span that is a link (a DOI or URL).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+}
+
+/// The reference with `key` as hayagriva formats it in CSL `style`, as styled
+/// runs of text. Empty when `library` has no such key.
+pub fn render_reference_spans(
+    library: &hayagriva::Library,
+    key: &str,
+    style: &hayagriva::citationberg::IndependentStyle,
+) -> Result<Vec<FormattedSpan>, String> {
+    let items = render_items(library, &[key.to_string()], style)?;
+    let mut spans = Vec::new();
+    for item in &items {
+        if let Some(first) = &item.first_field {
+            elem_child_to_spans(first, &mut spans);
+            push_span(&mut spans, " ", &hayagriva::Formatting::default(), None);
+        }
+        elem_children_to_spans(&item.content, &mut spans);
+    }
+    Ok(spans)
+}
+
+fn elem_children_to_spans(children: &hayagriva::ElemChildren, out: &mut Vec<FormattedSpan>) {
+    for child in &children.0 {
+        elem_child_to_spans(child, out);
+    }
+}
+
+fn elem_child_to_spans(child: &hayagriva::ElemChild, out: &mut Vec<FormattedSpan>) {
+    use hayagriva::ElemChild;
+    match child {
+        ElemChild::Text(formatted) => push_span(out, &formatted.text, &formatted.formatting, None),
+        ElemChild::Elem(elem) => elem_children_to_spans(&elem.children, out),
+        // Typst markup from the style; shown as written.
+        ElemChild::Markup(markup) => {
+            push_span(out, markup, &hayagriva::Formatting::default(), None)
+        }
+        ElemChild::Link { text, url } => push_span(out, &text.text, &text.formatting, Some(url)),
+        ElemChild::Transparent { .. } => {}
+    }
+}
+
+/// Append `text`, merged into the previous span when it is styled the same.
+fn push_span(
+    out: &mut Vec<FormattedSpan>,
+    text: &str,
+    fmt: &hayagriva::Formatting,
+    url: Option<&str>,
+) {
+    use hayagriva::citationberg::{FontStyle, FontVariant, FontWeight};
+    if text.is_empty() {
+        return;
+    }
+    let span = FormattedSpan {
+        text: text.to_string(),
+        italic: fmt.font_style == FontStyle::Italic,
+        bold: fmt.font_weight == FontWeight::Bold,
+        small_caps: fmt.font_variant == FontVariant::SmallCaps,
+        url: url.map(str::to_string),
+    };
+    if let Some(last) = out.last_mut() {
+        if span.url.is_none()
+            && last.url.is_none()
+            && (last.italic, last.bold, last.small_caps)
+                == (span.italic, span.bold, span.small_caps)
+        {
+            last.text.push_str(&span.text);
+            return;
+        }
+    }
+    out.push(span);
 }
 
 fn elem_children_to_typst(children: &hayagriva::ElemChildren, out: &mut String) {
@@ -1379,6 +1472,45 @@ gross1961:
         // Keys that don't resolve are skipped, yielding an empty string.
         let none = render_cited_bibliography(&library, &["nope".to_string()], &style).unwrap();
         assert_eq!(none, "");
+    }
+
+    #[test]
+    fn a_reference_renders_as_styled_spans() {
+        let yaml = r#"
+gross1961:
+    type: Article
+    author: Gross, E. P.
+    title: Structure of a Quantized Vortex in Boson Systems
+    date: 1961
+    parent:
+        type: Periodical
+        title: Il Nuovo Cimento
+"#;
+        let library = hayagriva::io::from_yaml_str(yaml).unwrap();
+        let style = resolve_style(
+            std::path::Path::new("/tmp/notebox"),
+            None,
+            Some("chicago-author-date"),
+        )
+        .unwrap();
+        let spans = render_reference_spans(&library, "gross1961", &style).unwrap();
+        let text: String = spans.iter().map(|s| s.text.as_str()).collect();
+        assert!(text.starts_with("Gross"), "got {text:?}");
+        // The journal is italic, and runs styled alike are merged.
+        assert!(
+            spans
+                .iter()
+                .any(|s| s.italic && s.text.contains("Il Nuovo Cimento")),
+            "got {spans:?}"
+        );
+        assert!(spans
+            .windows(2)
+            .all(|w| (w[0].italic, w[0].bold) != (w[1].italic, w[1].bold)
+                || w[0].url.is_some()
+                || w[1].url.is_some()));
+        assert!(render_reference_spans(&library, "nope", &style)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]

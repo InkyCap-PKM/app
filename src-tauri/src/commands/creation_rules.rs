@@ -127,6 +127,11 @@ pub async fn reorder_creation_rules(
 ///   note open.
 /// - `current_note`: the note being worked in; with "New note location" set to
 ///   "Current folder", a rule without its own folder creates the note beside it.
+/// - `reference_key`: the citation key whose details fill the scaffold's
+///   `{{ref…}}` variables. A scaffold that uses them fails with
+///   [`InkyCapError::ReferenceRequired`] without one, before anything is
+///   written, so the frontend can ask and retry.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn execute_creation_rule(
     rule_id: String,
@@ -134,10 +139,18 @@ pub async fn execute_creation_rule(
     target_folder_override: Option<String>,
     scaffold_override: Option<String>,
     current_note: Option<String>,
+    reference_key: Option<String>,
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
 ) -> Result<CreationResult, InkyCapError> {
     let session = state.session(window.label()).await;
+    // Before the notebox root is locked below: this reads it too.
+    let reference = match reference_key.as_deref() {
+        Some(key) => {
+            Some(crate::commands::bibliography::reference_fields(&state, &session, key).await?)
+        }
+        None => None,
+    };
     let storage = session.get_storage().await?;
     let notebox_root = session.notebox_root.read().await;
     let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
@@ -219,6 +232,7 @@ pub async fn execute_creation_rule(
                 &title,
                 &zid_pattern,
                 locale,
+                reference.as_ref(),
             )
             .await?;
             content = expanded.content;
@@ -357,6 +371,9 @@ pub struct TemplateEntry {
     /// True for the two system scaffolds (`new-note.typ`, `daily-note.typ`),
     /// which can't be deleted.
     pub builtin: bool,
+    /// True when the scaffold uses `{{ref…}}` variables, so it makes literature
+    /// notes and asks for a reference when used.
+    pub uses_reference: bool,
 }
 
 /// Scaffold entries with full paths, for the Templates panel.
@@ -377,19 +394,24 @@ pub async fn list_scaffold_entries(
     }
 
     let files = storage.list_files(&scaffold_dir, "*.typ").await?;
-    let mut entries: Vec<TemplateEntry> = files
-        .iter()
-        .filter_map(|p| {
-            let name = p.file_stem()?.to_string_lossy().to_string();
-            let builtin = is_builtin_scaffold(&p.file_name()?.to_string_lossy());
-            Some(TemplateEntry {
-                name,
-                path: to_frontend_string(p),
-                kind: "scaffold".to_string(),
-                builtin,
-            })
-        })
-        .collect();
+    let mut entries: Vec<TemplateEntry> = Vec::with_capacity(files.len());
+    for p in &files {
+        let (Some(stem), Some(file_name)) = (p.file_stem(), p.file_name()) else {
+            continue;
+        };
+        // An unreadable scaffold is still listed, so it can be opened or
+        // deleted.
+        let uses_reference = scaffolds::scaffold_uses_reference(storage.as_ref(), p)
+            .await
+            .unwrap_or(false);
+        entries.push(TemplateEntry {
+            name: stem.to_string_lossy().to_string(),
+            path: to_frontend_string(p),
+            kind: "scaffold".to_string(),
+            builtin: is_builtin_scaffold(&file_name.to_string_lossy()),
+            uses_reference,
+        });
+    }
 
     entries.sort_by(|a, b| crate::sort::compare_name(&a.name, &b.name));
     Ok(entries)
@@ -417,15 +439,27 @@ pub struct ScaffoldInsertResult {
 ///
 /// The frontend replaces the whole document with `new_source` in one
 /// transaction (one undo step) and moves the caret to `new_cursor_offset`.
+///
+/// `reference_key` fills the scaffold's `{{ref…}}` variables, as for
+/// [`execute_creation_rule`]; without one, such a scaffold fails with
+/// [`InkyCapError::ReferenceRequired`].
 #[tauri::command]
 pub async fn prepare_scaffold_insert(
     state: State<'_, AppState>,
     scaffold_name: String,
     current_source: String,
     title: String,
+    reference_key: Option<String>,
     window: tauri::WebviewWindow,
 ) -> Result<ScaffoldInsertResult, InkyCapError> {
     let session = state.session(window.label()).await;
+    // Before the notebox root is locked below: this reads it too.
+    let reference = match reference_key.as_deref() {
+        Some(key) => {
+            Some(crate::commands::bibliography::reference_fields(&state, &session, key).await?)
+        }
+        None => None,
+    };
     let storage = session.get_storage().await?;
     let notebox_root = session.notebox_root.read().await;
     let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
@@ -458,6 +492,7 @@ pub async fn prepare_scaffold_insert(
         &title,
         &zid_pattern,
         locale,
+        reference.as_ref(),
     )
     .await?;
 
@@ -575,6 +610,10 @@ const STARTER_SCAFFOLD: &str = "#import \"/.inkycap/notebox.typ\": *\n\n\
     // Scaffold: see https://typst.app/docs for Typst syntax.\n\
     // Variables: {{title}} {{slug}} {{date}} {{date:YYYY-MM-DD}}\n\
     //            {{time}} {{zid}}\n\
+    // A literature note can also use {{ref}} (a bibliography reference,\n\
+    // asked for when the scaffold is used) and its details, such as\n\
+    // {{ref.title}} {{ref.author}} {{ref.year}} {{ref.parent}} {{ref.doi}}.\n\
+    // See the sample literature-note-sample scaffold for more.\n\
     #note(\n  \
         // Properties go here. Any user-defined key is preserved.\n  \
         // tags: (\"draft\",),\n\

@@ -1305,6 +1305,29 @@ export interface FileCitation {
   zotero_item_key?: string;
 }
 
+/** A run of a formatted reference with one style (see `SourceReference`). */
+export interface FormattedSpan {
+  text: string;
+  italic: boolean;
+  bold: boolean;
+  small_caps: boolean;
+  /** The link's address, for a span that is a link (a DOI or URL). */
+  url?: string;
+}
+
+/** A literature note's source reference (`source: <key>`), formatted in the
+ *  notebox's citation style. */
+export interface SourceReference {
+  key: string;
+  /** False when the bibliography has no entry with the key. */
+  found: boolean;
+  title: string | null;
+  /** The formatted entry as styled runs, to show. */
+  formatted: FormattedSpan[];
+  /** The formatted entry as Typst markup, to copy. */
+  markup: string;
+}
+
 export interface AggregatedCitation {
   key: string;
   title: string | null;

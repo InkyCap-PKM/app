@@ -29,6 +29,7 @@ import { Dropdown } from "./Dropdown";
 import ScaffoldEditorModal from "./ScaffoldEditorModal";
 import { toastError, toastWarning } from "../stores/toasts";
 import { useI18n } from "../lib/i18n";
+import { REFERENCE_VARIABLES } from "../lib/literature-notes";
 import { Plus, Pencil, ChevronUp, ChevronDown } from "lucide-solid";
 
 // ── Hotkey conflict detection ──────────────────────────────────
@@ -409,7 +410,8 @@ const CreationRuleEditor: Component = () => {
                 <span class="settings__description">
                   {t("creationRules.scaffoldDescription", {
                     vars: "{{title}}, {{slug}}, {{date}}, {{zid}}",
-                  })}
+                  })}{" "}
+                  {t("scaffoldEditor.referenceHint", { vars: REFERENCE_VARIABLES })}
                 </span>
               </div>
               <div class="creation-rules__scaffold-field">

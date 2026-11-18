@@ -191,8 +191,52 @@ pub const DEFAULT_DAILY_NOTE_SCAFFOLD: &str = r#"#import "/.inkycap/notebox.typ"
 = {{title}}
 "#;
 
+/// A sample scaffold for literature notes (a note about one bibliography
+/// reference), showing the `{{ref…}}` variables. Seeded once per notebox (see
+/// [`seed_samples`]), so it stays gone once deleted.
+pub const LITERATURE_NOTE_SAMPLE_SCAFFOLD: &str = r#"#import "/.inkycap/notebox.typ": *
+// A sample literature note: a note about one work in your bibliography.
+// Using this scaffold asks which reference the note is about, then copies its
+// details into the properties below. Edit, add or remove any of them. A
+// property whose detail the reference doesn't have is left out.
+//
+// {{ref}} is the reference itself: its label in `source:`, a citation in the
+// text. {{ref.FIELD}} is one of its details: key, type, title, author, editor,
+// date, year, parent (the journal or book it appears in), publisher, location,
+// organization, volume, issue, edition, page-range, url, doi, isbn, issn,
+// language, genre, abstract, note. A property whose value is just one variable
+// in quotes gets that detail as its value: a list of names for author and
+// editor, the reference's label for {{ref}}.
+
+#note(
+  title: "{{ref.title}}",
+  date: "{{date:YYYY-MM-DD}}",
+  zid: "{{zid}}",
+  source: "{{ref}}",
+  author: "{{ref.author}}",
+  year: "{{ref.year}}",
+  published-in: "{{ref.parent}}",
+  publisher: "{{ref.publisher}}",
+  doi: "{{ref.doi}}",
+  tags: ("literature",),
+)
+= {{title}}
+
+{{ref}}
+
+== Summary
+
+== Key ideas
+
+== Quotations
+
+== My thoughts
+"#;
+
 /// File basename for the seeded New Note scaffold.
 pub const NEW_NOTE_SCAFFOLD_FILE: &str = "new-note.typ";
+/// File basename for the sample literature note scaffold.
+pub const LITERATURE_NOTE_SAMPLE_FILE: &str = "literature-note-sample.typ";
 /// File basename for the seeded Daily Note scaffold.
 pub const DAILY_NOTE_SCAFFOLD_FILE: &str = "daily-note.typ";
 
@@ -241,6 +285,7 @@ pub fn scaffold(notebox_root: &Path) {
             &scaffolds.join(DAILY_NOTE_SCAFFOLD_FILE),
             DEFAULT_DAILY_NOTE_SCAFFOLD.as_bytes(),
         );
+        seed_samples(notebox_root, &scaffolds);
     }
 
     // The collections folder, created on every open so it exists before the
@@ -290,6 +335,53 @@ pub fn strip_note_preamble(content: &str) -> &str {
             }
         } else {
             return trimmed;
+        }
+    }
+}
+
+/// Sample scaffolds InkyCap provides, as (file name, content).
+const SAMPLE_SCAFFOLDS: &[(&str, &str)] =
+    &[(LITERATURE_NOTE_SAMPLE_FILE, LITERATURE_NOTE_SAMPLE_SCAFFOLD)];
+
+/// The record of samples already written, relative to the notebox root.
+const SAMPLES_SEEDED_RELPATH: &str = ".inkycap/samples-seeded.json";
+
+/// Write each sample scaffold once per notebox: a sample named in
+/// `.inkycap/samples-seeded.json` isn't written again, so one the user deleted
+/// stays deleted. An existing file of the same name is kept.
+fn seed_samples(notebox_root: &Path, scaffolds: &Path) {
+    let record_path = notebox_root.join(SAMPLES_SEEDED_RELPATH);
+    let mut seeded: Vec<String> = std::fs::read(&record_path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .and_then(|value| {
+            value
+                .get("scaffolds")
+                .and_then(|list| serde_json::from_value::<Vec<String>>(list.clone()).ok())
+        })
+        .unwrap_or_default();
+    let mut changed = false;
+    for (file, content) in SAMPLE_SCAFFOLDS {
+        if seeded.iter().any(|s| s == file) {
+            continue;
+        }
+        write_if_absent(&scaffolds.join(file), content.as_bytes());
+        seeded.push((*file).to_string());
+        changed = true;
+    }
+    if changed {
+        let record = serde_json::json!({ "scaffolds": seeded });
+        match serde_json::to_vec_pretty(&record) {
+            Ok(mut bytes) => {
+                bytes.push(b'\n');
+                if let Err(err) = std::fs::write(&record_path, bytes) {
+                    log::warn!(
+                        "notebox library: failed to write {}: {err}",
+                        record_path.display()
+                    );
+                }
+            }
+            Err(err) => log::warn!("notebox library: failed to record samples: {err}"),
         }
     }
 }
@@ -344,6 +436,20 @@ fn write_if_changed(path: &Path, expected: &[u8]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_sample_scaffold_is_written_once_and_stays_deleted() {
+        let dir = tempfile::tempdir().unwrap();
+        let sample = scaffolds_dir(dir.path()).join(LITERATURE_NOTE_SAMPLE_FILE);
+        scaffold(dir.path());
+        assert!(sample.exists());
+        std::fs::write(&sample, "edited").unwrap();
+        scaffold(dir.path());
+        assert_eq!(std::fs::read_to_string(&sample).unwrap(), "edited");
+        std::fs::remove_file(&sample).unwrap();
+        scaffold(dir.path());
+        assert!(!sample.exists());
+    }
 
     #[test]
     fn template_import_goes_above_the_notebox_import() {

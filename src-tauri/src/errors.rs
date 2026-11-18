@@ -48,6 +48,16 @@ pub enum InkyCapError {
     #[error("A filename is required")]
     FilenameRequired,
 
+    /// A scaffold uses `{{ref…}}` variables and no reference was given. The
+    /// frontend matches this code, asks which reference the note is about and
+    /// retries with it.
+    #[error("A reference is required")]
+    ReferenceRequired,
+
+    /// The citation key in `detail` isn't in the notebox's bibliography.
+    #[error("Reference not found in the bibliography: {0}")]
+    ReferenceNotFound(String),
+
     /// The notebox is open in another window, whose label is in `detail`. The
     /// frontend focuses that window, with no error shown.
     #[error("Notebox is already open in another window")]
@@ -135,6 +145,8 @@ impl InkyCapError {
             InkyCapError::Network(_) => "network",
             InkyCapError::BadRequest(_) => "bad-request",
             InkyCapError::FilenameRequired => "filename-required",
+            InkyCapError::ReferenceRequired => "reference-required",
+            InkyCapError::ReferenceNotFound(_) => "reference-not-found",
             InkyCapError::NoteNameConflict(_) => "note-name-conflict",
             InkyCapError::NoteboxAlreadyOpen(_) => "notebox-already-open",
             InkyCapError::Cancelled => "cancelled",
@@ -168,6 +180,7 @@ impl InkyCapError {
             | InkyCapError::Network(s)
             | InkyCapError::BadRequest(s)
             | InkyCapError::NoteNameConflict(s)
+            | InkyCapError::ReferenceNotFound(s)
             | InkyCapError::NoteboxAlreadyOpen(s)
             | InkyCapError::UpgradeUnavailable(s)
             | InkyCapError::UpgradeNotVerified(s)
@@ -178,6 +191,7 @@ impl InkyCapError {
             | InkyCapError::FileTooLargeToShow(s) => Some(s.clone()),
             InkyCapError::NoteboxNotOpen
             | InkyCapError::FilenameRequired
+            | InkyCapError::ReferenceRequired
             | InkyCapError::Cancelled
             | InkyCapError::DocumentationReadOnly
             | InkyCapError::IndexNotReady => None,

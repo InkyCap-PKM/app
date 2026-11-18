@@ -12,6 +12,7 @@ import { noteboxSettings } from "../stores/settings";
 import { openZoteroItem } from "../lib/zotero";
 import { t } from "../lib/i18n";
 import { ZoteroIcon } from "./icons";
+import { Ellipsis } from "lucide-solid";
 
 export interface CitationRowData {
   key: string;
@@ -30,6 +31,11 @@ interface CitationRowProps {
   cite: CitationRowData;
   /** When provided, the row is clickable and invokes this on click. */
   onActivate?: () => void;
+  /** Right-click on the row. */
+  onContextMenu?: (e: MouseEvent) => void;
+  /** When provided, the row shows an actions button that calls this with the
+   *  button, so a menu can open beside it. */
+  onActions?: (button: HTMLElement) => void;
   /** Tooltip for the whole row. */
   title?: string;
 }
@@ -51,6 +57,7 @@ const CitationRow: Component<CitationRowProps> = (props) => {
       class="citation-row"
       classList={{ "citation-row--clickable": !!props.onActivate }}
       onClick={() => props.onActivate?.()}
+      onContextMenu={(e) => props.onContextMenu?.(e)}
       title={props.title}
     >
       <div class="citation-row__key-line">
@@ -71,9 +78,27 @@ const CitationRow: Component<CitationRowProps> = (props) => {
           </Show>
           <span class="citation-row__key">@{props.cite.key}</span>
         </span>
-        <Show when={props.cite.count !== undefined}>
-          <span class="citation-row__count">{props.cite.count}</span>
-        </Show>
+        <span class="citation-row__key-right">
+          <Show when={props.cite.count !== undefined}>
+            <span class="citation-row__count">{props.cite.count}</span>
+          </Show>
+          <Show when={props.onActions}>
+            <button
+              type="button"
+              class="ui-icon-btn citation-row__actions"
+              onClick={(e) => {
+                // The row's own click inserts a citation.
+                e.stopPropagation();
+                props.onActions?.(e.currentTarget);
+              }}
+              title={t("references.actions")}
+              aria-label={t("references.actions")}
+              aria-haspopup="menu"
+            >
+              <Ellipsis size={14} />
+            </button>
+          </Show>
+        </span>
       </div>
       <Show when={props.cite.title}>
         <div class="citation-row__title">{props.cite.title}</div>

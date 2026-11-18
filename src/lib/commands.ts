@@ -51,6 +51,7 @@ import {
   checkUpdates as gitCheckUpdatesAction,
 } from "../stores/git";
 import { exportPackageInteractive, importPackageInteractive } from "./package-handoff";
+import { newLiteratureNoteFromPicker } from "./literature-notes";
 
 // Editor commands (source mode, zoom) change Solid.js signals, which the editor
 // picks up through createEffect.
@@ -707,6 +708,13 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
     title: t("command.references.import-note"),
     category: "References",
     execute: callbacks.openRefNotePicker,
+  });
+
+  registerCommand({
+    id: "references:new-literature-note",
+    title: t("command.references.new-literature-note"),
+    category: "References",
+    execute: () => newLiteratureNoteFromPicker(),
   });
 
 

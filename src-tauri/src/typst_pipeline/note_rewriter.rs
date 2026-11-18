@@ -142,7 +142,54 @@ fn is_trivia(kind: SyntaxKind) -> bool {
 /// call, one is added after the notebox import (or at the top without an
 /// import). Other arguments keep their exact source.
 pub fn update_note_property(content: &str, key: &str, value: &PropertyValue) -> String {
-    set_note_property_raw(content, key, &serialize_to_typst(value))
+    set_note_property_raw(content, key, &serialize_property(key, value))
+}
+
+/// The property that names a note's bibliography reference, as a label
+/// (`source: <otlet1934>`). A string there is a plain URI instead.
+pub const SOURCE_PROPERTY: &str = "source";
+
+/// The citation key in a reference written the way the index and the property
+/// editor show one, `@otlet1934`. `None` for anything else, such as a URI.
+pub fn reference_key(value: &str) -> Option<&str> {
+    let key = value.trim().strip_prefix('@')?;
+    (!key.is_empty() && !key.contains(char::is_whitespace)).then_some(key)
+}
+
+/// The citation key of the note's source reference, `source: <key>` (or
+/// `label("key")`), or `None` when `source` is missing or a URI.
+pub fn source_reference_key(content: &str) -> Option<String> {
+    let (_, raw) = extract_note_properties(content)
+        .into_iter()
+        .find(|(k, _)| k == SOURCE_PROPERTY)?;
+    let raw = raw.trim();
+    if !(raw.starts_with('<') || raw.starts_with("label(")) {
+        return None;
+    }
+    reference_key(&typst_value_to_plain_text(raw)).map(str::to_string)
+}
+
+/// A citation key as a Typst label: `<key>`, or `label("key")` for a key a
+/// label literal can't hold.
+pub fn label_value(key: &str) -> String {
+    if typst::syntax::is_valid_label_literal_id(key) {
+        format!("<{key}>")
+    } else {
+        format!("label(\"{}\")", escape_typst_string(key))
+    }
+}
+
+/// [`serialize_to_typst`] for the property `key`: a reference (`@key`) in
+/// `source` is written as its label.
+fn serialize_property(key: &str, value: &PropertyValue) -> String {
+    if key == SOURCE_PROPERTY {
+        if let PropertyValue::String(s) = value {
+            if let Some(cite_key) = reference_key(s) {
+                return label_value(cite_key);
+            }
+        }
+    }
+    serialize_to_typst(value)
 }
 
 /// Add `link-ref("<name>")` to the list in property `key`, keeping existing
@@ -460,6 +507,17 @@ pub fn typst_value_to_plain_text(raw: &str) -> String {
         return items.join(", ");
     }
 
+    // A label, as `source` holds a reference: <key> or label("key") → @key.
+    if let Some(key) = trimmed.strip_prefix('<').and_then(|s| s.strip_suffix('>')) {
+        return format!("@{key}");
+    }
+    if let Some(inner) = trimmed
+        .strip_prefix("label(")
+        .and_then(|s| s.strip_suffix(')'))
+    {
+        return format!("@{}", typst_value_to_plain_text(inner));
+    }
+
     // link-ref("Target") → Target.
     if let Some(rest) = trimmed.strip_prefix("link-ref(") {
         if let Some(inner) = rest.strip_suffix(')') {
@@ -703,5 +761,48 @@ Some body text here.
         let src = "#note(derived-from: link-ref(\"A\"))";
         let out = append_link_ref(src, "derived-from", "B").unwrap();
         assert!(out.contains("(link-ref(\"A\"), link-ref(\"B\"))"));
+    }
+
+    #[test]
+    fn a_reference_in_source_is_written_as_a_label() {
+        let content = "#note()";
+        let set = |key: &str, value: &str| {
+            update_note_property(content, key, &PropertyValue::String(value.to_string()))
+        };
+        assert_eq!(set("source", "@otlet1934"), "#note(source: <otlet1934>)");
+        assert_eq!(
+            set("source", "@odd/key"),
+            "#note(source: label(\"odd/key\"))"
+        );
+        // A URI stays a string, and `@` means nothing special elsewhere.
+        assert_eq!(
+            set("source", "https://example.org"),
+            "#note(source: \"https://example.org\")"
+        );
+        assert_eq!(set("handle", "@athena"), "#note(handle: \"@athena\")");
+    }
+
+    #[test]
+    fn a_label_reads_as_plain_text_the_way_it_is_cited() {
+        assert_eq!(typst_value_to_plain_text("<otlet1934>"), "@otlet1934");
+        assert_eq!(typst_value_to_plain_text("label(\"odd/key\")"), "@odd/key");
+    }
+
+    #[test]
+    fn the_source_reference_key_is_read_only_from_a_label() {
+        assert_eq!(
+            source_reference_key("#note(title: \"T\", source: <otlet1934>)").as_deref(),
+            Some("otlet1934")
+        );
+        assert_eq!(
+            source_reference_key("#note(source: label(\"odd/key\"))").as_deref(),
+            Some("odd/key")
+        );
+        assert_eq!(
+            source_reference_key("#note(source: \"https://example.org\")"),
+            None
+        );
+        assert_eq!(source_reference_key("#note(source: \"@otlet1934\")"), None);
+        assert_eq!(source_reference_key("#note(title: \"T\")"), None);
     }
 }

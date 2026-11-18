@@ -12,10 +12,15 @@
 //   {{time}}         — current time as HH:MM
 //   {{time:FORMAT}}  — current time in a Moment.js-style format
 //   {{zid}}          — Zettelkasten ID from the user's pattern
+//   {{ref}}, {{ref.FIELD}} — one bibliography reference and its details, for
+//                      literature notes (see `reference`). A scaffold that uses
+//                      them needs a reference to be chosen.
 //
 // In a scaffold file, text in Typst comments is left as written, so help text
 // listing the variables survives use. Short patterns (a rule's folder or file
 // name) aren't Typst source and are expanded in full.
+
+pub mod reference;
 
 use std::ops::Range;
 use std::path::Path;
@@ -24,7 +29,7 @@ use chrono::{DateTime, Local, Locale};
 use regex::Regex;
 use typst::syntax::{parse, LinkedNode, SyntaxKind};
 
-use crate::errors::Result;
+use crate::errors::{InkyCapError, Result};
 
 /// The `chrono::Locale` for a UI language code (e.g. "fr-CA"), for month and
 /// weekday names in `{{date:...}}` / `{{time:...}}`. Matches the UI's date
@@ -56,16 +61,38 @@ pub async fn expand_scaffold(
     Ok(expand_scaffold_content(&raw, title, "", locale))
 }
 
-/// Read a scaffold file and expand variables including `{{zid}}`.
+/// Read a scaffold file and expand variables including `{{zid}}` and, from
+/// `reference`, `{{ref…}}`. A scaffold that uses `{{ref…}}` fails with
+/// [`InkyCapError::ReferenceRequired`] when no reference is given, so the
+/// caller can ask for one.
 pub async fn expand_scaffold_with_zid(
     storage: &dyn NoteboxStorage,
     scaffold_path: &Path,
     title: &str,
     zid_pattern: &str,
     locale: Locale,
+    reference: Option<&reference::ReferenceFields>,
 ) -> Result<ExpandedScaffold> {
     let raw = storage.read_file(scaffold_path).await?;
-    Ok(expand_scaffold_content(&raw, title, zid_pattern, locale))
+    if reference.is_none() && reference::uses_reference(&raw) {
+        return Err(InkyCapError::ReferenceRequired);
+    }
+    Ok(expand_scaffold_content_with_reference(
+        &raw,
+        title,
+        zid_pattern,
+        locale,
+        reference,
+    ))
+}
+
+/// Whether the scaffold at `scaffold_path` uses `{{ref…}}` variables.
+pub async fn scaffold_uses_reference(
+    storage: &dyn NoteboxStorage,
+    scaffold_path: &Path,
+) -> Result<bool> {
+    let raw = storage.read_file(scaffold_path).await?;
+    Ok(reference::uses_reference(&raw))
 }
 
 /// Generate a Zettelkasten ID from a moment-style format pattern.
@@ -113,8 +140,23 @@ pub fn expand_scaffold_content(
     zid_pattern: &str,
     locale: Locale,
 ) -> ExpandedScaffold {
+    expand_scaffold_content_with_reference(input, title, zid_pattern, locale, None)
+}
+
+/// [`expand_scaffold_content`], also expanding `{{ref…}}` from `reference`.
+/// They are expanded before `{{title}}`, so `title: "{{ref.title}}"` sets it.
+pub fn expand_scaffold_content_with_reference(
+    input: &str,
+    title: &str,
+    zid_pattern: &str,
+    locale: Locale,
+    reference: Option<&reference::ReferenceFields>,
+) -> ExpandedScaffold {
     let pass1 = Pass1::new(title, zid_pattern, locale);
-    let result = outside_comments(input, |text| pass1.apply(text));
+    let mut result = outside_comments(input, |text| pass1.apply(text));
+    if let Some(reference) = reference {
+        result = reference::expand_reference_variables(&result, reference);
+    }
     // The title comes from the note's real `#note(...)` call. That lookup is
     // already AST-based, so a commented-out `#note(...)` can't supply it.
     let resolved_title = resolve_title(&result, title);

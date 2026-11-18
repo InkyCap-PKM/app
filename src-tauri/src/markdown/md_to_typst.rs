@@ -13,8 +13,12 @@ use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
-use super::frontmatter::{parse_frontmatter_fields, sanitize_ident, system_alias, ParsedYamlValue};
+use super::frontmatter::{
+    is_citation_key_field, parse_frontmatter_fields, sanitize_ident, system_alias, ParsedField,
+    ParsedYamlValue,
+};
 use crate::property_types::{builtin_property_type, PropertyType};
+use crate::typst_pipeline::note_rewriter;
 
 /// The Markdown dialect of the source. The dialects differ in three places:
 ///
@@ -611,49 +615,82 @@ pub fn extract_frontmatter(input: &str) -> (Option<String>, &str) {
 /// `description`, …); others keep their sanitized name.
 fn frontmatter_to_note(yaml: &str) -> String {
     let fields = parse_frontmatter_fields(yaml);
-    let mut emitted: Vec<(String, String)> = Vec::new();
-    let mut seen: HashSet<String> = HashSet::new();
-
-    for field in &fields {
-        let (target, ty) = match system_alias(&field.key) {
+    let targets: Vec<(String, PropertyType)> = fields
+        .iter()
+        .map(|field| match system_alias(&field.key) {
             Some(sys) => (sys.to_string(), builtin_property_type(sys)),
             None => (sanitize_ident(&field.key), field.value.inferred_type()),
-        };
-        if !seen.insert(target.clone()) {
-            continue;
-        }
-        if let Some(formatted) = format_value_for_type(&field.value, ty) {
-            emitted.push((target, formatted));
+        })
+        .collect();
+    emit_fields(&fields, targets)
+}
+
+/// Format each field for its (target key, type) and assemble the `#note(...)`
+/// call. When several fields target the same key, the first wins, except that
+/// a citation key (`citekey`) takes `source` as the note's reference and a URI
+/// headed for `source` is kept as `url` instead.
+fn emit_fields(fields: &[ParsedField], mut targets: Vec<(String, PropertyType)>) -> String {
+    let is_source = |target: &str| target == note_rewriter::SOURCE_PROPERTY;
+    let has_reference = fields
+        .iter()
+        .zip(&targets)
+        .any(|(field, (target, _))| is_citation_key_field(&field.key) && is_source(target));
+    if has_reference {
+        for (field, (target, ty)) in fields.iter().zip(targets.iter_mut()) {
+            if is_source(target) && !is_citation_key_field(&field.key) {
+                *target = "url".to_string();
+                *ty = PropertyType::Text;
+            }
         }
     }
 
+    let mut emitted: Vec<(String, String)> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    for (field, (target, ty)) in fields.iter().zip(targets) {
+        if !seen.insert(target.clone()) {
+            continue;
+        }
+        let formatted = if is_source(&target) && is_citation_key_field(&field.key) {
+            citation_key_label(&field.value)
+        } else {
+            format_value_for_type(&field.value, ty)
+        };
+        if let Some(formatted) = formatted {
+            emitted.push((target, formatted));
+        }
+    }
     emit_note(&emitted)
+}
+
+/// A `citekey` value as the reference's label (`@otlet1934` or `otlet1934` →
+/// `<otlet1934>`), or `None` when empty.
+fn citation_key_label(value: &ParsedYamlValue) -> Option<String> {
+    let raw = match value {
+        ParsedYamlValue::Scalar { raw, .. } => raw.clone(),
+        ParsedYamlValue::List(items) => items.first()?.clone(),
+    };
+    let key = raw.trim().trim_matches('"');
+    let key = key.strip_prefix('@').unwrap_or(key).trim();
+    (!key.is_empty()).then(|| note_rewriter::label_value(key))
 }
 
 /// Convert YAML frontmatter to a `#note(...)` call using the mapping from the
 /// import dialog. Unmapped keys are dropped; when several keys map to the same
 /// target, the first wins.
 fn frontmatter_to_note_mapped(yaml: &str, mapping: &FrontmatterMapping) -> String {
-    let fields = parse_frontmatter_fields(yaml);
-    let mut emitted: Vec<(String, String)> = Vec::new();
-    let mut seen: HashSet<String> = HashSet::new();
-
-    for field in &fields {
+    let mut fields = Vec::new();
+    let mut targets = Vec::new();
+    for field in parse_frontmatter_fields(yaml) {
         let Some(field_map) = mapping.get(&field.key.to_lowercase()) else {
             continue;
         };
         let Some(target) = &field_map.target_key else {
             continue; // explicitly excluded by the user
         };
-        if !seen.insert(target.clone()) {
-            continue;
-        }
-        if let Some(formatted) = format_value_for_type(&field.value, field_map.target_type) {
-            emitted.push((target.clone(), formatted));
-        }
+        targets.push((target.clone(), field_map.target_type));
+        fields.push(field);
     }
-
-    emit_note(&emitted)
+    emit_fields(&fields, targets)
 }
 
 /// Assemble a `#note(...)` call from already-formatted (key, value) pairs.
@@ -1396,6 +1433,22 @@ mod tests {
                 target_type: ty,
             },
         )
+    }
+
+    #[test]
+    fn a_citekey_becomes_the_source_reference_and_keeps_the_url() {
+        let out = convert("---\nurl: https://example.org\ncitekey: otlet1934\n---\n\nBody");
+        assert!(out.contains("source: <otlet1934>"), "got:\n{out}");
+        assert!(out.contains("url: \"https://example.org\""), "got:\n{out}");
+        // Without a citekey, a URL is the source, as before.
+        let out = convert("---\nurl: https://example.org\n---\n\nBody");
+        assert!(
+            out.contains("source: \"https://example.org\""),
+            "got:\n{out}"
+        );
+        // An `@` from a Pandoc-style key is dropped.
+        let out = convert("---\ncitekey: \"@odd/key\"\n---\n\nBody");
+        assert!(out.contains("source: label(\"odd/key\")"), "got:\n{out}");
     }
 
     #[test]

@@ -3,7 +3,7 @@
 
 #note(
   title: "Citations et bibliographie",
-  description: "Comment connecter une bibliographie (fichier ou Zotero), parcourir et insérer des citations, choisir un style de citation, générer la liste des références, copier une bibliographie mise en forme et lire les avertissements de citation.",
+  description: "Comment connecter une bibliographie (fichier ou Zotero), parcourir et insérer des citations, choisir un style de citation, générer la liste des références, copier une bibliographie mise en forme, créer des notes de lecture et lire les avertissements de citation.",
   tags: ("documentation",),
 )
 
@@ -64,7 +64,7 @@ Si votre discipline ou votre éditeur a besoin d'un style absent de la liste, ch
 
 == La barre latérale Références
 
-Une fois une source configurée, ouvrez l'onglet *Références* dans le panneau de droite (son icône est un guillemet, à côté de l'onglet Liens). C'est votre base d'attache pour tout ce qui touche aux citations. Il comporte deux parties.
+Une fois une source configurée, ouvrez l'onglet *Références* dans le panneau de droite (son icône est un guillemet, à côté de l'onglet Liens). C'est votre base d'attache pour tout ce qui touche aux citations. Il comporte deux parties, et une troisième pour une note de lecture.
 
 === Parcourir les références
 
@@ -76,13 +76,17 @@ Cliquez sur *Parcourir les références* pour déployer la liste de chaque ouvra
 
 Un petit badge vous indique combien d'entrées vous avez et si elles proviennent de *Zotero* ou d'un *Fichier*. Si certaines entrées n'ont pu être lues, vous verrez une note « ignorées » expliquant que quelques entrées avaient des erreurs de mise en forme dans la source.
 
-*Pour insérer une citation, cliquez simplement sur une rangée.* InkyCap dépose `@key` là où votre curseur se trouve dans la note courante. Si une référence provenait de Zotero, la rangée offre aussi un lien *Ouvrir dans Zotero*.
+*Pour insérer une citation, cliquez simplement sur une rangée.* InkyCap dépose `@key` là où votre curseur se trouve dans la note courante. Si une référence provenait de Zotero, la rangée offre aussi un lien *Ouvrir dans Zotero*. Le bouton *⋯* à droite de chaque rangée (ou un clic droit sur la rangée) ouvre les actions de #wikilink("7 - Citations et bibliographie", label: "literature-notes", display: "note de lecture") pour cette référence.
 
 #callout("note")[ Si vous voyez « Aucune bibliographie configurée. Vérifiez Paramètres › Citations. », cela veut dire qu'InkyCap n'a pas encore trouvé de source. Retournez à l'onglet *Citations* et définissez-en une. ]
 
 === Citations dans ce fichier
 
-Sous le navigateur, la section *Citations* liste chaque ouvrage cité dans la note que vous êtes en train de modifier, dédupliqué. C'est une façon rapide de voir vos sources d'un coup d'œil. Quand la note cite au moins un ouvrage, un bouton *Copier la bibliographie mise en forme* apparaît ici aussi. Il y a plus là-dessus ci-dessous.
+Sous le navigateur, la section *Citations* liste chaque ouvrage cité dans la note que vous êtes en train de modifier, dédupliqué. C'est une façon rapide de voir vos sources d'un coup d'œil. Quand la note cite au moins un ouvrage, un bouton *Copier la bibliographie mise en forme* apparaît ici aussi. Il y a plus là-dessus ci-dessous. Chaque rangée a le même bouton *⋯* que dans la liste complète.
+
+=== Source <references-source>
+
+Dans une note de lecture, une section *Source* en haut de l'onglet montre l'œuvre dont traite la note, mise en forme dans votre style de citation comme elle paraîtrait dans une liste de références. Son bouton *Copier la référence mise en forme* copie cette entrée, prête à coller dans n'importe quelle note, comme *Copier la bibliographie mise en forme* le fait pour toutes les citations d'une note. Si la clé de citation de la source ne figure pas dans votre bibliographie (après une faute de frappe, ou une référence supprimée dans Zotero), la section le signale plutôt.
 
 == Insérer une citation pendant que vous écrivez
 
@@ -190,6 +194,44 @@ Une référence `@` vers un titre, une figure ou une équation se rend comme le 
 
 Si vos éléments Zotero ou vos entrées BibTeX portent des #highlight(fill: rgb("#ffd1e0"))[notes ou annotations] jointes, vous pouvez tirer ce texte directement dans votre écriture. Utilisez la palette de commandes `Ctrl+P` pour choisir la commande *Importer le texte d'une note depuis une référence (Zotero / BibTeX)* : cherchez une référence qui a une note jointe, puis choisissez la note pour insérer son texte clair à votre curseur. C'est une façon rapide d'amener des annotations de recherche dans votre brouillon.
 
+== Notes de lecture <literature-notes>
+
+Une *note de lecture* porte sur une œuvre de votre bibliographie : un article, un livre, un chapitre. Vous y notez ce qu'elle dit et ce que vous en pensez, et la note garde les détails de l'œuvre (auteur, année, revue, etc.) comme #wikilink("6 - Propriétés des notes", display: "propriétés"), de sorte qu'une #wikilink("2 - Collections", display: "collection") de vos notes de lecture peut les afficher en colonnes, triées et filtrées comme toute autre propriété.
+
+Une note de lecture nomme son œuvre dans la propriété *source*, écrite comme vous la citeriez : `@otlet1934`. Une note qui se contente de citer de nombreuses œuvres ne reçoit pas leurs détails; seule l'œuvre nommée comme source compte.
+
+=== Créer une note de lecture
+
+Il y a trois façons d'en commencer une :
+
+- Dans le panneau Références, cliquez sur le bouton *⋯* d'une référence (ou faites un clic droit dessus) et choisissez *Nouvelle note de lecture*. Cela fonctionne pour n'importe quelle référence, dans la liste complète ou parmi les citations de la note ouverte.
+- Lancez *Nouvelle note de lecture à partir d'une référence* depuis la palette de commandes (`Ctrl+P`), puis cherchez la référence.
+- Utilisez n'importe quel scaffold qui crée des notes de lecture, depuis une règle de création ou le sélecteur *Insérer un scaffold*. InkyCap demande d'abord de quelle référence traite la note. Si vous fermez cette question sans choisir, rien n'est créé.
+
+La nouvelle note est nommée d'après le titre de l'œuvre (à moins que votre règle de création nomme les notes autrement, par exemple par identifiant Zettelkasten) et s'ouvre avec les détails de l'œuvre déjà remplis.
+
+=== Le scaffold d'exemple pour les notes de lecture
+
+InkyCap ajoute à chaque boîte de notes un scaffold appelé *literature-note-sample*, prêt à l'emploi. Il remplit le titre, la source, les auteurs, l'année, la revue ou le livre où paraît l'œuvre (sous *published-in*), l'éditeur et le DOI, étiquette la note `literature` et commence le corps par une citation et des titres pour un résumé, les idées clés, des citations et vos propres réflexions. Ouvrez-le depuis l'onglet Scaffolds du panneau des modèles pour l'adapter à votre façon de travailler, ou copiez-le pour créer plusieurs genres de notes de lecture. Si vous le supprimez, il ne revient pas. Voir #wikilink("3 - Scaffolds, Templates et Packages") pour les espaces à remplir qu'un scaffold de note de lecture peut utiliser.
+
+Si plusieurs scaffolds créent des notes de lecture, le menu du panneau Références les énumère chacun, et la palette de commandes demande lequel utiliser.
+
+Une fois qu'une note a une source, son onglet Références montre la référence mise en forme de cette source, avec un bouton pour la copier (voir #wikilink("7 - Citations et bibliographie", label: "references-source", display: "Source") plus haut).
+
+=== Les détails sont une copie
+
+Les détails de l'œuvre sont copiés dans la note au moment de sa création. Ce sont ensuite des propriétés ordinaires : vous pouvez les corriger, les compléter ou les retirer, et tout outil Typst peut les lire. Ils ne changent pas quand vous modifiez la référence dans Zotero ou dans votre fichier de bibliographie; après avoir corrigé une référence, vous voudrez donc peut-être mettre aussi à jour les notes qui en traitent.
+
+Une propriété dont la référence n'a pas le détail est omise plutôt que laissée vide, de sorte qu'une note de lecture sur un livre n'a pas de propriété de revue.
+
+=== Ajouter les détails à une note existante
+
+Si vous avez commencé à écrire sur une œuvre avant d'en faire une note de lecture, ouvrez la note, appuyez sur `Ctrl+Shift+\` pour insérer un scaffold et choisissez votre scaffold de note de lecture. InkyCap demande de quelle référence traite la note, puis ajoute les détails de l'œuvre comme propriétés. Les propriétés que la note possède déjà sont conservées telles quelles, et le reste du scaffold est ajouté à la fin de la note.
+
+Pour nommer la source d'une note sans copier de détails, cliquez sur le bouton *⋯* de la référence dans le panneau Références et choisissez *Utiliser comme source de cette note*, ou tapez `@` suivi de la clé de citation dans le champ *source* de l'onglet Propriétés.
+
+#callout("tip", title: "Pour les utilisateurs de Typst")[La source est une étiquette Typst : `source: <otlet1934>`, la même référence que désigne `@otlet1934` (une clé qu'une étiquette ne peut pas contenir s'écrit `label("…")`). Une chaîne dans *source* reste un simple URI, comme dans les notes antérieures aux notes de lecture. Les détails sont lus dans la bibliographie avec laquelle Typst compile lui-même, de sorte que les noms des champs sont ceux de Typst (ceux de hayagriva), que vos références viennent d'un fichier ou de Zotero. L'importation Markdown lit un champ de métadonnées `citekey` comme source, et l'exportation Markdown réécrit la source sous `citekey`.]
+
 == Quand vous exportez
 
 La boîte de dialogue d'exportation comprend une case *Inclure la bibliographie dans la sortie*. Quand elle est cochée, « La bibliographie apparaîtra à la fin du document. » Quand elle est décochée, « Les citations sont résolues normalement, mais la bibliographie rendue est omise de la sortie. » C'est utile quand un éditeur fournit la liste de références séparément. Voir #wikilink("3 - Exportation et publication") pour le flux d'exportation complet, et #wikilink("2 - Collections") pour savoir comment une collection ou un livre entier gère sa bibliographie.
@@ -198,5 +240,6 @@ La boîte de dialogue d'exportation comprend une case *Inclure la bibliographie 
 
 - #wikilink("2 - Paramètres"). L'onglet *Citations*, où vivent votre source et votre style.
 - #wikilink("3 - Exportation et publication"). Les options de bibliographie quand vous exportez.
-- #wikilink("2 - Collections"). Les substitutions de style par collection et les listes de références à l'échelle d'un livre.
+- #wikilink("2 - Collections"). Les substitutions de style par collection, les listes de références à l'échelle d'un livre et les vues de vos notes de lecture.
+- #wikilink("3 - Scaffolds, Templates et Packages"). Les espaces à remplir qu'un scaffold de note de lecture peut utiliser.
 - #wikilink("1 - Rédaction et révision"). Le contexte d'édition plus large pour insérer des citations.

@@ -19,6 +19,7 @@ import { settings } from "../stores/settings";
 import { useI18n } from "../lib/i18n";
 import * as ipc from "../lib/ipc";
 import { toastError } from "../stores/toasts";
+import { REFERENCE_VARIABLES } from "../lib/literature-notes";
 
 interface ScaffoldEditorModalProps {
   mode: "create" | "edit";
@@ -160,7 +161,8 @@ export default function ScaffoldEditorModal(props: ScaffoldEditorModalProps) {
           <p class="app-modal__hint">
             {t("scaffoldEditor.hint", {
               vars: "{{title}}, {{slug}}, {{date}}, {{zid}}",
-            })}
+            })}{" "}
+            {t("scaffoldEditor.referenceHint", { vars: REFERENCE_VARIABLES })}
           </p>
           <div ref={editorParent} class="custom-typst-modal__editor" />
         </div>

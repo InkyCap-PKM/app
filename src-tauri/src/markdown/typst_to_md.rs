@@ -719,7 +719,8 @@ fn find_closing_marker(chars: &[char], start: usize, marker: char) -> Option<usi
 
 /// The note's `#note(...)` properties as YAML (ending in a newline), or `None`
 /// if there are none to write. Written by a YAML library, so values like `Dogs:
-/// a study` are quoted.
+/// a study` are quoted. A reference in `source` is written as Obsidian's
+/// `citekey` field, the form Markdown import reads back.
 fn note_frontmatter(input: &str) -> Option<String> {
     let mut mapping = serde_yaml::Mapping::new();
     for (key, raw) in note_rewriter::extract_note_properties(input) {
@@ -730,6 +731,15 @@ fn note_frontmatter(input: &str) -> Option<String> {
         else {
             continue;
         };
+        if key == note_rewriter::SOURCE_PROPERTY {
+            if let Some(cite_key) = label_key(expr) {
+                mapping.insert(
+                    serde_yaml::Value::String("citekey".to_string()),
+                    serde_yaml::Value::String(cite_key),
+                );
+                continue;
+            }
+        }
         if let Some(value) = typst_expr_to_yaml(expr) {
             mapping.insert(serde_yaml::Value::String(key), value);
         }
@@ -738,6 +748,26 @@ fn note_frontmatter(input: &str) -> Option<String> {
         return None;
     }
     serde_yaml::to_string(&mapping).ok()
+}
+
+/// The name of a label value: `<otlet1934>` or `label("otlet1934")`.
+fn label_key(expr: ast::Expr) -> Option<String> {
+    match expr {
+        ast::Expr::Label(label) => Some(label.get().to_string()),
+        ast::Expr::FuncCall(call) => {
+            let ast::Expr::Ident(callee) = call.callee() else {
+                return None;
+            };
+            if callee.as_str() != "label" {
+                return None;
+            }
+            call.args().items().find_map(|arg| match arg {
+                ast::Arg::Pos(ast::Expr::Str(s)) => Some(s.get().to_string()),
+                _ => None,
+            })
+        }
+        _ => None,
+    }
 }
 
 /// One property value as YAML: strings, numbers, booleans and arrays directly;
@@ -1006,6 +1036,19 @@ Body"#;
         assert_eq!(map["rank"].as_i64(), Some(3));
         assert_eq!(map["done"].as_bool(), Some(false));
         assert!(result.ends_with("---\n\nBody\n"), "{result}");
+    }
+
+    #[test]
+    fn a_source_reference_is_exported_as_a_citekey() {
+        let map = header(&convert(
+            "#note(\n  source: <otlet1934>,\n  url: \"https://example.org\",\n)\nBody",
+        ));
+        assert_eq!(header_str(&map, "citekey"), "otlet1934");
+        assert_eq!(header_str(&map, "url"), "https://example.org");
+        assert!(map.get("source").is_none());
+        // A URI in `source` is exported as it is.
+        let map = header(&convert("#note(source: \"https://example.org\")\nBody"));
+        assert_eq!(header_str(&map, "source"), "https://example.org");
     }
 
     #[test]

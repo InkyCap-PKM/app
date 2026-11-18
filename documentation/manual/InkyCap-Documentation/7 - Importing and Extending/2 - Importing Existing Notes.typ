@@ -46,6 +46,8 @@ Because your field names might not match InkyCap's, a *Map imported properties* 
 
 InkyCap makes sensible first guesses. Common names map themselves automatically. For example `title` becomes the title, `tags` (or `tag`) becomes tags, `aliases` becomes aliases, `date`/`created` becomes the date, and `description`/`summary` becomes the description. Anything it doesn't recognize is offered up as a new property named after your field, with its type guessed from a sample value.
 
+A `citekey` field, as Obsidian's Zotero plugins write in literature notes, becomes the note's source, so the note becomes a #wikilink("7 - Citations and Bibliography", label: "literature-notes", display: "literature note") about that reference. A `url` or `source` field in the same note is then kept as a `url` property. Exporting a literature note to Markdown writes its source back as `citekey`.
+
 #callout("note")[You can map your own field onto a system property, but you can't *create a new* property that uses a reserved system name. InkyCap will ask you to map onto it instead. Empty values and deeply nested YAML will be dropped.]
 
 #callout("tip", title: "For Typst users")[Frontmatter lands as a `#note(...)` call at the top of each imported note. It uses the same typed-metadata mechanism you'd write by hand. Values are parsed with proper YAML typing (lists, numbers, booleans, ISO dates), and a frontmatter value of `"[[Name]]"` is emitted as a reference:

@@ -159,10 +159,22 @@ pub fn system_alias(key: &str) -> Option<&'static str> {
         "description" | "summary" => Some("description"),
         "collection" | "collections" => Some("collection"),
         "source" | "url" => Some("source"),
+        // A citation key, as Obsidian's Zotero plugins write it, becomes the
+        // reference in `source` (see `is_citation_key_field`).
+        "citekey" | "citation-key" | "citationkey" => Some("source"),
         "task" => Some("task"),
         "zid" => Some("zid"),
         _ => None,
     }
+}
+
+/// Whether a frontmatter key holds a citation key (`citekey`). Imported as the
+/// note's `source` reference, `source: <key>`, and exported back as `citekey`.
+pub fn is_citation_key_field(key: &str) -> bool {
+    matches!(
+        key.trim().to_lowercase().as_str(),
+        "citekey" | "citation-key" | "citationkey"
+    )
 }
 
 /// Turn a frontmatter key into a valid Typst identifier, for a new property's

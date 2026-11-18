@@ -11,6 +11,7 @@ import { t } from "../lib/i18n";
 import { errorCode, errorDetail } from "../lib/errors";
 import { resolveNoteNameConflict } from "../lib/note-name-conflict";
 import { isToolbarRule } from "../lib/creation-rule-order";
+import { pickReference } from "./referencePicker";
 
 const [creationRules, setCreationRules] = createSignal<CreationRule[]>([]);
 
@@ -75,10 +76,19 @@ async function promptFilename(rule: CreationRule | undefined): Promise<string | 
  */
 export async function triggerCreationRule(
   ruleId: string,
-  options?: { targetFolder?: string; scaffoldOverride?: string; name?: string },
+  options?: {
+    targetFolder?: string;
+    scaffoldOverride?: string;
+    name?: string;
+    /** The reference a literature-note scaffold's `{{ref…}}` variables use;
+     *  asked for when the scaffold needs one and none is given. */
+    reference?: { key: string; title: string };
+  },
 ): Promise<CreationResult | null> {
   const folderOverride = options?.targetFolder;
   const scaffoldOverride = options?.scaffoldOverride;
+  let referenceKey = options?.reference?.key;
+  let referenceTitle = options?.reference?.title.trim() || undefined;
   let rule = creationRules().find((r) => r.id === ruleId);
   // Rule not cached: the store hasn't loaded for this notebox yet (e.g. the
   // startup load ran before a notebox was open). Load and retry, so the real
@@ -91,12 +101,23 @@ export async function triggerCreationRule(
   // rule from disk and returns a clear error if it truly doesn't exist.
   const pattern = rule?.filename_pattern.trim() ?? "?";
 
+  // A literature-note scaffold asks for its reference first, so a blank pattern
+  // can name the note after the reference's title instead of asking.
+  if (referenceKey === undefined && (await scaffoldUsesReference(scaffoldOverride ?? rule?.scaffold_path))) {
+    const entry = await pickReference();
+    if (!entry) return null;
+    referenceKey = entry.key;
+    referenceTitle = entry.title.trim() || undefined;
+  }
+
   // Initial filename: the given name if any. A blank pattern can't give one,
-  // so use a ZID (if enabled) or ask; otherwise the backend expands the pattern (and may still return
-  // `filename-required`).
-  let nameOverride: string | undefined = options?.name;
+  // so use a ZID (if enabled), the reference's title, or ask; otherwise the
+  // backend expands the pattern (and may still return `filename-required`).
+  const zidNames = settings.files.zettelkasten_enabled && settings.files.auto_title_as_zid;
+  let nameOverride: string | undefined =
+    options?.name ?? (pattern === "" && !zidNames ? referenceTitle : undefined);
   if (nameOverride === undefined && pattern === "") {
-    if (settings.files.zettelkasten_enabled && settings.files.auto_title_as_zid) {
+    if (zidNames) {
       nameOverride = await ipc.generateZid();
     } else {
       const name = await promptFilename(rule);
@@ -105,9 +126,11 @@ export async function triggerCreationRule(
     }
   }
 
-  // Create, prompting and retrying for the two outcomes that need input (so a
+  // Create, prompting and retrying for the outcomes that need input (so a
   // chosen name that also collides asks again):
   // - `filename-required`: the pattern expanded to nothing; ask for a name.
+  // - `reference-required`: the scaffold makes a literature note; ask which
+  //   reference it is about.
   // - `note-name-conflict`: the name exists in another folder (names are unique
   //   across the notebox); open that note, rename or cancel.
   // Other errors are thrown.
@@ -119,9 +142,16 @@ export async function triggerCreationRule(
         folderOverride,
         scaffoldOverride,
         activeNotePath(),
+        referenceKey,
       );
     } catch (e) {
       const code = errorCode(e);
+      if (code === "reference-required") {
+        const entry = await pickReference();
+        if (!entry) return null;
+        referenceKey = entry.key;
+        continue;
+      }
       if (code === "filename-required") {
         const name = await promptFilename(rule);
         if (name === null) return null;
@@ -139,6 +169,19 @@ export async function triggerCreationRule(
       }
       throw e;
     }
+  }
+}
+
+/** Whether the scaffold named `scaffold` (a name or `.typ` file name) uses
+ *  `{{ref…}}` variables. False when it can't be listed. */
+async function scaffoldUsesReference(scaffold: string | undefined): Promise<boolean> {
+  if (!scaffold) return false;
+  const name = scaffold.replace(/\.typ$/i, "");
+  try {
+    const entries = await ipc.listScaffoldEntries();
+    return entries.some((e) => e.name === name && e.uses_reference);
+  } catch {
+    return false;
   }
 }
 

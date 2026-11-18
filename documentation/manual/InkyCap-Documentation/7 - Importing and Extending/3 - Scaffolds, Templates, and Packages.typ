@@ -29,9 +29,11 @@ Two header controls exist:
 
 == Scaffolds
 
-A scaffold is just note content that you reuse. InkyCap comes with two, and you can add your own.
+A scaffold is just note content that you reuse. InkyCap comes with three, and you can add your own.
 
     The two built-in scaffolds are *new-note* (the standard starter behind every new note) and *daily-note* (a dated starter ideal for journalling; see #wikilink("4 - Journal Scroll")). These are seeded into your notebox the first time you open it and then left alone but you can customize them. They cannot be deleted, since the built-in creation rules depend on them. 
+
+    The third, *literature-note-sample*, is a starting point for #wikilink("7 - Citations and Bibliography", label: "literature-notes", display: "literature notes"), notes about one work in your bibliography. Change it, copy it, or delete it; once deleted, it doesn't come back.
 
 === Inserting a scaffold into a note
 
@@ -60,6 +62,13 @@ Scaffolds (and several creation-rule fields) understand `{{...}}` placeholders t
 - `{{date:FORMAT}}` is today's date in a format you choose (see below).
 - `{{time}}` and `{{time:FORMAT}}` give the current time.
 - `{{zid}}` is a Zettelkasten ID, if you've set up that pattern.
+
+A scaffold for #wikilink("7 - Citations and Bibliography", label: "literature-notes", display: "literature notes") can also use a reference from your bibliography. Using such a scaffold asks which reference the note is about.
+
+- `{{ref}}` is the reference itself. As a property's whole value, `source: "{{ref}}"`, it becomes the note's source. In the note's text, it becomes a citation.
+- `{{ref.FIELD}}` is one of the reference's details. The fields are `key` (the citation key), `type` (article, book, …), `title`, `author`, `editor`, `date`, `year`, `parent` (the journal, book or other work it appears in), `publisher`, `location`, `organization`, `volume`, `issue`, `edition`, `page-range`, `url`, `doi`, `isbn`, `issn`, `language`, `genre`, `abstract`, and `note`.
+
+Write a property's value as the placeholder in quotes, for example `author: "{{ref.author}}"`. The quotes keep the scaffold valid Typst while you edit it. When the placeholder is the whole value, the property gets the detail in its natural form: a list of names for `author` and `editor`, and text for the others. A placeholder inside longer text, as in `"Read for {{ref.title}}"`, is filled in as text. A property whose value is a detail the reference doesn't have is left out of the note.
 
 The format inside `{{date:...}}` uses familiar tokens: `YYYY` (year), `MM` (month number), `MMMM` (full month name), `DD` (day), `dddd` (weekday name), `HH` and `mm` (hours and minutes), and so on. Anything that isn't a token passes through as-is, so `{{date:D MMMM YYYY}}` gives you something like "5 June 2026". Month and weekday _names_ follow your interface language, so a French interface would render "vendredi".
 

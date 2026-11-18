@@ -552,6 +552,8 @@ fn typst_value_to_property(value: &Value) -> PropertyValue {
         Value::Int(n) => PropertyValue::Number(*n as f64),
         Value::Float(f) => PropertyValue::Number(*f),
         Value::Str(s) => PropertyValue::String(s.as_str().to_string()),
+        // A reference (`source: <otlet1934>`), shown the way it is cited.
+        Value::Label(label) => PropertyValue::String(format!("@{}", label.resolve().as_str())),
         Value::Array(arr) => {
             let items: Vec<PropertyValue> = arr.iter().map(typst_value_to_property).collect();
             PropertyValue::List(items)
@@ -614,6 +616,20 @@ mod tests {
         );
         assert!(result.tags.contains(&"a".to_string()));
         assert!(result.links.contains(&"Other".to_string()));
+    }
+
+    #[test]
+    fn a_source_reference_is_read_as_it_is_cited() {
+        let (_dir, root) =
+            setup_notebox_with_package(r#"#note(source: <otlet1934>, url: "https://example.org")"#);
+        let note_path = root.join("test.typ");
+        let source = fs::read_to_string(&note_path).unwrap();
+        let mut compiler = TypstCompiler::new(root);
+        let result = compile_and_query(&mut compiler, &note_path, source);
+        assert_eq!(
+            result.properties.get("source"),
+            Some(&PropertyValue::String("@otlet1934".to_string()))
+        );
     }
 
     #[test]

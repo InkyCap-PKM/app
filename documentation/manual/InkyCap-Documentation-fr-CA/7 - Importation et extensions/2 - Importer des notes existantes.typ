@@ -49,6 +49,8 @@ Comme vos noms de champs pourraient ne pas correspondre à ceux d'InkyCap, une f
 
 InkyCap fait des suppositions de départ sensées. Les noms courants s'associent automatiquement. Par exemple, `title` devient le titre, `tags` (ou `tag`) devient les étiquettes, `aliases` devient les alias, `date`/`created` devient la date, et `description`/`summary` devient la description. Tout ce qu'il ne reconnaît pas est proposé comme une nouvelle propriété nommée d'après votre champ, avec son type deviné à partir d'un exemple de valeur.
 
+Un champ `citekey`, comme l'écrivent les modules Zotero d'Obsidian dans les notes de lecture, devient la source de la note, qui devient ainsi une #wikilink("7 - Citations et bibliographie", label: "literature-notes", display: "note de lecture") sur cette référence. Un champ `url` ou `source` dans la même note est alors conservé comme propriété `url`. Exporter une note de lecture en Markdown réécrit sa source sous `citekey`.
+
 #callout("note")[
 Vous pouvez associer votre propre champ à une propriété système, mais vous ne pouvez pas *créer une nouvelle* propriété qui utilise un nom système réservé. InkyCap vous demandera plutôt de l'associer à celle-ci. Les valeurs vides et le YAML profondément imbriqué sont abandonnés.
 ]

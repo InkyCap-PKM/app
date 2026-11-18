@@ -45,7 +45,7 @@ InkyCap understands a handful of properties out of the box. Their types are fixe
 - *aliases* lists other names this note can be found under, entered as a comma-separated list (for example `working title, draft name`).
 - *date* and *due* are calendar dates, chosen with a date picker and useful for things such as the Agenda view.
 - *task* is a checkbox for turning a note into something actionable (and inclusion in the Agenda view).
-- *source* provides a field to include an associated URI.
+- *source* names where the note comes from: either a URI, or, for a #wikilink("7 - Citations and Bibliography", label: "literature-notes", display: "literature note"), the work in your bibliography that it is about, written as a citation such as `@otlet1934`.
 - *collection* identifies any #wikilink("2 - Collections") that you would like to explicitly assign this note to.
 - *zid* is the note's Zettelkasten identifier (a number). When Zettelkasten IDs are turned on in Settings, new notes get one automatically from the pattern you choose, and lists can be sorted by it.
 - *derived-from* lists the notes this one copied passages or whole notes from. Compose mode fills it in as you copy (see #wikilink("4 - Journal Scroll")), and you can edit it like any list. Each entry is a link, so it also counts as a backlink on the note it names, and it follows that note when it is renamed.

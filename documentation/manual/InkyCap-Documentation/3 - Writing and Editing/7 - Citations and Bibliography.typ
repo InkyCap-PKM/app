@@ -2,7 +2,7 @@
 
 #note(
   title: "Citations and Bibliography",
-  description: "How to connect a bibliography (file or Zotero), browse and insert citations, choose a citation style, render the reference list, copy a formatted bibliography, and read citation warnings.",
+  description: "How to connect a bibliography (file or Zotero), browse and insert citations, choose a citation style, render the reference list, copy a formatted bibliography, create literature notes, and read citation warnings.",
   tags: ("documentation",),
 )
 
@@ -63,7 +63,7 @@ If your discipline or publisher needs a style not in the list, choose *Custom CS
 
 == The References sidebar
 
-Once a source is configured, open the *References* tab in the right-hand panel (its icon is a quotation mark, beside the Links tab). This is your home base for everything to do with citations. It has two parts.
+Once a source is configured, open the *References* tab in the right-hand panel (its icon is a quotation mark, beside the Links tab). This is your home base for everything to do with citations. It has two parts, and a third for a literature note.
 
 === Browse references
 
@@ -75,13 +75,17 @@ Click *Browse references* to expand the list of every work in your bibliography.
 
 A small badge tells you how many entries you have and whether they come from *Zotero* or a *File*. If some entries could not be read, you will see a "skipped" note explaining that a few entries had formatting errors in the source.
 
-*To insert a citation, just click a row.* InkyCap drops `@key` wherever your cursor is placed within the current note. If a reference came from Zotero, the row also offers an *Open in Zotero* link.
+*To insert a citation, just click a row.* InkyCap drops `@key` wherever your cursor is placed within the current note. If a reference came from Zotero, the row also offers an *Open in Zotero* link. The *⋯* button at the right of each row (or a right-click on the row) opens the #wikilink("7 - Citations and Bibliography", label: "literature-notes", display: "literature note") actions for that reference.
 
 #callout("note")[ If you see "No bibliography configured. Check Settings › Citations.", it means InkyCap has not found a source yet. Return to the *Citations* tab and set one. ]
 
 === Citations in this file
 
-Below the browser, the *Citations* section lists every work cited in the note you are currently editing, de-duplicated. It is a quick way to see your sources at a glance. When the note cites at least one work, a *Copy formatted bibliography* button appears here too. There is more on that below.
+Below the browser, the *Citations* section lists every work cited in the note you are currently editing, de-duplicated. It is a quick way to see your sources at a glance. When the note cites at least one work, a *Copy formatted bibliography* button appears here too. There is more on that below. Each row has the same *⋯* button as in the full list.
+
+=== Source <references-source>
+
+In a literature note, a *Source* section at the top of the tab shows the work the note is about, formatted in your citation style as it would appear in a reference list. Its *Copy formatted reference* button copies that entry, ready to paste into any note, just as *Copy formatted bibliography* does for all of a note's citations. If the source's citation key isn't in your bibliography (after a typo, or a reference deleted in Zotero), the section says so instead.
 
 == Inserting a citation while you write
 
@@ -189,6 +193,44 @@ An `@` reference to a heading, figure, or equation renders as that item's number
 
 If your Zotero items or BibTeX entries carry attached #highlight(fill: rgb("#ffd1e0"))[notes or annotations], you can pull that text straight into your writing. Use the command palette `Ctrl+P` to select *Import note text from reference (Zotero / BibTeX)* command: search for a reference that has a note attached, then choose the note to insert its plain text at your cursor. This is a quick way to bring research annotations into your draft.
 
+== Literature notes <literature-notes>
+
+A *literature note* is a note about one work in your bibliography: an article, a book, a chapter. You write down what it says and what you think of it, and the note keeps the work's details (author, year, journal, and so on) as #wikilink("6 - Note Properties", display: "properties"), so a #wikilink("2 - Collections", display: "collection") of your literature notes can show them as columns, sorted and filtered like any other property.
+
+A literature note names its work in the *source* property, written the way you would cite it: `@otlet1934`. A note that merely cites many works doesn't get their details; only the one work named as its source counts.
+
+=== Creating a literature note
+
+There are three ways to start one:
+
+- In the References panel, click the *⋯* button on a reference (or right-click it) and choose *New literature note*. This works on any reference, whether in the full list or among the citations of the note you have open.
+- Run *New literature note from reference* from the command palette (`Ctrl+P`), then search for the reference.
+- Use any scaffold that makes literature notes, from a creation rule or the *Insert scaffold* picker. InkyCap first asks which reference the note is about. If you close that question without choosing, nothing is created.
+
+The new note is named after the work's title (unless your creation rule names notes another way, such as by Zettelkasten ID), and opens with the work's details already filled in.
+
+=== The sample literature note scaffold
+
+InkyCap adds a scaffold called *literature-note-sample* to each notebox, ready to use. It fills in the title, the source, the authors, the year, the journal or book the work appears in (as *published-in*), the publisher and the DOI, tags the note `literature`, and starts the body with a citation and headings for a summary, key ideas, quotations, and your own thoughts. Open it from the Scaffolds tab of the Templates panel to change it to suit how you work, or copy it to make several kinds of literature note. If you delete it, it doesn't come back. See #wikilink("3 - Scaffolds, Templates, and Packages") for the placeholders a literature note scaffold can use.
+
+If several scaffolds make literature notes, the References panel's menu lists each one, and the command palette asks which to use.
+
+Once a note has a source, its References tab shows the source's formatted reference, with a button to copy it (see #wikilink("7 - Citations and Bibliography", label: "references-source", display: "Source") above).
+
+=== The details are a copy
+
+The work's details are copied into the note when it is created. They are ordinary properties from then on: you can correct them, add to them or remove them, and every Typst tool can read them. They don't change when you edit the reference in Zotero or in your bibliography file, so after correcting a reference you may want to update the notes about it too.
+
+A property whose detail the reference doesn't have is left out rather than left empty, so a literature note about a book has no journal property.
+
+=== Adding the details to a note you already have
+
+If you started writing about a work before making it a literature note, open the note, press `Ctrl+Shift+\` to insert a scaffold, and choose your literature note scaffold. InkyCap asks which reference the note is about, then adds the work's details as properties. Properties the note already has are kept as they are, and the rest of the scaffold is added at the end of the note.
+
+To name a note's source without copying any details, click the *⋯* button on the reference in the References panel and choose *Use as this note's source*, or type `@` followed by the citation key in the *source* field of the Properties tab.
+
+#callout("tip", title: "For Typst users")[The source is a Typst label: `source: <otlet1934>`, the same reference `@otlet1934` points at (a key a label can't hold is written `label("…")`). A string in *source* is still a plain URI, as in notes from before literature notes existed. The details are read from the bibliography Typst itself compiles with, so the field names are Typst's own (hayagriva's), whether your references come from a file or from Zotero. Markdown import reads a `citekey` frontmatter field as the source, and Markdown export writes the source back as `citekey`.]
+
 == When you export
 
 The Export dialogue features an *Include bibliography in output* checkbox. When it is on, "The bibliography will appear at the end of the document." When it is off, "Citations resolve normally, but the rendered bibliography is omitted from the output." This is useful when a publisher supplies the reference list separately. See #wikilink("3 - Exporting and Publishing") for the full export workflow, and #wikilink("2 - Collections") for how a whole collection or book handles its bibliography.
@@ -197,5 +239,6 @@ The Export dialogue features an *Include bibliography in output* checkbox. When 
 
 - #wikilink("2 - Settings"). The *Citations* tab, where your source and style live.
 - #wikilink("3 - Exporting and Publishing"). Bibliography options when you export.
-- #wikilink("2 - Collections"). Per-collection style overrides and book-wide reference lists.
+- #wikilink("2 - Collections"). Per-collection style overrides and book-wide reference lists, and views of your literature notes.
+- #wikilink("3 - Scaffolds, Templates, and Packages"). The placeholders a literature note scaffold can use.
 - #wikilink("1 - Writing and Editing"). The broader editing context for inserting citations.

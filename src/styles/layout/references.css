@@ -52,6 +52,26 @@
   overflow-wrap: anywhere;
 }
 
+/* Right group: the occurrence count and the actions button. */
+.citation-row__key-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+/* The actions button stays visible but quiet, so the menu it opens (also on
+   right-click) can be found without crowding the row. */
+.citation-row__actions.ui-icon-btn {
+  padding: 0 var(--space-1);
+  color: var(--fg-dim);
+}
+
+.citation-row__actions.ui-icon-btn:hover {
+  color: var(--fg-primary);
+  background: var(--bg-hover);
+}
+
 .citation-row__count {
   flex-shrink: 0;
   font-size: 0.85em;
@@ -310,3 +330,29 @@
   color: var(--accent-danger);
 }
 
+
+/* A literature note's own reference, formatted in the citation style, inside a
+   `.citation-row` box (see SourceReferenceSection). */
+.source-reference {
+  margin: 0;
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+  color: var(--fg-primary);
+  overflow-wrap: anywhere;
+}
+
+.source-reference__italic {
+  font-style: italic;
+}
+
+.source-reference__bold {
+  font-weight: 600;
+}
+
+.source-reference__small-caps {
+  font-variant: small-caps;
+}
+
+.source-reference a {
+  color: var(--accent);
+}
