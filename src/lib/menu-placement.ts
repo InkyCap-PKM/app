@@ -7,7 +7,9 @@
 //
 // A menu that would pass the bottom opens upward from the point; past the right
 // edge, it opens to the left. If that doesn't fit either, it is placed against
-// the far edge with a small margin.
+// the far edge with a small margin. A menu taller than the window is limited to
+// the window's height and scrolls, so every item stays reachable. (A scrolling
+// menu clips its own submenus, but the menus with submenus are short.)
 //
 // Only fixed-position menus with inline pixel `left` / `top` are handled. Menus
 // placed inside another element (dropdowns, submenus) are left alone.
@@ -22,6 +24,12 @@ const VIEWPORT_MARGIN = 8;
  * is our own write; anything else is a new position from the menu's owner.
  */
 const placed = new WeakMap<HTMLElement, { left: string; top: string }>();
+
+/**
+ * Menus whose height this module limited. Only these limits are cleared before
+ * measuring again, so a menu's own `max-height` (the pill menu's) is kept.
+ */
+const limited = new WeakSet<HTMLElement>();
 
 let observer: MutationObserver | null = null;
 
@@ -66,8 +74,10 @@ export function placeMenu(menu: HTMLElement): void {
   if (last && last.left === menu.style.left && last.top === menu.style.top) return;
   if (getComputedStyle(menu).position !== "fixed") return;
 
+  releaseHeight(menu);
   const rect = menu.getBoundingClientRect();
   if (rect.width === 0 && rect.height === 0) return;
+  const height = limitHeight(menu, rect.height);
 
   const left = pixels(menu.style.left);
   const top = pixels(menu.style.top);
@@ -75,7 +85,7 @@ export function placeMenu(menu: HTMLElement): void {
     menu.style.left = `${fit(left, rect.width, window.innerWidth)}px`;
   }
   if (top !== null) {
-    menu.style.top = `${fit(top, rect.height, window.innerHeight)}px`;
+    menu.style.top = `${fit(top, height, window.innerHeight)}px`;
   }
   placed.set(menu, { left: menu.style.left, top: menu.style.top });
 }
@@ -90,6 +100,27 @@ export function fit(start: number, size: number, limit: number): number {
   if (start + size <= max) return Math.max(VIEWPORT_MARGIN, start);
   if (start - size >= VIEWPORT_MARGIN) return start - size;
   return Math.max(VIEWPORT_MARGIN, max - size);
+}
+
+/**
+ * Limit `menu` to the window's height, less the margins, if it is taller, and
+ * let it scroll. Set inline rather than by a class, since Solid replaces the
+ * whole class list of menus whose classes it computes. Returns the height the
+ * menu will take.
+ */
+function limitHeight(menu: HTMLElement, height: number): number {
+  const room = window.innerHeight - 2 * VIEWPORT_MARGIN;
+  if (height <= room) return height;
+  menu.style.maxHeight = `${room}px`;
+  menu.style.overflowY = "auto";
+  limited.add(menu);
+  return room;
+}
+
+function releaseHeight(menu: HTMLElement): void {
+  if (!limited.delete(menu)) return;
+  menu.style.maxHeight = "";
+  menu.style.overflowY = "";
 }
 
 function pixels(value: string): number | null {

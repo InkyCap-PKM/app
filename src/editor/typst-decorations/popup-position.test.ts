@@ -49,6 +49,38 @@ describe("computePlacement", () => {
   });
 });
 
+describe("computePlacement with fitHeight (the pill menu)", () => {
+  const opts = { fitHeight: true } as const;
+
+  it("reports the room below without shrinking a popup that fits", () => {
+    const p = computePlacement(anchorAt(100, 100), { width: 200, height: 260 }, VIEWPORT, opts);
+    expect(p.side).toBe("below");
+    expect(p.top).toBe(120 + GAP);
+    expect(p.maxHeight).toBe(800 - 120 - MARGIN - GAP);
+  });
+
+  it("limits a long popup to the room below, leaving the anchor uncovered", () => {
+    const p = computePlacement(anchorAt(100, 300), { width: 200, height: 900 }, VIEWPORT, opts);
+    expect(p.side).toBe("below");
+    expect(p.top).toBe(320 + GAP);
+    expect(p.maxHeight).toBe(800 - 320 - MARGIN - GAP);
+  });
+
+  it("limits a long popup to the room above when that side is larger", () => {
+    const p = computePlacement(anchorAt(100, 600), { width: 200, height: 900 }, VIEWPORT, opts);
+    expect(p.side).toBe("above");
+    expect(p.maxHeight).toBe(600 - MARGIN - GAP);
+    expect(p.top).toBe(MARGIN);
+    // Ends just above the anchor.
+    expect(p.top + p.maxHeight!).toBe(600 - GAP);
+  });
+
+  it("omits maxHeight without the option", () => {
+    const p = computePlacement(anchorAt(100, 300), { width: 200, height: 900 }, VIEWPORT);
+    expect(p.maxHeight).toBeUndefined();
+  });
+});
+
 describe("computePlacement with prefer: above (the selection toolbar)", () => {
   const size = { width: 400, height: 36 };
   const opts = { prefer: "above", align: "center", gap: 8 } as const;

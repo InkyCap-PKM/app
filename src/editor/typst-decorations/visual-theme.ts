@@ -930,6 +930,8 @@ export const visualTheme = EditorView.theme({
     // Cap the width so an expanded inline help block (or a long value) wraps
     // instead of stretching the whole menu wide.
     maxWidth: "360px",
+    // The height limit comes from openPillMenu (the room beside the pill).
+    overflowY: "auto",
     fontSize: "0.9em",
     // UI chrome (a menu popup), so it follows the interface font.
     fontFamily: "var(--interface-font, inherit)",

@@ -60,6 +60,47 @@ describe("placeMenu", () => {
     expect(menu.style.top).toBe("20px");
   });
 
+  it("limits a menu taller than the window to the window and lets it scroll", () => {
+    // Report the natural height until a max-height is set, as layout would.
+    menu.getBoundingClientRect = () => {
+      const height = menu.style.maxHeight ? parseFloat(menu.style.maxHeight) : 1000;
+      return { width: 180, height, top: 0, left: 0, right: 180, bottom: height } as DOMRect;
+    };
+    menu.style.left = "100px";
+    menu.style.top = "300px";
+    placeMenu(menu);
+    expect(menu.style.maxHeight).toBe("784px");
+    expect(menu.style.overflowY).toBe("auto");
+    expect(menu.style.top).toBe("8px");
+  });
+
+  it("lifts its height limit when the menu is placed again and fits", () => {
+    let natural = 1000;
+    menu.getBoundingClientRect = () => {
+      const height = menu.style.maxHeight
+        ? Math.min(natural, parseFloat(menu.style.maxHeight))
+        : natural;
+      return { width: 180, height, top: 0, left: 0, right: 180, bottom: height } as DOMRect;
+    };
+    menu.style.left = "100px";
+    menu.style.top = "300px";
+    placeMenu(menu);
+    natural = 200;
+    menu.style.top = "100px";
+    placeMenu(menu);
+    expect(menu.style.maxHeight).toBe("");
+    expect(menu.style.overflowY).toBe("");
+    expect(menu.style.top).toBe("100px");
+  });
+
+  it("keeps a height limit the menu set itself", () => {
+    menu.style.maxHeight = "300px";
+    menu.style.left = "100px";
+    menu.style.top = "100px";
+    placeMenu(menu);
+    expect(menu.style.maxHeight).toBe("300px");
+  });
+
   it("leaves menus that are not fixed-position alone", () => {
     menu.style.position = "absolute";
     menu.style.left = "950px";

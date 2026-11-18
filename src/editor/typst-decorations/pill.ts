@@ -5,6 +5,7 @@
 
 import { type EditorView, WidgetType } from "@codemirror/view";
 import { expandFunc } from "./effects";
+import { positionPopupAtAnchor } from "./popup-position";
 import { setTabEditingMode, getActiveTab } from "../../stores/tabs";
 import { t } from "../../lib/i18n";
 
@@ -243,24 +244,11 @@ export function openPillMenu(
     }
   }
 
-  // Position fixed under the anchor; reuse the verse popover's pattern.
-  const rect = anchor.getBoundingClientRect();
+  // Below the pill, or above it when there is more room there. A menu longer
+  // than that room scrolls, so every item stays reachable in a short window.
   menu.style.position = "fixed";
-  menu.style.top = `${rect.bottom + 4}px`;
-  menu.style.left = `${rect.left}px`;
   view.dom.appendChild(menu);
-
-  // Clamp to viewport — if the menu would clip the right edge, slide it
-  // back left; same for bottom.
-  requestAnimationFrame(() => {
-    const m = menu.getBoundingClientRect();
-    if (m.right > window.innerWidth - 8) {
-      menu.style.left = `${Math.max(8, window.innerWidth - 8 - m.width)}px`;
-    }
-    if (m.bottom > window.innerHeight - 8) {
-      menu.style.top = `${Math.max(8, rect.top - 4 - m.height)}px`;
-    }
-  });
+  positionPopupAtAnchor(menu, anchor.getBoundingClientRect(), { fitHeight: true });
 
   const closeMenu = () => {
     menu.remove();

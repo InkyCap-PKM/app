@@ -43,6 +43,12 @@ export interface PlacementOptions {
   gap?: number;
   /** Minimum breathing room from the viewport edge. Default `MARGIN`. */
   margin?: number;
+  /**
+   * Limit the popup's height to the room on the side it opens on, so a long
+   * popup scrolls rather than covering the anchor or running off screen. The
+   * popup needs `overflow-y: auto` in CSS. Default `false`.
+   */
+  fitHeight?: boolean;
 }
 
 export interface Placement {
@@ -50,6 +56,8 @@ export interface Placement {
   left: number;
   /** Side actually used, after any flip. */
   side: PlacementSide;
+  /** With `fitHeight`: the height the popup may take on that side. */
+  maxHeight?: number;
 }
 
 const GAP = 4; // distance between the anchor and the popup edge
@@ -67,7 +75,7 @@ function clamp(value: number, min: number, max: number): number {
  * Opens on the preferred side, flips when that side can't fit it and the other
  * has more room, then keeps both axes within the margins. A popup larger than
  * the viewport is pinned to the top-left margin; popups that can be that large
- * should set `max-height` and `overflow-y: auto` in CSS.
+ * should set `fitHeight`, or `max-height` and `overflow-y: auto` in CSS.
  */
 export function computePlacement(
   anchor: AnchorCoords,
@@ -75,7 +83,13 @@ export function computePlacement(
   viewport: Viewport,
   options: PlacementOptions = {},
 ): Placement {
-  const { prefer = "below", align = "start", gap = GAP, margin = MARGIN } = options;
+  const {
+    prefer = "below",
+    align = "start",
+    gap = GAP,
+    margin = MARGIN,
+    fitHeight = false,
+  } = options;
 
   const spaceBelow = viewport.height - anchor.bottom - margin;
   const spaceAbove = anchor.top - margin;
@@ -89,14 +103,17 @@ export function computePlacement(
     side = "below";
   }
 
-  const rawTop = side === "above" ? anchor.top - size.height - gap : anchor.bottom + gap;
-  const top = clamp(rawTop, margin, viewport.height - size.height - margin);
+  const room = Math.max(0, (side === "above" ? spaceAbove : spaceBelow) - gap);
+  const height = fitHeight ? Math.min(size.height, room) : size.height;
+
+  const rawTop = side === "above" ? anchor.top - height - gap : anchor.bottom + gap;
+  const top = clamp(rawTop, margin, viewport.height - height - margin);
 
   const rawLeft =
     align === "center" ? (anchor.left + anchor.right) / 2 - size.width / 2 : anchor.left;
   const left = clamp(rawLeft, margin, viewport.width - size.width - margin);
 
-  return { top, left, side };
+  return fitHeight ? { top, left, side, maxHeight: room } : { top, left, side };
 }
 
 /**
@@ -104,7 +121,8 @@ export function computePlacement(
  * element must already have its content. It is shown first (`display`,
  * `"block"` by default; `"flex"` for flex surfaces) so `max-height` applies to
  * the measurement, and `top`/`left` are set in the same task, so the
- * intermediate position is never painted.
+ * intermediate position is never painted. With `fitHeight`, any earlier height
+ * limit is cleared before measuring and the new one is set as `max-height`.
  */
 export function positionPopupAtAnchor(
   el: HTMLElement,
@@ -112,6 +130,7 @@ export function positionPopupAtAnchor(
   options: PlacementOptions & { display?: string } = {},
 ): Placement {
   el.style.display = options.display ?? "block";
+  if (options.fitHeight) el.style.maxHeight = "";
 
   const placement = computePlacement(
     coords,
@@ -122,5 +141,6 @@ export function positionPopupAtAnchor(
 
   el.style.top = `${placement.top}px`;
   el.style.left = `${placement.left}px`;
+  if (placement.maxHeight !== undefined) el.style.maxHeight = `${placement.maxHeight}px`;
   return placement;
 }
