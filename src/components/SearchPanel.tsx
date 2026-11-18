@@ -610,7 +610,6 @@ const SearchPanel: Component = () => {
     setShowOverflowMenu(false);
     try {
       await ipc.addBookmark({ type: "Search", data: { query: q } });
-      document.dispatchEvent(new CustomEvent("inkycap:bookmarks-changed"));
     } catch (e) {
       setSearchError(errorText(e));
     }

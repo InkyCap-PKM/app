@@ -3,6 +3,8 @@
 
 import { Component, createMemo, createResource, For, Show, JSX } from "solid-js";
 import * as ipc from "../lib/ipc";
+import { onBookmarksChanged } from "../lib/events";
+import { listenWhileMounted } from "../lib/listen-while-mounted";
 import { pathEquals } from "../lib/paths";
 import { attachListNav } from "../lib/list-nav";
 import { createDragReorder, reorderIndex } from "../lib/drag-reorder";
@@ -16,7 +18,8 @@ import RuleIcon from "./RuleIcon";
 import { useI18n } from "../lib/i18n";
 
 interface BookmarksPanelProps {
-  /** Trigger a refresh from the parent (e.g. after adding a bookmark). */
+  /** Trigger a refresh from the parent (the sidebar's refresh). Bookmark
+   *  changes need none: the backend announces each one. */
   refreshTick?: number;
 }
 
@@ -26,6 +29,7 @@ const BookmarksPanel: Component<BookmarksPanelProps> = (props) => {
     () => props.refreshTick,
     async () => ipc.listBookmarks(),
   );
+  listenWhileMounted(onBookmarksChanged(() => void refetch()));
 
   // Drag the icon to reorder. Indices are taken from the full
   // `bookmarks()` list, which is the order the backend stores.
@@ -38,7 +42,6 @@ const BookmarksPanel: Component<BookmarksPanelProps> = (props) => {
     if (toIndex === null) return;
     try {
       await ipc.reorderBookmarks(fromIndex, toIndex);
-      refetch();
     } catch (err) {
       console.error("Failed to reorder bookmark:", err);
     }
@@ -144,7 +147,6 @@ const BookmarksPanel: Component<BookmarksPanelProps> = (props) => {
     e.stopPropagation();
     try {
       await ipc.removeBookmark(bm.id);
-      refetch();
     } catch (err) {
       console.error("Failed to remove bookmark:", err);
     }

@@ -50,8 +50,6 @@ const AgendaPanel: Component<AgendaPanelProps> = (props) => {
             type: "AgendaView",
             data: { name, notebox: info.path, filter: JSON.stringify(snapshot) },
           });
-          // Make the Bookmarks pane re-query (same channel SearchPanel uses).
-          document.dispatchEvent(new CustomEvent("inkycap:bookmarks-changed"));
         }}
         onOpen={(it, opts) =>
           openTab(

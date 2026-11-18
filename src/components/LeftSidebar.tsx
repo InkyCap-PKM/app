@@ -785,14 +785,6 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     requestAnimationFrame(() => scrollWhenReady(0));
   });
 
-  // Other panels (e.g. SearchPanel) bookmark items asynchronously and
-  // dispatch this event to make the Bookmarks pane re-query.
-  const onBookmarksChanged = () => setRefreshTick((t) => t + 1);
-  document.addEventListener("inkycap:bookmarks-changed", onBookmarksChanged);
-  onCleanup(() =>
-    document.removeEventListener("inkycap:bookmarks-changed", onBookmarksChanged),
-  );
-
   function openSearchFor(query: string) {
     setMode("search");
     document.dispatchEvent(

@@ -9,7 +9,6 @@ import { t } from "../lib/i18n";
 import * as ipc from "../lib/ipc";
 import { buildFileList } from "./filelist";
 import {
-  onBookmarksChanged,
   onFileCreated,
   onFileDeleted,
   onFileRenamed,
@@ -95,7 +94,6 @@ let noteboxLostUnlisten: UnlistenFn | null = null;
 let fileCreatedUnlisten: (() => void) | null = null;
 let fileDeletedUnlisten: (() => void) | null = null;
 let fileRenamedUnlisten: (() => void) | null = null;
-let bookmarksChangedUnlisten: (() => void) | null = null;
 let noteSavedUnlisten: (() => void) | null = null;
 let indexUpdatedUnlisten: UnlistenFn | null = null;
 
@@ -185,13 +183,6 @@ async function ensureIndexEventListeners() {
   if (fileRenamedUnlisten === null) {
     fileRenamedUnlisten = await onFileRenamed((payload) => {
       renameTabPath(payload.from, payload.to);
-    });
-  }
-  // The backend rebases bookmarks on rename or move; refresh the Bookmarks
-  // pane.
-  if (bookmarksChangedUnlisten === null) {
-    bookmarksChangedUnlisten = await onBookmarksChanged(() => {
-      document.dispatchEvent(new CustomEvent("inkycap:bookmarks-changed"));
     });
   }
   // Refresh aliases when a note is saved (`refreshAliases` debounces).

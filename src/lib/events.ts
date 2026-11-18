@@ -76,9 +76,9 @@ export function onIndexRebuilt(
   }).then((unlisten) => unlisten);
 }
 
-// Sent after the backend updates bookmark paths for a rename or move in
-// InkyCap, so the Bookmarks pane reloads. Sent to all windows, since bookmarks
-// are app-wide.
+// Sent whenever the bookmarks change: one is added, removed or reordered, or
+// their paths follow a rename or move in InkyCap. Sent to all windows, since
+// bookmarks are app-wide; the Bookmarks pane reloads on it.
 export function onBookmarksChanged(
   callback: () => void,
 ): Promise<() => void> {
