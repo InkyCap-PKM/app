@@ -90,6 +90,7 @@ const DEFAULTS: UserSettings = {
     new_tab_today: false,
     new_tab_unwritten_notes: false,
     new_tab_list_length: 6,
+    on_this_date_pane: false,
     disable_dmabuf_renderer: false,
   },
   backup: {

@@ -79,11 +79,14 @@ import {
   Filter,
   Sprout,
   NotebookPen,
+  ListClock,
 } from "lucide-solid";
 import { NoteIcon, UnwrittenNoteIcon } from "./icons";
 import { Dynamic } from "solid-js/web";
 import ReferencesPanel from "./ReferencesPanel";
 import PackageReferencePanel from "./PackageReferencePanel";
+import OnThisDatePanel from "./OnThisDatePanel";
+import { settings } from "../stores/settings";
 import NotePackagesSection from "./NotePackagesSection";
 import {
   PACKAGE_REFERENCE_TAB,
@@ -279,6 +282,8 @@ const RightPanel: Component = () => {
     return !!path && isScaffoldFile(path);
   };
   const noteTabsShown = () => !packageFileOpen() && !scaffoldOpen();
+  // On This Date is opt-in (Settings > Behaviour).
+  const onThisDateShown = () => noteTabsShown() && settings.behaviour.on_this_date_pane;
   // Properties apply to scaffolds too: their `#note(...)` is merged into notes.
   const propertiesShown = () => !packageFileOpen();
 
@@ -314,6 +319,7 @@ const RightPanel: Component = () => {
       (!noteTabsShown() &&
         (active === "links" || active === "references" || active === "annotations")) ||
       (active === "properties" && !propertiesShown()) ||
+      (active === "on-this-date" && !onThisDateShown()) ||
       (active === PACKAGE_REFERENCE_TAB && !packageReferenceShown() && !noteImportsResource.loading);
     if (!hidden) return;
     setActivePanel(packageReferenceShown() ? PACKAGE_REFERENCE_TAB : "outline");
@@ -1332,6 +1338,16 @@ const RightPanel: Component = () => {
                 </span>
               </button>
             </Show>
+            <Show when={onThisDateShown()}>
+              <button
+                class={`right-panel__tab${activePanel() === "on-this-date" ? " right-panel__tab--active" : ""}`}
+                onClick={() => setActivePanel("on-this-date")}
+                title={t("onThisDate.title")}
+                aria-label={t("onThisDate.title")}
+              >
+                <ListClock size={18} />
+              </button>
+            </Show>
             {/* Contributed tabs (plugins / manifest query-views). Renders
                 nothing when the registry is empty, so the built-in tab row is
                 unchanged by default. */}
@@ -2292,6 +2308,10 @@ const RightPanel: Component = () => {
 
           <Show when={activePanel() === PACKAGE_REFERENCE_TAB}>
             <PackageReferencePanel imports={noteImports()} />
+          </Show>
+
+          <Show when={activePanel() === "on-this-date" && onThisDateShown() && activeFileTab()}>
+            {(tab) => <OnThisDatePanel path={tab().path} />}
           </Show>
 
           {/* Scroll Context tab — only meaningful when Journal Scroll is on

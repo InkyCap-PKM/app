@@ -191,6 +191,14 @@ If you organize notes into a #wikilink("2 - Collections", display: "collection")
 
 To set one up, open the collection's table, use the *Add view* (the *+* button), and choose *Agenda view*. The result uses the same Agenda list functionality that you already know, but scoped to just that collection's members. (Membership follows the collection's filter; a note appears because it matches that filter, not because of any manual marker.)
 
+== What falls on a note's date
+
+The *On This Date* pane in the right panel lists every task and dated reminder, from any note, that falls on the open note's date. A daily note, for example, shows what was due that day. Turn it on in #wikilink("2 - Settings") under Behaviour, *On This Date pane*; it then appears as a tab in the right panel.
+
+The pane reads the note's `date` property, the `date: "2026-11-19"` line in its `#note(...)` block, which you can change in the *Properties* pane like any other property. InkyCap's own scaffolds add it to new notes. A note without one shows a reminder that the property is needed, and lists nothing.
+
+The list includes the note's own tasks and dates (handy when they are spread through a long note), finished tasks, crossed out as in the Agenda, and repeating dates on each day they repeat. Rows look and open the same way as in the Agenda panel.
+
 == Related pages
 
 - #wikilink("6 - Note Properties") (mark a whole note as a task or give it a deadline).

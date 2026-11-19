@@ -437,6 +437,7 @@ pub fn run() {
             commands::agenda::get_agenda_items,
             commands::agenda::get_collection_agenda,
             commands::agenda::get_today_agenda_items,
+            commands::agenda::get_note_day_agenda,
             commands::new_tab_page::get_recent_notes,
             commands::new_tab_page::get_unwritten_notes,
             commands::journal_scroll::run_scroll_query,

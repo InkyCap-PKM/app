@@ -24,6 +24,7 @@ import { modifierKey } from "../../lib/platform";
 import { formatUserDate, formatUserTime } from "../../lib/dates";
 import { settings } from "../../stores/settings";
 import { openTab } from "../../stores/tabs";
+import { sortDayItems } from "../AgendaRow";
 import {
   dismissHeldBackTabs,
   heldBackTabs,
@@ -178,13 +179,6 @@ const Row: Component<{
   </li>
 );
 
-/** Open tasks first, then by text, so today's remaining work leads. */
-function sortToday(items: AgendaItem[]): AgendaItem[] {
-  return [...items].sort(
-    (a, b) => Number(a.done) - Number(b.done) || a.text.localeCompare(b.text),
-  );
-}
-
 const NewTabPage: Component = () => {
   const t = useI18n();
   const modifier = modifierKey();
@@ -288,7 +282,7 @@ const NewTabPage: Component = () => {
               count={today()?.length}
               scrollable
             >
-              <For each={sortToday(today() ?? [])}>
+              <For each={sortDayItems(today() ?? [])}>
                 {(item) => (
                   <Row
                     icon={

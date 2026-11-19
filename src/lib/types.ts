@@ -552,6 +552,10 @@ export interface BehaviourSettings {
    *  scrolls past this many instead). Settings offers 3, 6 or 12. */
   new_tab_list_length: number;
 
+  /** Show the right panel's On This Date pane: the tasks and dates that fall
+   *  on the open note's `date` property. */
+  on_this_date_pane: boolean;
+
   /**
    * Linux only: disable WebKitGTK's DMABUF renderer, which causes stray or
    * duplicated UI on some GPU and driver combinations (issue #22). Read at
@@ -1050,6 +1054,16 @@ export interface AgendaItem {
   occurrence_index: number | null;
   /** The repeat rule, for rendering a human summary. `null` when not recurring. */
   recurrence: Recurrence | null;
+}
+
+/** A note's date and that day's agenda items. Mirrors the Rust
+ *  `NoteDayAgenda`. */
+export interface NoteDayAgenda {
+  /** The note's `date` property as `YYYY-MM-DD`; `null` when it has none or
+   *  the value isn't a date. */
+  date: string | null;
+  /** Every agenda item dated that day, the note's own included. */
+  items: AgendaItem[];
 }
 
 // New tab page lists. Mirror the Rust structs in `commands/new_tab_page.rs`.

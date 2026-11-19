@@ -6,10 +6,10 @@
 import { Component, createResource } from "solid-js";
 import * as ipc from "../lib/ipc";
 import type { AgendaItem } from "../lib/types";
-import { openTab } from "../stores/tabs";
 import { noteboxInfo, propertyVersion, fileTreeVersion } from "../stores/notebox";
 import { t } from "../lib/i18n";
 import AgendaList, { agendaFiltersKey } from "./AgendaList";
+import { openAgendaItem } from "./AgendaRow";
 
 interface AgendaPanelProps {
   /** Bumped by the parent to force a refetch (e.g. after an edit). */
@@ -51,12 +51,7 @@ const AgendaPanel: Component<AgendaPanelProps> = (props) => {
             data: { name, notebox: info.path, filter: JSON.stringify(snapshot) },
           });
         }}
-        onOpen={(it, opts) =>
-          openTab(
-            { type: "file", title: it.note_title, path: it.note_path },
-            opts?.newTab ? { forceNewTab: true, newTabAction: true } : undefined,
-          )
-        }
+        onOpen={openAgendaItem}
       />
     </div>
   );

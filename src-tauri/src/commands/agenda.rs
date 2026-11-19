@@ -5,8 +5,9 @@
 //      `<inkycap-agenda>` label.
 //
 // `get_agenda_items` covers the notebox (the Agenda pane);
-// `get_collection_agenda` one collection view's notes. Both use
-// `agenda_items_for_notes`, so the results match. Sorting, grouping and
+// `get_collection_agenda` one collection view's notes; `get_today_agenda_items`
+// and `get_note_day_agenda` one day's items. All use `agenda_items_for_notes`,
+// so the results match. Sorting, grouping and
 // filtering are done in the frontend.
 // ---------------------------------------------------------------------------
 
@@ -303,8 +304,67 @@ pub async fn get_today_agenda_items(
     let session = state.session(window.label()).await;
     let index = session.property_index.read().await;
     let notes: Vec<&NoteMetadata> = index.notes.values().collect();
-    let today = local_today();
-    Ok(items_dated(agenda_items_for_notes(&notes, today), today))
+    Ok(agenda_items_on(&notes, local_today()))
+}
+
+/// A note's date and the agenda items that fall on it, for the right panel's
+/// On This Date pane.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct NoteDayAgenda {
+    /// The note's `date` property as `YYYY-MM-DD`, or `None` when it has no
+    /// date property or the value isn't a date.
+    pub date: Option<String>,
+    /// Every agenda item dated that day across the notebox, the note's own
+    /// included, done or not. Empty when `date` is `None`.
+    pub items: Vec<AgendaItem>,
+}
+
+/// The agenda items on the day given by the note's `date` property (see
+/// [`NoteDayAgenda`]). A note the index doesn't know has no date.
+#[tauri::command]
+pub async fn get_note_day_agenda(
+    path: String,
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<NoteDayAgenda, InkyCapError> {
+    let session = state.session(window.label()).await;
+    let path_buf = sanitize_notebox_arg(&path)?;
+    let index = session.property_index.read().await;
+    // Index keys can differ in shape from the path the frontend sends, so fall
+    // back to comparing canonical strings when the direct lookup misses.
+    let wanted = to_frontend_string(&path_buf);
+    let note = index.notes.get(&path_buf).or_else(|| {
+        index
+            .notes
+            .values()
+            .find(|n| to_frontend_string(&n.path) == wanted)
+    });
+    let Some(day) = note.and_then(note_day) else {
+        return Ok(NoteDayAgenda {
+            date: None,
+            items: Vec::new(),
+        });
+    };
+    let notes: Vec<&NoteMetadata> = index.notes.values().collect();
+    Ok(NoteDayAgenda {
+        date: Some(day.format("%Y-%m-%d").to_string()),
+        items: agenda_items_on(&notes, day),
+    })
+}
+
+/// The day a note's `date` property names. Only the leading `YYYY-MM-DD` is
+/// read, so a value with a time after it still counts.
+fn note_day(note: &NoteMetadata) -> Option<NaiveDate> {
+    let value = prop_str(note, "date")?;
+    parse_iso_date(value.trim().get(..10)?)
+}
+
+/// The agenda items dated `day`, done or not, with recurring reminders counted
+/// on the days they repeat. Recurrences are expanded as the Agenda would on
+/// that day, so a day in the past or future gets the same answer the Agenda
+/// gives for today.
+fn agenda_items_on(notes: &[&NoteMetadata], day: NaiveDate) -> Vec<AgendaItem> {
+    items_dated(agenda_items_for_notes(notes, day), day)
 }
 
 /// Keep only the items whose date is `day`.
@@ -627,5 +687,70 @@ mod tests {
         assert!(items.iter().all(|i| i.recurring && !i.is_task));
         assert_eq!(items[0].date.as_deref(), Some("2026-08-01"));
         assert_eq!(items[0].text, "Submit expense report");
+    }
+
+    #[test]
+    fn a_weekly_reminder_counts_on_a_past_day_it_repeats() {
+        // A note dated a week after the anchor sees the repeat, even though
+        // that day is in the past relative to any real "today".
+        let mut n = note(
+            "/notebox/standup.typ",
+            &[("due", PropertyValue::String("2025-03-03".into()))],
+            &[],
+            Vec::new(),
+        );
+        n.recurrence = Some(Recurrence {
+            freq: "week".into(),
+            interval: 1,
+            by_day: Vec::new(),
+            until: None,
+            count: None,
+        });
+        let on_repeat = agenda_items_on(&[&n], parse_iso_date("2025-03-10").unwrap());
+        assert_eq!(on_repeat.len(), 1);
+        assert!(on_repeat[0].recurring);
+        let off_day = agenda_items_on(&[&n], parse_iso_date("2025-03-11").unwrap());
+        assert!(off_day.is_empty());
+    }
+
+    #[test]
+    fn done_tasks_and_the_notes_own_items_are_included() {
+        let n = note(
+            "/notebox/day.typ",
+            &[("date", PropertyValue::String("2026-06-10".into()))],
+            &[],
+            vec![AgendaMarker {
+                kind: "task".into(),
+                body: Some("Send draft".into()),
+                due: Some("2026-06-10".into()),
+                done: true,
+                tags: Vec::new(),
+                recurrence: None,
+            }],
+        );
+        let items = agenda_items_on(&[&n], note_day(&n).unwrap());
+        assert_eq!(items.len(), 1);
+        assert!(items[0].done);
+        assert_eq!(items[0].text, "Send draft");
+    }
+
+    #[test]
+    fn note_day_reads_the_leading_date_only() {
+        let with_time = note(
+            "/notebox/a.typ",
+            &[("date", PropertyValue::String("2026-06-10T09:30".into()))],
+            &[],
+            Vec::new(),
+        );
+        assert_eq!(note_day(&with_time), parse_iso_date("2026-06-10"));
+        let not_a_date = note(
+            "/notebox/b.typ",
+            &[("date", PropertyValue::String("soon".into()))],
+            &[],
+            Vec::new(),
+        );
+        assert_eq!(note_day(&not_a_date), None);
+        let none = note("/notebox/c.typ", &[], &[], Vec::new());
+        assert_eq!(note_day(&none), None);
     }
 }

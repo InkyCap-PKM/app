@@ -205,6 +205,14 @@ Si vous organisez des notes dans une #wikilink("2 - Collections", display: "coll
 
 Pour en configurer un, ouvrez le tableau de la collection, utilisez *Ajouter une vue* (le bouton *+*) et choisissez *Vue agenda*. Le résultat utilise la même fonctionnalité de liste d'Agenda que vous connaissez déjà, mais limitée aux seuls membres de cette collection. (L'appartenance suit le filtre de la collection ; une note apparaît parce qu'elle correspond à ce filtre, et non à cause d'un marqueur manuel.)
 
+== Ce qui tombe à la date d'une note
+
+Le volet *À cette date* du panneau de droite liste chaque tâche et chaque rappel daté, de n'importe quelle note, qui tombe à la date de la note ouverte. Une note quotidienne, par exemple, montre ce qui était prévu ce jour-là. Activez-le dans #wikilink("2 - Paramètres") sous Comportement, *Volet À cette date* ; il apparaît alors comme un onglet du panneau de droite.
+
+Le volet lit la propriété `date` de la note, la ligne `date: "2026-11-19"` de son bloc `#note(...)`, que vous pouvez modifier dans le volet *Propriétés* comme n'importe quelle autre propriété. Les modèles d'InkyCap l'ajoutent aux nouvelles notes. Une note qui n'en a pas affiche un rappel indiquant que la propriété est nécessaire, et ne liste rien.
+
+La liste comprend les tâches et les dates de la note elle-même (pratique quand elles sont dispersées dans une longue note), les tâches terminées, barrées comme dans l'Agenda, et les dates récurrentes chaque jour où elles reviennent. Les lignes s'affichent et s'ouvrent comme dans le panneau Agenda.
+
 == Pages connexes
 
 - #wikilink("6 - Propriétés des notes") (marquer une note entière comme une tâche ou lui donner une échéance).

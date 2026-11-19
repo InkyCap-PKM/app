@@ -59,6 +59,6 @@
     "codemirror-lang-typst": "^0.4.0",
     "dompurify": "^3.4.16",
     "hunspell-asm": "^4.0.2",
-    "lucide-solid": "^1.8.0"
+    "lucide-solid": "^1.76.0"
   }
 }

@@ -8,14 +8,9 @@ import { attachListNav } from "../lib/list-nav";
 import { compareName, compareZid } from "../lib/sort";
 import {
   ArrowDownNarrowWide,
-  CalendarClock,
-  CheckSquare,
-  Square,
   Check,
   ChevronDown,
   ChevronRight,
-  Repeat,
-  ClockAlert,
   ListChevronsUpDown,
   ListChevronsDownUp,
   BookmarkPlus,
@@ -23,12 +18,11 @@ import {
 } from "lucide-solid";
 import type { AgendaItem } from "../lib/types";
 import { useI18n } from "../lib/i18n";
-import { formatRecurrence } from "../lib/recurrence";
 import { anchorPanelMenu } from "../lib/uiMenu";
 import { clickOutside } from "../lib/clickOutside";
 import { requestedAgendaView, setRequestedAgendaView } from "../stores/agendaView";
-import { formatUserDate } from "../lib/dates";
 import DateValueInput from "./DateValueInput";
+import { AgendaRow, AgendaRowMenu, type AgendaRowMenuState } from "./AgendaRow";
 import { Dropdown } from "./Dropdown";
 import {
   type DateFilterState,
@@ -36,6 +30,7 @@ import {
   DEFAULT_DATE_FILTER,
   isDateFilterActive,
   matchesDateFilter,
+  localTodayISO,
 } from "../lib/column-filter";
 
 interface AgendaListProps {
@@ -106,21 +101,6 @@ function setCollapseRecurring(v: boolean) {
   }
 }
 
-/**
- * Short date in the user's date format (Settings > Appearance), or the text
- * unchanged if it isn't an ISO date.
- */
-function formatDate(iso: string): string {
-  return formatUserDate(iso);
-}
-
-function todayISO(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-    d.getDate(),
-  ).padStart(2, "0")}`;
-}
-
 // ── Saved filter state (sidebar Agenda only) ───────────────────────
 // Restored across sessions per notebox, since one notebox's tags don't exist in
 // another. Collection Agenda views pass no key; collections keep lasting views
@@ -173,11 +153,7 @@ const AgendaList: Component<AgendaListProps> = (props) => {
   const [showTagsMenu, setShowTagsMenu] = createSignal(false);
   const [showDateMenu, setShowDateMenu] = createSignal(false);
   let dateBtnRef: HTMLButtonElement | undefined;
-  const [rowContextMenu, setRowContextMenu] = createSignal<{
-    x: number;
-    y: number;
-    item: AgendaItem;
-  } | null>(null);
+  const [rowContextMenu, setRowContextMenu] = createSignal<AgendaRowMenuState | null>(null);
   let sortBtnRef: HTMLButtonElement | undefined;
   let taskBtnRef: HTMLButtonElement | undefined;
   let tagsBtnRef: HTMLButtonElement | undefined;
@@ -461,7 +437,7 @@ const AgendaList: Component<AgendaListProps> = (props) => {
     }
   }
 
-  const today = todayISO();
+  const today = localTodayISO();
 
   return (
     <>
@@ -856,119 +832,52 @@ const AgendaList: Component<AgendaListProps> = (props) => {
         >
           <For each={visible()}>
             {(it) => (
-              <div
-                data-list-item
-                class="sidebar-item agenda__item"
-                classList={{
-                  "agenda__item--done": it.done,
-                  // Later occurrences are muted so a frequent reminder doesn't
-                  // dominate; the next one stays at full strength.
-                  "agenda__item--recurrence-future":
-                    it.recurring && (it.occurrence_index ?? 0) > 0,
-                }}
-                onClick={(e) => props.onOpen(it, { newTab: e.ctrlKey || e.metaKey })}
-                onAuxClick={(e) => {
-                  if (e.button !== 1) return; // middle-click → new tab
-                  e.preventDefault();
-                  props.onOpen(it, { newTab: true });
-                }}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  setRowContextMenu({ x: e.clientX, y: e.clientY, item: it });
-                }}
-                title={
-                  it.recurring && it.recurrence
-                    ? `${it.note_title} · ${formatRecurrence(it.recurrence)}`
-                    : it.note_title
+              <AgendaRow
+                item={it}
+                today={today}
+                onOpen={props.onOpen}
+                onContextMenu={(e, item) =>
+                  setRowContextMenu({ x: e.clientX, y: e.clientY, item })
                 }
-              >
-                {/* Per-series caret: reveal/hide just this recurrence's upcoming
-                    occurrences, independent of the global Expand/Collapse all. */}
-                <Show
-                  when={
-                    it.recurring &&
-                    (it.occurrence_index ?? 0) === 0 &&
-                    seriesWithMore().has(seriesKey(it))
-                  }
-                >
-                  <button
-                    class="agenda__recur-caret"
-                    aria-expanded={isSeriesExpanded(seriesKey(it))}
-                    title={
-                      isSeriesExpanded(seriesKey(it))
-                        ? t("agenda.recurring.collapseOne")
-                        : t("agenda.recurring.expandOne")
-                    }
-                    aria-label={
-                      isSeriesExpanded(seriesKey(it))
-                        ? t("agenda.recurring.collapseOne")
-                        : t("agenda.recurring.expandOne")
-                    }
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleSeries(seriesKey(it));
-                    }}
-                  >
-                    <Show
-                      when={isSeriesExpanded(seriesKey(it))}
-                      fallback={<ChevronRight size={12} />}
-                    >
-                      <ChevronDown size={12} />
-                    </Show>
-                  </button>
-                </Show>
-                <span class="sidebar-item__icon">
-                  <Show
-                    when={it.is_task}
-                    fallback={<CalendarClock size={14} />}
-                  >
-                    {it.done ? <CheckSquare size={14} /> : <Square size={14} />}
-                  </Show>
-                </span>
-                <span class="agenda__item-body">
-                  <span class="agenda__item-text">{it.text}</span>
-                  {/* The rule summary on the current occurrence surfaces the
-                      cadence and end date in the list itself — so changing
-                      "until", interval, or weekdays is visibly reflected even
-                      when later occurrences fall past the displayed window. */}
+                leading={
+                  /* Per-series caret: reveal/hide just this recurrence's
+                     upcoming occurrences, independent of the global
+                     Expand/Collapse all. */
                   <Show
                     when={
-                      it.recurring && (it.occurrence_index ?? 0) === 0 && it.recurrence
+                      it.recurring &&
+                      (it.occurrence_index ?? 0) === 0 &&
+                      seriesWithMore().has(seriesKey(it))
                     }
                   >
-                    <span class="agenda__recur-summary">
-                      {formatRecurrence(it.recurrence!)}
-                    </span>
-                  </Show>
-                </span>
-                <Show when={it.recurring}>
-                  <Repeat size={11} class="agenda__recur-icon" aria-hidden="true" />
-                </Show>
-                <Show when={it.date}>
-                  {(() => {
-                    const overdue = !it.done && !!it.date && it.date < today;
-                    return (
-                      <span
-                        class="agenda__date"
-                        classList={{ "agenda__date--overdue": overdue }}
-                        title={overdue ? t("agenda.date.overdue") : undefined}
+                    <button
+                      class="agenda__recur-caret"
+                      aria-expanded={isSeriesExpanded(seriesKey(it))}
+                      title={
+                        isSeriesExpanded(seriesKey(it))
+                          ? t("agenda.recurring.collapseOne")
+                          : t("agenda.recurring.expandOne")
+                      }
+                      aria-label={
+                        isSeriesExpanded(seriesKey(it))
+                          ? t("agenda.recurring.collapseOne")
+                          : t("agenda.recurring.expandOne")
+                      }
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleSeries(seriesKey(it));
+                      }}
+                    >
+                      <Show
+                        when={isSeriesExpanded(seriesKey(it))}
+                        fallback={<ChevronRight size={12} />}
                       >
-                        {/* An icon as well as the colour, so "overdue" doesn't
-                            depend on telling red apart. */}
-                        <Show when={overdue}>
-                          <ClockAlert
-                            size={11}
-                            class="agenda__overdue-icon"
-                            role="img"
-                            aria-label={t("agenda.date.overdue")}
-                          />
-                        </Show>
-                        {formatDate(it.date!)}
-                      </span>
-                    );
-                  })()}
-                </Show>
-              </div>
+                        <ChevronDown size={12} />
+                      </Show>
+                    </button>
+                  </Show>
+                }
+              />
             )}
           </For>
         </Show>
@@ -977,30 +886,11 @@ const AgendaList: Component<AgendaListProps> = (props) => {
 
       <Show when={rowContextMenu()}>
         {(menu) => (
-          <div
-            class="context-menu"
-            style={{ left: `${menu().x}px`, top: `${menu().y}px` }}
-            use:clickOutside={{ onDismiss: () => setRowContextMenu(null) }}
-          >
-            <button
-              class="context-menu__item"
-              onClick={() => {
-                props.onOpen(menu().item);
-                setRowContextMenu(null);
-              }}
-            >
-              {t("common.open")}
-            </button>
-            <button
-              class="context-menu__item"
-              onClick={() => {
-                props.onOpen(menu().item, { newTab: true });
-                setRowContextMenu(null);
-              }}
-            >
-              {t("wikilink.menu.openNewTab")}
-            </button>
-          </div>
+          <AgendaRowMenu
+            menu={menu()}
+            onOpen={props.onOpen}
+            onClose={() => setRowContextMenu(null)}
+          />
         )}
       </Show>
     </>

@@ -33,6 +33,7 @@ import type {
   MycelialExclusionInfo,
   PropertyType,
   AgendaItem,
+  NoteDayAgenda,
   RecentNote,
   UnwrittenNote,
   Recurrence,
@@ -2629,6 +2630,14 @@ export async function getAgendaItems(): Promise<AgendaItem[]> {
 /** Tasks and dated reminders due today, across the whole notebox. */
 export async function getTodayAgendaItems(): Promise<AgendaItem[]> {
   return invoke<AgendaItem[]>("get_today_agenda_items");
+}
+
+/**
+ * The open note's date (its `date` property) and every task and dated reminder
+ * across the notebox that falls on it, repeats included.
+ */
+export async function getNoteDayAgenda(path: string): Promise<NoteDayAgenda> {
+  return invoke<NoteDayAgenda>("get_note_day_agenda", { path });
 }
 
 /** The `limit` most recently modified notes, newest first. */

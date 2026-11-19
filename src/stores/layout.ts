@@ -13,6 +13,7 @@ export type RightPanelTab =
   | "scroll-context"
   | "annotations"
   | "package-reference"
+  | "on-this-date"
   // A panel id contributed at runtime (plugin, external tool); `(string & {})`
   // keeps autocomplete for the built-in names. These aren't in
   // BUILT_IN_RIGHT_PANEL_TABS, so they aren't restored on reload (the
@@ -27,6 +28,7 @@ const BUILT_IN_RIGHT_PANEL_TABS: readonly RightPanelTab[] = [
   "scroll-context",
   "annotations",
   "package-reference",
+  "on-this-date",
 ];
 
 /// Right panel tabs for a Collection View. Separate from `RightPanelTab` (for

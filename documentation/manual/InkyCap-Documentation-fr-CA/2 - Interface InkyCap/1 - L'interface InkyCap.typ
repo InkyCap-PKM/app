@@ -93,6 +93,7 @@ Quand une *note* est active, le panneau de droite vous offre :
 - *Références* est le panneau de bibliographie. Voyez #wikilink("7 - Citations et bibliographie").
 - *Référence du package*, le dernier onglet, apparaît lorsque la note importe des packages ou des templates Typst, et énumère leurs fonctions et leurs options. Voyez #wikilink("3 - Scaffolds, Templates et Packages").
 - *Modifications et historique* vous permet de réviser les suggestions, les modifications suivies et les annotations. Un petit point apparaît sur cet onglet quand des modifications suggérées attendent que vous les acceptiez ou les refusiez.
+- *À cette date*, une fois activé dans #wikilink("2 - Paramètres") sous Comportement, liste les tâches et les dates qui tombent à la date de la note. Voir #wikilink("3 - Agenda, tâches et dates").
 
 Quand vous ouvrez une *collection*, le panneau de droite passe à *Exportation*, *Apparence*, *Livre* et *Collection*. Quand vous ouvrez une #wikilink("5 - Vue mycélienne"), il affiche plutôt trois onglets : *Contexte lié*, *Croissance* et *Filtrage*.
 

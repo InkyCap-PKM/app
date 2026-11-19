@@ -225,6 +225,9 @@ pub struct BehaviourSettings {
     pub new_tab_unwritten_notes: bool,
     /// How many entries each list on the new tab page shows (3, 6 or 12).
     pub new_tab_list_length: u32,
+    /// Show the right panel's On This Date pane: the tasks and dates that fall
+    /// on the open note's `date` property.
+    pub on_this_date_pane: bool,
 
     /// Linux only: set `WEBKIT_DISABLE_DMABUF_RENDERER=1` and
     /// `WEBKIT_DISABLE_COMPOSITING_MODE=1` at startup, to avoid stray or
@@ -243,6 +246,7 @@ impl Default for BehaviourSettings {
             new_tab_today: false,
             new_tab_unwritten_notes: false,
             new_tab_list_length: 6,
+            on_this_date_pane: false,
             disable_dmabuf_renderer: false,
         }
     }

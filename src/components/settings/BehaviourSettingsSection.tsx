@@ -171,6 +171,18 @@ export function BehaviourSettingsSection() {
         />
       </Show>
 
+      {/* Right panel settings */}
+      <div class="settings__section-header">
+        <span class="settings__label">{t("settings.behaviour.rightPanel")}</span>
+      </div>
+      <SettingToggle
+        label={t("settings.behaviour.onThisDate.label")}
+        description={t("settings.behaviour.onThisDate.description")}
+        help={t("settings.behaviour.onThisDate.help")}
+        value={settings.behaviour.on_this_date_pane}
+        onChange={(v) => updateSetting("behaviour", "on_this_date_pane", v)}
+      />
+
       {/* Graphics (Linux/WebKitGTK only) */}
       <Show when={isLinux()}>
         <div class="settings__section-header">
