@@ -6,7 +6,7 @@
 
 import { Component, For, Show, createSignal, createMemo, createEffect } from "solid-js";
 import { EditorView } from "@codemirror/view";
-import { attachListNav } from "../lib/list-nav";
+import { attachListNav, focusListItem } from "../lib/list-nav";
 import { X, Plus, Minus, Replace, MessageSquare, UserPen, RotateCcw } from "lucide-solid";
 import {
   noteAnnotations,
@@ -313,8 +313,8 @@ const AnnotationsPanel: Component = () => {
   const [selectedFrom, setSelectedFrom] = createSignal<number | null>(null);
   let listEl: HTMLDivElement | undefined;
 
-  // An annotation pill in the visual editor was clicked: show its row. The
-  // filter is cleared so the row can't be filtered out of sight.
+  // A pill in the visual editor asked to show its row. The filter is cleared
+  // so the row can't be filtered out of sight.
   createEffect(() => {
     const req = annotationRevealRequest();
     if (!req) return;
@@ -323,9 +323,10 @@ const AnnotationsPanel: Component = () => {
     setFilter("");
     setSelectedFrom(req.from);
     requestAnimationFrame(() => {
-      listEl
-        ?.querySelector(`[data-annotation-from="${req.from}"]`)
-        ?.scrollIntoView({ block: "nearest" });
+      const row = listEl?.querySelector<HTMLElement>(`[data-annotation-from="${req.from}"]`);
+      if (!row || !listEl) return;
+      if (req.focus) focusListItem(listEl, row);
+      else row.scrollIntoView({ block: "nearest" });
     });
   });
 

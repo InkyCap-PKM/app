@@ -79,6 +79,12 @@ export interface PillModel {
    * are often long or multi-line but are still edited in place.
    */
   alwaysOfferEditSource?: boolean;
+  /**
+   * For a call that has its own row in a side panel (an annotation or a
+   * suggestion in Changes & History): shows that row. When set, the menu
+   * offers "Show in side panel".
+   */
+  onShowInSidePanel?: () => void;
 }
 
 /** A stretch of the note's source, as document offsets (`to` exclusive). */
@@ -476,6 +482,13 @@ function buildSourceSection(view: EditorView, model: PillModel): PillMenuSection
           }
         });
       },
+    });
+  }
+  if (model.onShowInSidePanel) {
+    items.push({
+      label: t("pill.showInSidePanel"),
+      title: t("pill.showInSidePanel.title"),
+      onSelect: model.onShowInSidePanel,
     });
   }
   return { items };

@@ -12,6 +12,32 @@
 
 let idCounter = 0;
 
+function listItems(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll<HTMLElement>("[data-list-item]")).filter(
+    (el) => el.getClientRects().length > 0,
+  );
+}
+
+function setActiveItem(container: HTMLElement, el: HTMLElement | null, list: HTMLElement[]): void {
+  for (const it of list) it.classList.toggle("is-kbd-active", it === el);
+  if (el) {
+    if (!el.id) el.id = `lnav-${++idCounter}`;
+    container.setAttribute("aria-activedescendant", el.id);
+    el.scrollIntoView({ block: "nearest" });
+  } else {
+    container.removeAttribute("aria-activedescendant");
+  }
+}
+
+/**
+ * Move keyboard focus into a list wired with {@link attachListNav} and put its
+ * cursor on `item`, so arrow keys and Enter carry on from that row.
+ */
+export function focusListItem(container: HTMLElement, item: HTMLElement): void {
+  setActiveItem(container, item, listItems(container));
+  container.focus({ preventScroll: true });
+}
+
 /**
  * Add keyboard navigation to a list container. Safe to pass straight as a Solid
  * `ref`. The listeners are on the element, so they go when it unmounts.
@@ -24,24 +50,13 @@ export function attachListNav(container: HTMLElement): void {
   // Let F6 region-cycling land directly on the list.
   if (!container.hasAttribute("data-focus-entry")) container.setAttribute("data-focus-entry", "");
 
-  const items = (): HTMLElement[] =>
-    Array.from(container.querySelectorAll<HTMLElement>("[data-list-item]")).filter(
-      (el) => el.getClientRects().length > 0,
-    );
+  const items = (): HTMLElement[] => listItems(container);
 
   const activeOf = (list: HTMLElement[]): HTMLElement | null =>
     list.find((el) => el.classList.contains("is-kbd-active")) ?? null;
 
-  const setActive = (el: HTMLElement | null, list: HTMLElement[]) => {
-    for (const it of list) it.classList.toggle("is-kbd-active", it === el);
-    if (el) {
-      if (!el.id) el.id = `lnav-${++idCounter}`;
-      container.setAttribute("aria-activedescendant", el.id);
-      el.scrollIntoView({ block: "nearest" });
-    } else {
-      container.removeAttribute("aria-activedescendant");
-    }
-  };
+  const setActive = (el: HTMLElement | null, list: HTMLElement[]) =>
+    setActiveItem(container, el, list);
 
   container.addEventListener("keydown", (e) => {
     const tag = (e.target as HTMLElement).tagName;

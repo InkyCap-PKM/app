@@ -3,6 +3,8 @@ import { EditorState, type StateEffect } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { buildPillButton } from "./pill";
 import { expandFunc } from "./effects";
+import { FuncPillWidget } from "./visual-widgets";
+import { annotationRevealRequest, clearAnnotationRevealRequest } from "./annotation-reveal";
 
 // Every pill answers a click the same way: it opens its menu. Editing the
 // source is one of the menu's items, never what the click itself does.
@@ -64,5 +66,33 @@ describe("clicking a pill", () => {
     edit!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
     edit!.click();
     expect(expanded()).toBe(true);
+  });
+});
+
+describe("Show in side panel", () => {
+  function mountFuncPill(doc: string, funcName: string) {
+    const view = new EditorView({ state: EditorState.create({ doc }), parent: document.body });
+    views.push(view);
+    const pill = new FuncPillWidget(0, funcName).toDOM(view);
+    document.body.appendChild(pill);
+    return pill;
+  }
+
+  afterEach(() => clearAnnotationRevealRequest());
+
+  it("shows a suggestion's row in Changes & History and asks for focus", () => {
+    const pill = mountFuncPill('#suggestion(kind: "delete")[old words]', "suggestion");
+    pill.click();
+    const show = menuItem("Show in side panel");
+    expect(show).toBeTruthy();
+    show!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    show!.click();
+    expect(annotationRevealRequest()).toEqual({ from: 0, focus: true });
+  });
+
+  it("is not offered for a call with no side-panel row", () => {
+    const { pill } = mountPill();
+    pill.click();
+    expect(menuItem("Show in side panel")).toBeUndefined();
   });
 });

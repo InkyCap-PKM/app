@@ -6,6 +6,17 @@ import { revealAnnotation } from "./annotation-reveal";
 import type { CommentRun } from "./comments";
 import { t, tPlural } from "../../lib/i18n";
 
+/** Functions whose calls have a row in the Changes & History pane, so their
+ *  pill menu offers "Show in side panel". */
+const CHANGES_PANE_FUNCS = new Set(["annotation", "suggestion"]);
+
+/** The "Show in side panel" action for a call at `pos`, when it has a row in
+ *  the Changes & History pane. */
+function sidePanelAction(funcName: string, pos: number): (() => void) | undefined {
+  if (!CHANGES_PANE_FUNCS.has(funcName)) return undefined;
+  return () => revealAnnotation(pos, { focus: true });
+}
+
 export class FuncPillWidget extends WidgetType {
   constructor(readonly pos: number, readonly funcName: string) { super(); }
   eq(other: FuncPillWidget) { return this.pos === other.pos && this.funcName === other.funcName; }
@@ -17,6 +28,7 @@ export class FuncPillWidget extends WidgetType {
         callFrom: this.pos,
         callTo,
         optionSections: getPillOptions(this.funcName, view, this.pos, callTo),
+        onShowInSidePanel: sidePanelAction(this.funcName, this.pos),
       };
     });
   }
@@ -94,8 +106,9 @@ function tooltipText(text: string): string {
 
 /**
  * An annotation (`#annotation[…]`). A reviewer's remark isn't part of the
- * writing, so only a pill marks it; hovering shows the comment, and its
- * menu's "Edit source" reveals the source and opens Changes & History on it.
+ * writing, so only a pill marks it; hovering shows the comment. Its menu's
+ * "Edit source" reveals the source and opens Changes & History on it, and
+ * "Show in side panel" moves focus to its row there.
  * `summary` is the comment with attribution, for the tooltip.
  */
 export class AnnotationPillWidget extends WidgetType {
@@ -120,6 +133,7 @@ export class AnnotationPillWidget extends WidgetType {
             v.focus();
             revealAnnotation(this.pos);
           },
+          onShowInSidePanel: sidePanelAction("annotation", this.pos),
         };
       },
       {

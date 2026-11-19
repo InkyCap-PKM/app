@@ -97,12 +97,15 @@ Every pill opens the same menu via `openPillMenu()`. Sections are assembled in o
 │  Edit source       (conditional)│  ← source section (R8)
 │  Open in visual editor          │
 │  Open in source editor          │
+│  Show in side panel   (if set)  │  ← onShowInSidePanel
 │  ─────────────                  │
 │  Copy                           │  ← universal section
 │  Duplicate                      │
 │  Delete                         │
 └─────────────────────────────────┘
 ```
+
+*Show in side panel* appears when the `PillModel` sets `onShowInSidePanel`. Annotation and suggestion pills set it (`sidePanelAction` in visual-widgets.ts) to open Changes & History on their row and move keyboard focus there.
 
 The source and universal sections are built by `buildSourceSection()` / `buildUniversalSection()` in pill.ts; "Edit source" is suppressed when `allowEditSource === false` or the call is complex (R8).
 
