@@ -35,7 +35,7 @@ This is the slim strip of icons at the very far left. It remains even when you c
 
 == The left sidebar: your tools
 
-Across the top of the left sidebar is a row of icon buttons, the *mode bar*. Each one switches the pane below to a different tool. The built-in modes include:
+Across the top of the left sidebar is a row of icon buttons, the *mode bar*. Each one switches the pane below to a different tool. When the sidebar is too narrow to show them all, a shadow appears at the end of the row and a *More panels* button (») lists the hidden ones; choose one to open it, or widen the sidebar to bring the buttons back. The right panel's tabs work the same way. The built-in modes include:
 
 + *File Tree* is every file in your notebox, shown as a folder tree.
 + *Collections* are your gathered groups of notes for projects, publishing into a paper, a book, or querying information like a database within InkyCap. See #wikilink("2 - Collections").

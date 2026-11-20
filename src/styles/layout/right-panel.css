@@ -6,12 +6,11 @@
 .right-panel__tabs {
   display: flex;
   align-items: center;
-  /* The bottom divider is drawn full width by .right-panel::after; this
-     element is clipped 40px short of the right edge (clip-path below), so
-     its own border would stop short. */
+  /* The bottom divider is drawn full width by .right-panel::after. The
+     right padding leaves room for the panel's collapse toggle. */
   min-height: 38px;
   gap: var(--space-1);
-  padding: 0 40px 0 8px;
+  padding: 0 var(--right-panel-toggle-reserve) 0 8px;
   /* Must match .left-sidebar__mode-bar, so the section headers below both
      bars line up. flex-shrink: 0 matters; see .left-sidebar__mode-bar. */
   flex-shrink: 0;
@@ -19,19 +18,30 @@
 }
 
 /* ── Overflow cue for the two header bars ──────────────────────────────────
-   When the left mode bar or right tab bar is too narrow for all its buttons,
-   the extra ones are clipped at the end, and a soft inner shadow there (from
-   `data-overflow`, set by createOverflowWatcher) shows there's more.
-   Widening the panel reveals them, so there are no scroll buttons. Same
-   shadow as the tab strip. */
+   The tab buttons of the left mode bar and the right tab bar sit in a
+   `.panel-tab-strip`. When the strip is too narrow for them all, the extra
+   ones are clipped at its end, a soft inner shadow there (from
+   `data-overflow`, set by createTabStripOverflow) shows there's more, and a
+   "more" button after the strip (TabStripMoreButton) lists them. Same shadow
+   as the tab strip. */
 .left-sidebar__mode-bar,
 .right-panel__tabs {
   position: relative;
   overflow: hidden;
 }
 
-.left-sidebar__mode-bar::after,
-.right-panel__tabs::after {
+.panel-tab-strip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+  align-self: stretch;
+}
+
+.panel-tab-strip::after {
   content: "";
   position: absolute;
   top: 0;
@@ -40,36 +50,34 @@
   width: 14px;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 140ms ease;
+  transition: opacity var(--dur-fast) var(--ease-out);
   background: linear-gradient(to right, transparent, rgba(0, 0, 0, 0.16));
 }
 
-/* The collapse toggle takes the last 40px (hence padding-right: 40px).
-   clip-path cuts the tabs off at that line, so they can't show under or
-   beside the button, and the cue sits just left of it. (overflow: hidden
-   alone clips at the window edge.) */
-.right-panel__tabs {
-  clip-path: inset(0 40px 0 0);
-}
-
-.right-panel__tabs::after {
-  right: 40px;
-}
-
-[data-theme="dark"] .left-sidebar__mode-bar::after,
-[data-theme="dark"] .right-panel__tabs::after {
+[data-theme="dark"] .panel-tab-strip::after {
   background: linear-gradient(to right, transparent, rgba(0, 0, 0, 0.5));
 }
 
-.left-sidebar__mode-bar[data-overflow="true"]::after,
-.right-panel__tabs[data-overflow="true"]::after {
+.panel-tab-strip[data-overflow="true"]::after {
   opacity: 1;
+}
+
+/* A tab that doesn't fully fit is hidden and listed in the "more" menu
+   instead (`data-tab-hidden`, set by createTabStripOverflow). It keeps its
+   space, so the tabs before it stay put. */
+.panel-tab-strip [data-tab-hidden] {
+  visibility: hidden;
+}
+
+/* The tab buttons keep their size; the strip clips them instead. */
+.panel-tab-strip > * {
+  flex-shrink: 0;
 }
 
 .right-panel__tab {
   background: none;
   border: 1px solid transparent;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   color: var(--fg-muted);
   cursor: pointer;
   padding: var(--space-2) var(--space-4);

@@ -23,7 +23,8 @@ import type { SearchResult } from "../lib/types";
 import { indexReady, bumpPropertyVersion } from "../stores/notebox";
 import { moveActiveFileInteractive } from "../lib/move-file";
 import { deleteActiveFileInteractive } from "../lib/delete-file";
-import { createOverflowWatcher } from "../lib/overflow";
+import { createTabStripOverflow } from "../lib/overflow";
+import TabStripMoreButton from "./TabStripMoreButton";
 import {
   PROPERTY_TYPE_OPTIONS,
   propertyTypeLabel,
@@ -187,9 +188,9 @@ const RightPanel: Component = () => {
   const activePanel = rightPanelTab;
   const setActivePanel = (tab: RightPanelTab) => setRightPanelTab(tab);
 
-  // Edge-shadow cue when the tab bar is too narrow to show every tab (the user
-  // widens the panel to reveal them — see createOverflowWatcher).
-  const tabsOverflow = createOverflowWatcher();
+  // Tabs that don't fit: an edge shadow and a "more" button listing them (see
+  // createTabStripOverflow).
+  const tabsOverflow = createTabStripOverflow("right-panel__tab--active");
 
   // The Scroll Context tab exists only while Journal Scroll is on; when it
   // turns off, go back to the tab that was focused before.
@@ -1195,10 +1196,13 @@ const RightPanel: Component = () => {
       {/* Tab bar — always visible so the collapse toggle is accessible */}
       <div
         class="right-panel__tabs"
-        ref={tabsOverflow.ref}
-        data-overflow={tabsOverflow.overflowing() ? "true" : undefined}
         data-panel-tablist
       >
+        <div
+          class="panel-tab-strip"
+          ref={tabsOverflow.ref}
+          data-overflow={tabsOverflow.overflowing() ? "true" : undefined}
+        >
         <Show when={activeFileTab()}>
           {/* In Journal Scroll the right panel is wholly owned by the scroll
               context — the file-scoped tabs (File actions, Outline,
@@ -1455,6 +1459,8 @@ const RightPanel: Component = () => {
             <Filter size={18} />
           </button>
         </Show>
+        </div>
+        <TabStripMoreButton overflow={tabsOverflow} />
       </div>
 
       {/* Annotations tab content — its own fill container so the pane can pin

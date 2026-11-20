@@ -195,8 +195,11 @@ Practical notes:
 
 ## 5. Recorded design decisions
 
-- **Corner radius is 7px** at the control tier (`--radius-md`). This was a
-  deliberate, slightly-softer-than-6px choice; retune from the one token.
+- **Corner radius is 7px** for full buttons, tabs and cards (`--radius-md`).
+  This was a deliberate, slightly-softer-than-6px choice; retune from the one
+  token. Icon buttons and other small controls use 4px (`--radius-control`),
+  since 7px looks too round at that size; the panels' top-row buttons are icon
+  buttons.
 - **Density stays a CSS-only lever — no Settings toggle.** The `--density`
   multiplier on the spacing scale (via `data-density="compact"` on `<html>`)
   works app-wide since the 2026-09 token migration. A Settings → Appearance

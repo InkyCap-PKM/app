@@ -43,7 +43,8 @@ import { isLinux } from "../lib/platform";
 import { attachListNav } from "../lib/list-nav";
 import { anchorPanelMenu } from "../lib/uiMenu";
 import { clickOutside, dismissOnEscape } from "../lib/clickOutside";
-import { createOverflowWatcher } from "../lib/overflow";
+import { createTabStripOverflow } from "../lib/overflow";
+import TabStripMoreButton from "./TabStripMoreButton";
 import { compareName, compareZid } from "../lib/sort";
 import { settings, updateSetting, noteboxSettings } from "../stores/settings";
 import type { FileSortMode } from "../lib/types";
@@ -209,9 +210,9 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   const setMode = props.setMode;
   const [refreshTick, setRefreshTick] = createSignal(0);
 
-  // Edge-shadow cue when the mode bar is too narrow to show every button (the
-  // user widens the sidebar to reveal them — see createOverflowWatcher).
-  const modeOverflow = createOverflowWatcher();
+  // Mode buttons that don't fit: an edge shadow and a "more" button listing
+  // them (see createTabStripOverflow).
+  const modeOverflow = createTabStripOverflow("left-sidebar__mode-btn--active");
 
   // File-tree sort and folder expansion live here so Expand all / Collapse all
   // can change every folder at once; folders start collapsed. The sort is a
@@ -1376,10 +1377,13 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     <div class="left-sidebar" data-focus-region="sidebar">
       <div
         class="left-sidebar__mode-bar"
-        ref={modeOverflow.ref}
-        data-overflow={modeOverflow.overflowing() ? "true" : undefined}
         data-panel-tablist
       >
+        <div
+          class="panel-tab-strip"
+          ref={modeOverflow.ref}
+          data-overflow={modeOverflow.overflowing() ? "true" : undefined}
+        >
         <button
           class={`left-sidebar__mode-btn ${mode() === "filetree" ? "left-sidebar__mode-btn--active" : ""}`}
           onClick={() => setMode("filetree")}
@@ -1428,6 +1432,8 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
         >
           <BookMarked size={18} />
         </button>
+        </div>
+        <TabStripMoreButton overflow={modeOverflow} />
       </div>
       <div class="left-sidebar__content">
         <Show when={mode() === "collections"}>

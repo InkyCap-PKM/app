@@ -2601,6 +2601,7 @@
   "mycelialFilter.addPropertyRule": "Add a property rule…",
   "mycelialFilter.exclusionLoadFailed": "Failed to load exclusion rules",
   "mycelialFilter.exclusionSaveFailed": "Failed to save exclusion rules",
+  "panelTabs.more": "More panels",
   "outlinePanel.title": "Outline",
   "outlinePanel.collapseAll": "Collapse all headings",
   "outlinePanel.expandAll": "Expand all headings",

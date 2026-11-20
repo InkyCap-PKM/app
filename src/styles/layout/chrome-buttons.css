@@ -1,9 +1,11 @@
 /* New tab button, palette category headers, status bar toggles. Part of layout.css,
    whose import order (see ../layout.css) keeps the cascade. */
 
-/* ─── Tab bar: new-tab button ─── */
+/* ─── Small square buttons: the tab bar's new-tab button, and the "more"
+   button at the end of a panel's tab row (TabStripMoreButton) ─── */
 
-.tab-bar__new {
+.tab-bar__new,
+.panel-tab-more {
   background: none;
   border: 1px solid transparent;
   border-radius: var(--radius-control);
@@ -23,14 +25,23 @@
 
 /* The button is 24px with a small icon, so it stays quiet. Overrides the
    em-based svg.lucide size. */
-.tab-bar__new svg {
+.tab-bar__new svg,
+.panel-tab-more svg {
   width: 14px;
   height: 14px;
 }
 
-.tab-bar__new:hover {
+.tab-bar__new:hover,
+.panel-tab-more:hover {
   background: var(--bg-hover);
   color: var(--fg-primary);
+}
+
+/* The open pane is one of the hidden tabs: marked like a selected tab. */
+.panel-tab-more--active {
+  color: var(--fg-primary);
+  border-color: var(--border-input);
+  background: var(--bg-highlight);
 }
 
 /* WebView2 (Windows) draws a blue selection or tap highlight on buttons
@@ -46,6 +57,7 @@
 }
 
 .tab-bar__new:focus-visible,
+.panel-tab-more:focus-visible,
 .tab__close:focus-visible,
 .tab-bar__scroll:focus-visible {
   outline: none;

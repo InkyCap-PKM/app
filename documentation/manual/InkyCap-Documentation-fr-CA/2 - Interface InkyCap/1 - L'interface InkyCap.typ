@@ -36,7 +36,7 @@ Il s'agit de la mince bande d'icônes tout à gauche. Elle reste visible même q
 
 == La barre latérale gauche : vos outils
 
-En haut de la barre latérale gauche se trouve une rangée de boutons-icônes, la *barre de modes*. Chacun fait passer le panneau du dessous à un outil différent. Les modes intégrés comprennent :
+En haut de la barre latérale gauche se trouve une rangée de boutons-icônes, la *barre de modes*. Chacun fait passer le panneau du dessous à un outil différent. Quand la barre latérale est trop étroite pour tous les afficher, une ombre apparaît au bout de la rangée et un bouton *Autres panneaux* (») liste ceux qui sont cachés ; choisissez-en un pour l'ouvrir, ou élargissez la barre latérale pour faire réapparaître les boutons. Les onglets du panneau de droite fonctionnent de la même façon. Les modes intégrés comprennent :
 
 + L'*Arborescence des fichiers* présente chaque fichier de votre boîte de notes, affiché sous forme d'arbre de dossiers.
 + Les *Collections* sont vos groupes de notes rassemblées pour des projets, pour la publication d'un article ou d'un livre, ou pour interroger de l'information comme dans une base de données à l'intérieur d'InkyCap. Voyez #wikilink("2 - Collections").

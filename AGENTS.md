@@ -379,10 +379,11 @@ InkyCap is built to be picked up and extended by future human contributors who h
   (`--radius-sm/md/lg`), spacing (`--space-1…6`), `--btn-*`,
   `--focus-ring`, motion (`--ease-out`, `--dur-fast/base`), elevation
   (`--surface-0/1/2`). **Never hardcode a radius, padding, colour, or
-  transition** — reach for the scale. `--radius-control` is an alias of
-  `--radius-md`.
-- Full reference, conventions, and recorded decisions (7px control
-  radius, deferred density toggle, no frosted surfaces):
+  transition** — reach for the scale. Icon buttons and other small
+  controls use `--radius-control`, an alias of `--radius-sm` (4px); full
+  buttons, tabs and cards use `--radius-md` (7px).
+- Full reference, conventions, and recorded decisions (corner radii,
+  deferred density toggle, no frosted surfaces):
   [documentation/developer/ui-styling.md](documentation/developer/ui-styling.md).
 
 ### UI surfaces (menus, popups, dialogs)

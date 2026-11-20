@@ -2601,6 +2601,7 @@
   "mycelialFilter.addPropertyRule": "Ajouter une règle de propriété…",
   "mycelialFilter.exclusionLoadFailed": "Échec du chargement des règles d'exclusion",
   "mycelialFilter.exclusionSaveFailed": "Échec de l'enregistrement des règles d'exclusion",
+  "panelTabs.more": "Autres panneaux",
   "outlinePanel.title": "Plan",
   "outlinePanel.collapseAll": "Réduire tous les titres",
   "outlinePanel.expandAll": "Développer tous les titres",

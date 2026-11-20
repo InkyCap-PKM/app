@@ -1,10 +1,9 @@
 /* Right panel divider and the floating toggle when collapsed. Part of
    layout.css, whose import order (see ../layout.css) keeps the cascade. */
 
-/* The tab bar's border is clipped 40px short of the right edge (see
-   .right-panel__tabs clip-path), so the divider is drawn on the panel
-   itself, reaching the window edge like the left sidebar's mode bar border.
-   38px matches .right-panel__tabs min-height. */
+/* The divider under the right panel's tab bar is drawn on the panel itself,
+   reaching the window edge under the collapse toggle like the left sidebar's
+   mode bar border. 38px matches .right-panel__tabs min-height. */
 .right-panel::after {
   content: "";
   position: absolute;
@@ -22,18 +21,31 @@
   display: none;
 }
 
+/* The collapse toggle's size, and the room the bars beside it leave for it:
+   its right margin, its box and the gap between tab buttons, so the last
+   tab sits as far from it as tabs sit from each other. The box is the 16px
+   icon plus padding and border. */
+.app-shell {
+  --right-panel-toggle-box: calc(16px + 2 * var(--space-4) + 2px);
+  --right-panel-toggle-reserve: calc(
+    var(--space-4) + var(--right-panel-toggle-box) + var(--space-1)
+  );
+}
+
 .right-panel-toggle {
   position: absolute;
   top: 0;
   right: 0;
   z-index: 10;
+  box-sizing: border-box;
+  width: var(--right-panel-toggle-box);
   background: none;
   border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
   color: var(--fg-muted);
   cursor: pointer;
   padding: var(--space-2) var(--space-4);
-  margin: 5px 8px;
+  margin: 5px var(--space-4);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -49,7 +61,7 @@
    tab strip at the top right, where the pane menu is. Reserve its width so
    the toggle lands in empty space rather than over the pane menu. */
 .app-shell--right-collapsed .main-content__tabs {
-  padding-right: 40px;
+  padding-right: var(--right-panel-toggle-reserve);
 }
 
 .right-panel__section {
