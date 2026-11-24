@@ -15,6 +15,8 @@ pub(crate) mod destination;
 pub(crate) mod helpers;
 pub(crate) mod html;
 pub(crate) mod pandoc;
+pub(crate) mod pandoc_bibliography;
+pub(crate) mod pandoc_footnotes;
 pub(crate) mod pdf;
 pub(crate) mod site;
 

@@ -126,6 +126,18 @@ accept / reject / keep choice on every export path, via the shared helpers; the
 Pandoc path additionally flattens surviving review marks to native constructs so
 Pandoc's reader does not choke.
 
+Pandoc exports run `pandoc_bibliography.lua`, a Pandoc filter that turns the
+bulleted list Typst's HTML uses for a bibliography into one paragraph per entry.
+In DOCX and ODT these use a "Bibliography" paragraph style, whose indent
+`pandoc_bibliography.rs` sets from the citation style (hanging, or the width of
+the labels) unless the user's own Pandoc reference document already sets it.
+
+A second filter, `pandoc_footnotes.lua`, turns Typst's footnotes into real ones;
+Pandoc's HTML reader would otherwise drop their text. A footnote inside another
+goes in parentheses, since Word can't nest them. The html-align shim runs here
+too, so that `align()` content is kept, though Pandoc doesn't carry the alignment
+itself into the file.
+
 ### 2.2 Collections and merged "book" export
 
 A collection can export as one merged document. `export_collection_book_pdf`
@@ -203,6 +215,8 @@ to the notebox or an alternate folder.
 | PDF / book export | `src-tauri/src/commands/export/pdf.rs` |
 | HTML export | `src-tauri/src/commands/export/html.rs` |
 | Pandoc export | `src-tauri/src/commands/export/pandoc.rs` |
+| Footnotes in Pandoc exports | `src-tauri/src/commands/export/pandoc_footnotes.rs`, `pandoc_footnotes.lua` |
+| Bibliography layout in Pandoc exports | `src-tauri/src/commands/export/pandoc_bibliography.rs`, `pandoc_bibliography.lua` |
 | Export helpers (review, bib, metadata) | `src-tauri/src/commands/export/helpers.rs` |
 | Path rebasing | `src-tauri/src/typst_pipeline/path_rebase.rs` |
 | Backup module | `src-tauri/src/backup/` |
