@@ -36,21 +36,21 @@ The following list itemizes a few highlights.
   of the navigation model.
 - **Portable, typed metadata.** Note properties are typed arguments to a Typst
   `#note(...)` call, queryable by any Typst tool through the bundled
-  `inkycap-notebox` package. Your structure travels with your files.
+  `inkycap-notebox` package. 
 - **Three editor modes.** Source (full Typst), visual (write-what-you-mean convenience over
   live Typst markup), and reading (the rendered document).
-- **First-class bibliography.** Native Typst BibTeX/Hayagriva citations and a
-  dedicated References sidebar with Zotero integration.
-- **The Mycelial View.** A graph that reveals *emergent concepts* (recurring ideas you have not yet
-  written a page for) and other types of notes that are likely to merit development or more of your attention, using corpus statistics. Its goal is to help you identify where your interests want to grow.
+- **First-class citations.** Native Typst BibTeX/Hayagriva citations and a
+  dedicated References sidebar with Zotero integration and many bibliography features.
+- **The Mycelial View.** A graph (made using corpus statistics) that reveals recurring ideas, which you have not yet
+  written a page for and other types of notes that are likely to merit development or more of your attention. Its goal is to help you identify where your interests want to grow.
 - **The Journal Scroll View.** A temporal and contextual flow of your notes. It provides easy ways to see your work and its connections over the course of time or based on connective content. 
 - **Local-first and private.** No telemetry, analytics, or remote logging, and no built-in generative artificial intelligence consumption.
-  Your notebox does not leave your computer unless you decide to synchronize it or manually share your files.
+  Your notebox remains on your computer unless you decide to synchronize it or to manually share your files.
 - **Collections.** These provide database-like functionality, allowing you to easily treat your notes and their properties as information you can query and display in an exportable table. Collections also provide unique functionality for compiling and styling an export of notes into one or multiple PDFs (for example, a professional-looking book) or HTML files (for example, as a website).
 - **Collaboration.** Optional whole-notebox git sync with a
   simplified, merge-first model and the ability to collaborate asynchronously on notes via e-mail or file transfers. In all cases, suggestions, add/remove, and annotations are possible.
 - **Dates and Tasks.** Shortcuts to easily insert dates and tasks within the context of whatever you are working on. InkyCap will extract them in a variety of agenda views to list what is important for you.
-- **Open formats in and out.** Import from regular Markdown or an Obsidian-flavoured vault; export to PDF
+- **Open import and export formats.** Import from regular Markdown or an Obsidian-flavoured vault; export to PDF
   (including PDF/A and PDF/UA), HTML, Markdown, and ODT/DOCX/LaTeX via Pandoc.
 
 ## Status
