@@ -12,6 +12,58 @@ each tagged release, newest first, grouping entries under **Added**, **Changed**
 **Fixed**, **Removed**, **Security**, or **Deprecated** as needed.
 
 
+## [26.11.4] - 2026-11-24
+
+Citations and bibliographies are easier to set up and consistent everywhere: a
+citation's page and form, and a bibliography's title and style, are set from
+their pills, and the default citation style applies to every preview and
+export. Word and ODT exports keep footnotes and lay out the bibliography in the
+citation style. Split with preview scrolls its two panes together.
+
+### Added
+
+- **Citation pills.** Every citation (`@key`, `@key[…]` and `#cite(...)`) shows
+  as one pill with its key and page. Its menu sets the page, chapter or other
+  place in the work, and how the citation reads: normal, in prose, the full
+  reference, the author only or the year only.
+- **Bibliography pill options.** The pill's menu sets the title above the list
+  or removes it, and chooses a citation style from a searchable list of every
+  style built into Typst, or a `.csl` file in the notebox.
+- **Insert bibliography** in the References panel, shown when the note cites a
+  work and has no bibliography of its own.
+- **Split with preview scrolls together.** Scrolling either pane shows the same
+  part of the note in the other, in both the SVG and HTML formats, and the
+  preview follows the editor while typing.
+
+### Changed
+
+- **Default citation style.** The style in Settings now reaches the preview and
+  every export the same way, as a Typst set rule. A style set on a note's own
+  bibliography wins over it, and over a collection's style.
+- Refreshing Zotero references, saving a notebox's citation settings or
+  exporting re-reads the bibliography, and open reading views update.
+- Citations no longer have *Convert to advanced citation*. Choosing a form in
+  the citation's menu does the conversion when it is needed.
+- In Word and ODT exports, bibliography entries use a "Bibliography" paragraph
+  style, so they can be restyled together in a word processor.
+
+### Fixed
+
+- A note's own `#bibliography(...)` without a style exported in IEEE instead of
+  the style in Settings. So did a book whose collection names no style.
+- A citation with a page showed as a broken reference in the visual editor.
+- Exports through Pandoc (Word, ODT, LaTeX and PDF with properties):
+  - Footnote text was missing, including citations in note styles such as
+    Chicago notes. Footnotes are now real footnotes; one inside another goes in
+    parentheses.
+  - Aligned content, such as a centred image, was missing. The content is kept,
+    though not its alignment.
+  - Bibliography entries came out as bullets without the citation style's
+    layout. In Word and ODT they now have its hanging indent, or their labels
+    in a column of their own.
+- In the visual editor, highlighted text in headings, and bold or
+  struck-through text in any highlight, was hard to read in dark mode.
+
 ## [26.11.2] - 2026-11-19
 
 Literature notes: a note's source can be a reference from the bibliography,
