@@ -786,6 +786,28 @@ export function upsertNamedArg(
   return callSource.substring(0, argList.open + 1) + newArgs + callSource.substring(argList.close);
 }
 
+/**
+ * The text inside a content block literal (`[p. 64]` → `p. 64`), undoing the
+ * escapes {@link contentBlockLiteral} writes. Null when `literal` is missing
+ * or isn't a content block (`none`, a variable, …).
+ */
+export function contentBlockText(literal: string | null): string | null {
+  if (!literal || !literal.startsWith("[") || !literal.endsWith("]")) return null;
+  return literal.slice(1, -1).replace(/\\\]/g, "]").replace(/\\\\/g, "\\");
+}
+
+/**
+ * A content block literal holding `text` (`p. 64` → `[p. 64]`), with `\` and
+ * `]` escaped so the text can't close the block early. Null for blank text, so
+ * callers can pass it straight to {@link upsertNamedArg} to remove the
+ * argument.
+ */
+export function contentBlockLiteral(text: string): string | null {
+  const trimmed = text.trim();
+  if (trimmed === "") return null;
+  return "[" + trimmed.replace(/\\/g, "\\\\").replace(/\]/g, "\\]") + "]";
+}
+
 /** Read a named arg's value text (literal source), or null if not present. */
 export function readNamedArg(callSource: string, name: string): string | null {
   const argList = findArgList(callSource);

@@ -63,34 +63,6 @@ export const PAGE_SIZE_OPTIONS = [
   { value: "b5", labelKey: "settings.appearance.pageSize.b5" },
 ];
 
-/** Citation styles offered in Settings and in a collection's Appearance tab.
- *  Style names are proper names and stay as written; the "custom" entry is a
- *  translatable label, resolved by `citationStyleOptions`. */
-export const CITATION_STYLES: { value: string; label?: string; labelKey?: string }[] = [
-  { value: "chicago-author-date", label: "Chicago (Author-Date)" },
-  { value: "chicago-notes", label: "Chicago (Notes)" },
-  { value: "apa", label: "APA" },
-  { value: "mla", label: "MLA" },
-  { value: "ieee", label: "IEEE" },
-  { value: "association-for-computing-machinery", label: "ACM" },
-  { value: "american-chemical-society", label: "ACS" },
-  { value: "american-institute-of-physics", label: "AIP" },
-  { value: "american-medical-association", label: "AMA" },
-  { value: "american-psychological-association", label: "APA (7th)" },
-  { value: "future-medicine", label: "Future Medicine" },
-  { value: "gb-7714-2005-numeric", label: "GB/T 7714 (Numeric)" },
-  { value: "custom", labelKey: "settings.citations.customCsl.label" },
-];
-
-/** The citation styles as select options, with translatable labels resolved
- *  through the caller's `t`. */
-export function citationStyleOptions(t: (key: string) => string): { value: string; label: string }[] {
-  return CITATION_STYLES.map((s) => ({
-    value: s.value,
-    label: s.labelKey ? t(s.labelKey) : (s.label ?? s.value),
-  }));
-}
-
 // --- Reusable Setting Widgets ---
 
 /**

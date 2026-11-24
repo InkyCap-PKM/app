@@ -50,45 +50,83 @@ pub fn already_declares_bibliography(source: &str) -> bool {
     bib_re().is_match(&stripped)
 }
 
-/// The source to compile: unchanged if there is nothing to inject, otherwise
-/// with a call to the package's [`apply-bibliography`] appended. Typst collects
-/// citations across the whole document, so placement only decides where the
-/// list renders.
-///
-/// `style`, when given, is passed as `style:`; Typst interprets both built-in
-/// names ("apa") and CSL paths ("/styles/foo.csl").
-pub fn augment(
-    source: &str,
-    notebox_root: &Path,
-    bibliography: &Path,
-    style: Option<&str>,
-) -> String {
-    if already_declares_bibliography(source) {
-        return source.to_string();
-    }
-    let Ok(rel) = bibliography.strip_prefix(notebox_root) else {
-        return source.to_string();
+/// `source` with `#bibliography("<path>")` appended, for a note that cites
+/// works but declares no bibliography. Typst collects citations across the
+/// whole document, so placement only decides where the list renders. `path` is
+/// notebox-root-absolute; a missing leading `/` is added. The style comes from
+/// [`with_default_style`], not from this call.
+pub fn append_bibliography_call(source: &str, path: &str) -> String {
+    let path = if path.starts_with('/') {
+        path.to_string()
+    } else {
+        format!("/{path}")
     };
-    let typst_path = rel
-        .components()
-        .map(|c| c.as_os_str().to_string_lossy().into_owned())
-        .collect::<Vec<_>>()
-        .join("/");
-    let directive = match style {
-        Some(s) => format!(
-            "#apply-bibliography(\"/{}\", style: \"{}\")\n",
-            typst_path, s
-        ),
-        None => format!("#apply-bibliography(\"/{}\")\n", typst_path),
-    };
+    format!(
+        "{}\n\n#bibliography(\"{}\")\n",
+        source.trim_end(),
+        escape_typst_string(&path)
+    )
+}
 
-    let mut out = String::with_capacity(source.len() + directive.len() + 1);
-    out.push_str(source);
-    if !source.ends_with('\n') {
-        out.push('\n');
+/// `source` with `#set bibliography(style: "<style>")` after the notebox
+/// import, so every bibliography in the note that names no `style:` uses it.
+/// One that does name a style keeps it, and a later `#set bibliography(...)` in
+/// the note or its template replaces this one, as in plain Typst. Adds one line
+/// after the import.
+///
+/// `style` is a built-in name (`"apa"`) or a notebox-root-absolute `.csl` path.
+pub fn with_default_style(source: &str, style: &str) -> String {
+    let rule = format!(
+        "#set bibliography(style: \"{}\")",
+        escape_typst_string(style)
+    );
+    crate::notebox_package::insert_after_notebox_import(source, &rule)
+}
+
+/// The citation style a note compiles with when it names none: the notebox's
+/// custom `.csl` file, else the user's named style. `None` leaves Typst's own
+/// default. A custom path without a leading `/` is taken from the notebox root,
+/// as [`resolve_style`] reads it.
+pub fn effective_style(custom_csl_path: Option<&str>, style_name: Option<&str>) -> Option<String> {
+    if let Some(path) = custom_csl_path.map(str::trim).filter(|p| !p.is_empty()) {
+        return Some(if path.starts_with('/') {
+            path.to_string()
+        } else {
+            format!("/{path}")
+        });
     }
-    out.push_str(&directive);
-    out
+    style_name
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && *s != "custom")
+        .map(String::from)
+}
+
+/// One of Typst's built-in citation styles, for the style pickers.
+#[derive(Debug, Clone, Serialize)]
+pub struct CitationStyleInfo {
+    /// The name to write in `style:`, e.g. `"chicago-author-date"`.
+    pub name: String,
+    /// Other names Typst accepts for the same style, e.g. `"apa"`.
+    pub aliases: Vec<String>,
+    /// The style's own title, e.g. "Chicago Manual of Style 17th edition
+    /// (author-date)".
+    pub title: String,
+}
+
+/// Every citation style built into Typst, read from hayagriva (the library
+/// Typst formats citations with), so the list matches what `style:` accepts.
+pub fn citation_styles() -> Vec<CitationStyleInfo> {
+    hayagriva::archive::ArchivedStyle::all()
+        .iter()
+        .filter_map(|style| {
+            let (name, aliases) = style.names().split_first()?;
+            Some(CitationStyleInfo {
+                name: (*name).to_string(),
+                aliases: aliases.iter().map(|a| (*a).to_string()).collect(),
+                title: style.display_name().to_string(),
+            })
+        })
+        .collect()
 }
 
 fn strip_line_comments(source: &str) -> String {
@@ -801,8 +839,8 @@ pub fn parse_library_bibtex(content: &str) -> Result<hayagriva::Library, String>
 }
 
 /// The CSL style to render with, in the same order as compiling (see
-/// `NoteboxSession::open_notebox_fast`): the notebox's custom `.csl`, else the
-/// global named style, else `chicago-author-date`.
+/// [`effective_style`]): the notebox's custom `.csl`, else the global named
+/// style, else `chicago-author-date`.
 pub fn resolve_style(
     notebox_root: &Path,
     custom_csl_path: Option<&str>,
@@ -1077,11 +1115,6 @@ fn escape_typst_string(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
-
-    fn notebox() -> PathBuf {
-        PathBuf::from("/tmp/notebox")
-    }
 
     /// The exported BibTeX is identical whatever the HashMap order: fields are
     /// sorted alphabetically.
@@ -1148,48 +1181,69 @@ mod tests {
     }
 
     #[test]
-    fn no_inject_when_user_declares() {
-        let src = "#import \"/lib.typ\": *\n#bibliography(\"/refs.bib\")\n= Title\n";
-        let out = augment(src, &notebox(), &notebox().join("references.bib"), None);
-        assert_eq!(out, src);
+    fn appends_bibliography_call_at_end() {
+        let src = "#import \"/lib.typ\": *\n= Title\n@smith2020\n";
+        let out = append_bibliography_call(src, "references.bib");
+        assert!(out.ends_with("@smith2020\n\n#bibliography(\"/references.bib\")\n"));
     }
 
     #[test]
-    fn injects_at_end() {
-        let src = "#import \"/lib.typ\": *\n= Title\n";
-        let out = augment(src, &notebox(), &notebox().join("references.bib"), None);
-        assert!(out.contains("#apply-bibliography(\"/references.bib\")"));
-        assert!(out
-            .trim_end()
-            .ends_with("#apply-bibliography(\"/references.bib\")"));
+    fn default_style_goes_after_the_notebox_import() {
+        let import = crate::notebox_package::import_line();
+        let src = format!("{import}\n= Title\n#bibliography(\"/refs.bib\")\n");
+        let out = with_default_style(&src, "chicago-author-date");
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines[0], import);
+        assert_eq!(
+            lines[1],
+            "#set bibliography(style: \"chicago-author-date\")"
+        );
+        // The user's own call is left as written.
+        assert!(out.contains("#bibliography(\"/refs.bib\")\n"));
     }
 
     #[test]
-    fn injects_at_end_when_no_import() {
-        let src = "= Title\nbody\n";
-        let out = augment(src, &notebox(), &notebox().join("references.bib"), None);
-        assert!(out
-            .trim_end()
-            .ends_with("#apply-bibliography(\"/references.bib\")"));
-        assert!(out.starts_with("= Title"));
+    fn default_style_goes_first_without_an_import() {
+        let out = with_default_style("= Title\n", "apa");
+        assert!(out.starts_with("#set bibliography(style: \"apa\")\n= Title"));
+    }
+
+    #[test]
+    fn default_style_escapes_the_name() {
+        let out = with_default_style("", "/styles/a\"b.csl");
+        assert!(out.starts_with("#set bibliography(style: \"/styles/a\\\"b.csl\")"));
+    }
+
+    #[test]
+    fn effective_style_prefers_the_custom_csl_file() {
+        assert_eq!(
+            effective_style(Some("styles/x.csl"), Some("apa")).as_deref(),
+            Some("/styles/x.csl")
+        );
+        assert_eq!(effective_style(None, Some("apa")).as_deref(), Some("apa"));
+        assert_eq!(effective_style(Some(""), Some("custom")), None);
+        assert_eq!(effective_style(None, None), None);
+    }
+
+    #[test]
+    fn citation_styles_lists_typst_names() {
+        let styles = citation_styles();
+        assert!(styles.len() > 50);
+        let apa = styles
+            .iter()
+            .find(|s| s.name == "american-psychological-association")
+            .expect("APA is built in");
+        assert!(apa.aliases.iter().any(|a| a == "apa"));
+        // Every name is one Typst's `style:` accepts.
+        for s in &styles {
+            assert!(hayagriva::archive::ArchivedStyle::by_name(&s.name).is_some());
+        }
     }
 
     #[test]
     fn comment_is_not_a_declaration() {
         let src = "// #bibliography(\"/x.bib\")\n= Title\n";
         assert!(!already_declares_bibliography(src));
-    }
-
-    #[test]
-    fn injects_with_style() {
-        let src = "#import \"/lib.typ\": *\n= Title\n";
-        let out = augment(
-            src,
-            &notebox(),
-            &notebox().join("references.bib"),
-            Some("apa"),
-        );
-        assert!(out.contains("#apply-bibliography(\"/references.bib\", style: \"apa\")"));
     }
 
     /// Our `#apply-bibliography(` must not count as a user's

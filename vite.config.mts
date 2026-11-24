@@ -23,6 +23,13 @@ export default defineConfig({
     },
   },
   clearScreen: false,
+  optimizeDeps: {
+    // The app has one page. Without this, the dev server's first-run
+    // dependency scan searches the whole repository for `*.html`, wanders
+    // into the flatpak build trees' symlink loops (see `server.watch` below)
+    // and never finishes, so the Tauri window stays blank.
+    entries: ["index.html"],
+  },
   server: {
     port: 1420,
     strictPort: true,

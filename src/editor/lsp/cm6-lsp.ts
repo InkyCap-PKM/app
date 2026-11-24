@@ -7,6 +7,7 @@ import { referenceActions } from "./reference-quickfix";
 import { isEmailLikeAt } from "../typst-decorations/reference-form";
 import { LspClient, filePathToUri, type LspDiagnostic, type LspPosition, type LspCompletionItem } from "./client";
 import * as ipc from "../../lib/ipc";
+import { bibliographyRevision } from "../../stores/bibliography";
 import { t } from "../../lib/i18n";
 
 export const lspClientFacet = Facet.define<LspClient, LspClient | null>({
@@ -338,13 +339,18 @@ function isScaffoldFragmentUri(uri: string): boolean {
 const BIB_KEY_TTL = 5000;
 let cachedBibKeys = new Set<string>();
 let bibKeyCacheTime = 0;
+let bibKeyCacheRevision = -1;
 
 async function refreshBibKeys(): Promise<Set<string>> {
-  if (Date.now() - bibKeyCacheTime < BIB_KEY_TTL) return cachedBibKeys;
+  if (bibKeyCacheRevision === bibliographyRevision() && Date.now() - bibKeyCacheTime < BIB_KEY_TTL) {
+    return cachedBibKeys;
+  }
   try {
+    const revision = bibliographyRevision();
     const entries = await ipc.getBibliographyEntries();
     cachedBibKeys = new Set(entries.map((e) => e.key));
     bibKeyCacheTime = Date.now();
+    bibKeyCacheRevision = revision;
   } catch {
     // Keep the (possibly stale) cache; a failed fetch shouldn't suppress
     // diagnostics or strip an already-known key.

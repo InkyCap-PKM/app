@@ -5,6 +5,7 @@ import { positionPopupAtAnchor } from "./popup-position";
 import * as ipc from "../../lib/ipc";
 import { t } from "../../lib/i18n";
 import type { BibEntry } from "../../lib/types";
+import { bibliographyRevision } from "../../stores/bibliography";
 import { scanDocumentLabels, type DocLabel, type LabelKind } from "./document-labels";
 import {
   canReferenceWithAt,
@@ -60,6 +61,9 @@ let currentState: SuggestState = EMPTY;
 let filteredItems: RefItem[] = [];
 let cachedEntries: BibEntry[] | null = null;
 let cacheTime = 0;
+/** The bibliography revision `cachedEntries` was read at; a refresh makes the
+ *  cache stale at once rather than after the TTL. */
+let cacheRevision = -1;
 const CACHE_TTL = 30_000;
 
 // After accepting, keep the popup closed until the cursor leaves the inserted
@@ -168,10 +172,16 @@ export function activeReferenceSearchAt(): number | null {
 }
 
 async function getEntries(): Promise<BibEntry[]> {
-  if (cachedEntries && Date.now() - cacheTime < CACHE_TTL) return cachedEntries;
+  if (
+    cachedEntries
+    && cacheRevision === bibliographyRevision()
+    && Date.now() - cacheTime < CACHE_TTL
+  ) return cachedEntries;
   try {
+    const revision = bibliographyRevision();
     cachedEntries = await ipc.getBibliographyEntries();
     cacheTime = Date.now();
+    cacheRevision = revision;
   } catch {
     cachedEntries = [];
   }
@@ -605,6 +615,9 @@ export function getCachedBibKeys(): Set<string> {
     void getEntries();
     return new Set();
   }
+  // After a refresh, read the entries again in the background; until then the
+  // previous keys still stand.
+  if (cacheRevision !== bibliographyRevision()) void getEntries();
   return new Set(cachedEntries.map((e) => e.key));
 }
 

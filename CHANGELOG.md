@@ -12,6 +12,88 @@ each tagged release, newest first, grouping entries under **Added**, **Changed**
 **Fixed**, **Removed**, **Security**, or **Deprecated** as needed.
 
 
+## [26.11.2] - 2026-11-19
+
+Literature notes: a note's source can be a reference from the bibliography,
+and scaffolds can fill in that reference's details. A new On This Date pane
+lists what falls on a note's date. Tasks can hold links, wikilinks and tags,
+search filters match whole names and words, and side panels too narrow for
+their buttons list the rest in a » menu. Clicking a pill now always opens its
+menu.
+
+### Added
+
+- **Literature notes conveniences.** A note's `source` property can be a bibliography
+  reference (`source: <otlet1934>`, shown and typed as `@otlet1934`); a quoted
+  string is still read as a web address or other URI.
+- **Reference details in scaffolds.** `{{ref}}` and `{{ref.FIELD}}` copy a
+  reference's details into a new note: `title`, `author`, `year`, `parent`,
+  `publisher`, `doi` and the other Typst bibliography fields (e.g. from a Zotero source). A whole quoted
+  value becomes the matching Typst value (a list of authors, the reference's
+  label), text inside a string or the note body is escaped, and a property
+  for a detail the reference lacks is left out. Using such a scaffold from a
+  creation rule or *Insert Scaffold* first asks which reference, names a new
+  note after its title, and creates nothing if cancelled.
+- **New literature note** from the References panel (a new ⋯ button, or
+  right-click on any reference, which also offers *Use as this note's
+  source*) and from the command palette. A literature note's References tab
+  shows its own reference formatted in the citation style, with a button to
+  copy it. Each notebox gets a `literature-note-sample` scaffold once; a
+  deleted one stays deleted.
+- **On This Date pane** in the right panel, turned on in Settings >
+  Behaviour > Right panel (off by default). It lists every task and dated
+  reminder in the notebox that falls on the open note's `date` property,
+  including the note's own items and completed tasks, with repeating dates
+  counted on the days they repeat, as in the Agenda.
+- **» menu for side panel buttons.** When the left sidebar or right panel is
+  too narrow for all of its buttons, the ones that don't fit are listed, by
+  icon and name, in a menu at the end of the row. The button is marked when
+  the open pane is one of the hidden ones.
+- **Show in side panel** in the menu of annotation and suggestion pills,
+  which opens Changes & History on that item and moves the keyboard focus
+  there.
+- **Markup in tasks.** Tasks take a markup body (`#task[…]`), so links,
+  wikilinks and tags in them render and are indexed; the Agenda shows them as
+  plain text. New tasks, Markdown import and Markdown export use this form.
+  *Convert task text to markup* (command palette, *Tools*) converts imported
+  tasks whose string text holds markup.
+- Quick Open (Ctrl+O) can create a note when no file matches.
+- Ctrl+Shift+V always pastes plain text.
+- Markdown import reads a `citekey` field as the note's source (keeping a
+  `url` alongside it), and Markdown export writes it back.
+
+### Changed
+
+- **Clicking a pill** always opens its menu; *Edit source* there reveals the
+  markup.
+- **Search parameters consistently match like search terms.** `tag:`, `collection:` and
+  property names match the whole name; `file:`, `section:`, `annotation:` and
+  property values match whole words (a quoted value as a phrase); `path:`
+  matches whole folder names at any depth, and a leading `/` counts from the
+  notebox root. `*` matches part of a word or name in every filter, so
+  `tag:draft` no longer finds `draft_old` but `tag:draft*` does.
+- **Pasting an address** at the cursor inserts plain text rather than a link,
+  escaped where Typst would misread it (`athena\@inkycap.org`).
+- Copying from the visual editor gives other apps the text without escape
+  backslashes, while pasting back into InkyCap keeps the Typst source.
+  Escape backslashes show on the cursor's line like other markup.
+- Typing in Find refines the current match in place instead of jumping to the
+  next one, and typing in Replace leaves the current match where it is, so
+  *Replace* changes the occurrence shown.
+- The right panel's top-row buttons have the same tighter corners as the left
+  sidebar's.
+
+### Fixed
+
+- Task text written as a string with escaped quotes was cut off.
+- Menus too tall for the screen, such as some pill menus, now scroll.
+- The Bookmarks pane updates as soon as a bookmark is added.
+- *Search in folder* now works when the notebox is opened through a symbolic
+  link, and clicking a tag with a space in its name quotes the search.
+- The Add Package list fits the width of the sidebar.
+- The right panel's buttons no longer slide under its collapse button when
+  the panel is narrow.
+
 ## [26.10.10] - 2026-10-28
 
 Notes can now add, remove and look up Typst packages without leaving the

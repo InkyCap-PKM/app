@@ -145,8 +145,8 @@ typst-svg = "0.15"
 typst-pdf = "0.15"
 typst-html = "0.15"
 typst-assets = { version = "0.15", features = ["fonts"] }
-hayagriva = "0.9"
-biblatex = "0.11"
+hayagriva = "0.10"
+biblatex = "0.12"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"

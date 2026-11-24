@@ -120,6 +120,33 @@ pub fn is_notebox_import_line(line: &str) -> bool {
     trimmed.contains("/.inkycap/notebox.typ")
 }
 
+/// `source` with `block` on its own line(s) just after the notebox import, or
+/// at the top when there is none. For compile-time rules InkyCap adds to an
+/// in-memory copy of a note; the file on disk is never changed. Lines after the
+/// import shift down by `block`'s line count, which callers that map
+/// diagnostics back to the file must count.
+pub fn insert_after_notebox_import(source: &str, block: &str) -> String {
+    let mut out = String::with_capacity(source.len() + block.len() + 2);
+    let mut injected = false;
+    for line in source.lines() {
+        out.push_str(line);
+        out.push('\n');
+        if !injected && is_notebox_import_line(line) {
+            out.push_str(block);
+            out.push('\n');
+            injected = true;
+        }
+    }
+    if injected {
+        return out;
+    }
+    let mut prepended = String::with_capacity(out.len() + block.len() + 1);
+    prepended.push_str(block);
+    prepended.push('\n');
+    prepended.push_str(&out);
+    prepended
+}
+
 /// Add the notebox import if missing. Used by export for notes made outside
 /// InkyCap.
 pub fn ensure_import(source: &str) -> String {

@@ -42,7 +42,7 @@ If you keep your references in #link("https://zotero.org")[Zotero], choose *Zote
 
 In the *Zotero database path* field you point InkyCap at your `zotero.sqlite` file. The easiest way is to click *Detect*, which searches the usual locations on your computer automatically (it shows *Detecting…* while it works). Because this is the location of your Zotero install, it is a *global* setting. Once set, it applies to all your noteboxes.
 
-#callout("note")[When you select Zotero as your reference source, InkyCap generates its own bibliography file from your Zotero library (at `.inkycap/zotero-export.bib`), which enables the rest of the application's citation machinery to read this information. This is created automatically and kept up-to-date; you do not need to manage it. However if you make some changes to a reference in Zotero while using InkyCap, you can force a quick refresh in InkyCap by clicking the *Refresh bibliography* button in the upper right of the References panel.]
+#callout("note")[When you select Zotero as your reference source, InkyCap generates its own bibliography file from your Zotero library (at `.inkycap/zotero-export.bib`), which enables the rest of the application's citation machinery to read this information. This is created automatically and kept up-to-date; you do not need to manage it. However if you make some changes to a reference in Zotero while using InkyCap, you can force a quick refresh in InkyCap by clicking the *Refresh bibliography* button in the upper right of the References panel. Open notes and their reading views pick up the change straight away.]
 
 == Choosing a citation style
 
@@ -57,9 +57,9 @@ The *Citation style* setting controls how your citations and reference list are 
 
 If your discipline or publisher needs a style not in the list, choose *Custom CSL file…* and point InkyCap at a `.csl` style file using *Browse…*. A custom style is set per notebox and takes precedence over the global named style. Get more styles from the #link("https://citationstyles.org/")[Citation Style Language project].
 
-#callout("important")[ The citation style you choose here is a *default*. As the setting itself notes, it "can be overridden in rendered output per file or by collection." So one notebox can default to Chicago while a particular #wikilink("2 - Collections", display: "Collection") is set to use its own style and publishes output using MLA. ]
+#callout("important")[ The citation style you choose here is a *default*. As the setting itself notes, it "can be overridden in rendered output per file or by collection." So one notebox can default to Chicago while a particular #wikilink("2 - Collections", display: "Collection") is set to use its own style and publishes output using MLA. To give a single note its own style, click its bibliography pill and choose one (see #link(<bibliography-pill>)[Changing the title and style]). A style set on a note's bibliography wins over both your default and a collection's style. ]
 
-#callout("tip", title: "For Typst users")[InkyCap does not invent its own citation format. It uses Typst's native citations end to end. Style names map to hayagriva's archived CSL styles, and all formatting flows through hayagriva (the same engine behind Typst's `#bibliography`). The resolution order is: a per-notebox custom `.csl` file, then the global named style, then a fallback to `chicago-author-date`. Source selection, the bibliography path, and the custom CSL path are per-notebox; the named-style default and the Zotero database path are global.]
+#callout("tip", title: "For Typst users")[InkyCap does not invent its own citation format. It uses Typst's native citations end to end. Style names are Typst's built-in CSL styles, and all formatting flows through hayagriva (the same engine behind Typst's `#bibliography`). The default is resolved in this order: a per-notebox custom `.csl` file, then the global named style; with neither, Typst's own default (IEEE) applies. In a collection export, the collection's style takes the place of yours. Source selection, the bibliography path, and the custom CSL path are per-notebox; the named-style default and the Zotero database path are global.]
 
 == The References sidebar
 
@@ -81,7 +81,7 @@ A small badge tells you how many entries you have and whether they come from *Zo
 
 === Citations in this file
 
-Below the browser, the *Citations* section lists every work cited in the note you are currently editing, de-duplicated. It is a quick way to see your sources at a glance. When the note cites at least one work, a *Copy formatted bibliography* button appears here too. There is more on that below. Each row has the same *⋯* button as in the full list.
+Below the browser, the *Citations* section lists every work cited in the note you are currently editing, de-duplicated. It is a quick way to see your sources at a glance. When the note cites at least one work, a *Copy formatted bibliography* button appears here too. There is more on that below. If the note doesn't yet have a bibliography of its own, an *Insert a bibliography at the end of the note* button (a book with a plus sign) appears beside it, which adds one for you (see #link(<own-bibliography>)[Adding your own bibliography]). Each row has the same *⋯* button as in the full list.
 
 === Source <references-source>
 
@@ -111,6 +111,8 @@ Typst-style citations also accept a page or other supplement:
 @otlet1934[p. 64]
 ```
 
+In the visual editor you don't need to type the brackets: click the citation's pill and type the page into its *Page* field (see #link(<citation-pill>)[Citation pills] below).
+
 A citation can sit right against the preceding word, with no space, as footnote styles often want (`results@otlet1934`). The popup opens there too.
 
 If you ever need to write the at-sign (`@`) at the start of a word, escape it with a backslash `\` first so that InkyCap does not mistake it for a citation, or pick *Plain text* at the bottom of the popup. InkyCap will detect e-mail addresses. When you finish a word like `user@domain.com` and what follows the `@` isn't one of your citation keys or labels, the Visual editor turns it into an e-mail link (undo for plain text; see #wikilink("4 - Links and Backlinks")). An address written bare in the Source editor isn't flagged as a broken reference, and InkyCap still compiles the note, though other Typst tools need it linked or written as `user\@domain.com`. 
@@ -138,7 +140,16 @@ Press `Ctrl+Shift+C` to open the *Search references & cite* picker, a focused ov
 
 Type `/` for the command palette and choose *Citation* to start a citation at your cursor, or *Bibliography* to insert an explicit reference-list call. These are the same actions available through InkyCap's command palette. See #wikilink("2 - Editing Notes") for more on the slash menu.
 
-#callout("tip")[In the visual editor, each citation shows as a pill displaying `@key`. Right-click a pill and choose *Convert to advanced citation* if you want the function form, `#cite(<key>)`, which accepts extra options. A function-form citation carries a circled `#` pill; right-click that pill for a *Form* group where you choose how the citation reads: *normal*, *prose*, *full*, *author*, or *year*. ]
+=== Citation pills <citation-pill>
+
+In the visual editor, each citation shows as a pill with its key, and its page if it has one: `@otlet1934, p. 64`. Click the pill (or right-click it, or press *Enter* when it has the keyboard focus) to open its menu:
+
+- *Page* takes a page, chapter or other place in the work, printed with the citation exactly as you write it, such as `p. 64`, `pp. 64–70` or `ch. 3`. Clear the field to remove it.
+- *Form* decides how the citation reads: *Normal* as your citation style writes it, such as (Otlet 1934); *In prose*, worked into a sentence, such as Otlet (1934); *Full reference*, the whole entry as the bibliography lists it; *Author only*; or *Year only*.
+
+The menu also offers *Edit source*, *Copy*, *Duplicate* and *Delete*, as every pill does. To edit the citation by hand, move the cursor into it with the arrow keys.
+
+#callout("tip", title: "For Typst users")[The pill keeps the shortest form Typst accepts. A page is written as a supplement, `@otlet1934[p. 64]`; choosing a form other than *Normal* turns the citation into `#cite(<otlet1934>, form: "prose", supplement: [p. 64])`, since the `@` form can't carry one. A `#cite(...)` you write yourself stays a `#cite(...)`, and the menu only changes the argument you set.]
 
 == How your bibliography appears
 
@@ -148,21 +159,39 @@ When you switch to reading mode or generate a preview, InkyCap checks whether yo
 
 InkyCap only treats `@something` as a citation when that key actually matches an entry in your bibliography. So an e-mail address like `user@domain.com` in your prose will not accidentally become a citation.
 
-If you would rather control exactly where the reference list sits, you can write the bibliography call yourself. The slash menu's *Bibliography* entry inserts one for you, pointing at whichever source you chose in Settings: the file InkyCap generates from Zotero, or your own bibliography file. With Zotero it looks like this:
+=== Adding your own bibliography <own-bibliography>
+
+If you would rather control exactly where the reference list sits, or give it its own title or style, add the bibliography call to the note yourself. There are two ways to do it:
+
+- In the References panel, click *Insert a bibliography at the end of the note* beside *Citations*. It appears when the note cites a work and has no bibliography yet.
+- Type `/` and choose *Bibliography*, which inserts the call where your cursor is.
+
+Either way, the call points at whichever source you chose in Settings: the file InkyCap generates from Zotero, or your own bibliography file. With Zotero it looks like this:
 
 ```typ
 #bibliography("/.inkycap/zotero-export.bib")
 ```
 
-If no bibliography file has been chosen yet, the quotes are left empty for you to fill in. You can add a style to the call too:
+If no bibliography file has been chosen yet, the quotes are left empty for you to fill in.
+
+=== Changing the title and style <bibliography-pill>
+
+In the visual editor, the bibliography shows as a pill. Click it to open its menu:
+
+- *Title* is the heading above the list. Leave it empty for Typst's own heading, which follows the note's language ("Bibliography" in English). *No title* prints the list without a heading.
+- *Citation style* starts with *Default*, the style from Settings (or the collection's style when the note is exported as part of a collection). *Choose a style…* opens a searchable list of every citation style built into Typst. Search by name, such as `nature` or `harvard`, and press *Enter*. To use a `.csl` file from your notebox instead, type its path, ending in `.csl`, and choose *Use this style file from the notebox*. Once a style is set, the menu shows it with a check mark; choose *Default* to go back.
+
+The choices are written into the call, so with a title and a style it reads:
 
 ```typ
-#bibliography("/references.bib", style: "apa")
+#bibliography("/references.bib", title: [Works cited], style: "apa")
 ```
+
+The style applies to this note's citations and reference list in the reading view and in every export, including PDF.
 
 #callout("note")[The path begins with `/`, which InkyCap treats as your notebox root, so the reference works no matter where the note lives or how it is later exported. In Typst, the position of this call only decides *where the list renders* (conventionally the end); your citations resolve across the whole document regardless.]
 
-#callout("tip", title: "For Typst users")[If your note already has an explicit `#bibliography(...)`, InkyCap leaves it in place but adds your preferred `style:` if you did not specify one (otherwise Typst would fall back to its IEEE default). Otherwise it appends `#bibliography("<path>", style: "<style>")` only when at least one extracted key really exists in your bibliography, or when the note uses `attribution: <...>`. Unmatched keys are escaped to `\@` so they render literally. ]
+#callout("tip", title: "For Typst users")[InkyCap gives every bibliography your default style with a Typst set rule, `#set bibliography(style: "<style>")`, added just after the notebox import when the note is compiled, for the reading view and for every export alike. Your own `#bibliography(...)` is never edited: one without `style:` takes the default, one with `style:` keeps its own, and a `#set bibliography(...)` of your own (or a template's) replaces InkyCap's, as in plain Typst. Without a bibliography of your own, InkyCap appends `#bibliography("<path>")` only when at least one extracted key really exists in your bibliography, or when the note uses `attribution: <...>`. Unmatched keys are escaped to `\@` so they render literally. ]
 
 == Copying a bibliography on its own
 

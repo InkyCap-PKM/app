@@ -66,11 +66,13 @@ pub async fn compile_typst_svg(
     let canonical = storage.resolve_path(&path_arg)?;
     let source = storage.read_file(&path_arg).await?;
 
-    // Count the lines inserted near the top (set-notebox and style cascade);
-    // the bibliography goes at the end and shifts nothing.
+    // Count the lines inserted near the top (set-notebox, style cascade and
+    // citation style); the bibliography goes at the end and shifts nothing.
     let original_lines = source.lines().count();
     let source = maybe_inject_set_notebox(&source, &state, CompilePurpose::ReadingView).await;
     let source = inject_style_cascade(&source, &path_arg, &state).await;
+    let style = resolve_citation_style(&state, &session).await;
+    let source = with_citation_style(&source, style.as_deref());
     let injected_line_offset = source.lines().count().saturating_sub(original_lines);
     let source = maybe_inject_preview_bibliography(&source, &state, &session).await;
     let source = escape_non_bib_citations(&source, &state, &session).await;
@@ -89,45 +91,55 @@ pub async fn compile_typst_svg(
     Ok(result)
 }
 
-/// The citation style: the notebox's `custom_csl_path`, else the user's named
-/// style, else `None` (Typst's default).
-async fn resolve_citation_style(state: &AppState, session: &NoteboxSession) -> Option<String> {
-    let notebox = session.notebox_settings.read().await;
-    if let Some(p) = notebox.citations.custom_csl_path.clone() {
-        return Some(p);
-    }
-    let settings = state.settings.read().await;
-    settings
+/// The citation style a note uses when it names none: the notebox's
+/// `custom_csl_path`, else the user's named style, else `None` (Typst's own
+/// default). Preview and every export read it from here.
+pub(crate) async fn resolve_citation_style(
+    state: &AppState,
+    session: &NoteboxSession,
+) -> Option<String> {
+    let custom = session
+        .notebox_settings
+        .read()
+        .await
         .citations
-        .citation_style
-        .as_deref()
-        .filter(|s| !s.is_empty() && *s != "custom")
-        .map(String::from)
+        .custom_csl_path
+        .clone();
+    let settings = state.settings.read().await;
+    crate::typst_pipeline::bibliography::effective_style(
+        custom.as_deref(),
+        settings.citations.citation_style.as_deref(),
+    )
 }
 
-/// Make sure citations resolve with the user's style:
-///
-/// 1. No `#bibliography(...)` and real citations: append one with path and
-///    style.
-/// 2. A `#bibliography(...)` without `style:`: add the user's style, so they
-///    don't get Typst's IEEE default.
-/// 3. A `#bibliography(...)` with `style:`: leave it.
+/// `source` with `#set bibliography(style: ...)` after the import (see
+/// [`crate::typst_pipeline::bibliography::with_default_style`]), when there is
+/// a style and the note cites a work or declares a bibliography. Other notes
+/// are left alone, so a missing custom `.csl` file can't stop a note without
+/// citations from compiling. Adds one line near the top.
+pub(crate) fn with_citation_style(source: &str, style: Option<&str>) -> String {
+    let Some(style) = style else {
+        return source.to_string();
+    };
+    if !source_has_citation(source)
+        && !crate::typst_pipeline::bibliography::already_declares_bibliography(source)
+    {
+        return source.to_string();
+    }
+    crate::typst_pipeline::bibliography::with_default_style(source, style)
+}
+
+/// Append a `#bibliography(...)` for the reading view when the note cites works
+/// in the notebox's bibliography but declares none, so its citations resolve.
+/// The style comes from [`with_citation_style`].
 async fn maybe_inject_preview_bibliography(
     source: &str,
     state: &AppState,
     session: &NoteboxSession,
 ) -> String {
-    let explicit_bib_line = source.lines().enumerate().find(|(_, line)| {
-        let trimmed = line.trim();
-        !trimmed.starts_with("//") && trimmed.contains("#bibliography(")
-    });
-
-    if let Some((line_idx, line)) = explicit_bib_line {
-        // User has an explicit #bibliography() — inject style if missing.
-        return inject_style_into_explicit_bib(source, line, line_idx, state, session).await;
-    }
-
-    if !source_has_citation(source) {
+    if crate::typst_pipeline::bibliography::already_declares_bibliography(source)
+        || !source_has_citation(source)
+    {
         return source.to_string();
     }
 
@@ -149,48 +161,7 @@ async fn maybe_inject_preview_bibliography(
         }
     }
 
-    let style = resolve_citation_style(state, session).await;
-    match style {
-        Some(s) => format!(
-            "{}\n\n#bibliography(\"{}\", style: \"{}\")\n",
-            source.trim_end(),
-            bib,
-            s.replace('\\', "\\\\").replace('"', "\\\"")
-        ),
-        None => format!("{}\n\n#bibliography(\"{}\")\n", source.trim_end(), bib),
-    }
-}
-
-/// Add the user's style to a `#bibliography(...)` that has no `style:`.
-async fn inject_style_into_explicit_bib(
-    source: &str,
-    bib_line: &str,
-    _line_idx: usize,
-    state: &AppState,
-    session: &NoteboxSession,
-) -> String {
-    if bib_line.contains("style:") {
-        return source.to_string();
-    }
-    let Some(style) = resolve_citation_style(state, session).await else {
-        return source.to_string();
-    };
-    let escaped = style.replace('\\', "\\\\").replace('"', "\\\"");
-    // Insert `style: "..."` before the closing `)` of the #bibliography() call.
-    let trimmed = bib_line.trim();
-    if let Some(close_paren) = trimmed.rfind(')') {
-        let before = &trimmed[..close_paren];
-        let after = &trimmed[close_paren..];
-        let separator = if before.trim_end().ends_with(',') || before.trim_end().ends_with('(') {
-            " "
-        } else {
-            ", "
-        };
-        let new_line = format!("{}{separator}style: \"{escaped}\"{after}", before);
-        source.replace(trimmed, &new_line)
-    } else {
-        source.to_string()
-    }
+    crate::typst_pipeline::bibliography::append_bibliography_call(source, &bib)
 }
 
 /// Escape `@key`s that match no bibliography entry (e.g. email addresses) so
@@ -308,6 +279,8 @@ async fn compile_html_source(
     let original_lines = source.lines().count();
     let source = maybe_inject_set_notebox(source, state, CompilePurpose::ReadingView).await;
     let source = inject_style_cascade(&source, path_arg, state).await;
+    let style = resolve_citation_style(state, session).await;
+    let source = with_citation_style(&source, style.as_deref());
     // Tag citations with `data-cite-key` so the Scroll Context panel can find
     // them (HTML only; see `style_injection::inject_cite_tagging`).
     let source = style_injection::inject_cite_tagging(&source);
@@ -493,9 +466,51 @@ async fn resolve_preview_bib_path(session: &NoteboxSession) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{inject_set_notebox, CompilePurpose};
+    use super::{inject_set_notebox, with_citation_style, CompilePurpose};
 
     const NOTE: &str = "#import \"/.inkycap/notebox.typ\": *\n= Body\n";
+
+    /// A note's own bibliography without `style:` gets the user's style from a
+    /// set rule, and the call itself is left exactly as written. Preview and
+    /// every export use this one step, so they can't disagree on the style.
+    #[test]
+    fn own_bibliography_without_style_gets_the_default_style() {
+        let src = format!(
+            "{NOTE}As shown @otlet1934[p. 64].\n#bibliography(\"/.inkycap/zotero-export.bib\", title: [References])\n"
+        );
+        let out = with_citation_style(&src, Some("chicago-author-date"));
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(
+            lines[1],
+            "#set bibliography(style: \"chicago-author-date\")"
+        );
+        assert!(
+            out.contains("#bibliography(\"/.inkycap/zotero-export.bib\", title: [References])\n")
+        );
+    }
+
+    /// A style the note names itself stays: the set rule only fills in a
+    /// missing `style:`, which Typst does for us.
+    #[test]
+    fn own_style_is_left_for_typst_to_keep() {
+        let src = format!("{NOTE}@a\n#bibliography(\"/r.bib\", style: \"apa\")\n");
+        let out = with_citation_style(&src, Some("chicago-author-date"));
+        assert!(out.contains("#bibliography(\"/r.bib\", style: \"apa\")"));
+        // One rule, after the import, before the note's own call.
+        assert_eq!(out.matches("#set bibliography(").count(), 1);
+        assert!(out.find("#set bibliography(").unwrap() < out.find("style: \"apa\"").unwrap());
+    }
+
+    #[test]
+    fn notes_without_citations_or_bibliography_are_unchanged() {
+        assert_eq!(with_citation_style(NOTE, Some("apa")), NOTE);
+    }
+
+    #[test]
+    fn no_style_leaves_the_note_unchanged() {
+        let src = format!("{NOTE}@a\n");
+        assert_eq!(with_citation_style(&src, None), src);
+    }
 
     #[test]
     fn export_with_default_toggles_is_unchanged() {

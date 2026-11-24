@@ -414,7 +414,6 @@ mod tests {
                 &note,
                 format!("{custom}\n= Chapter\n\nBody.\n"),
                 template,
-                None,
                 PdfStandardPreset::default(),
                 false,
             )

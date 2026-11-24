@@ -136,10 +136,7 @@ pub async fn open_notebox(
 
     // Fast path: set up the root and storage and list collections, so the file
     // tree can render right away.
-    let global_citations = state.settings.read().await.citations.clone();
-    let note_count = session
-        .open_notebox_fast(notebox_path.clone(), &global_citations)
-        .await?;
+    let note_count = session.open_notebox_fast(notebox_path.clone()).await?;
 
     // Replace the health monitor with one for this notebox. It detects a
     // vanished root and repairs `.inkycap/`.

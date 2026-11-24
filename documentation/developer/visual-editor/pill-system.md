@@ -15,11 +15,11 @@ There are three kinds. They are a **behavioural taxonomy**, not a declared type 
 
 | Kind | Where the pill sits | Visibility | Examples |
 |---|---|---|---|
-| **inline** | Inline in source flow, alongside formatted content | Shown when the cursor is on the call's line; hidden when cursor leaves | `strike`, `highlight`, `emph`, `strong`, `underline`, `overline`, `sub`, `super`, inline `quote`, `cite`, `task`, `due`, generic `#fn[…]` |
+| **inline** | Inline in source flow, alongside formatted content | Shown when the cursor is on the call's line; hidden when cursor leaves | `strike`, `highlight`, `emph`, `strong`, `underline`, `overline`, `sub`, `super`, inline `quote`, `task`, `due`, generic `#fn[…]` |
 | **block-row** | A row of its own, above the rendered block | Shown when the cursor is on the call's line; hidden when cursor leaves | `image`, `video`, `audio`, `callout`, block `quote` |
 | **embedded** | Part of a permanent widget's chrome (e.g. corner of a canvas) | Always visible — the pill belongs to the widget, not to the cursor | `verse`, `bibliography` |
 
-Two inline pills stay visible with the cursor away, because the pill is the only visible form of what it stands for: `annotation` (`AnnotationPillWidget` — the comment reads in the Changes & History pane, which the pill's click opens via [annotation-reveal.ts](../../../src/editor/typst-decorations/annotation-reveal.ts)) and Typst comments (`CommentPillWidget` — one pill per run of consecutive full-line comments, see [comments.ts](../../../src/editor/typst-decorations/comments.ts)).
+Three inline pills stay visible with the cursor away, because the pill is the only visible form of what it stands for: citations (`@key`, `@key[…]` and `#cite(...)`, all one `CitationWidget` pill from [citation-pill.ts](../../../src/editor/typst-decorations/citation-pill.ts), labelled with the key and any page; a caret inside a `@key` shows its source for typing), `annotation` (`AnnotationPillWidget` — the comment reads in the Changes & History pane, which the pill's click opens via [annotation-reveal.ts](../../../src/editor/typst-decorations/annotation-reveal.ts)) and Typst comments (`CommentPillWidget` — one pill per run of consecutive full-line comments, see [comments.ts](../../../src/editor/typst-decorations/comments.ts)).
 
 `line` is a special inline case: it renders as an `<hr>` when the cursor is away and surfaces a pill (`FuncChipWidget`) on its line. Interactive functions (`wikilink`, `tag`, `link`, `suggestion`), `table`, and `footnote` are full widgets with **no pill** (see "When NOT to add a pill").
 
@@ -31,7 +31,7 @@ This table is the audit reference. Use it to verify any change preserves the int
 |---|---|---|---|---|---|---|---|
 | `strike`, `highlight`, `emph`, `strong`, `underline`, `overline`, `sub`, `super` | inline | cursor on line | cursor away | yes | simple calls | only `highlight` (color) | yes (formatted, R12) |
 | inline `quote` | inline | cursor on line | cursor away | yes | simple calls | style, attribution | yes (R12) |
-| `cite` | inline (badge + pill) | cursor on line | cursor away | yes | simple calls | citation form | citation badge |
+| `cite`, `@key`, `@key[…]` | inline (the pill is the citation) | always | caret inside a `@key`, or *Edit source* | n/a | simple calls | page (supplement), form | key and page on the pill |
 | `task`, `due` | inline (widget + pill) | cursor on line | cursor away | yes | simple calls | `task`: body/due/done · `due`: date/label | widget (`#task[…]`: checkbox widget, live body) |
 | `sym` | inline | cursor on line | cursor away | yes | simple calls | symbol name | rendered glyph |
 | Generic fallback `#fn[…]` / `#fn(…)` | inline | cursor on line | cursor away | yes | simple calls | generic named-args (R10) | yes |
@@ -46,7 +46,7 @@ This table is the audit reference. Use it to verify any change preserves the int
 | `align` | inline wrapper | cursor on line | cursor away | yes | simple calls | left/center/right | wrapped content |
 | `csv` | inline | cursor on line | cursor away | yes | simple calls | file, delimiter, row-type | call label |
 | `verse` | embedded | always | never | no | never | options live on widget | yes (contentEditable canvas) |
-| `bibliography` | embedded | always | never | no | never | none | path label only |
+| `bibliography` | embedded | always | never | no | simple calls | title, no title, citation style | path label only |
 | `tag`, `wikilink`, `link`, `suggestion` | interactive widget | n/a (not a pill) | n/a | n/a | n/a | n/a | n/a |
 | `footnote` | widget (not a pill) | n/a | n/a | n/a | n/a | n/a | hidden in title attr |
 | `table` | block widget (not a pill) | n/a | n/a | n/a | n/a | n/a | full |
@@ -84,7 +84,7 @@ This is the only allowed split. A new pill's handling in `handleFuncCall()` (R10
 
 Both handlers live in `buildPillButton()` in [pill.ts](../../../src/editor/typst-decorations/pill.ts); the *Edit source* rule is in `buildSourceSection()`.
 
-`alwaysOfferEditSource` is set for callouts, block quotes, annotations, comment runs and the style preamble, which are long or multi-line but still edited in place. Verse and bibliography (embedded pills) set `allowEditSource: false` on their `PillModel`: their canvas IS the editor, so there's no inline-source mode for them. (Verse's alignment lives in the menu, not a bespoke popover.)
+`alwaysOfferEditSource` is set for callouts, block quotes, annotations, comment runs and the style preamble, which are long or multi-line but still edited in place. Verse (an embedded pill) sets `allowEditSource: false` on its `PillModel`: its canvas IS the editor, so there's no inline-source mode for it. (Verse's alignment lives in the menu, not a bespoke popover.)
 
 ### R6 — Pill menu: option sections + source + universal
 
@@ -125,7 +125,8 @@ The curated option builders live in [pill-options.ts](../../../src/editor/typst-
 | `csv` | `csvOptions` | File, delimiter, row-type |
 | `align` | `alignOptions` | left / center / right |
 | `figure` | `figureOptions` | Caption |
-| `cite` | `citeOptions` | Citation form (and convert `@key` shorthand → call) |
+| `cite` | `citeOptions` → `citationOptions` in [citation-pill.ts](../../../src/editor/typst-decorations/citation-pill.ts) | Page (`supplement`), form. `@key` takes `[…]` for a page and becomes `#cite(...)` only for a form other than normal |
+| `bibliography` | `bibliographyOptions` in [bibliography-pill.ts](../../../src/editor/typst-decorations/bibliography-pill.ts) | Title, no title (`title: none`), citation style (the default, the style in use, or *Choose a style…*, which opens the style picker) |
 | `task` | `taskOptions` | Body (string bodies only; a markup body is edited in place), due date, done toggle |
 | `due` | `dueOptions` | Date, description label |
 | `sym` | `symOptions` | Symbol name |

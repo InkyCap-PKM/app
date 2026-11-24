@@ -437,35 +437,36 @@ mod tests {
     #[test]
     fn inject_bibliography_when_citations_present() {
         let source = "#note()\nSome text @smith2020 and more.".to_string();
-        let result = maybe_inject_bibliography(source, Some("refs.bib"), None);
+        let result = maybe_inject_bibliography(source, Some("refs.bib"));
         assert!(result.contains("#bibliography(\"/refs.bib\")"));
     }
 
     #[test]
-    fn inject_bibliography_with_style() {
-        let source = "#note()\n@jones2021".to_string();
-        let result = maybe_inject_bibliography(source, Some("refs.bib"), Some("ieee"));
-        assert!(result.contains("#bibliography(\"/refs.bib\", style: \"ieee\")"));
+    fn declared_bibliography_is_left_alone() {
+        let source =
+            "#note()\n@jones2021\n#bibliography(\"/x.bib\", title: [References])\n".to_string();
+        let result = maybe_inject_bibliography(source.clone(), Some("refs.bib"));
+        assert_eq!(result, source);
     }
 
     #[test]
     fn no_bibliography_without_citations() {
         let source = "#note()\nNo citations here.".to_string();
-        let result = maybe_inject_bibliography(source.clone(), Some("refs.bib"), None);
+        let result = maybe_inject_bibliography(source.clone(), Some("refs.bib"));
         assert_eq!(result, source);
     }
 
     #[test]
     fn no_bibliography_without_bib_file() {
         let source = "#note()\n@smith2020".to_string();
-        let result = maybe_inject_bibliography(source.clone(), None, None);
+        let result = maybe_inject_bibliography(source.clone(), None);
         assert_eq!(result, source);
     }
 
     #[test]
     fn no_bibliography_for_import_at_signs() {
         let source = "#import \"@preview/pkg:0.1.0\": *\nNo citations.".to_string();
-        let result = maybe_inject_bibliography(source.clone(), Some("refs.bib"), None);
+        let result = maybe_inject_bibliography(source.clone(), Some("refs.bib"));
         assert_eq!(result, source);
     }
 

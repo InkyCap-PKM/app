@@ -15,7 +15,8 @@ use super::companion::{CompanionFiles, CompanionReport, LinkedFilesOptions};
 use super::helpers::{
     apply_review_mode, args_has_named_arg, find_matching_paren, inject_document_metadata,
     parse_date_to_typst_datetime, parse_first_string_arg, parse_named_string_arg,
-    prepare_bibliography, resolve_effective_bib, resolve_template_path_with_root,
+    prepare_bibliography, resolve_effective_bib, resolve_export_style,
+    resolve_template_path_with_root,
 };
 
 // ── Single-note PDF export ──────────────────────────────────────
@@ -220,25 +221,13 @@ pub async fn export_collection_note_pdf(
     compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
     let pdf_bytes: Vec<u8> = if let Some(ref template) = resolved_template {
         compiler
-            .compile_pdf_with_template(
-                &note_path_buf,
-                source,
-                template,
-                base.bibliography_style.as_deref(),
-                standard,
-                false,
-            )
+            .compile_pdf_with_template(&note_path_buf, source, template, standard, false)
             .map_err(|e| InkyCapError::ExportFailed(e.to_string()))?
             .bytes
     } else {
-        if let Some(ref style) = base.bibliography_style {
-            compiler.set_bibliography_style(Some(style.clone()));
-        }
-        let result = compiler
+        compiler
             .compile_pdf(&note_path_buf, source, standard)
-            .map_err(|e| InkyCapError::ExportFailed(e.to_string()));
-        compiler.set_bibliography_style(None);
-        result?
+            .map_err(|e| InkyCapError::ExportFailed(e.to_string()))?
     };
     drop(guard);
 
@@ -376,21 +365,9 @@ pub async fn export_collection_batch_pdf(
             continue;
         }
         let compile_result = if let Some(ref template) = resolved_template {
-            compiler.compile_pdf_with_template(
-                &note_path_buf,
-                source,
-                template,
-                base.bibliography_style.as_deref(),
-                standard,
-                bypass,
-            )
+            compiler.compile_pdf_with_template(&note_path_buf, source, template, standard, bypass)
         } else {
-            if let Some(ref style) = base.bibliography_style {
-                compiler.set_bibliography_style(Some(style.clone()));
-            }
-            let result = compiler.compile_pdf_with(&note_path_buf, source, standard, bypass);
-            compiler.set_bibliography_style(None);
-            result
+            compiler.compile_pdf_with(&note_path_buf, source, standard, bypass)
         };
 
         let output = match compile_result {
@@ -792,6 +769,8 @@ pub async fn export_collection_book_pdf(
         body_numbering_pattern.as_deref(),
         heading_numbering_pattern.as_deref(),
     );
+    let book_style =
+        resolve_export_style(base.bibliography_style.as_deref(), &state, &session).await;
 
     let mut compiler_guard = session.typst_compiler.lock().await;
     let compiler = compiler_guard
@@ -799,12 +778,12 @@ pub async fn export_collection_book_pdf(
         .ok_or(InkyCapError::NoteboxNotOpen)?;
     compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
 
-    if let Some(ref style) = base.bibliography_style {
-        compiler.set_bibliography_style(Some(style.clone()));
-    }
     let source =
         super::super::typst::maybe_inject_set_notebox(&source, &state, CompilePurpose::Export)
             .await;
+    // The same default-style rule as a single note, so a book whose collection
+    // names no style uses the user's, as each of its notes does on its own.
+    let source = super::super::typst::with_citation_style(&source, book_style.as_deref());
     // Escape stray `@` (emails like `athena@inkycap.org`) from the inlined
     // notes. The book doesn't go through `prepare_bibliography`, so it needs
     // this too, or one email would fail the whole compile.
@@ -821,7 +800,6 @@ pub async fn export_collection_book_pdf(
         book_pdf_standard,
         bypass_errors.unwrap_or(false),
     );
-    compiler.set_bibliography_style(None);
     let output = match compile_result {
         Ok(output) => output,
         Err(diags) => {

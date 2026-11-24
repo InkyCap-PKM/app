@@ -31,6 +31,7 @@ import ToastHost from "./components/ToastHost";
 import PromptHost from "./components/PromptHost";
 import FolderPickerHost from "./components/FolderPickerHost";
 import ReferencePickerHost from "./components/ReferencePickerHost";
+import CitationStylePickerHost from "./components/CitationStylePickerHost";
 import NoteboxSeedHost from "./components/NoteboxSeedHost";
 import TypAuditDialog from "./components/TypAuditDialog";
 import NameAuditDialog from "./components/NameAuditDialog";
@@ -500,6 +501,7 @@ const App: Component = () => {
         <PromptHost />
         <FolderPickerHost />
         <ReferencePickerHost />
+        <CitationStylePickerHost />
         <NoteboxSeedHost />
         <NoteboxRequiredOverlay />
       </div>

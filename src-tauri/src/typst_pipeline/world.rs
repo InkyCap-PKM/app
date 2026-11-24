@@ -296,9 +296,8 @@ impl NoteboxWorld {
         self.files.clear();
     }
 
-    /// Drop one file from both caches, so the next compile reads it again. For
-    /// the watcher, whose paths are already canonical.
-    #[allow(dead_code)]
+    /// Drop one file from both caches, so the next compile reads it again.
+    /// `abs_path` must be under the canonical notebox root.
     pub fn invalidate(&self, abs_path: &Path) {
         if let Some(id) = self.file_id_for(abs_path) {
             self.sources.invalidate(id);

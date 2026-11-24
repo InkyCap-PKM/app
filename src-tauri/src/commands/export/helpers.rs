@@ -15,7 +15,8 @@ pub(crate) fn apply_review_mode(content: &str, mode: Option<&str>) -> String {
 // ── Bibliography ────────────────────────────────────────────────
 
 /// The bibliography file for export: the collection's `bibliography_file`, else
-/// the citation settings (Zotero export or the configured `.bib`).
+/// the citation settings (the Zotero library exported fresh, or the configured
+/// `.bib`).
 pub(super) async fn resolve_effective_bib(
     collection_bib: Option<&str>,
     notebox_root: Option<&Path>,
@@ -30,31 +31,32 @@ pub(super) async fn resolve_effective_bib(
     let notebox_root = notebox_root?;
     let global = state.settings.read().await.citations.clone();
     let notebox = session.notebox_settings.read().await.citations.clone();
-    crate::state::configure_bibliography(notebox_root, &global, &notebox)
+    session
+        .refresh_bibliography_file(notebox_root, &global, &notebox)
+        .await
 }
 
-/// The citation style: the notebox's `custom_csl_path`, else the user's named
-/// style (e.g. `"chicago-notes"`), else `None`.
-pub(super) async fn resolve_user_bib_style(
+/// The citation style for an export: the collection's `bibliography_style`
+/// when it sets one, else the style the note's preview uses.
+pub(super) async fn resolve_export_style(
+    collection_style: Option<&str>,
     state: &State<'_, AppState>,
     session: &NoteboxSession,
 ) -> Option<String> {
-    let notebox = session.notebox_settings.read().await;
-    let global = state.settings.read().await;
-    notebox.citations.custom_csl_path.clone().or_else(|| {
-        global
-            .citations
-            .citation_style
-            .as_deref()
-            .filter(|s| !s.is_empty() && *s != "custom")
-            .map(String::from)
-    })
+    match collection_style.map(str::trim) {
+        Some(s) if !s.is_empty() => Some(s.to_string()),
+        _ => crate::commands::typst::resolve_citation_style(state.inner(), session).await,
+    }
 }
 
 /// Resolve the bibliography and style, add or hide the bibliography as needed, and
 /// escape stray `@` (emails like `athena@inkycap.org`) so a strict export doesn't
 /// fail on an unknown label, as the reading view does. Every export path that
 /// prepares a note goes through here.
+///
+/// The style is set with the same `#set bibliography(style: ...)` rule as the
+/// preview, so a bibliography the note declares itself, without `style:`, comes
+/// out in the same style in both.
 pub(super) async fn prepare_bibliography(
     source: String,
     collection_bib: Option<&str>,
@@ -63,14 +65,12 @@ pub(super) async fn prepare_bibliography(
     state: &State<'_, AppState>,
     session: &NoteboxSession,
 ) -> String {
-    let notebox_root = session.notebox_root.read().await;
+    let notebox_root = session.notebox_root.read().await.clone();
     let effective_bib =
         resolve_effective_bib(collection_bib, notebox_root.as_deref(), state, session).await;
-    let bib_style = match collection_bib_style {
-        Some(s) if !s.is_empty() => Some(s.to_string()),
-        _ => resolve_user_bib_style(state, session).await,
-    };
-    let source = maybe_inject_bibliography(source, effective_bib.as_deref(), bib_style.as_deref());
+    let bib_style = resolve_export_style(collection_bib_style, state, session).await;
+    let source = crate::commands::typst::with_citation_style(&source, bib_style.as_deref());
+    let source = maybe_inject_bibliography(source, effective_bib.as_deref());
     let source = apply_bibliography_visibility(source, include_bibliography);
     crate::commands::typst::escape_non_bib_citations(&source, state.inner(), session).await
 }
@@ -90,45 +90,18 @@ pub(super) fn apply_bibliography_visibility(source: String, include: bool) -> St
     format!("#show bibliography: _ => none\n\n{}", source)
 }
 
-/// Append a `#bibliography(...)` call to the source when the collection
-/// specifies a bibliography file and the source contains `@` citations.
-pub(super) fn maybe_inject_bibliography(
-    source: String,
-    bib_file: Option<&str>,
-    bib_style: Option<&str>,
-) -> String {
-    let Some(bib) = bib_file else { return source };
-    if bib.is_empty() {
+/// Append a `#bibliography(...)` call when there is a bibliography file and the
+/// source cites works but declares no bibliography of its own.
+pub(super) fn maybe_inject_bibliography(source: String, bib_file: Option<&str>) -> String {
+    let Some(bib) = bib_file.filter(|b| !b.is_empty()) else {
         return source;
     };
-    let bib = if bib.starts_with('/') {
-        bib.to_string()
-    } else {
-        format!("/{bib}")
-    };
-
-    let has_explicit_bib = source.lines().any(|line| {
-        let trimmed = line.trim();
-        !trimmed.starts_with("//") && trimmed.contains("#bibliography(")
-    });
-    if has_explicit_bib {
+    if crate::typst_pipeline::bibliography::already_declares_bibliography(&source)
+        || !crate::commands::typst::source_has_citation(&source)
+    {
         return source;
-    };
-
-    if !crate::commands::typst::source_has_citation(&source) {
-        return source;
-    };
-
-    let style_arg = match bib_style {
-        Some(s) if !s.is_empty() => format!(", style: \"{}\"", s),
-        _ => String::new(),
-    };
-    format!(
-        "{}\n\n#bibliography(\"{}\"{})\n",
-        source.trim_end(),
-        bib,
-        style_arg
-    )
+    }
+    crate::typst_pipeline::bibliography::append_bibliography_call(&source, bib)
 }
 
 // ── Wikilinks ───────────────────────────────────────────────────

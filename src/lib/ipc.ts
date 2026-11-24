@@ -45,6 +45,7 @@ import type {
   TypstCompileResult,
   TypstHtmlResult,
   BibEntry,
+  CitationStyleInfo,
   FileCitation,
   SourceReference,
   AggregatedCitation,
@@ -2437,6 +2438,11 @@ export async function aggregateCitations(
 
 export async function refreshBibliography(): Promise<string | null> {
   return invoke<string | null>("refresh_bibliography");
+}
+
+/** Every citation style built into Typst, as `style:` accepts them. */
+export async function listCitationStyles(): Promise<CitationStyleInfo[]> {
+  return invoke<CitationStyleInfo[]>("list_citation_styles");
 }
 
 export async function detectZoteroPath(): Promise<string | null> {

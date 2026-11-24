@@ -18,6 +18,7 @@ import { loadMediaObjectUrl, revokeBlobUrls } from "../lib/media-src";
 import { sanitizeNoteHtml } from "../lib/safe-html";
 import { t } from "../lib/i18n";
 import { settings } from "../stores/settings";
+import { bibliographyRevision } from "../stores/bibliography";
 import { localeVersion } from "../lib/i18n";
 import {
   tabs,
@@ -938,7 +939,8 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
   // ── Reading-mode compile ───────────────────────────────
 
   // Reading and preview panes compile from disk, so bump a revision on each
-  // save of this tab's path to make them recompile.
+  // save of this tab's path to make them recompile. A refreshed bibliography
+  // (see stores/bibliography.ts) recompiles them too.
   const [savedRevision, setSavedRevision] = createSignal(0);
   const onExternalSave = (e: Event) => {
     const savedPath = (e as CustomEvent).detail?.path as string | undefined;
@@ -951,9 +953,9 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
 
   const [compileResult] = createResource<
     TypstCompileResult | undefined,
-    readonly [string, TypstMode, "svg" | "html", number]
+    readonly [string, TypstMode, "svg" | "html", number, number]
   >(
-    () => [props.path, currentMode(), readingFormat(), savedRevision()] as const,
+    () => [props.path, currentMode(), readingFormat(), savedRevision(), bibliographyRevision()] as const,
     async ([path, mode, fmt]) => {
       if (mode !== "reading" || fmt !== "svg") return undefined;
       try {
@@ -966,9 +968,9 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
 
   const [htmlResult] = createResource<
     TypstHtmlResult | undefined,
-    readonly [string, TypstMode, "svg" | "html", number]
+    readonly [string, TypstMode, "svg" | "html", number, number]
   >(
-    () => [props.path, currentMode(), readingFormat(), savedRevision()] as const,
+    () => [props.path, currentMode(), readingFormat(), savedRevision(), bibliographyRevision()] as const,
     async ([path, mode, fmt]) => {
       if (mode !== "reading" || fmt !== "html") return undefined;
       try {

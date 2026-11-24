@@ -1042,17 +1042,8 @@ export const visualTheme = EditorView.theme({
     padding: "1px",
     cursor: "pointer",
   },
-  ".cm-typst-citation": {
-    display: "inline-block",
-    backgroundColor: "var(--bg-secondary)",
-    color: "var(--syntax-type)",
-    borderRadius: "var(--radius-sm)",
-    padding: "1px 5px",
-    fontSize: "0.9em",
-    fontFamily: "var(--editor-font-mono, monospace)",
-  },
-  // Cross-reference pill (`@heading`, `@fig-…`): like the citation chip but
-  // accent-tinted and in the body font, since it shows the target's text.
+  // Cross-reference pill (`@heading`, `@fig-…`): accent-tinted and in the body
+  // font, since it shows the target's text.
   ".cm-typst-ref-pill": {
     display: "inline-block",
     backgroundColor: "color-mix(in srgb, var(--accent) 12%, transparent)",

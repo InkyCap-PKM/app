@@ -2289,7 +2289,8 @@ export class BlockquoteAttributionRowWidget extends WidgetType {
 }
 
 // A bibliography renders as a pill placeholder, so it is visible without being
-// editable prose. The pill's menu offers source editing, copy and delete.
+// editable prose. The pill's menu sets the title and citation style (see
+// bibliography-pill.ts) and offers source editing, copy and delete.
 export class BibliographyBlockWidget extends WidgetType {
   constructor(readonly path: string, readonly pos: number) { super(); }
 
@@ -2300,11 +2301,15 @@ export class BibliographyBlockWidget extends WidgetType {
   toDOM(view: EditorView) {
     const wrap = document.createElement("div");
     wrap.className = "cm-typst-bibliography-block";
-    wrap.appendChild(buildPillButton("bibliography", view, () => ({
-      funcName: "bibliography",
-      callFrom: this.pos,
-      callTo: findCallEnd(view, this.pos),
-    })));
+    wrap.appendChild(buildPillButton("bibliography", view, () => {
+      const callTo = findCallEnd(view, this.pos);
+      return {
+        funcName: "bibliography",
+        callFrom: this.pos,
+        callTo,
+        optionSections: getPillOptions("bibliography", view, this.pos, callTo),
+      };
+    }));
     return wrap;
   }
 
@@ -2437,44 +2442,9 @@ function jumpToLabel(view: EditorView, label: string): void {
   view.focus();
 }
 
-export class CitationWidget extends WidgetType {
-  constructor(
-    readonly key: string,
-    readonly refFrom: number = 0,
-    readonly refTo: number = 0,
-  ) {
-    super();
-  }
-
-  eq(other: WidgetType) {
-    return other instanceof CitationWidget
-      && this.key === other.key
-      && this.refFrom === other.refFrom
-      && this.refTo === other.refTo;
-  }
-
-  toDOM(view: EditorView) {
-    const pill = document.createElement("span");
-    pill.className = "cm-typst-citation";
-    pill.textContent = `@${this.key}`;
-
-    pill.addEventListener("contextmenu", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      showCiteContextMenu(pill, view, this.key, this.refFrom, this.refTo);
-    });
-
-    return pill;
-  }
-
-  ignoreEvent(e: Event) {
-    return e.type === "contextmenu";
-  }
-}
-
 /**
  * A pill for an `@label` reference to a heading, figure, equation or table in
- * the note (the non-citation use of `@`). Unlike {@link CitationWidget} it
+ * the note (the non-citation use of `@`). Unlike the citation pill it
  * shows the target's text (e.g. the heading) rather than `@key`. Clicking jumps
  * to the label.
  */
@@ -2517,66 +2487,6 @@ export class ReferenceWidget extends WidgetType {
   ignoreEvent() {
     return true;
   }
-}
-
-function showCiteContextMenu(
-  anchor: HTMLElement,
-  view: EditorView,
-  key: string,
-  from: number,
-  to: number,
-) {
-  const currentSrc = view.state.doc.sliceString(from, Math.min(to, view.state.doc.length));
-  if (!currentSrc.startsWith("@")) return;
-
-  document.querySelectorAll(".cm-typst-pill-menu").forEach((m) => m.remove());
-
-  const menu = document.createElement("div");
-  menu.className = "cm-typst-pill-menu";
-  menu.setAttribute("role", "menu");
-
-  const item = document.createElement("button");
-  item.type = "button";
-  item.className = "cm-typst-pill-menu-item";
-  item.addEventListener("click", (e) => {
-    e.preventDefault();
-    menu.remove();
-    const replacement = `#cite(<${key}>)`;
-    view.dispatch({
-      changes: { from, to, insert: replacement },
-      selection: { anchor: from + replacement.length },
-    });
-    view.focus();
-  });
-  const label = document.createElement("span");
-  label.className = "cm-typst-pill-menu-label";
-  label.textContent = t("widget.citation.convertToAdvanced");
-  item.appendChild(label);
-  menu.appendChild(item);
-
-  view.dom.appendChild(menu);
-
-  const rect = anchor.getBoundingClientRect();
-  const editorRect = view.dom.getBoundingClientRect();
-  menu.style.position = "absolute";
-  menu.style.left = `${rect.left - editorRect.left}px`;
-  menu.style.top = `${rect.bottom - editorRect.top + 4}px`;
-
-  const close = (e: MouseEvent) => {
-    if (!menu.contains(e.target as Node)) {
-      menu.remove();
-      document.removeEventListener("mousedown", close, true);
-    }
-  };
-  const closeOnEscape = (e: KeyboardEvent) => {
-    if (e.key === "Escape") {
-      menu.remove();
-      document.removeEventListener("keydown", closeOnEscape, true);
-      view.focus();
-    }
-  };
-  document.addEventListener("mousedown", close, true);
-  document.addEventListener("keydown", closeOnEscape, true);
 }
 
 /** Collapse the selection to the start or end of a verse canvas. */

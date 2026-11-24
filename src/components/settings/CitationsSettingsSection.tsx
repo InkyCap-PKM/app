@@ -8,7 +8,8 @@ import { useI18n } from "../../lib/i18n";
 import { noteboxRootDefault } from "../../lib/dialog-defaults";
 import { normalizePath, pathStartsWith } from "../../lib/paths";
 import { open } from "@tauri-apps/plugin-dialog";
-import { SettingSelect, SettingLabel, citationStyleOptions } from "./shared";
+import { SettingSelect, SettingLabel } from "./shared";
+import { citationStyleOptions } from "../../lib/citation-styles";
 
 /// The Citation Style Language project, where users can download more `.csl`
 /// styles. Linked from the custom-CSL help text.

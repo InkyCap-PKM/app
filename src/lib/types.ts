@@ -1310,6 +1310,16 @@ export interface BibEntry {
   has_notes: boolean;
 }
 
+/** One of Typst's built-in citation styles (`list_citation_styles`). */
+export interface CitationStyleInfo {
+  /** The name to write in `style:`, e.g. `"chicago-author-date"`. */
+  name: string;
+  /** Other names Typst accepts for the same style, e.g. `"apa"`. */
+  aliases: string[];
+  /** The style's own title, in English as the style file gives it. */
+  title: string;
+}
+
 export interface FileCitation {
   key: string;
   title: string | null;

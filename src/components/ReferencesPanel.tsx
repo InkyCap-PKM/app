@@ -1,11 +1,14 @@
 import { errorText } from "../lib/errors";
-import { Component, createResource, createSignal, createMemo, For, Show, onMount, onCleanup } from "solid-js";
+import { Component, createResource, createSignal, createMemo, createEffect, For, Show, onMount, onCleanup } from "solid-js";
 import { attachListNav } from "../lib/list-nav";
 import CitationRow from "./CitationRow";
 import SourceReferenceSection from "./SourceReferenceSection";
 import { getActiveTab } from "../stores/tabs";
 import { pathEquals } from "../lib/paths";
 import { noteboxSettings } from "../stores/settings";
+import { refreshBibliography } from "../stores/bibliography";
+import { activeEditorView } from "../stores/editor";
+import { appendBibliography, declaresBibliography } from "../lib/bibliography-insert";
 import type { FileCitation, BibEntry } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { fuzzyMatch, compareMatches, type FuzzyMatch } from "../lib/fuzzy";
@@ -16,7 +19,7 @@ import { clickOutside } from "../lib/clickOutside";
 import { showToast } from "../stores/toasts";
 import { showContextMenu } from "../lib/context-menu";
 import { referenceMenuEntries, type Reference } from "../lib/literature-notes";
-import { RefreshCw, ClipboardCopy, ChevronRight, ChevronDown } from "lucide-solid";
+import { RefreshCw, ClipboardCopy, ChevronRight, ChevronDown, BookPlus } from "lucide-solid";
 
 const PAGE_SIZE = 50;
 
@@ -127,6 +130,14 @@ const ReferencesPanel: Component = () => {
     return tab?.type === "file" ? tab : undefined;
   };
 
+  // Whether the open note has its own `#bibliography(...)`, read from its editor
+  // whenever the citations are (on open, on save, after inserting one).
+  const [hasOwnBibliography, setHasOwnBibliography] = createSignal(false);
+  createEffect(() => {
+    const handle = activeEditorView();
+    setHasOwnBibliography(declaresBibliography(handle?.getText() ?? ""));
+  });
+
   const [citations, { refetch: refetchCitations }] = createResource(
     () => {
       const path = activeFileTab()?.path;
@@ -136,6 +147,7 @@ const ReferencesPanel: Component = () => {
     async (path) => {
       if (!path) return [];
       setCitationError(null);
+      setHasOwnBibliography(declaresBibliography(activeEditorView()?.getText() ?? ""));
       try {
         return await ipc.getFileCitations(path);
       } catch (err) {
@@ -274,7 +286,7 @@ const ReferencesPanel: Component = () => {
   async function handleRefresh() {
     setRefreshing(true);
     try {
-      await ipc.refreshBibliography();
+      await refreshBibliography();
       refetchCitations();
       if (showAll()) {
         setShowAll(false);
@@ -285,6 +297,16 @@ const ReferencesPanel: Component = () => {
     } finally {
       setRefreshing(false);
     }
+  }
+
+  // Add `#bibliography(...)` to the end of the note, so its reference list
+  // sits there with a pill to set its title and style. A note without one gets
+  // a list at the end when it compiles anyway; this makes it the note's own.
+  function handleInsertBibliography() {
+    const handle = activeEditorView();
+    if (!handle) return;
+    appendBibliography(handle.view);
+    setHasOwnBibliography(true);
   }
 
   const [copyingBib, setCopyingBib] = createSignal(false);
@@ -505,6 +527,16 @@ const ReferencesPanel: Component = () => {
           </span>
           <Show when={citations()?.length}>
             <div class="right-panel__header-actions">
+              <Show when={!hasOwnBibliography() && activeEditorView()}>
+                <button
+                  class="ui-icon-btn"
+                  onClick={handleInsertBibliography}
+                  title={t("references.insertBib")}
+                  aria-label={t("references.insertBib")}
+                >
+                  <BookPlus size={14} />
+                </button>
+              </Show>
               <button
                 class="ui-icon-btn"
                 onClick={handleCopyBibliography}

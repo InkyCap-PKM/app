@@ -163,29 +163,7 @@ pub fn inject_style_rules(
         return source.to_string();
     }
 
-    let mut out = String::with_capacity(source.len() + injection.len() + 4);
-    let mut injected = false;
-
-    for line in source.lines() {
-        out.push_str(line);
-        out.push('\n');
-
-        if !injected && crate::notebox_package::is_notebox_import_line(line) {
-            out.push_str(&injection);
-            out.push('\n');
-            injected = true;
-        }
-    }
-
-    if !injected {
-        // Fallback: prepend to source
-        let mut prepended = injection;
-        prepended.push('\n');
-        prepended.push_str(&out);
-        return prepended;
-    }
-
-    out
+    crate::notebox_package::insert_after_notebox_import(source, &injection)
 }
 
 /// Add a `show cite` rule that tags each citation with `data-cite-key` in HTML,
@@ -198,24 +176,7 @@ pub fn inject_cite_tagging(source: &str) -> String {
     // the angle brackets to leave the bare citation key.
     const RULE: &str = r#"#show cite: it => html.elem("span", attrs: ("data-cite-key": repr(it.key).slice(1, -1)), it)"#;
 
-    let mut out = String::with_capacity(source.len() + RULE.len() + 2);
-    let mut injected = false;
-    for line in source.lines() {
-        out.push_str(line);
-        out.push('\n');
-        if !injected && crate::notebox_package::is_notebox_import_line(line) {
-            out.push_str(RULE);
-            out.push('\n');
-            injected = true;
-        }
-    }
-    if !injected {
-        let mut prepended = String::from(RULE);
-        prepended.push('\n');
-        prepended.push_str(&out);
-        return prepended;
-    }
-    out
+    crate::notebox_package::insert_after_notebox_import(source, RULE)
 }
 
 /// Add `#show align: html-align` on the HTML path. typst-html has no output for

@@ -58,12 +58,11 @@ fn main() {
     let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
     runtime.block_on(async {
         let state = AppState::new();
-        let citations = state.settings.read().await.citations.clone();
         let session = state.session("measure").await;
         for run in ["cold", "warm"] {
             reset_peak();
             session
-                .open_notebox_fast(notebox.clone(), &citations)
+                .open_notebox_fast(notebox.clone())
                 .await
                 .expect("open notebox");
             report(&format!("{run}: opened"), false);

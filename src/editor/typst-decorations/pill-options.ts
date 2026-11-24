@@ -9,6 +9,8 @@
 import { type EditorView } from "@codemirror/view";
 import {
   applyCallTransform,
+  contentBlockLiteral,
+  contentBlockText,
   findArgList,
   findCallEnd,
   readNamedArg,
@@ -25,6 +27,8 @@ import {
   calloutKindLabel,
   parseCalloutColorLiteral,
 } from "./callout-kinds";
+import { citationOptions } from "./citation-pill";
+import { bibliographyOptions } from "./bibliography-pill";
 
 // Highlighter colours in rainbow order: the Typst literal written to `fill:
 // rgb(...)` and a label. The literal stays fixed so a preset is recognized
@@ -96,6 +100,7 @@ const REGISTRY: Record<string, PillOptionsBuilder> = {
   align:     alignOptions,
   figure:    figureOptions,
   cite:      citeOptions,
+  bibliography: bibliographyOptions,
   task:      taskOptions,
   due:       dueOptions,
   sym:       symOptions,
@@ -669,58 +674,22 @@ function alignOptions(view: EditorView, from: number, to: number): PillMenuSecti
 
 function figureOptions(view: EditorView, from: number, to: number): PillMenuSection[] {
   const src = readCallSource(view, from, to);
-  const captionRaw = readNamedArg(src, "caption");
-  // caption: [Hello] — strip surrounding brackets, then unescape \] and \\.
-  const caption = captionRaw && captionRaw.startsWith("[") && captionRaw.endsWith("]")
-    ? captionRaw.slice(1, -1).replace(/\\\]/g, "]").replace(/\\\\/g, "\\")
-    : "";
+  const caption = contentBlockText(readNamedArg(src, "caption")) ?? "";
   return [{
     items: [{
       label: t("pill.figure.caption"),
       input: {
         value: caption,
         placeholder: t("pill.figure.caption.placeholder"),
-        onCommit: (v) => {
-          const t = v.trim();
-          const literal = t === "" ? null : "[" + t.replace(/\\/g, "\\\\").replace(/\]/g, "\\]") + "]";
-          applyCallTransform(view, from, (s) => upsertNamedArg(s, "caption", literal));
-        },
+        onCommit: (v) => applyCallTransform(view, from, (s) =>
+          upsertNamedArg(s, "caption", contentBlockLiteral(v))),
       },
     }],
   }];
 }
 
-function citeOptions(view: EditorView, from: number, to: number): PillMenuSection[] {
-  const src = readCallSource(view, from, to);
-  const isShorthand = src.startsWith("@");
-  if (!isShorthand) {
-    const form = readNamedArg(src, "form");
-    const currentForm = form ?? "normal";
-    return [{
-      heading: t("pill.cite.form"),
-      items: (["normal", "prose", "full", "author", "year"] as const).map((f) => ({
-        label: t("pill.cite.form." + f),
-        isActive: currentForm === f,
-        onSelect: () => applyCallTransform(view, from, (s) =>
-          upsertNamedArg(s, "form", f === "normal" ? null : `"${f}"`)),
-      })),
-    }];
-  }
-  const key = src.slice(1);
-  return [{
-    heading: t("pill.cite.citation"),
-    items: [{
-      label: t("pill.cite.convert"),
-      title: t("pill.cite.convert.title"),
-      onSelect: () => {
-        view.dispatch({
-          changes: { from, to, insert: `#cite(<${key}>)` },
-          selection: { anchor: from + `#cite(<${key}>)`.length },
-        });
-        view.focus();
-      },
-    }],
-  }];
+function citeOptions(view: EditorView, from: number): PillMenuSection[] {
+  return citationOptions(view, from);
 }
 
 function highlightOptions(view: EditorView, from: number, to: number): PillMenuSection[] {

@@ -75,6 +75,7 @@ In the visual editor, all Typst function markup that is **not** in the simple di
 - Content-bracket functions (`strike`, `highlight`, `emph`, `strong`, `callout`, `quote`, `verse`) show pill + visible content when the cursor is on the line, and hide the markup entirely when the cursor is away.
 - Block widget functions (`image`, `video`, `audio`) show pill + editable value on cursor line.
 - Interactive functions (`wikilink`, `tag`, `link`) always render as semantic widgets (no pill).
+- Citations (`@key`, `@key[…]`, `#cite(...)`) always render as one pill, labelled with the key and any page, whose menu sets the page and form ([citation-pill.ts](src/editor/typst-decorations/citation-pill.ts)).
 - Unknown `#func[content]` calls use the same pill pattern via the default case.
 
 ### Metadata via the `inkycap-notebox` package

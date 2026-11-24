@@ -198,8 +198,6 @@ fn join_messages(diags: &[TypstDiagnostic]) -> String {
 
 pub struct TypstCompiler {
     world: NoteboxWorld,
-    /// Citation style (e.g. "apa", "ieee", "mla"). `None` uses Typst default.
-    bibliography_style: Option<String>,
     package_facts: PackageFactsCache,
 }
 
@@ -207,7 +205,6 @@ impl TypstCompiler {
     pub fn new(notebox_root: PathBuf) -> Self {
         Self {
             world: NoteboxWorld::new(notebox_root),
-            bibliography_style: None,
             package_facts: PackageFactsCache::default(),
         }
     }
@@ -309,8 +306,16 @@ impl TypstCompiler {
         }
     }
 
-    pub fn set_bibliography_style(&mut self, style: Option<String>) {
-        self.bibliography_style = style;
+    /// Make the next compile read the notebox file at `root_path` (notebox-root-
+    /// absolute, e.g. `/.inkycap/zotero-export.bib`) from disk again, for a
+    /// file InkyCap has just rewritten. A path outside the notebox is ignored.
+    pub fn invalidate_notebox_file(&self, root_path: &str) {
+        let rel = root_path.trim_start_matches('/');
+        if rel.is_empty() {
+            return;
+        }
+        let abs = self.world.notebox_root().join(rel);
+        self.world.invalidate(&abs);
     }
 
     /// Drop a single file from the compiler's caches. Hook for the watcher;
@@ -520,19 +525,12 @@ impl TypstCompiler {
         abs_path: &Path,
         source: String,
         template: &str,
-        bib_style: Option<&str>,
         pdf_standard: PdfStandardPreset,
         bypass_errors: bool,
     ) -> Result<PdfOutput, CompileError> {
         let with_template =
             crate::notebox_package::add_import_above_notebox_import(&source, template);
-        let old_style = self.bibliography_style.clone();
-        if let Some(style) = bib_style {
-            self.bibliography_style = Some(style.to_string());
-        }
-        let result = self.compile_pdf_with(abs_path, with_template, pdf_standard, bypass_errors);
-        self.bibliography_style = old_style;
-        result
+        self.compile_pdf_with(abs_path, with_template, pdf_standard, bypass_errors)
     }
 
     /// Compile the note at `abs_path` to HTML with Typst's HTML backend. Failed

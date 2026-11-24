@@ -30,7 +30,6 @@ import {
   WikilinkWidget,
   LinkWidget,
   LabelLinkWidget,
-  CitationWidget,
   ReferenceWidget,
   VerseWidget,
   FootnoteWidget,
@@ -38,6 +37,7 @@ import {
   type SuggestionKind,
   createVerseEntryKeymap,
 } from "./widgets";
+import { CitationWidget, parseCitation } from "./citation-pill";
 import { calloutColor, readCalloutColorArg } from "./callout-kinds";
 import { TableWidget, editingTableRange, editingTableStarts } from "./table-widget";
 import { inlineOnlyFacet, scopeRangeField } from "./cell-scope";
@@ -937,10 +937,12 @@ export function buildDecorations(
           }
           case "Ref": {
             const refText = state.doc.sliceString(node.from, node.to);
-            if (refText.startsWith("@")) {
+            const parts = refText.startsWith("@") ? parseCitation(refText) : null;
+            if (parts) {
               // `@` refers either to a bibliography entry or to a document
-              // `<label>`; check both.
-              const key = refText.slice(1);
+              // `<label>`; check both. A supplement (`@key[p. 64]`) isn't part
+              // of the key.
+              const key = parts.key;
               const bibKeys = getCachedBibKeys();
               const label = getDocLabelMap().get(key);
               // An unresolved `@` after an email local part (`athena@inkycap.org`) is
@@ -959,7 +961,7 @@ export function buildDecorations(
               if (bibKeys.has(key)) {
                 decos.push(
                   Decoration.replace({
-                    widget: new CitationWidget(key, node.from, node.to),
+                    widget: new CitationWidget(key, parts.supplement, node.from, node.to),
                     inclusiveStart: false,
                     inclusiveEnd: false,
                   }).range(node.from, node.to),
@@ -977,7 +979,7 @@ export function buildDecorations(
                 // doesn't flash as broken.
                 decos.push(
                   Decoration.replace({
-                    widget: new CitationWidget(key, node.from, node.to),
+                    widget: new CitationWidget(key, parts.supplement, node.from, node.to),
                     inclusiveStart: false,
                     inclusiveEnd: false,
                   }).range(node.from, node.to),
@@ -1717,16 +1719,13 @@ export function handleFuncCall(
       return false;
     }
     case "cite": {
-      const keyMatch = text.match(/<([^>]+)>/);
-      if (keyMatch) {
-        if (showPill) {
-          decos.push(
-            Decoration.widget({ widget: new FuncPillWidget(from, "cite"), side: -1 }).range(from),
-          );
-        }
+      // The citation pill stands in for the whole call, as for `@key`; its
+      // menu sets the page and form, and "Edit source" shows the call.
+      const parts = parseCitation(text);
+      if (parts) {
         decos.push(
           Decoration.replace({
-            widget: new CitationWidget(keyMatch[1]),
+            widget: new CitationWidget(parts.key, parts.supplement, from, to),
             inclusiveStart: false,
             inclusiveEnd: false,
           }).range(from, to),

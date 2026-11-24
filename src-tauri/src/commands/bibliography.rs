@@ -312,8 +312,9 @@ pub(crate) async fn load_entries_inner(
     }
 }
 
-/// Re-export the Zotero bibliography to `.inkycap/zotero-export.bib`.
-/// Called from the "refresh" button in the References panel.
+/// Re-export the Zotero bibliography to `.inkycap/zotero-export.bib` and have
+/// the compiler read the bibliography again, so the reading view and exports
+/// show the change. Called from the "refresh" button in the References panel.
 #[tauri::command]
 pub async fn refresh_bibliography(
     state: State<'_, AppState>,
@@ -328,11 +329,16 @@ pub async fn refresh_bibliography(
         .ok_or(InkyCapError::NoteboxNotOpen)?;
     let global = state.settings.read().await.citations.clone();
     let notebox = session.notebox_settings.read().await.citations.clone();
-    Ok(crate::state::configure_bibliography(
-        &notebox_root,
-        &global,
-        &notebox,
-    ))
+    Ok(session
+        .refresh_bibliography_file(&notebox_root, &global, &notebox)
+        .await)
+}
+
+/// Every citation style built into Typst, for the style pickers: the name to
+/// write in `style:`, other accepted names, and the style's title.
+#[tauri::command]
+pub async fn list_citation_styles() -> Result<Vec<bibliography::CitationStyleInfo>, InkyCapError> {
+    Ok(bibliography::citation_styles())
 }
 
 /// Entries skipped in the last BibTeX parse because of conversion errors, so

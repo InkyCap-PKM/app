@@ -155,14 +155,7 @@ impl NoteboxSession {
     /// indexes and return the approximate number of `.typ` files. The slow work happens
     /// later in [`NoteboxSession::build_indexes`], usually as a background task started
     /// by `open_notebox`.
-    ///
-    /// `global_citations` is passed in because the compiler's citation style falls back
-    /// to the global style when the notebox has none.
-    pub async fn open_notebox_fast(
-        &self,
-        path: PathBuf,
-        global_citations: &CitationSettings,
-    ) -> crate::errors::Result<usize> {
+    pub async fn open_notebox_fast(&self, path: PathBuf) -> crate::errors::Result<usize> {
         let storage = Arc::new(LocalNoteboxStorage::new(path.clone())?);
         // Use the canonical root everywhere, matching what the storage layer
         // validates (symlinks, trailing separators).
@@ -206,20 +199,7 @@ impl NoteboxSession {
 
         // Create the Typst compiler now, so the first reading-mode render
         // doesn't pay for font discovery (about 340ms).
-        let mut compiler = TypstCompiler::new(canonical_path.clone());
-        {
-            let notebox = self.notebox_settings.read().await;
-            // The notebox's `custom_csl_path` overrides the global style;
-            // "custom" with no path means no style.
-            let style = notebox.citations.custom_csl_path.clone().or_else(|| {
-                global_citations
-                    .citation_style
-                    .as_deref()
-                    .filter(|s| *s != "custom")
-                    .map(String::from)
-            });
-            compiler.set_bibliography_style(style);
-        }
+        let compiler = TypstCompiler::new(canonical_path.clone());
         *self.typst_compiler.lock().await = Some(compiler);
         *self.notebox_root.write().await = Some(canonical_path);
         *self.storage.write().await = Some(storage);
@@ -672,6 +652,30 @@ impl NoteboxSession {
             .await
             .clone()
             .ok_or(crate::errors::InkyCapError::NoteboxNotOpen)
+    }
+
+    /// Bring the notebox's bibliography file up to date and make the compiler
+    /// read it again: [`configure_bibliography`] (which re-exports the Zotero
+    /// library), then drop the compiler's saved copy of the file, which it
+    /// otherwise keeps until the notebox closes. Every refresh of the
+    /// bibliography goes through here: the References panel's Refresh button,
+    /// saving the notebox settings, and each export. Returns the
+    /// notebox-root-absolute path, as `configure_bibliography` does.
+    ///
+    /// Takes `notebox_root` and `notebox` rather than reading them, so a
+    /// caller holding `notebox_root` or saving new settings can pass its own.
+    /// Takes the `typst_compiler` lock briefly; don't call while holding it.
+    pub async fn refresh_bibliography_file(
+        &self,
+        notebox_root: &Path,
+        global: &CitationSettings,
+        notebox: &NoteboxCitationSettings,
+    ) -> Option<String> {
+        let path = configure_bibliography(notebox_root, global, notebox)?;
+        if let Some(compiler) = self.typst_compiler.lock().await.as_ref() {
+            compiler.invalidate_notebox_file(&path);
+        }
+        Some(path)
     }
 
     /// Fallback for [`reindex_note`] when a fresh stat is unavailable: copy the
@@ -1205,10 +1209,7 @@ mod tests {
         std::fs::write(dir.join("a.typ"), note_source("One")).unwrap();
         std::fs::write(dir.join("b.typ"), note_source("Other")).unwrap();
         let session = NoteboxSession::new("main".into(), None);
-        session
-            .open_notebox_fast(dir.to_path_buf(), &CitationSettings::default())
-            .await
-            .unwrap();
+        session.open_notebox_fast(dir.to_path_buf()).await.unwrap();
         session.build_indexes().await.unwrap();
         let root = session
             .get_storage()
