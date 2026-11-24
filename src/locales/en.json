@@ -680,7 +680,7 @@
   "pane.splitDown": "Split down",
   "pane.splitWithPreview": "Split with preview",
   "pane.close": "Close this pane",
-  "tab.syncedPreview": "Synced preview — edits here update the preview pane",
+  "tab.syncedPreview": "Synced preview: edits here update the preview, and the two panes scroll together",
   "command.pane.splitRight": "Split editor right",
   "command.pane.splitDown": "Split editor down",
   "command.pane.splitWithPreview": "Split with synced preview",

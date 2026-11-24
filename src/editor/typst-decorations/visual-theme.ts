@@ -1,10 +1,11 @@
 import { EditorView } from "@codemirror/view";
 
 // Text inside a heading takes the heading colour, except link-type elements
-// (wikilink, link, footnote), which keep their own. Heading marks are
-// `inclusiveEnd`, so a heading ending in a wikilink contains its pill and
+// (wikilink, link, footnote) and highlights, which keep their own. Heading marks
+// are `inclusiveEnd`, so a heading ending in a wikilink contains its pill and
 // brackets.
-const HEADING_LINK_EXEMPT = [
+const HEADING_COLOR_EXEMPT = [
+  ".cm-typst-highlight",
   ".cm-typst-wikilink",
   ".cm-typst-link",
   ".cm-typst-footnote",
@@ -12,10 +13,10 @@ const HEADING_LINK_EXEMPT = [
   ".cm-typst-wikilink-bracket",
   ".cm-typst-wikilink-sep",
 ];
-const headingInnerNonLinkSelector = [1, 2, 3, 4, 5, 6]
+const headingInnerSelector = [1, 2, 3, 4, 5, 6]
   .map(
     (n) =>
-      `.cm-typst-h${n} span${HEADING_LINK_EXEMPT.map((c) => `:not(${c})`).join("")}`,
+      `.cm-typst-h${n} span${HEADING_COLOR_EXEMPT.map((c) => `:not(${c})`).join("")}`,
   )
   .join(", ");
 
@@ -87,6 +88,10 @@ export const visualTheme = EditorView.theme({
     // Highlight colours are light in every theme, so pin near-black text for
     // contrast in dark mode.
     color: "#1a1a1a", // token-exempt: highlight pastels are light in every theme
+    // Formatting with a colour of its own (bold, strikethrough) takes the same
+    // text colour on a highlight.
+    "--syntax-strong": "currentColor",
+    "--syntax-strike": "currentColor",
   },
   // R12 marks for sub/super/underline/overline: visual representation
   // applied directly to the live Typst source so the body stays editable.
@@ -203,7 +208,7 @@ export const visualTheme = EditorView.theme({
   ".cm-typst-h1, .cm-typst-h2, .cm-typst-h3, .cm-typst-h4, .cm-typst-h5, .cm-typst-h6": {
     color: "var(--fg-primary)",
   },
-  [headingInnerNonLinkSelector]: {
+  [headingInnerSelector]: {
     color: "inherit !important",
   },
   ".cm-typst-h1": { fontSize: "1.8em", fontWeight: "bold", lineHeight: "1.3" },

@@ -136,12 +136,14 @@ export function highlightInlineStyle(text: string, pinTextColor: boolean): strin
 }
 
 /**
- * A `Decoration.mark` for a `#highlight(…)` call with any custom fill, stroke
- * or radius, or the plain highlight mark without them.
+ * A `Decoration.mark` for a `#highlight(…)` call: the highlight class, with any
+ * custom fill, stroke or radius on top.
  */
 export function buildHighlightMark(text: string): Decoration {
   const style = highlightInlineStyle(text, true);
-  return style ? Decoration.mark({ attributes: { style } }) : highlight;
+  return style
+    ? Decoration.mark({ class: "cm-typst-highlight", attributes: { style } })
+    : highlight;
 }
 
 /**

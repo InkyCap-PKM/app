@@ -117,7 +117,7 @@ To work on two things at once, *split the editor*. At the right edge of the tab 
 
 Each pane keeps its own reading format and its own right-panel context, so you can, for example, draft in one pane while reading a reference in another.
 
-*Split with preview* opens a live reading view of the _same_ note beside the editor, and that preview updates as you type. The editing tab is marked as a *Synced preview* so you can tell the pair apart, and each note can have one such pair at a time. The preview uses your *Reading view format preference* from #wikilink("2 - Settings"). You can also start one from the command palette with *Split with synced preview*; it has no keyboard shortcut of its own.
+*Split with preview* opens a live reading view of the _same_ note beside the editor, and that preview updates as you type. The two panes scroll together: scroll either one and the other shows the same part of the note. The editing tab is marked as a *Synced preview* so you can tell the pair apart, and each note can have one such pair at a time. The preview uses your *Reading view format preference* from #wikilink("2 - Settings"). You can also start one from the command palette with *Split with synced preview*; it has no keyboard shortcut of its own.
 
 #callout("tip")[ Each note can be viewed in three modes: *Source edit*, *Visual edit*, and *Reading view*. Switch between source and visual with *Ctrl+Shift+M*, and toggle reading view with *Ctrl+Shift+R*. See #wikilink("2 - Editing Notes") for what each mode is best for. ]
 

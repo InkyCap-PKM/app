@@ -1415,7 +1415,19 @@ export interface TypstCompileResult {
    *  render: `frames` is populated and `diagnostics` lists the real errors. */
   recovered: boolean;
   frames: TypstFrame[];
+  /** Where each row of the pages comes from in the note's source. */
+  positions: PagePosition[];
   diagnostics: TypstDiagnostic[];
+}
+
+/** A source position (1-based line plus how far along it, so `3.5` is halfway
+ *  along line 3) and where it appears in the compiled pages. */
+export interface PagePosition {
+  position: number;
+  /** 0-based. */
+  page: number;
+  /** Distance from the top of the page, in Typst points. */
+  y_pt: number;
 }
 
 export interface TypstHtmlResult {
@@ -1423,6 +1435,8 @@ export interface TypstHtmlResult {
   /** See {@link TypstCompileResult.recovered}: true when `html` was salvaged
    *  by error recovery after a failed compile. */
   recovered: boolean;
+  /** Blocks carry their source position (as in {@link PagePosition}) in a
+   *  `data-src-pos` attribute. */
   html: string;
   diagnostics: TypstDiagnostic[];
 }

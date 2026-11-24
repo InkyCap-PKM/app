@@ -4,7 +4,7 @@ import { typst } from "codemirror-lang-typst";
 import { buildDecorations } from "./visual-plugin";
 import { EditorView } from "@codemirror/view";
 import { WikilinkWidget, LinkWidget, CalloutBlockWidget } from "./widgets";
-import { highlightInlineStyle } from "./visual-colors";
+import { buildHighlightMark, highlightInlineStyle } from "./visual-colors";
 
 // A wikilink or external link is a replace widget, which CodeMirror draws
 // outside any mark spanning it, so a highlight over the surrounding text
@@ -76,6 +76,14 @@ describe("highlightInlineStyle", () => {
 
   it("returns null for a call with no fill, stroke or radius", () => {
     expect(highlightInlineStyle("#highlight[x]", true)).toBeNull();
+  });
+});
+
+describe("buildHighlightMark", () => {
+  it("always carries the class that keeps its text dark inside a heading", () => {
+    for (const call of ["#highlight[x]", '#highlight(fill: rgb("#c8f0c8"))[x]']) {
+      expect(buildHighlightMark(call).spec.class).toBe("cm-typst-highlight");
+    }
   });
 });
 

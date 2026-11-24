@@ -9,6 +9,7 @@
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use typst::World;
 use typst_html::{HtmlDocument, HtmlOptions};
 use typst_layout::PagedDocument;
 use typst_pdf::{PdfOptions, PdfStandard, PdfStandards};
@@ -16,6 +17,7 @@ use typst_pdf::{PdfOptions, PdfStandard, PdfStandards};
 use crate::typst_pipeline::diagnostic::TypstDiagnostic;
 use crate::typst_pipeline::package_imports::PackageFactsCache;
 use crate::typst_pipeline::recovery::{self, RecoveryStyle};
+use crate::typst_pipeline::source_positions::{self, PagePosition};
 use crate::typst_pipeline::world::NoteboxWorld;
 
 /// Logs each compile's duration at `debug` level, so regressions show in dev
@@ -145,6 +147,9 @@ pub struct TypstCompileResult {
     /// [`recovery`]: crate::typst_pipeline::recovery
     pub recovered: bool,
     pub frames: Vec<TypstFrame>,
+    /// Where each row of the pages comes from in the compiled source; the
+    /// command layer shifts them back to the file on disk.
+    pub positions: Vec<PagePosition>,
     pub diagnostics: Vec<TypstDiagnostic>,
 }
 
@@ -362,6 +367,7 @@ impl TypstCompiler {
                 ok: true,
                 recovered: false,
                 frames: render_frames(&document),
+                positions: self.page_positions(&document),
                 diagnostics,
             }),
             Err(errors) => {
@@ -379,6 +385,12 @@ impl TypstCompiler {
                     &errors,
                     RecoveryStyle::Marker,
                 );
+                // Read while the world still holds the source `recovered` was
+                // compiled from.
+                let positions = recovered
+                    .as_ref()
+                    .map(|document| self.page_positions(document))
+                    .unwrap_or_default();
                 // The recovery pass left the patched source in the world;
                 // restore the user's original so later queries see it.
                 let _ = self.world.set_main(abs_path, source);
@@ -387,12 +399,14 @@ impl TypstCompiler {
                         ok: false,
                         recovered: true,
                         frames: render_frames(&document),
+                        positions,
                         diagnostics,
                     }),
                     None => Ok(TypstCompileResult {
                         ok: false,
                         recovered: false,
                         frames: Vec::new(),
+                        positions,
                         diagnostics,
                     }),
                 }
@@ -533,6 +547,15 @@ impl TypstCompiler {
         self.compile_pdf_with(abs_path, with_template, pdf_standard, bypass_errors)
     }
 
+    /// See [`source_positions::page_positions`]; `document` must have been
+    /// compiled from the world's current main source.
+    fn page_positions(&self, document: &PagedDocument) -> Vec<PagePosition> {
+        self.world
+            .source(self.world.main())
+            .map(|source| source_positions::page_positions(document, &source))
+            .unwrap_or_default()
+    }
+
     /// Compile the note at `abs_path` to HTML with Typst's HTML backend. Failed
     /// compiles are recovered with warning markers ([`RecoveryStyle::Marker`]); see
     /// [`compile_html_with`](Self::compile_html_with).
@@ -552,6 +575,47 @@ impl TypstCompiler {
         abs_path: &Path,
         source: String,
         recovery_style: RecoveryStyle,
+    ) -> Result<TypstHtmlResult, CompileError> {
+        self.compile_html_impl(abs_path, source, recovery_style, None)
+    }
+
+    /// Like [`compile_html`](Self::compile_html), with each block's source
+    /// position in a `data-src-pos` attribute (see
+    /// [`source_positions`]). `inserted_above` is the number of lines InkyCap
+    /// added near the top of `source`, which the positions leave out.
+    pub fn compile_html_with_positions(
+        &mut self,
+        abs_path: &Path,
+        source: String,
+        inserted_above: usize,
+    ) -> Result<TypstHtmlResult, CompileError> {
+        self.compile_html_impl(
+            abs_path,
+            source,
+            RecoveryStyle::Marker,
+            Some(inserted_above),
+        )
+    }
+
+    /// Add source positions to `document`, which must have been compiled from
+    /// the world's current main source, when they are wanted.
+    fn mark_html_positions(&self, document: &mut HtmlDocument, inserted_above: Option<usize>) {
+        let Some(inserted_above) = inserted_above else {
+            return;
+        };
+        if let Ok(source) = self.world.source(self.world.main()) {
+            source_positions::mark_html_positions(document, &source, inserted_above);
+        }
+    }
+
+    /// `positions_after` is the inserted line count when source positions are
+    /// wanted.
+    fn compile_html_impl(
+        &mut self,
+        abs_path: &Path,
+        source: String,
+        recovery_style: RecoveryStyle,
+        positions_after: Option<usize>,
     ) -> Result<TypstHtmlResult, CompileError> {
         let _evict = EvictComemoOnDrop;
         // Clone so the original source can be restored after the recovery
@@ -577,7 +641,8 @@ impl TypstCompiler {
             .collect();
 
         match warned.output {
-            Ok(document) => {
+            Ok(mut document) => {
+                self.mark_html_positions(&mut document, positions_after);
                 // Default options (minified). The reading view and HTML exports
                 // don't need readable HTML source, and using the default picks
                 // up new fields.
@@ -623,7 +688,10 @@ impl TypstCompiler {
                     &errors,
                     recovery_style,
                 )
-                .and_then(|document| typst_html::html(&document, &HtmlOptions::default()).ok());
+                .and_then(|mut document| {
+                    self.mark_html_positions(&mut document, positions_after);
+                    typst_html::html(&document, &HtmlOptions::default()).ok()
+                });
                 let _ = self.world.set_main(abs_path, source);
                 match recovered {
                     Some(html) => Ok(TypstHtmlResult {

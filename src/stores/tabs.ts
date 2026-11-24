@@ -1,7 +1,7 @@
 import { createSignal } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import type { StateEffect } from "@codemirror/state";
-import { pathEquals } from "../lib/paths";
+import { normalizePath, pathEquals } from "../lib/paths";
 import { moveOpenEditors } from "./editor-writes";
 import { t } from "../lib/i18n";
 import { settings } from "./settings";
@@ -54,8 +54,8 @@ export interface Tab {
   readingZoom?: number;
   /**
    * Shared by the editor and preview tabs of a "Split with preview" pair, for the
-   * synced indicator only (the preview refreshes by path). A group with one member
-   * left reads as unsynced.
+   * synced indicator and for scrolling them together (the preview refreshes by
+   * path). A group with one member left reads as unsynced.
    */
   syncGroupId?: string;
   /**
@@ -695,6 +695,17 @@ export function isSyncedTab(tabId: string): boolean {
   const tab = tabs.find((t) => t.id === tabId);
   if (!tab?.syncGroupId) return false;
   return tabs.some((t) => t.id !== tabId && t.syncGroupId === tab.syncGroupId);
+}
+
+/**
+ * Names the group of panes this tab scrolls together with (see
+ * lib/scroll-sync.ts). It includes the note, so a pane that moves on to another
+ * note stops following. Undefined when the tab isn't part of a pair.
+ */
+export function scrollSyncKey(tabId: string): string | undefined {
+  const tab = tabs.find((t) => t.id === tabId);
+  if (!tab || !isSyncedTab(tabId)) return undefined;
+  return `${tab.syncGroupId}::${normalizePath(tab.path)}`;
 }
 
 /**

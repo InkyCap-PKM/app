@@ -40,7 +40,11 @@ import {
   tabReadingFormat,
   setTabReadingFormat,
   tabReadingZoom,
+  scrollSyncKey,
 } from "../stores/tabs";
+import { joinScrollSync, type ScrollSyncMember } from "../lib/scroll-sync";
+import { createPreviewMap, htmlAnchors, type PreviewAnchor } from "../lib/preview-positions";
+import { editorOffsetOf, editorPositionAt } from "../editor/scroll-position";
 import { navigateWikilink, showWikilinkContextMenu } from "../lib/wikilink-nav";
 import { openLink, startsWithSchemeAndSlashes } from "../lib/open-link";
 import { isDocumentationWindow } from "../lib/docs-window";
@@ -312,6 +316,8 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
 
   function onDocUpdate(text: string) {
     if (suppressChange) return;
+    // While the user writes, a synced preview follows the editor.
+    scrollSync?.lead();
     setDocText(text);
     if (text === lastSaved) {
       // Typed back to what is on disk: nothing left to save.
@@ -437,6 +443,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
       }
     }
     registerEditorView(props.tabId, editorHandle);
+    updateScrollSync();
   }
 
   function destroyEditor() {
@@ -462,6 +469,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
       unregisterEditorView(props.tabId, editorHandle);
       editorHandle.destroy();
       editorHandle = undefined;
+      updateScrollSync();
     }
   }
 
@@ -479,6 +487,29 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
     lspCloseDocument();
     destroyEditor();
   });
+
+  // ── Scrolling together with a synced preview ───────────
+
+  const syncKey = createMemo(() => scrollSyncKey(props.tabId));
+  let scrollSync: ScrollSyncMember | undefined;
+
+  /** Match the editor's membership to whether it is mounted and in a pair. */
+  function updateScrollSync() {
+    scrollSync?.leave();
+    scrollSync = undefined;
+    const key = syncKey();
+    if (!key || !editorHandle) return;
+    const { view } = editorHandle;
+    scrollSync = joinScrollSync(key, {
+      scroller: view.scrollDOM,
+      content: view.contentDOM,
+      leadsByDefault: true,
+      positionAt: (offset) => editorPositionAt(view, offset),
+      offsetOf: (position) => editorOffsetOf(view, position),
+    });
+  }
+
+  createEffect(on(syncKey, updateScrollSync, { defer: true }));
 
   // ── Mode handling ──────────────────────────────────────
 
@@ -1315,6 +1346,56 @@ function attachReadingScrollMemory(
   });
 }
 
+/**
+ * Scroll a reading view together with the other pane of its "Split with
+ * preview" pair. `measure` finds the source positions in the view, and
+ * `result` is the compile it shows.
+ */
+function attachPreviewScrollSync(
+  scroller: HTMLElement,
+  tabId: string,
+  content: () => HTMLElement | undefined,
+  measure: () => PreviewAnchor[],
+  result: () => unknown,
+): void {
+  const map = createPreviewMap(scroller, measure);
+  let member: ScrollSyncMember | undefined;
+  let joined: HTMLElement | undefined;
+  const leave = () => {
+    member?.leave();
+    member = undefined;
+    joined = undefined;
+  };
+  onCleanup(leave);
+
+  const key = createMemo(() => scrollSyncKey(tabId));
+  createEffect(on(key, leave, { defer: true }));
+  createEffect(
+    on([key, result], ([syncKey]) => {
+      if (!syncKey) return;
+      // Once this update's pages are in the document.
+      queueMicrotask(() => {
+        const el = content();
+        if (!el || !scroller.isConnected || key() !== syncKey) return;
+        map.invalidate();
+        if (member && joined === el) {
+          member.contentReplaced();
+          return;
+        }
+        leave();
+        joined = el;
+        member = joinScrollSync(syncKey, {
+          scroller,
+          content: el,
+          leadsByDefault: false,
+          positionAt: map.positionAt,
+          offsetOf: map.offsetOf,
+        });
+      });
+    }),
+  );
+}
+
 interface TypstReadingViewProps {
   result: TypstCompileResult | undefined;
   loading: boolean;
@@ -1324,6 +1405,18 @@ interface TypstReadingViewProps {
 }
 
 const TypstReadingView: Component<TypstReadingViewProps> = (props) => {
+  let pagesRef: HTMLDivElement | undefined;
+
+  const pageAnchors = (scroller: HTMLElement): PreviewAnchor[] => {
+    const pages = pagesRef?.querySelectorAll<HTMLElement>(".typst-reading__page") ?? [];
+    const scrollerTop = scroller.getBoundingClientRect().top - scroller.scrollTop;
+    const pageTops = Array.from(pages, (p) => p.getBoundingClientRect().top - scrollerTop);
+    const pxPerPt = PT_TO_CSS_PX * props.zoom;
+    return (props.result?.positions ?? [])
+      .filter((p) => p.page < pageTops.length)
+      .map((p) => ({ position: p.position, offset: pageTops[p.page] + p.y_pt * pxPerPt }));
+  };
+
   // In the SVG view a wikilink is a plain `<a>` to `<name>.typ`, which the
   // webview would follow out of the app. Detect the `.typ` target and use in-app
   // navigation.
@@ -1367,6 +1460,13 @@ const TypstReadingView: Component<TypstReadingViewProps> = (props) => {
       ref={(el) => {
         attachReadingScrollMemory(el, props.tabId, props.path, () => !!props.result);
         attachReadingZoomWheel(el, props.tabId);
+        attachPreviewScrollSync(
+          el,
+          props.tabId,
+          () => pagesRef,
+          () => pageAnchors(el),
+          () => props.result,
+        );
       }}
       onClick={onWikilinkClick}
       onAuxClick={onWikilinkClick}
@@ -1390,7 +1490,7 @@ const TypstReadingView: Component<TypstReadingViewProps> = (props) => {
                 </For>
               </div>
             </Show>
-            <div class="typst-reading__pages">
+            <div class="typst-reading__pages" ref={pagesRef}>
               <For each={r().frames}>
                 {(frame) => (
                   <div
@@ -1450,6 +1550,8 @@ async function resolveMediaSources(root: HTMLElement): Promise<void> {
 // images are handled by the backend's `html-align` shim.
 
 const TypstHtmlReadingView: Component<TypstHtmlReadingViewProps> = (props) => {
+  let contentRef: HTMLDivElement | undefined;
+
   // Font size comes from CSS (`--md-body-size`); only the family is set here.
   //
   // Zoom uses CSS `zoom`, which scales the whole layout so the measure and
@@ -1507,6 +1609,13 @@ const TypstHtmlReadingView: Component<TypstHtmlReadingViewProps> = (props) => {
       ref={(el) => {
         attachReadingScrollMemory(el, props.tabId, props.path, () => !!props.result?.html);
         attachReadingZoomWheel(el, props.tabId);
+        attachPreviewScrollSync(
+          el,
+          props.tabId,
+          () => contentRef,
+          () => (contentRef ? htmlAnchors(el, contentRef) : []),
+          () => props.result,
+        );
       }}
       onClick={onWikilinkClick}
       onAuxClick={onWikilinkClick}
@@ -1535,6 +1644,7 @@ const TypstHtmlReadingView: Component<TypstHtmlReadingViewProps> = (props) => {
                 class="typst-reading__html-content"
                 style={contentStyle()}
                 ref={(el) => {
+                  contentRef = el;
                   // This element survives recompiles, so refill it whenever the
                   // HTML changes.
                   createEffect(() => {
@@ -1564,6 +1674,7 @@ function ipcErrorToResult(err: unknown): TypstCompileResult {
     ok: false,
     recovered: false,
     frames: [],
+    positions: [],
     diagnostics: [
       {
         severity: "error",

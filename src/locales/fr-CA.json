@@ -680,7 +680,7 @@
   "pane.splitDown": "Diviser vers le bas",
   "pane.splitWithPreview": "Diviser avec aperçu",
   "pane.close": "Fermer ce volet",
-  "tab.syncedPreview": "Aperçu synchronisé — vos modifications ici mettent à jour le volet d'aperçu",
+  "tab.syncedPreview": "Aperçu synchronisé : vos modifications ici mettent à jour l'aperçu, et les deux volets défilent ensemble",
   "command.pane.splitRight": "Diviser l'éditeur à droite",
   "command.pane.splitDown": "Diviser l'éditeur vers le bas",
   "command.pane.splitWithPreview": "Diviser avec un aperçu synchronisé",

@@ -9,6 +9,7 @@ use crate::storage::sanitize_notebox_arg;
 use crate::storage::traits::NoteboxStorage;
 use crate::typst_pipeline::bibliography::extract_citations;
 use crate::typst_pipeline::package_fetch::compile_with_auto_packages;
+use crate::typst_pipeline::source_positions::without_inserted_lines;
 use crate::typst_pipeline::style_injection;
 use crate::typst_pipeline::{html_drawings, package_imports};
 use crate::typst_pipeline::{TypstCompileResult, TypstCompiler, TypstDiagnostic, TypstHtmlResult};
@@ -88,6 +89,9 @@ pub async fn compile_typst_svg(
             .map_err(|err| InkyCapError::Typst(err.to_string()))?;
     result.diagnostics.extend(import_warnings);
     remap_diagnostic_lines(&mut result.diagnostics, injected_line_offset);
+    for p in &mut result.positions {
+        p.position = without_inserted_lines(p.position, injected_line_offset);
+    }
     Ok(result)
 }
 
@@ -300,7 +304,7 @@ async fn compile_html_source(
     let source = package_imports::without_template_rules(compiler, &source);
     let mut framed = html_drawings::frame_drawings(compiler, &source);
     let mut result = compile_with_auto_packages(compiler, |c| {
-        c.compile_html(&canonical, framed.source.clone())
+        c.compile_html_with_positions(&canonical, framed.source.clone(), injected_line_offset)
     })
     .await
     .map_err(|err| InkyCapError::Typst(err.to_string()))?;
@@ -311,7 +315,11 @@ async fn compile_html_source(
         if reframed != framed {
             framed = reframed;
             result = compile_with_auto_packages(compiler, |c| {
-                c.compile_html(&canonical, framed.source.clone())
+                c.compile_html_with_positions(
+                    &canonical,
+                    framed.source.clone(),
+                    injected_line_offset,
+                )
             })
             .await
             .map_err(|err| InkyCapError::Typst(err.to_string()))?;
